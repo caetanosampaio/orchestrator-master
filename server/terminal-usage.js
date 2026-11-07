@@ -41,8 +41,9 @@ export function createUsageReader({ configDir = claudeConfigDir(), pricesFile = 
     return priceCache.table;
   };
 
-  function locate(sessionId) {
-    const root = path.join(configDir, 'projects');
+  // `dir` (opcional) = pasta de configuração da CONTA da sessão (accounts.js); sem ela vale a pasta padrão do leitor
+  function locate(sessionId, dir = configDir) {
+    const root = path.join(dir ?? configDir, 'projects');
     let dirs; try { dirs = fs.readdirSync(root, { withFileTypes: true }); } catch { return null; }
     for (const d of dirs) { if (!d.isDirectory()) continue; const f = path.join(root, d.name, `${sessionId}.jsonl`); try { if (fs.statSync(f).isFile()) return f; } catch { /* próximo projeto */ } }
     return null;
@@ -71,10 +72,10 @@ export function createUsageReader({ configDir = claudeConfigDir(), pricesFile = 
   }
 
   /** @returns {null | {input:number, output:number, cacheWrite:number, cacheRead:number, total:number, turns:number, model:string|null, costUsd:number|null}} */
-  function read(sessionId) {
+  function read(sessionId, dir) {
     if (typeof sessionId !== 'string' || !UUID_RE.test(sessionId)) return null;
     let st = files.get(sessionId);
-    if (!st) { if ((misses.get(sessionId) ?? 0) > Date.now()) return null; const file = locate(sessionId); if (!file) { misses.set(sessionId, Date.now() + missMs); return null; } misses.delete(sessionId); st = { file, offset: 0, byMsg: new Map(), pending: '' }; files.set(sessionId, st); }
+    if (!st) { if ((misses.get(sessionId) ?? 0) > Date.now()) return null; const file = locate(sessionId, dir); if (!file) { misses.set(sessionId, Date.now() + missMs); return null; } misses.delete(sessionId); st = { file, offset: 0, byMsg: new Map(), pending: '' }; files.set(sessionId, st); }
     ingest(st);
     // Subagentes (ferramenta Task) gravam em <sessão>/subagents/*.jsonl: também são consumo do pane
     st.subs ??= new Map(); const subDir = path.join(path.dirname(st.file), sessionId, 'subagents');
@@ -93,10 +94,10 @@ export function createUsageReader({ configDir = claudeConfigDir(), pricesFile = 
   }
   const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i; // só UUID: nenhum separador de caminho chega ao sistema de arquivos
   /** Quais destes ids têm transcrição? UM passe pelas pastas de projeto (em vez de uma varredura por id): é o que o histórico usa. Sem cache: reflete o disco agora. */
-  function present(ids) {
+  function present(ids, dir = configDir) {
     const want = new Set((Array.isArray(ids) ? ids : []).filter((x) => typeof x === 'string' && UUID.test(x))), out = new Set();
     if (!want.size) return out;
-    const root = path.join(configDir, 'projects');
+    const root = path.join(dir ?? configDir, 'projects');
     let dirs; try { dirs = fs.readdirSync(root, { withFileTypes: true }); } catch { return out; }
     for (const d of dirs) {
       if (!d.isDirectory()) continue;
@@ -109,5 +110,5 @@ export function createUsageReader({ configDir = claudeConfigDir(), pricesFile = 
     }
     return out;
   }
-  return { read, has: (sessionId) => typeof sessionId === 'string' && UUID.test(sessionId) && locate(sessionId) !== null, present, forget: (sessionId) => { misses.delete(sessionId); return files.delete(sessionId); } };
+  return { read, has: (sessionId, dir) => typeof sessionId === 'string' && UUID.test(sessionId) && locate(sessionId, dir) !== null, present, forget: (sessionId) => { misses.delete(sessionId); return files.delete(sessionId); } };
 }

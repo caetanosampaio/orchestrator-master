@@ -7,6 +7,7 @@ import { useStore } from '../store.jsx';
 import { usePrefs, useLayouts, useLayoutMode, useAutoRestore } from '../hooks.js';
 import { orderSessions, mergeOrder, sameList, EMPTY as EMPTY_LAYOUT } from '../layout-state.js';
 import { historyRows, resumeBody, needsConfigAck, restorePlan, batchSummary, lastShutdownRestore, attemptKey } from '../session-history.js';
+import { accountTagName } from '../accounts-view.js';
 import { Btn, Icon, WorkStar } from './ui.jsx';
 import { paneUsage, squadUsage } from '../usage-view.js';
 import { createTerminalStream, isOld } from '../terminal-stream.js';
@@ -25,10 +26,13 @@ const shortPath = (p) => { const parts = String(p ?? '').split(/[\\/]+/).filter(
 
 /** Um pane = um terminal xterm ligado ao PTY do servidor: saída por SSE, entrada e tamanho por POST (nunca WebSocket: passa pela checagem de Host/Origin). */
 function TerminalPane({ session, role, state, waiting, maximized, fontSize, stream, onClose, onMaximize, onFocus }) {
-  const { noteInteraction } = useStore();
+  const { noteInteraction, notify, accounts } = useStore();
+  const accTag = accountTagName(session.accountId, accounts); // só contas que não são a Sistema
   const hostRef = useRef(null), termRef = useRef(null), fitRef = useRef(null);
   const id = session.id, running = session.status === 'running';
   const runningRef = useRef(running); runningRef.current = running;
+  const [conn, setConn] = useState(() => stream.status?.() ?? 'open');
+  useEffect(() => stream.onStatus?.(setConn), [stream]); // 'reconnecting' aparece discreto no cabeçalho
   const [started, setStarted] = useState(false); // false até chegar a primeira saída: o Claude Code leva alguns segundos para iniciar (vários ao mesmo tempo, mais)
 
   useEffect(() => {
@@ -49,7 +53,14 @@ function TerminalPane({ session, role, state, waiting, maximized, fontSize, stre
 
     // entrada: uma fila só, para as teclas chegarem na ordem em que foram digitadas
     let chain = Promise.resolve();
-    const send = (data) => { for (let i = 0; i < data.length; i += MAX_CHUNK) { const part = data.slice(i, i + MAX_CHUNK); chain = chain.then(() => api.post(`/api/terminals/${id}/input`, { data: part })).catch(() => {}); } };
+    // Recusa (409 "ainda iniciando", terminal encerrado, rede) não pode ser silenciosa: avisa, no máximo 1 vez a cada 3 s por terminal, e a fila segue na ordem
+    let lastWarn = 0;
+    const warn = (e) => {
+      const now = Date.now(); if (now - lastWarn < 3000) return; lastWarn = now;
+      const why = e?.status === 409 ? 'o terminal ainda está iniciando ou já foi encerrado' : e?.message || 'falha de conexão com o servidor';
+      notify(`A tecla não foi enviada para "${session.title}": ${why}.`, 'error');
+    };
+    const send = (data) => { for (let i = 0; i < data.length; i += MAX_CHUNK) { const part = data.slice(i, i + MAX_CHUNK); chain = chain.then(() => api.post(`/api/terminals/${id}/input`, { data: part })).catch(warn); } };
     // tudo que o xterm escreve no PTY (teclas, colar, relatórios de foco e de mouse) é interação da interface: o redesenho que o Claude Code faz em resposta não é trabalho
     // Reconstruir a tela de um terminal que JÁ existia reproduz a saída antiga, e nela estão as PERGUNTAS que o Claude Code fez ao terminal na partida (identificação, posição do cursor,
     // foco). O xterm responderia a todas de novo, e essas respostas chegariam ao Claude Code VIVO como teclas (vários ESC seguidos abrem o seletor de mensagens: o cursor some e as letras
@@ -98,7 +109,9 @@ function TerminalPane({ session, role, state, waiting, maximized, fontSize, stre
         <b className={`oc-ptitle${nm.role ? ' sub' : ''}`} title={session.title}>{nm.name}</b>
         {waiting?.length > 0 && <span className="oc-pwait" role="status" title={waitTitle}><Icon name="clock" size={12} /><span className="oc-pwait-t">{waiting.length > 1 ? `${waiting.length} tarefas aguardando você` : waitText ? `Aguardando você: ${waitText}` : 'Aguardando você'}</span></span>}
         <span className="oc-pgrow" />
+        {conn === 'reconnecting' && <span className="oc-reconn" role="status" title="A conexão com os terminais caiu; tentando de novo automaticamente.">reconectando…</span>}
         <span className="oc-ptag" title="Provider deste terminal">Claude Code</span>
+        {accTag && <span className="oc-ptag acc" title={`Conta: ${accTag}`}><span className="sr">Conta: </span>{accTag}</span>}
         {session.worktreeId && <span className="oc-ptag wt" title="Roda num worktree próprio">worktree</span>}
         {hasUse && <span className="oc-pusage" title={use.title}><span className="sr">Consumo: </span>{use.tokens} tok<span aria-hidden="true"> · </span><span className="sr">custo </span>{use.cost}</span>}
         {onFocus && <button type="button" className="oc-pbtn" onClick={onFocus} aria-label="Colocar este terminal em foco" title="Colocar em foco"><Icon name="fit" size={14} /></button>}

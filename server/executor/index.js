@@ -1,7 +1,7 @@
 // Executor real: roda UMA tarefa por vez com o Claude Code, como processo filho controlado.
 //
 // Segurança (fixa no código, nada vem do cliente):
-//  - binário fixo `claude`, sem shell, argumentos montados aqui, cwd = workspace validado;
+//  - binário `claude` resolvido como nos terminais (providers/claude.js; `.cmd` via cmd.exe só com argumentos de lista permitida), argumentos montados aqui, cwd = workspace validado;
 //  - NUNCA usa --dangerously-skip-permissions nem bypassPermissions;
 //  - --permission-prompts none: qualquer pedido de permissão é negado automaticamente;
 //  - --tools restringe a leitura/edição de arquivos (sem Bash, sem rede);
@@ -13,6 +13,7 @@ import { parseLine, createUsageTracker } from './stream.js';
 import { killTreeSync, processStartedAt, waitGone, START_TOLERANCE_MS } from '../orphans.js';
 import { killTree } from '../proc.js';
 import { pidAlive } from '../instance-lock.js';
+import { launchSpec, shellSafeArgs, claudeEnv } from '../claude-cli.js';
 
 export const bus = new EventEmitter(); // 'task' | 'log' | 'state' -> consumido pelo SSE
 bus.setMaxListeners(50);
@@ -24,14 +25,15 @@ export const CLAUDE_ARGS = [
   '--tools', 'Read,Edit,Write,Glob,Grep',
 ];
 
-/**
- * `command`/`prefixArgs` só existem para os testes injetarem uma CLI falsa; o servidor
- * usa sempre o padrão e nenhum valor vem de requisições.
- */
-export function createExecutor({ command = 'claude', prefixArgs = [], args = CLAUDE_ARGS, timeoutMs = 15 * 60 * 1000, orphanTools = {} } = {}) {
+// launchSpec e shellSafeArgs vivem em ../claude-cli.js (compartilhados com as contas); shellSafeArgs continua exportado daqui.
+export { shellSafeArgs };
+
+export function createExecutor({ command, prefixArgs = [], args = CLAUDE_ARGS, timeoutMs = 15 * 60 * 1000, orphanTools = {}, env: envOf = claudeEnv } = {}) {
+  const injected = command !== undefined;
   const { alive = pidAlive, startedAtOf = processStartedAt, kill = killTreeSync, wait = waitGone } = orphanTools; // injetáveis só nos testes
   let active = null;
   let probeCache = { at: 0, value: null };
+  let probeInFlight = null; // /api/state e /api/agents chamam probe() juntos: uma única `claude --version` em andamento, compartilhada
   // Processos de um servidor anterior que podem ainda estar executando (ver orphans.js): ou foram identificados e não puderam ser encerrados,
   // ou estão vivos e a identidade não foi confirmada. Enquanto vivos, o executor fica ocupado: nada novo se sobrepõe a eles. Guardamos a hora
   // de criação (null = desconhecida) para nunca encerrar um PID reaproveitado e nunca encerrar um processo de identidade desconhecida.
@@ -40,15 +42,20 @@ export function createExecutor({ command = 'claude', prefixArgs = [], args = CLA
 
   function probe() {
     if (Date.now() - probeCache.at < 15000 && probeCache.value) return Promise.resolve(probeCache.value);
-    return new Promise((resolve) => {
-      execFile(command, [...prefixArgs, '--version'], { timeout: 8000, windowsHide: true }, (err, stdout) => {
-        const value = err
-          ? { available: false, detail: 'Claude Code não encontrado no PATH' }
-          : { available: true, version: stdout.trim(), detail: 'Claude Code detectado e pronto para executar tarefas autorizadas' };
-        probeCache = { at: Date.now(), value };
-        resolve(value);
-      });
+    if (probeInFlight) return probeInFlight;
+    probeInFlight = new Promise((resolve) => {
+      const spec = launchSpec({ injected, command, prefixArgs }, ['--version']);
+      const done = (value) => { probeCache = { at: Date.now(), value }; probeInFlight = null; resolve(value); };
+      if (spec.error) return done({ available: false, detail: 'Claude Code não pôde ser iniciado com segurança (caminho do claude.cmd inválido).' });
+      try {
+        execFile(spec.file, spec.args, { timeout: 8000, windowsHide: true, windowsVerbatimArguments: spec.verbatim }, (err, stdout) => {
+          done(err
+            ? { available: false, detail: 'Claude Code não encontrado no PATH' }
+            : { available: true, version: stdout.trim(), detail: 'Claude Code detectado e pronto para executar tarefas autorizadas' });
+        });
+      } catch { done({ available: false, detail: 'Claude Code não encontrado no PATH' }); }
     });
+    return probeInFlight;
   }
 
   /**
@@ -62,6 +69,8 @@ export function createExecutor({ command = 'claude', prefixArgs = [], args = CLA
     // Validado ANTES do lock e de qualquer estado do runner: lista não vazia de textos sem byte nulo (um `\0` faria o spawn lançar depois de `active = run`).
     if (callArgs !== undefined && (!Array.isArray(callArgs) || callArgs.length === 0 || !callArgs.every((a) => typeof a === 'string' && !a.includes('\0')))) throw new TypeError('args deve ser uma lista não vazia de textos sem byte nulo.');
     if (active || liveOrphans()) { const e = new Error('Outra execução está em andamento.'); e.code = 'BUSY'; throw e; }
+    const spec = launchSpec({ injected, command, prefixArgs }, callArgs ?? args); // antes do lock: recusa por segurança não deixa estado para trás
+    if (spec.error) throw new TypeError(spec.error);
     const run = { missionId, taskId, startedAt: new Date().toISOString(), stopping: false, timedOut: false, child: null, finished: null };
     active = run;
     let result = null, error = null, spawnFailed = false, settled = false;
@@ -70,7 +79,7 @@ export function createExecutor({ command = 'claude', prefixArgs = [], args = CLA
     const done = new Promise((r) => { resolveDone = r; });
     run.finished = done;
 
-    const child = spawn(command, [...prefixArgs, ...(callArgs ?? args)], { cwd, shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'], env: process.env });
+    const child = spawn(spec.file, spec.args, { cwd, shell: false, windowsHide: true, windowsVerbatimArguments: spec.verbatim, stdio: ['pipe', 'pipe', 'pipe'], env: envOf() }); // conta padrão no MOMENTO da execução (claude-cli.js)
     run.child = child;
     const timer = setTimeout(() => { run.timedOut = true; killTree(child); }, timeoutMs);
 
@@ -155,6 +164,8 @@ export function createExecutor({ command = 'claude', prefixArgs = [], args = CLA
   return {
     id: 'claude-code',
     probe,
+    /** Descarta o cache da sonda ("Verificar novamente"): a próxima chamada a probe() consulta de verdade. */
+    resetProbe: () => { probeCache = { at: 0, value: null }; },
     cachedAvailability: () => (probeCache.value ? probeCache.value.available : null),
     isBusy: () => !!active || liveOrphans() > 0,
     /** Registra um processo de execução anterior que pode estar ativo (hora de criação ou null se desconhecida): bloqueia novas execuções enquanto viver. */

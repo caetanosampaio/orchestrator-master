@@ -37,3 +37,12 @@ test('preferência: padrão ligado; desligar persiste; armazenamento quebrado nu
   const broken = { getItem() { throw new Error('bloqueado'); }, setItem() { throw new Error('bloqueado'); } };
   assert.equal(readAutoRestore(broken), true); assert.doesNotThrow(() => writeAutoRestore(false, broken));
 });
+
+test('encerramento forçado: sem endedAt, interruptedAt vale como instante de término', () => {
+  const t0 = Date.parse('2026-11-07T01:00:00.000Z'), at = (ms) => new Date(t0 - ms).toISOString();
+  const forced = (id, ms) => rec(id, null, { interruptedAt: at(ms) });
+  const r = rows([forced('a', 0), forced('b', 5000), forced('velha', 24 * 3600_000), rec('c', at(1000), { interruptedAt: at(99999999) })]);
+  assert.deepEqual(lastShutdownRestore(r.restore).map((x) => x.id).sort(), ['a', 'b', 'c']);
+  assert.equal(attemptKey(r.restore.find((x) => x.id === 'a')), `a:${at(0)}`);
+  assert.deepEqual(lastShutdownRestore(rows([rec('z', null)]).restore), []); // sem nenhuma data continua de fora
+});

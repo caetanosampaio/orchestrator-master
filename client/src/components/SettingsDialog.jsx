@@ -7,11 +7,13 @@ import { FONT_RANGE } from '../prefs.js';
 import Dialog from './Dialog.jsx';
 import { Btn, Icon } from './ui.jsx';
 import MaestroControls from './MaestroControls.jsx';
+import AccountsPanel from './AccountsPanel.jsx';
 import WorktreePanel from './WorktreePanel.jsx';
 import { terminalWorktrees } from '../worktree-view.js';
 
 const SECTIONS = [
   ['perfil', 'Perfil e conta', 'user'],
+  ['accounts', 'Contas', 'user'],
   ['geral', 'Preferências gerais', 'sliders'],
   ['visualizacao', 'Visualização', 'panel'],
   ['historico', 'Histórico de sessões', 'clock'],
@@ -63,8 +65,10 @@ export default function SettingsDialog({ onClose, initial = 'perfil' }) {
             <Row title="Nome exibido" hint="Aparece no rodapé da barra lateral.">
               <input value={prefs.name} onChange={(e) => setPref('name', e.target.value)} maxLength={40} placeholder="Seu nome" data-autofocus="" aria-label="Nome exibido" />
             </Row>
-            <Row title="Conta" hint="Ainda não existe login nem conta: o FORGE roda só neste computador (127.0.0.1) e o nome fica salvo apenas aqui. O login do Claude Code é independente e fica no próprio CLI." />
+            <Row title="Conta" hint="O nome fica salvo apenas neste computador (127.0.0.1). Para conectar contas do Claude Code, use a aba Contas." />
           </>}
+
+          {tab === 'accounts' && <AccountsPanel />}
 
           {tab === 'geral' && <>
             <Row title="Isolar novos terminais em worktree" hint="Cada terminal trabalha numa branch Git própria, sem pisar nos arquivos dos outros. Exige repositório Git.">

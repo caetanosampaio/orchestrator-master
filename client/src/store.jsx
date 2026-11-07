@@ -78,6 +78,21 @@ export function StoreProvider({ children }) {
       api.get('/api/maestro').then((m) => { const j = JSON.stringify(m); if (j !== lastM.current) { lastM.current = j; setMaestro(m); } }).catch(() => {});
     } catch { /* servidor fora do ar: mantém o último estado */ }
   }, []);
+  // Contas (etiqueta no terminal e aba Contas). Servidor antigo sem a rota: lista vazia, sem erro na tela.
+  const [accounts, setAccounts] = useState([]);
+  const lastA = useRef('');
+  const loadAccounts = useCallback(async () => {
+    try {
+      const d = await api.get('/api/accounts?status=0'); // só nomes: o status completo fica com a aba Contas
+      const list = Array.isArray(d?.accounts) ? d.accounts : [];
+      const j = JSON.stringify(list); if (j !== lastA.current) { lastA.current = j; setAccounts(list); }
+    } catch { /* sem a rota ou fora do ar: mantém o último */ }
+  }, []);
+  useEffect(() => {
+    loadAccounts();
+    const t = setInterval(() => { if (!document.hidden) loadAccounts(); }, 60000); // o status de cada conta custa ~1 s de `claude auth status` no servidor (com cache): a lista só precisa dos nomes; a aba Contas recarrega ao abrir e a cada ação
+    return () => clearInterval(t);
+  }, [loadAccounts]);
   const updateMaestro = useCallback((m) => { lastM.current = JSON.stringify(m); setMaestro(m); }, []);
   useEffect(() => {
     loadTerminals();
@@ -136,6 +151,6 @@ export function StoreProvider({ children }) {
   const selectTopic = (workspaceId, topicId) => act(() => (topicId ? nav.activateTopic(topicId) : nav.activateGeneral(workspaceId)));
 
   return (
-    <Ctx.Provider value={{ ...data, openWorkspaceIds, topics, activeTopicIds, selectTopic, error, mission, selectMission, refresh, act, notify, toast, terminals, maestro, setMaestro: updateMaestro, workingIds, loadTerminals, noteInteraction, unseenWs }}>{children}</Ctx.Provider>
+    <Ctx.Provider value={{ ...data, openWorkspaceIds, topics, activeTopicIds, selectTopic, error, mission, selectMission, refresh, act, notify, toast, terminals, maestro, setMaestro: updateMaestro, workingIds, loadTerminals, noteInteraction, unseenWs, accounts, loadAccounts }}>{children}</Ctx.Provider>
   );
 }

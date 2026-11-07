@@ -7,6 +7,7 @@ import SettingsDialog from './components/SettingsDialog.jsx';
 import WorkspaceDialog from './components/WorkspaceDialog.jsx';
 import { useStore } from './store.jsx';
 import { usePrefs, useUi } from './hooks.js';
+import PrereqModal from './components/PrereqModal.jsx';
 import { Icon, PersistenceNote } from './components/ui.jsx';
 
 const NARROW = '(max-width: 900px)';
@@ -69,6 +70,7 @@ export default function App() {
           <span className="toast-text">{toast.text}</span>
         </div>
       )}
+      <PrereqModal suspended={!!dialog} onOpenAccounts={() => openSettings('accounts')} /> {/* se afasta enquanto um diálogo (ex.: Configurações > Contas) está aberto */}
       {dialog === 'settings' && <SettingsDialog initial={settingsTab} onClose={closeDialog} />}
       {dialog === 'workspaces' && <WorkspaceDialog onClose={closeDialog} />}
     </div>

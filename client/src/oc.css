@@ -426,3 +426,40 @@ html[data-motion="reduced"] .wsi, html[data-motion="reduced"] .wsi svg { animati
 .conv-msg { padding: var(--sp-2) var(--sp-3); border-radius: var(--r-2); background: var(--coal-2); }
 .conv-msg.me { box-shadow: inset 2px 0 0 var(--brand); }
 .conv-t { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* popup "Antes de começar" (PrereqModal) e estado da conexão dos terminais */
+.prereq-modal { background: rgba(0, 0, 0, .66); backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px); z-index: 60; }
+.prereq-modal .oc-dialog { width: min(100%, 560px); }
+.prereq-lead { margin: 0; color: var(--text); }
+.prereq-issues { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-4); }
+.prereq-issue { padding: var(--sp-4); border-radius: var(--r-3); background: var(--warn-bg); color: var(--warn-text); box-shadow: inset 3px 0 0 var(--warn); }
+.prereq-issue.blocking { background: rgba(138, 31, 18, .16); color: var(--text); box-shadow: inset 3px 0 0 var(--brand); }
+.prereq-issue h3 { margin: 0 0 var(--sp-2); font-family: var(--mono); font-size: 12.5px; font-weight: 600; letter-spacing: .04em; color: var(--strong); }
+.prereq-issue p { margin: 0 0 var(--sp-2); overflow-wrap: anywhere; }
+.prereq-issue ol { margin: 0; padding-left: 1.25em; display: flex; flex-direction: column; gap: 2px; }
+.prereq-issue code { font-family: var(--mono); padding: 1px 5px; border-radius: var(--r-1); background: rgba(255, 255, 255, .08); color: var(--strong); }
+.prereq-issue a { color: inherit; text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
+.prereq-hint { margin: 0; }
+.prereq-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--sp-3); }
+.oc-reconn { font-size: var(--fs-sm); color: var(--warn-text); }
+@media (max-width: 600px) { .prereq-actions .btn { flex: 1 1 100%; min-height: 44px; } }
+
+/* Aba Contas (AccountsPanel) */
+.acc { display: flex; flex-direction: column; gap: var(--sp-4); }
+.acc-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-3); }
+.acc-card { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); border-radius: var(--r-2); background: var(--coal-1); box-shadow: inset 0 0 0 1px var(--coal-line); min-width: 0; }
+.acc-card.def { box-shadow: inset 0 0 0 1px var(--line-strong); }
+.acc-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); min-width: 0; }
+.acc-name { font-weight: 500; color: var(--strong); overflow-wrap: anywhere; }
+.acc-sum { margin: 0; overflow-wrap: anywhere; }
+.acc-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.acc-login, .acc-confirm, .acc-add { display: flex; flex-direction: column; gap: var(--sp-3); padding-top: var(--sp-2); border-top: 1px solid var(--coal-line); }
+.acc-add { padding: var(--sp-3) var(--sp-4); border: 0; border-radius: var(--r-2); background: var(--coal-1); box-shadow: inset 0 0 0 1px var(--coal-line); }
+.acc-field { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-sm); } .acc-field input, .acc-field select { width: 100%; max-width: 360px; }
+.acc-code { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--sp-2); } .acc-code .acc-field { flex: 1 1 220px; }
+.acc-url { overflow-wrap: anywhere; margin: 0; }
+.acc-log { margin: 0; max-height: 7.5em; overflow: auto; padding: var(--sp-2) var(--sp-3); font-size: 11.5px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--coal-2); border-radius: var(--r-2); box-shadow: inset 0 0 0 1px var(--coal-line); }
+.acc-prov { display: flex; flex-wrap: wrap; gap: var(--sp-3); margin: 0; padding: 0; border: 0; } .acc-prov legend { padding: 0; margin-bottom: 4px; font-size: var(--fs-sm); }
+.acc-popt { display: inline-flex; align-items: center; gap: var(--sp-2); min-height: 32px; } .acc-popt.off { opacity: .6; }
+.oc-ptag.acc { min-width: 0; max-width: 16ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 0 1 auto; }
+@media (max-width: 700px) { .acc .btn, .acc-popt { min-height: 44px; } .acc-field input, .acc-field select { max-width: none; } }

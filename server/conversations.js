@@ -46,21 +46,22 @@ export function messageOf(o) {
   return { r: o.type === 'user' ? 'u' : 'a', t: cut ? `${text}\n[…cortado]` : text, at: typeof o.timestamp === 'string' && o.timestamp.length <= 40 ? o.timestamp : null };
 }
 
-export function createConversationStore({ dir, configDir = claudeConfigDir(), now = () => new Date().toISOString() } = {}) {
+// `configDirOf(accountId)` (accounts.js) devolve a pasta do Claude da CONTA do registro (null = a padrão do processo); sem ele vale sempre `configDir`.
+export function createConversationStore({ dir, configDir = claudeConfigDir(), configDirOf = null, now = () => new Date().toISOString() } = {}) {
   if (!dir) throw new Error('createConversationStore: dir é obrigatório');
   const wsDir = (ws) => path.join(dir, ws), metaPath = (ws, rec) => path.join(dir, ws, `${rec}.json`), logPath = (ws, rec) => path.join(dir, ws, `${rec}.log`), tombPath = (ws, rec) => path.join(dir, ws, `${rec}.del`);
-  const projectsRoot = path.join(configDir, 'projects');
+  const rootOf = (accountId) => path.join((configDirOf ? configDirOf(accountId ?? 'system') : null) ?? configDir, 'projects');
   const lastSig = new Map(); // `${ws}/${rec}` -> assinatura do último resumo gravado (sem nada novo, não regrava)
 
   const isFile = (f) => { try { return fs.lstatSync(f).isFile(); } catch { return false; } }; // lstat: symlink não conta
-  function locate(claudeId) {
+  function locate(claudeId, projectsRoot = rootOf(null)) {
     if (!UUID_RE.test(String(claudeId))) return null;
     let dirs; try { dirs = fs.readdirSync(projectsRoot, { withFileTypes: true }); } catch { return null; }
     for (const d of dirs) { if (!d.isDirectory()) continue; const f = path.join(projectsRoot, d.name, `${claudeId}.jsonl`); if (isFile(f)) return f; }
     return null;
   }
   /** Reaproveita o arquivo já conhecido (sem varrer todos os projetos), desde que continue sendo o transcript DESTA sessão. */
-  function knownFile(m, claudeId) {
+  function knownFile(m, claudeId, projectsRoot) {
     const f = m?.srcFile; if (typeof f !== 'string') return null;
     const rel = path.relative(projectsRoot, f);
     return path.basename(f) === `${String(claudeId).toLowerCase()}.jsonl` && rel && !rel.startsWith('..') && !path.isAbsolute(rel) && isFile(f) ? f : null;
@@ -80,7 +81,7 @@ export function createConversationStore({ dir, configDir = claudeConfigDir(), no
       if (!isObj(rec) || !REC_RE.test(String(rec.id)) || !WS_RE.test(String(rec.workspaceId))) return { ok: false, reason: 'registro_invalido' };
       const ws = rec.workspaceId, key = `${ws}/${rec.id}`;
       let m = readMeta(ws, rec.id);
-      const file = knownFile(m, rec.claudeSessionId) ?? locate(rec.claudeSessionId); if (!file) return { ok: false, reason: 'sem_transcricao' };
+      const root = rootOf(rec.accountId), file = knownFile(m, rec.claudeSessionId, root) ?? locate(rec.claudeSessionId, root); if (!file) return { ok: false, reason: 'sem_transcricao' };
       let size = 0; try { size = fs.statSync(file).size; } catch { return { ok: false, reason: 'sem_transcricao' }; }
       fs.mkdirSync(wsDir(ws), { recursive: true });
       const tomb = readTomb(ws, rec.id);

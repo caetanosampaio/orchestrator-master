@@ -12,10 +12,12 @@ import { execFileSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { processStartedAt } from './orphans.js'; // import circular com orphans.js (que usa pidAlive): só há uso dentro de funções, então é seguro
 
 export const LOCK_NAME = 'server.lock';
 const GARBAGE_STALE_MS = 10_000; // arquivo ilegível só é obsoleto depois disso (pode estar sendo escrito agora)
 const BOOT_MARGIN_MS = 5_000;
+const REUSE_MARGIN_MS = 5_000; // relógio/arredondamento entre a hora de início do processo e o startedAt gravado (que é posterior ao início do dono)
 
 export const lockPathFor = (dir) => path.join(dir, LOCK_NAME);
 
@@ -30,6 +32,15 @@ function isZombie(pid) {
 export function pidAlive(pid) {
   try { process.kill(pid, 0); } catch (e) { return e.code === 'EPERM'; }
   return !isZombie(pid);
+}
+
+/** PID reaproveitado: no Windows o app é encerrado com `taskkill /F` (a trava sobra) e o PID pode passar a outro processo. Se o processo vivo com esse PID
+ *  nasceu DEPOIS de a trava ser gravada (com margem), ele não é o dono. Sem como obter a hora de início, devolve false: nunca declara obsoleta uma instância viva. */
+function pidReused(pid, lockStartedMs, startedAtOf) {
+  if (!Number.isFinite(lockStartedMs)) return false;
+  let procMs = null;
+  try { procMs = startedAtOf(pid); } catch { procMs = null; }
+  return Number.isFinite(procMs) && procMs > lockStartedMs + REUSE_MARGIN_MS;
 }
 
 function readLock(file) {
@@ -49,7 +60,7 @@ function readLock(file) {
  * Lança em erros de E/S inesperados (pasta sem permissão etc.): melhor falhar alto do que subir sem trava.
  * Opções (`isAlive`, `bootTime`, `pid`) existem para os testes; o servidor usa os padrões.
  */
-export function acquireInstanceLock({ dir, pid = process.pid, isAlive = pidAlive, bootTime = Date.now() - os.uptime() * 1000, autoRelease = false } = {}) {
+export function acquireInstanceLock({ dir, pid = process.pid, isAlive = pidAlive, bootTime = Date.now() - os.uptime() * 1000, autoRelease = false, startedAtOf = isAlive === pidAlive ? processStartedAt : () => null } = {}) { // sem isAlive real (testes), a hora de início do processo também não é consultada, salvo se injetada
   fs.mkdirSync(dir, { recursive: true });
   const lockPath = lockPathFor(dir);
   const token = randomUUID();
@@ -80,7 +91,7 @@ export function acquireInstanceLock({ dir, pid = process.pid, isAlive = pidAlive
     if (cur.info) {
       const startedMs = Date.parse(cur.info.startedAt);
       const beforeBoot = Number.isFinite(startedMs) && startedMs < bootTime - BOOT_MARGIN_MS; // PID reaproveitado depois de reiniciar o sistema
-      stale = !isAlive(cur.info.pid) || beforeBoot;
+      stale = !isAlive(cur.info.pid) || beforeBoot || pidReused(cur.info.pid, startedMs, startedAtOf);
     } else stale = cur.ageMs > GARBAGE_STALE_MS;
     if (!stale) {
       return refusal(cur.info, cur.info

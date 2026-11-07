@@ -10,8 +10,8 @@ import { reclaimOrphans, ORPHAN_NOTE } from './orphans.js';
 import { pidAlive } from './instance-lock.js';
 
 export const CHILD_KEY = 'childProcesses';
-export const CHILD_KINDS = Object.freeze(['planner', 'verifier', 'preparer', 'terminal']);
-const LABEL = { planner: 'Planner', verifier: 'verificação real', preparer: 'preparação de ambiente', terminal: 'terminal do Claude Code' };
+export const CHILD_KINDS = Object.freeze(['planner', 'verifier', 'preparer', 'terminal', 'login']);
+const LABEL = { planner: 'Planner', verifier: 'verificação real', preparer: 'preparação de ambiente', terminal: 'terminal do Claude Code', login: 'login de conta do Claude Code' };
 
 const NOOP = Object.freeze({ pid: null, release() {} });
 

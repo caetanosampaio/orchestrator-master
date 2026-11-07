@@ -8,6 +8,8 @@ import * as store from './store.js';
 import { uid, now } from './store.js';
 import { claudeCodeExecutor as realExecutor } from './executor/index.js';
 import { gitInfo } from './git.js';
+import { asyncRoute } from './async-route.js';
+import { createGitProbe, prereqsOf, probeLogin } from './prereqs.js';
 import { validateDir, setupWorkspaceRemoval, setupWorkspaceRename } from './workspaces.js';
 import { topicsState, openAndActivate, snapshotTabs, restoreTabs, setupWorkspaceTabs, setupTopics } from './topics.js';
 import { setupUiSettings } from './ui-settings.js';
@@ -27,6 +29,9 @@ import { planModeFromEnv, stepRetriesFromEnv, resolveOrchestration, MAX_STEP_ATT
 import { resolveSupervision, supervisionMs, MAX_MINUTES_LIMIT, STALL_MINUTES_LIMIT, MAX_AUTO_RESUMES } from './supervisor.js';
 import { resolveWorktreeIsolation, createWorktreeManager, setupWorktrees } from './worktrees.js';
 import { createTerminalManager, setupTerminals } from './terminals.js';
+import { createAccounts, setupAccounts } from './accounts.js';
+import { createLoginManager } from './account-login.js';
+import { setClaudeEnvProvider } from './claude-cli.js';
 import { createUsageReader } from './terminal-usage.js';
 import { createMaestro, setupMaestro, stableServerName } from './maestro.js';
 import { migrateLegacyDir } from './legacy-dirs.js';
@@ -44,6 +49,9 @@ const apiToken = consumeApiTokenFromEnv(); // M2: lido e REMOVIDO de process.env
 // Costura de teste: só código em processo (nunca env, rede ou requisição) pode injetar executor/planner simulados.
 const testDeps = globalThis.__ORCH_TEST_DEPS__ ?? {};
 const claudeCodeExecutor = testDeps.executor ?? realExecutor;
+const probeGit = testDeps.gitProbe ?? createGitProbe();
+// Só registra no log: uma rejeição esquecida não derruba o servidor nem os terminais. (Nenhum handler de uncaughtException de propósito: estado corrompido deve derrubar.)
+process.on('unhandledRejection', (reason) => { console.error('[forge] rejeição não tratada:', reason?.code || reason?.message || reason); });
 const routingMode = routingFromEnv(); // ORCH_PLANNER_ROUTING=off|on (padrão off); valor inválido impede o boot, antes de qualquer acesso a dados
 const router = routingMode === 'on' ? createRouter() : null;
 const cycleLimits = cycleLimitsFromEnv(); // ORCH_CYCLE_MAX_PLANNER_CALLS / ORCH_CYCLE_MAX_ESTIMATED_COST_USD (padrão: desativados); valor inválido impede o boot
@@ -61,7 +69,7 @@ const HOST = '127.0.0.1'; // somente local
 // Trava de instância ANTES de qualquer operação que possa tocar o banco (load, setupExecution, recover): uma 2ª instância sai sem alterar nada.
 const lock = acquireInstanceLock({ dir: store.dataDir, autoRelease: true });
 if (!lock.ok) { console.error(`[forge] ${lock.message}`); process.exit(1); }
-installShutdown({ lock, executor: claudeCodeExecutor, children: [planner, verifier, { killActiveSync: () => worktrees.killActiveSync() }, { killActiveSync: () => terminals.killAllSync() }], store }); // ao sair: encerra os filhos (executor, Planner, verificador), grava o que está pendente e libera a trava
+installShutdown({ lock, executor: claudeCodeExecutor, children: [planner, verifier, { killActiveSync: () => worktrees.killActiveSync() }, { killActiveSync: () => terminals.killAllSync() }, { killActiveSync: () => logins.killActiveSync() }], store }); // ao sair: encerra os filhos (executor, Planner, verificador), grava o que está pendente e libera a trava
 const db = store.load();
 // Configuração efetiva de planejamento e retentativas (I4): ambiente > db.settings > padrão (desligados). Lida a cada mensagem do chat e a cada laço do ciclo.
 const orchestration = () => resolveOrchestration({ settings: db.settings });
@@ -84,8 +92,14 @@ const loadoutsDir = process.env.ORCH_DATA_DIR ? path.join(store.dataDir, 'loadou
 const statusDir = process.env.ORCH_DATA_DIR ? path.join(store.dataDir, 'agent-status') : path.join(devHome, 'agent-status');
 const agentStatus = createAgentStatus({ dir: statusDir });
 const loadouts = createLoadouts({ db, dir: loadoutsDir, hooks: hooksJson({ node: process.execPath, script: fileURLToPath(new URL('./agent-status-hook.mjs', import.meta.url)), dir: statusDir }) });
-const conversations = createConversationStore({ dir: historyDir }); // histórico de conversas próprio, por workspace (texto das trocas; ver conversations.js)
-const terminals = createTerminalManager({ db, loadouts, agentStatus, onEnd: (rec) => { if (db.workspaces.some((w) => w.id === rec.workspaceId)) conversations.sync(rec); }, track: childRegistry.track, worktrees, mcp: maestro, persist: store.saveOrThrow, isChildAlive: (terminalId) => childRegistry.pending().some((r) => r && r.kind === 'terminal' && r.terminalId === terminalId && pidAlive(r.pid)), usage: createUsageReader({ pricesFile: path.join(store.dataDir, 'pricing.json') }) }); // terminais interativos (PTY) do Claude Code: um processo por pane, em paralelo
+// Contas do Claude Code (accounts.js): cada conta é uma pasta de configuração própria. Testes que injetam o executor e não injetam `accountsCli` rodam SEM Claude Code (nunca chamam o real).
+const accountsCli = testDeps.accountsCli ?? (testDeps.executor ? { unavailable: true } : {});
+let logins = null;
+const accounts = createAccounts({ db, dataDir: store.dataDir, persist: store.saveOrThrow, uid, ...accountsCli, isInUse: (id) => terminals.usesAccount(id), isLoginActive: (id) => logins?.isActive(id) === true, isCycleBusy: () => claudeCodeExecutor.isBusy() || planning() });
+logins = createLoginManager({ accounts, ...accountsCli, track: childRegistry.track });
+setClaudeEnvProvider(() => accounts.envOf(accounts.defaultId())); // Executor e Planner do ciclo usam a conta padrão no momento de cada execução
+const conversations = createConversationStore({ dir: historyDir, configDirOf: (id) => accounts.configDirOf(id) }); // histórico de conversas próprio, por workspace (texto das trocas; ver conversations.js); cada sessão é lida na pasta da conta dela
+const terminals = createTerminalManager({ db, accounts, loadouts, agentStatus, onEnd: (rec) => { if (db.workspaces.some((w) => w.id === rec.workspaceId)) conversations.sync(rec); }, track: childRegistry.track, worktrees, mcp: maestro, persist: store.saveOrThrow, isChildAlive: (terminalId) => childRegistry.pending().some((r) => r && r.kind === 'terminal' && r.terminalId === terminalId && pidAlive(r.pid)), usage: createUsageReader({ pricesFile: path.join(store.dataDir, 'pricing.json') }) }); // terminais interativos (PTY) do Claude Code: um processo por pane, em paralelo
 let worktreeRecovery = { settled: [], inconsistent: [], unregistered: [], unverified: [] }; // E3: preenchido logo DEPOIS do reclaim dos processos filhos (abaixo)
 const app = express();
 // Host válido em toda a /api, Origin permitido quando enviado e OBRIGATÓRIO em POST/PUT/PATCH/DELETE (CSRF, DNS rebinding e chamadas locais sem Origin; ver origin-guard.js).
@@ -106,12 +120,17 @@ function visibleMissions() {
 const withStatus = (m) => ({ ...m, status: missionStatus(m), tasks: m.tasks.map((t) => ({ ...t, blockedReason: blockedReason(db, claudeCodeExecutor, m, t) })) });
 
 // ---------- Estado geral ----------
-app.get('/api/state', async (req, res) => {
-  const probe = await claudeCodeExecutor.probe();
+// Login do /api/state: espera no máximo ~1,5 s pelo status (a 1ª consulta a frio leva ~1 s ou mais). Se estourar, devolve "desconhecido"; a consulta continua em segundo plano e aquece o cache.
+const LOGIN_WAIT_MS = 1500, LOGIN_UNKNOWN = { known: false, loggedIn: null, detail: '' };
+const withTimeout = (p, ms, fallback) => new Promise((resolve) => { const t = setTimeout(() => resolve(fallback), ms); t.unref?.(); Promise.resolve(p).then((v) => { clearTimeout(t); resolve(v); }, () => { clearTimeout(t); resolve(fallback); }); });
+app.get('/api/state', asyncRoute(async (req, res) => {
+  if (req.query.fresh === '1') { accounts.invalidate(accounts.defaultId()); claudeCodeExecutor.resetProbe?.(); probeGit.reset?.(); } // "Verificar novamente": enxerga um login feito fora do FORGE sem esperar o cache
+  const [probe, git] = await Promise.all([claudeCodeExecutor.probe(), probeGit()]); // o probe do executor deduplica a chamada em andamento (também usada por /api/agents)
   const tasks = visibleMissions().flatMap((m) => m.tasks);
   const o = orchestration(), sv = supervision();
   res.json({
     system: claudeCodeExecutor.isBusy() || planning() ? 'running' : probe.available ? 'idle' : 'degraded',
+    prereqs: prereqsOf(probe, git, await withTimeout((testDeps.loginProbe ?? (() => probeLogin({ accounts })))(), LOGIN_WAIT_MS, LOGIN_UNKNOWN)), // aditivo: { claude, git, login } = { available, version, detail } e { known, loggedIn, detail } (login = `claude auth status` da conta padrão, com cache de ~45 s)
     executor: { id: claudeCodeExecutor.id, connected: probe.available, busy: claudeCodeExecutor.isBusy(), current: claudeCodeExecutor.current(), ...probe },
     planner: { connected: probe.available, busy: planning(), detail: probe.available ? 'Planner pronto (Claude Code sem ferramentas).' : probe.detail },
     counts: {
@@ -131,7 +150,7 @@ app.get('/api/state', async (req, res) => {
     // costUsd/runs (legado: execuções reais que reportaram custo) + durationMs + tokens agregados por agente/missão/ciclo (ver usage.js); null sem nenhum dado
     usage: summarizeUsage(visibleMissions(), db.chat),
   });
-});
+}));
 
 // ---------- Workspaces ----------
 app.get('/api/workspaces', (req, res) => res.json(db.workspaces));
@@ -179,11 +198,11 @@ app.post('/api/workspaces/:id/activate', (req, res) => {
   res.json(ws);
 });
 
-app.get('/api/workspaces/:id/git', async (req, res) => {
+app.get('/api/workspaces/:id/git', asyncRoute(async (req, res) => {
   const ws = find(db.workspaces, req.params.id);
   if (!ws) return bad(res, 'Workspace não encontrado.', 404);
-  res.json(await gitInfo(ws.path));
-});
+  res.json(await (testDeps.gitInfo ?? gitInfo)(ws.path));
+}));
 
 // ---------- Missões ----------
 app.get('/api/missions', (req, res) => res.json(visibleMissions().map(withStatus)));
@@ -226,8 +245,12 @@ app.post('/api/missions', (req, res) => {
     tasks: [],
   };
   db.missions.unshift(m);
+  try { store.saveOrThrow(); } catch {
+    db.missions.shift(); // desfaz: nada fica só na memória
+    return bad(res, 'Não foi possível criar a missão: o banco não pôde ser gravado; nada foi alterado.', 500);
+  }
   store.log('mission', `Missão criada: ${title}`, { missionId: m.id });
-  commit();
+  store.saveSoon();
   res.status(201).json(withStatus(m));
 });
 
@@ -235,9 +258,14 @@ app.delete('/api/missions/:id', (req, res) => {
   const m = find(db.missions, req.params.id);
   if (!m) return bad(res, 'Missão não encontrada.', 404);
   if (m.tasks.some((t) => t.status === 'running') || (m.cycle && ['planning', 'running'].includes(m.cycle.status))) return bad(res, 'Há uma tarefa ou ciclo em andamento nesta missão.', 409);
+  const prevMissions = db.missions;
   db.missions = db.missions.filter((x) => x.id !== m.id);
+  try { store.saveOrThrow(); } catch {
+    db.missions = prevMissions;
+    return bad(res, 'Não foi possível remover a missão: o banco não pôde ser gravado; nada foi alterado.', 500);
+  }
   store.log('mission', `Missão removida: ${m.title}`);
-  commit();
+  store.saveSoon();
   res.status(204).end();
 });
 
@@ -250,8 +278,12 @@ app.post('/api/missions/:id/tasks', (req, res) => {
   const dependsOn = Array.isArray(req.body?.dependsOn) ? req.body.dependsOn.filter((d) => find(m.tasks, d)) : [];
   const task = { id: uid('task'), title, status: 'queued', authorized: false, dependsOn, report: '', files: [], log: [] };
   m.tasks.push(task);
+  try { store.saveOrThrow(); } catch {
+    m.tasks.pop();
+    return bad(res, 'Não foi possível adicionar a tarefa: o banco não pôde ser gravado; nada foi alterado.', 500);
+  }
   store.log('task', `Tarefa adicionada: ${title}`, { missionId: m.id, taskId: task.id });
-  commit();
+  store.saveSoon();
   res.status(201).json(task);
 });
 
@@ -263,10 +295,15 @@ app.delete('/api/missions/:id/tasks/:tid', (req, res) => {
   // Rodadas (do ciclo atual e dos anteriores) apontam para a tarefa por taskId; removê-la deixaria o histórico e o relatório com referência quebrada.
   const referenced = [m.cycle, ...(m.pastCycles || [])].some((c) => (c?.rounds || []).some((r) => r.taskId === task.id));
   if (referenced) return bad(res, 'A tarefa é referenciada por uma rodada de ciclo e não pode ser removida.', 409);
+  const prevTasks = m.tasks, prevDeps = m.tasks.map((t) => t.dependsOn);
   m.tasks = m.tasks.filter((t) => t.id !== task.id);
   m.tasks.forEach((t) => (t.dependsOn = t.dependsOn.filter((d) => d !== task.id)));
+  try { store.saveOrThrow(); } catch {
+    m.tasks = prevTasks; prevTasks.forEach((t, i) => (t.dependsOn = prevDeps[i])); // desfaz a remoção e as dependências limpas
+    return bad(res, 'Não foi possível remover a tarefa: o banco não pôde ser gravado; nada foi alterado.', 500);
+  }
   store.log('task', `Tarefa removida: ${task.title}`, { missionId: m.id });
-  commit();
+  store.saveSoon();
   res.status(204).end();
 });
 
@@ -292,13 +329,13 @@ app.post('/api/missions/:id/tasks/:tid/approve', decide('approve'));
 app.post('/api/missions/:id/tasks/:tid/reject', decide('reject'));
 
 // ---------- Agentes, atividade, configurações ----------
-app.get('/api/agents', async (req, res) => {
+app.get('/api/agents', asyncRoute(async (req, res) => {
   const probe = await claudeCodeExecutor.probe();
   res.json([
     { id: 'planner', name: 'Planner', role: 'Decide a próxima tarefa a partir do objetivo e dos relatórios do Executor (continue, complete ou blocked). Não tem ferramentas: só recebe e devolve texto.', status: planning() ? 'running' : probe.available ? 'idle' : 'not_connected', detail: planning() ? 'Planejando a próxima rodada.' : probe.available ? 'Pronto: usa o Claude Code sem ferramentas e é validado pelo backend.' : probe.detail, availability: probe.available ? 'connected' : 'unavailable' },
     { id: 'executor', name: 'Executor (Claude Code)', role: 'Executa uma tarefa autorizada por vez no workspace da missão, com permissões padrão (leitura e edição de arquivos).', status: claudeCodeExecutor.isBusy() ? 'running' : probe.available ? 'idle' : 'not_connected', detail: claudeCodeExecutor.isBusy() ? 'Executando uma tarefa.' : probe.detail, version: probe.version || null, available: probe.available, availability: probe.available ? 'connected' : 'unavailable' },
   ]);
-});
+}));
 
 app.get('/api/activity', (req, res) => res.json(db.activity.slice(0, 200)));
 
@@ -365,6 +402,7 @@ setupConversations(app, { db, conversations }); // GET/DELETE /api/workspaces/:i
 const cycle = setupCycle(app, { db, executor: claudeCodeExecutor, planner, startTaskRun, verifier, router, limits: cycleLimits, multiStep: () => orchestration().planMode, stepRetries: () => orchestration().stepRetries, supervision: () => supervisionMs(supervision()), worktrees, worktreeIsolation: () => worktreeIsolation().enabled });
 setupWorktrees(app, { db, manager: worktrees });
 setupTerminals(app, { manager: terminals });
+setupAccounts(app, { accounts, logins }); // GET/POST/DELETE /api/accounts[/:id/(default|login...)]: leituras com token de sessão quando configurado
 setupMaestro(app, { maestro });
 setupChat(app, { db, planner, cycle, multiStep: () => orchestration().planMode }); // M5: chat geral; só prepara propostas, executar exige /api/chat/approve
 

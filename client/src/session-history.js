@@ -20,7 +20,7 @@ export function historyRows({ history, workspaceId, topics = [], topicId, onlyTo
     id: h.id, title: String(h.title ?? ''), roleLabel: h.roleLabel ?? h.role, color: h.color ?? null, state: h.state, stateLabel: STATE_LABEL[h.state] ?? String(h.state),
     reasonLabel: REASON_LABEL[h.closedReason] ?? null, topicId: h.topicId ?? null, topicTitle: h.topicId ? (title.get(h.topicId) ?? 'tópico arquivado') : 'Geral',
     resumable: h.resumable === true, active: h.active === true, blockedCode: h.blockedReason ?? null, blockedShort: BLOCKED_SHORT[h.blockedReason] ?? null, blockedMessage: h.blockedMessage ?? null,
-    resumes: Number.isInteger(h.resumes) ? h.resumes : 0, usesWorktree: !!h.worktreeId, startedAt: h.startedAt ?? null, endedAt: h.endedAt ?? null, forked: !!h.forkedFrom,
+    resumes: Number.isInteger(h.resumes) ? h.resumes : 0, usesWorktree: !!h.worktreeId, startedAt: h.startedAt ?? null, endedAt: h.endedAt ?? h.interruptedAt ?? null, forked: !!h.forkedFrom,
     restore: h.state === 'interrupted' && h.resumable === true,
   }));
   return { restore: rows.filter((r) => r.restore), others: rows.filter((r) => !r.restore) };
@@ -63,11 +63,13 @@ const ts = (iso) => { const t = Date.parse(iso); return Number.isFinite(t) ? t :
  * Das sessões "estavam abertas" (restore), só as do ÚLTIMO encerramento: as que pararam até `windowMs` antes da mais recente. Sessões interrompidas num encerramento antigo
  * continuam disponíveis no Histórico (restauração manual), mas não voltam sozinhas. Sem data válida a sessão não entra.
  */
+// Encerramento forçado (ex.: taskkill no Windows) deixa `endedAt` nulo e só `interruptedAt`: serve como instante de término.
+const endOf = (r) => ts(r.endedAt ?? r.interruptedAt);
 export function lastShutdownRestore(restoreRows, windowMs = AUTO_RESTORE_WINDOW_MS) {
-  const rows = arr(restoreRows).filter((r) => r && r.restore && ts(r.endedAt) !== null);
+  const rows = arr(restoreRows).filter((r) => r && r.restore && endOf(r) !== null);
   if (!rows.length) return [];
-  const latest = Math.max(...rows.map((r) => ts(r.endedAt)));
-  return rows.filter((r) => latest - ts(r.endedAt) <= windowMs);
+  const latest = Math.max(...rows.map(endOf));
+  return rows.filter((r) => latest - endOf(r) <= windowMs);
 }
 
 /** Chave de "já tentei": o registro + o instante em que parou. Um novo encerramento do mesmo registro gera uma chave nova e pode voltar a restaurar. */
