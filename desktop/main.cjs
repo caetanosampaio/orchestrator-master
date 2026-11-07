@@ -3,7 +3,7 @@
 //   - o banco fica em %APPDATA%\FORGE\data (ORCH_DATA_DIR; na primeira execução os dados de %APPDATA%\AI Dev Orchestrator\data são COPIADOS para cá, ver migrate-userdata.cjs); nunca em uma pasta de código e nunca no `data\` do repositório;
 //   - o Node é o do pacote (resources\node\node.exe, com o npm ao lado: as verificações reais procuram o npm junto do node.exe);
 //   - o Claude Code continua sendo exigido no PATH da máquina (o orquestrador o executa, não o inclui).
-const { app, BrowserWindow, Menu, dialog, shell, session } = require('electron');
+const { app, BrowserWindow, Menu, dialog, shell, session, clipboard } = require('electron');
 const { randomBytes } = require('node:crypto');
 const { spawn, execFileSync } = require('node:child_process');
 const fs = require('node:fs');
@@ -11,6 +11,10 @@ const net = require('node:net');
 const path = require('node:path');
 const { buildMacPath, macMenuTemplate } = require('./mac-env.cjs');
 const { migrateUserData } = require('./migrate-userdata.cjs');
+const { removeLockIfOwned } = require('./lock-cleanup.cjs');
+const { createLogWriter } = require('./log-rotate.cjs');
+const { createRestartPolicy, shouldFailRestart } = require('./restart-policy.cjs');
+const { buildMenuTemplate } = require('./menu.cjs');
 
 app.setName('FORGE');
 app.setPath('userData', path.join(app.getPath('appData'), 'FORGE')); // explícito: a pasta de dados não depende de como o Electron deriva o nome
@@ -21,7 +25,9 @@ const APP_DIR = path.join(RES, 'orchestrator'), NODE_EXE = IS_WIN ? path.join(RE
 const DATA_DIR = process.env.ORCH_DESKTOP_DATA || path.join(app.getPath('userData'), 'data');
 const LOG_FILE = path.join(app.getPath('userData'), 'logs', 'server.log');
 
-let child = null, port = 0, win = null, quitting = false, tail = [];
+const logWriter = createLogWriter({ file: LOG_FILE }); // rotaciona em 5 MB (server.log.1, .2)
+const restartPolicy = createRestartPolicy({ max: 3, windowMs: 120000 }); // no máximo 3 reinícios em 2 min
+let child = null, port = 0, win = null, quitting = false, tail = [], lastPid = 0;
 // M2: token de sessão por boot. Vai ao servidor por ORCH_API_TOKEN (que o remove do ambiente dos filhos) e é injetado SÓ nas requisições da janela à própria origem;
 // o agente de um pane não o recebe, então não consegue aprovar as próprias tarefas nem escrever na entrada de outro pane com um curl.
 const API_TOKEN = randomBytes(32).toString('hex');
@@ -32,7 +38,7 @@ const get = async (p) => { const r = await fetch(`http://127.0.0.1:${port}${p}`)
 
 function log(line) {
   tail.push(line); if (tail.length > 40) tail.shift();
-  try { fs.appendFileSync(LOG_FILE, line.endsWith('\n') ? line : `${line}\n`); } catch { /* sem log em disco: a janela de erro ainda mostra o final */ }
+  logWriter.write(line); // sem log em disco: a janela de erro ainda mostra o final
 }
 
 function startServer() {
@@ -42,10 +48,37 @@ function startServer() {
   if (!IS_WIN) env.PATH = buildMacPath({ home: require('node:os').homedir(), pathEnv: env.PATH }); // app aberto pelo Finder não herda o PATH do shell (git do usuário na frente; claude/node do usuário no fim)
   delete env.ELECTRON_RUN_AS_NODE; delete env.NODE_OPTIONS; // o servidor roda no Node do pacote, nunca como Electron
   child = spawn(NODE_EXE, [path.join(APP_DIR, 'server', 'index.js')], { cwd: APP_DIR, env, windowsHide: true, detached: !IS_WIN, stdio: ['ignore', 'pipe', 'pipe'] }); // fora do Windows o servidor lidera o próprio grupo de processos (permite encerrar a árvore)
+  lastPid = child.pid;
   log(`--- servidor iniciado (pid ${child.pid}) em 127.0.0.1:${port}; dados em ${DATA_DIR}`);
   for (const s of [child.stdout, child.stderr]) s.on('data', (d) => String(d).split(/\r?\n/).filter(Boolean).forEach(log));
-  child.once('exit', (code, sig) => { log(`--- servidor encerrou (código ${code}, sinal ${sig})`); child = null; if (!quitting) fail('O servidor do orquestrador parou.'); });
+  const c = child;
+  c.once('exit', (code, sig) => {
+    log(`--- servidor encerrou (código ${code}, sinal ${sig})`);
+    if (child === c) child = null; // um filho antigo não pode zerar o novo (reinício)
+    if (quitting) return;
+    if (SMOKE) { fail('O servidor do orquestrador parou.'); return; }
+    const d = restartPolicy.decide();
+    if (!d.restart) { fail('O servidor do orquestrador parou várias vezes seguidas e não foi possível reiniciá-lo. Feche o FORGE e abra de novo; se repetir, envie o log (menu Ajuda > Abrir pasta de logs).'); return; }
+    restartServer(d.count);
+  });
 }
+
+/** Queda inesperada: sobe o servidor de novo na MESMA porta e com o MESMO token e recarrega a janela. Se o novo filho cair, o handler de saída decide de novo (com limite). */
+async function restartServer(n) {
+  log(`--- reiniciando o servidor após queda inesperada (${n}/3 na janela de 2 min)`);
+  let started = false;
+  try {
+    removeLockIfOwned({ dir: DATA_DIR, pid: lastPid }); // o processo caiu sem liberar a trava
+    startServer(); started = true; await waitReady();
+    if (win && !win.isDestroyed()) win.webContents.loadURL(`http://127.0.0.1:${port}/`);
+  } catch (e) {
+    // Sem filho (o startServer lançou) ninguém mais decidirá nada: avisa. Se o filho nasceu e já saiu, o handler de saída decide (reinicia ou desiste).
+    if (shouldFailRestart({ quitting, started, hasChild: !!child })) fail(e.message || String(e));
+  }
+}
+
+/** O processo com este PID ainda existe? (sinal 0 não mata nada; EPERM = existe, mas é de outro usuário.) */
+function pidAlive(pid) { try { process.kill(pid, 0); return true; } catch (e) { return !!e && e.code === 'EPERM'; } }
 
 /** Primeira execução depois da troca de nome: copia os dados de "AI Dev Orchestrator" para "FORGE". Com dados explícitos (verificação do pacote) não mexe em nada. */
 function runMigration() {
@@ -70,7 +103,9 @@ function fail(message) {
 /** Interrompe a execução em curso (se houver) e encerra o servidor com TODA a árvore de processos (Claude Code incluído). */
 function stopServer() {
   const c = child; child = null; if (!c?.pid) return;
-  if (IS_WIN) { try { execFileSync('taskkill', ['/PID', String(c.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore', timeout: 8000 }); } catch { /* já encerrado */ } return; }
+  if (IS_WIN) { try { execFileSync('taskkill', ['/PID', String(c.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore', timeout: 8000 }); } catch { /* já encerrado */ }
+    if (!pidAlive(c.pid)) removeLockIfOwned({ dir: DATA_DIR, pid: c.pid }); // /F impede o desligamento gracioso: só a trava deste pid é removida, e só se o processo morreu de fato (o taskkill pode falhar por timeout)
+    return; }
   // macOS/Linux: SIGTERM primeiro (o servidor encerra o Claude Code e os terminais dele e libera a trava); se não sair em ~4 s, SIGKILL no grupo inteiro
   const alive = () => { try { process.kill(c.pid, 0); return true; } catch { return false; } };
   try { process.kill(c.pid, 'SIGTERM'); } catch { return; }
@@ -110,7 +145,8 @@ const lock = SMOKE ? true : app.requestSingleInstanceLock();
 if (!lock) { app.quit(); } else {
   app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
   app.whenReady().then(async () => {
-    Menu.setApplicationMenu(process.platform === 'darwin' ? Menu.buildFromTemplate(macMenuTemplate()) : null); // macOS sem menu = sem Cmd+C/V/Q; Windows continua sem menu
+    Menu.setApplicationMenu(Menu.buildFromTemplate(buildMenuTemplate({ app, shell, dialog, clipboard, logsDir: path.dirname(LOG_FILE), dataDir: DATA_DIR, osRelease: require('node:os').release(), getWindow: () => win || undefined }))); // macOS sem menu = sem Cmd+C/V/Q; no Windows o menu fica oculto (Alt o mostra)
+    logWriter.check(); setInterval(() => logWriter.check(), 60000).unref(); // rotação no boot e a cada minuto
     try {
       runMigration(); // antes de subir o servidor: ele abre o banco assim que inicia
       port = await freePort(); startServer(); await waitReady();

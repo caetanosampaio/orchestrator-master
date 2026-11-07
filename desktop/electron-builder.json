@@ -10,6 +10,10 @@
     "main.cjs",
     "mac-env.cjs",
     "migrate-userdata.cjs",
+    "lock-cleanup.cjs",
+    "log-rotate.cjs",
+    "restart-policy.cjs",
+    "menu.cjs",
     "package.json"
   ],
   "extraResources": [
