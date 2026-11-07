@@ -1,6 +1,7 @@
 {
   "name": "forge",
   "version": "0.1.0",
+  "license": "UNLICENSED",
   "private": true,
   "type": "module",
   "description": "Central local de operações para coordenar agentes de IA em desenvolvimento de software",
@@ -21,5 +22,8 @@
   },
   "devDependencies": {
     "concurrently": "^9.1.0"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

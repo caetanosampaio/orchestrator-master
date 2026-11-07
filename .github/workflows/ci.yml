@@ -1,0 +1,49 @@
+# Integração contínua: roda a suíte de testes (com banco temporário) e confere o build do cliente em Windows, Linux e macOS.
+# AINDA NÃO FOI EXECUTADA: este arquivo nunca rodou no GitHub. O primeiro push mostra se algo precisa de ajuste (por exemplo, testes de
+# processos que só passam no Windows). Enquanto isso, o macOS não bloqueia o resultado (continue-on-error).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Testes (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    continue-on-error: ${{ matrix.os == 'macos-latest' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Suíte completa com banco temporário (nunca usa data/ do repositório)
+        shell: bash
+        run: |
+          export ORCH_DATA_DIR="$(mktemp -d)"
+          npm test
+
+  client-build:
+    name: Build do cliente
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - run: npm --prefix client ci
+      - run: npm --prefix client run build

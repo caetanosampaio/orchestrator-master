@@ -1,0 +1,32 @@
+RASCUNHO PROVISÓRIO: este texto NÃO é uma licença definitiva nem aconselhamento jurídico.
+Ele existe apenas para que o repositório não fique sem nenhum aviso. O autor deve escolher a
+licença (por exemplo, uma licença proprietária/EULA revisada por um advogado, ou uma licença
+de código aberto) e substituir este arquivo ANTES de distribuir o FORGE a terceiros.
+
+--------------------------------------------------------------------------------
+
+FORGE
+Copyright (c) 2026 FORGE. Todos os direitos reservados.
+
+Este software e a documentação associada ("Software") são de propriedade exclusiva do titular
+dos direitos autorais. Nenhuma licença é concedida por este arquivo para copiar, modificar,
+distribuir, sublicenciar ou usar o Software, exceto mediante autorização expressa e por escrito
+do titular.
+
+O SOFTWARE É FORNECIDO "NO ESTADO EM QUE SE ENCONTRA", SEM GARANTIA DE QUALQUER TIPO, EXPRESSA OU
+IMPLÍCITA, INCLUINDO, SEM LIMITAÇÃO, GARANTIAS DE COMERCIALIZAÇÃO, ADEQUAÇÃO A UMA FINALIDADE
+ESPECÍFICA E NÃO VIOLAÇÃO. EM NENHUMA HIPÓTESE O TITULAR SERÁ RESPONSÁVEL POR QUALQUER
+REIVINDICAÇÃO, DANO OU OUTRA RESPONSABILIDADE DECORRENTE DO USO DO SOFTWARE.
+
+--------------------------------------------------------------------------------
+AVISOS SOBRE TERCEIROS
+
+1. Claude Code. O FORGE executa o Claude Code (CLI da Anthropic), que o usuário instala e usa
+   com a sua própria conta. O uso do Claude Code está sujeito aos termos e às políticas da
+   Anthropic. O FORGE não inclui nem redistribui o Claude Code.
+
+2. Componentes de código aberto. O aplicativo para desktop é construído sobre Electron e
+   Chromium, e o servidor usa Express e node-pty, entre outras dependências, cada um sob a
+   sua própria licença. Os pacotes do desktop incluem os arquivos de licença do Electron e do
+   Chromium (LICENSE.electron.txt e LICENSES.chromium.html) ao lado do executável. Cada
+   componente permanece sob a sua licença original.
