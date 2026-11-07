@@ -79,7 +79,7 @@ test('o relatório continua derivado e SEM campos persistidos novos: a entrada n
 const freePort = () => new Promise((resolve) => { const s = net.createServer().listen(0, '127.0.0.1', () => { const { port } = s.address(); s.close(() => resolve(port)); }); });
 let n = 0;
 async function stateWith(extra) {
-  const dir = path.join(root, `d${++n}`); fs.mkdirSync(dir); assert.ok(dir.startsWith(os.tmpdir()));
+  const dir = path.join(root, `d${++n}`); fs.mkdirSync(dir); assert.ok(fs.realpathSync.native(path.dirname(dir)).startsWith(fs.realpathSync.native(os.tmpdir())));
   const port = await freePort(), env = { ...process.env, PORT: String(port), ORCH_DATA_DIR: dir };
   for (const k of ['ORCH_PLANNER_ROUTING', 'ORCH_PLANNER_MODEL', 'ORCH_PLANNER_EFFORT', 'ORCH_CYCLE_MAX_PLANNER_CALLS', 'ORCH_CYCLE_MAX_ESTIMATED_COST_USD', 'ORCH_CYCLE_PLAN', 'ORCH_CYCLE_MAX_STEP_RETRIES']) delete env[k];
   const child = spawn(process.execPath, [INDEX], { env: { ...env, ...extra }, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true }); children.add(child);

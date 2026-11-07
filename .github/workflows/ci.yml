@@ -1,6 +1,5 @@
 # Integração contínua: roda a suíte de testes (com banco temporário) e confere o build do cliente em Windows, Linux e macOS.
-# AINDA NÃO FOI EXECUTADA: este arquivo nunca rodou no GitHub. O primeiro push mostra se algo precisa de ajuste (por exemplo, testes de
-# processos que só passam no Windows). Enquanto isso, o macOS não bloqueia o resultado (continue-on-error).
+# Primeira execução (2026-11-07) revelou testes que presumiam o Windows e o esbuild do cliente; ajustados. Enquanto isso, o macOS não bloqueia o resultado (continue-on-error).
 name: CI
 
 on:
@@ -28,6 +27,13 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # alguns testes empacotam código do cliente (esbuild vive nas dependências de client/)
+      - run: npm --prefix client ci
+      # node-pty no macOS: o helper de spawn pode vir sem permissão de execução do pacote npm
+      - name: Permissão do spawn-helper do node-pty (macOS/Linux)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: chmod +x node_modules/node-pty/prebuilds/*/spawn-helper 2>/dev/null || true
       - name: Suíte completa com banco temporário (nunca usa data/ do repositório)
         shell: bash
         run: |

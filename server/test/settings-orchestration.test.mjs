@@ -21,7 +21,7 @@ const stat = () => (fs.existsSync(REAL_DB) ? `${fs.statSync(REAL_DB).mtimeMs}:${
 let n = 0;
 function world() {
   const base = path.join(root, `w${++n}`), data = path.join(base, 'data'), ws = path.join(base, 'workspace');
-  fs.mkdirSync(data, { recursive: true }); fs.mkdirSync(ws); assert.ok(data.startsWith(os.tmpdir()), 'o banco do teste tem que ficar no diretório temporário');
+  fs.mkdirSync(data, { recursive: true }); fs.mkdirSync(ws); assert.ok(fs.realpathSync.native(path.dirname(data)).startsWith(fs.realpathSync.native(os.tmpdir())), 'o banco do teste tem que ficar no diretório temporário');
   execFileSync('git', ['init', '-q'], { cwd: ws }); fs.writeFileSync(path.join(ws, 'package.json'), JSON.stringify({ name: 'alvo', scripts: { test: 'node -e 0' } }));
   return { data, ws };
 }

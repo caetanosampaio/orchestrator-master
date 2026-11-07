@@ -18,7 +18,7 @@ after(async () => { for (const c of children) { try { c.kill(); } catch { /* já
 
 const freePort = () => new Promise((resolve) => { const s = net.createServer().listen(0, '127.0.0.1', () => { const { port } = s.address(); s.close(() => resolve(port)); }); });
 let n = 0;
-const newDir = () => { const d = path.join(root, `d${++n}`); fs.mkdirSync(d); assert.ok(d.startsWith(os.tmpdir()), 'o banco do teste tem que ficar no diretório temporário'); return d; };
+const newDir = () => { const d = path.join(root, `d${++n}`); fs.mkdirSync(d); assert.ok(fs.realpathSync.native(path.dirname(d)).startsWith(fs.realpathSync.native(os.tmpdir())), 'o banco do teste tem que ficar no diretório temporário'); return d; };
 
 /** Sobe `node server/index.js`; `exited` resolve com o código; `waitFor` espera um padrão na saída (com tempo máximo). */
 function server(dir, port) {

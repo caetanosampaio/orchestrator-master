@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'orch-persist-'));
 const DATA = path.join(tmp, 'data');
 process.env.ORCH_DATA_DIR = DATA;
-assert.ok(DATA.startsWith(os.tmpdir()), 'o banco do teste tem que ficar no diretório temporário');
+assert.ok(fs.realpathSync.native(path.dirname(DATA)).startsWith(fs.realpathSync.native(os.tmpdir())), 'o banco do teste tem que ficar no diretório temporário');
 const wsDir = path.join(tmp, 'workspace'); fs.mkdirSync(wsDir); execFileSync('git', ['init', '-q'], { cwd: wsDir }); fs.writeFileSync(path.join(wsDir, 'LEIAME.md'), 'x\n');
 const FAKE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fake-cli.mjs');
 

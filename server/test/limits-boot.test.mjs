@@ -16,7 +16,7 @@ after(async () => { for (const c of children) { try { c.kill(); } catch { /* já
 
 const freePort = () => new Promise((resolve) => { const s = net.createServer().listen(0, '127.0.0.1', () => { const { port } = s.address(); s.close(() => resolve(port)); }); });
 let n = 0;
-const newDir = () => { const d = path.join(root, `d${++n}`); fs.mkdirSync(d); assert.ok(d.startsWith(os.tmpdir())); return d; };
+const newDir = () => { const d = path.join(root, `d${++n}`); fs.mkdirSync(d); assert.ok(fs.realpathSync.native(path.dirname(d)).startsWith(fs.realpathSync.native(os.tmpdir()))); return d; };
 function boot(port, dir, extra) {
   const base = { ...process.env, PORT: String(port), ORCH_DATA_DIR: dir };
   for (const k of ['ORCH_PLANNER_ROUTING', 'ORCH_PLANNER_MODEL', 'ORCH_PLANNER_EFFORT', 'ORCH_CYCLE_MAX_PLANNER_CALLS', 'ORCH_CYCLE_MAX_ESTIMATED_COST_USD']) delete base[k];

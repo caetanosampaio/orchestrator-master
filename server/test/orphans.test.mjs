@@ -211,7 +211,7 @@ test('installShutdown: sinais e saída encerram o filho, liberam a trava e saem 
 test('ponta a ponta: o servidor REAL (index.js, banco temporário) encerra no boot a execução órfã deixada por uma queda', async () => {
   const { default: net } = await import('node:net');
   const dir = fs.mkdtempSync(path.join(tmp, 'srv-')), s = sleeper();
-  assert.ok(dir.startsWith(os.tmpdir()), 'o banco do teste fica no diretório temporário');
+  assert.ok(fs.realpathSync.native(path.dirname(dir)).startsWith(fs.realpathSync.native(os.tmpdir())), 'o banco do teste fica no diretório temporário');
   const task = { id: 't1', title: 'órfã', status: 'running', pid: s.pid, startedAt: s.startedAt, log: [], files: [], dependsOn: [], report: '' };
   fs.writeFileSync(path.join(dir, 'db.json'), JSON.stringify({ version: 1, settings: { activeWorkspaceId: null, requireApproval: true, showDemoData: false }, workspaces: [], activity: [], missions: [{ id: 'm1', demo: false, title: 'M', workspaceId: null, tasks: [task] }] }, null, 2));
   const port = await new Promise((r) => { const l = net.createServer().listen(0, '127.0.0.1', () => { const { port: p } = l.address(); l.close(() => r(p)); }); });

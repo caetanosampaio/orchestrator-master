@@ -18,7 +18,7 @@ const freePort = () => new Promise((resolve) => { const s = net.createServer().l
 let n = 0;
 async function boot(extraEnv = {}) {
   const dir = path.join(root, `d${++n}`); fs.mkdirSync(dir);
-  assert.ok(dir.startsWith(os.tmpdir()));
+  assert.ok(fs.realpathSync.native(path.dirname(dir)).startsWith(fs.realpathSync.native(os.tmpdir())));
   const port = await freePort();
   const child = spawn(process.execPath, [BOOT], { env: { ...process.env, PORT: String(port), ORCH_DATA_DIR: dir, ...extraEnv }, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
   children.add(child);

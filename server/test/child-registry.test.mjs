@@ -14,7 +14,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'orch-childreg-'));
 const DATA = path.join(tmp, 'data');
 process.env.ORCH_DATA_DIR = DATA;
-assert.ok(DATA.startsWith(os.tmpdir()), 'o banco do teste tem que ficar no diretório temporário');
+assert.ok(fs.realpathSync.native(path.dirname(DATA)).startsWith(fs.realpathSync.native(os.tmpdir())), 'o banco do teste tem que ficar no diretório temporário');
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FAKE = path.join(HERE, 'fake-cli.mjs');
 const url = (f) => pathToFileURL(path.join(HERE, '..', f)).href;

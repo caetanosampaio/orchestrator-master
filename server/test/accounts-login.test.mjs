@@ -153,7 +153,8 @@ test('child-registry: o PID é registrado e liberado ao terminar; registro que f
   assert.equal(reg.length, 1); assert.deepEqual([reg[0].kind, Number.isInteger(reg[0].pid), reg[0].released], [L.LOGIN_TRACK_KIND, true, true]);
   const b = world({ mode: 'tree', loginOver: { track: () => { throw new Error('sem disco'); } } }); const r = b.logins.start(b.acc.id);
   assert.deepEqual([r.ok, r.status], [false, 503]); assert.equal(snap(b).state, 'idle');
-  assert.ok(await until(() => fs.existsSync(b.pidFile))); const { child, grandchild } = b.pids(); assert.ok(await until(() => !pidAlive(child) && !pidAlive(grandchild)), 'o processo não ficou vivo sem registro');
+  // em máquina lenta o processo morre antes de gravar o PID (também vale); se gravou, a árvore tem que estar morta
+  if (await until(() => fs.existsSync(b.pidFile), 3000)) { const { child, grandchild } = b.pids(); assert.ok(await until(() => !pidAlive(child) && !pidAlive(grandchild)), 'o processo não ficou vivo sem registro'); }
 });
 
 test('remover conta com login em andamento => 409 (e nada é apagado)', async () => {

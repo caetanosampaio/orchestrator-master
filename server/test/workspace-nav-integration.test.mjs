@@ -19,6 +19,8 @@ const DB_FILE = path.join(dataDir, 'db.json');
 // claude falso: fica vivo até ser encerrado (um PTY nunca fecha o stdin); ignora todos os argumentos.
 fs.writeFileSync(path.join(binDir, 'keep.mjs'), 'setInterval(() => {}, 1000);\n');
 fs.writeFileSync(path.join(binDir, 'claude.cmd'), `@echo off\r\n"${process.execPath}" "${path.join(binDir, 'keep.mjs')}"\r\n`);
+// Linux/macOS: o provider procura `claude` (sem extensão) no PATH; um script executável faz o mesmo papel do .cmd
+fs.writeFileSync(path.join(binDir, 'claude'), `#!/bin/sh\nexec "${process.execPath}" "${path.join(binDir, 'keep.mjs')}"\n`, { mode: 0o755 });
 
 const G = (cwd, ...a) => execFileSync('git', ['-c', 'user.name=teste', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', ...a], { cwd, encoding: 'utf8', windowsHide: true }).trim();
 const mkWs = (name) => { const d = path.join(root, name); fs.mkdirSync(d); G(d, 'init', '-q'); fs.writeFileSync(path.join(d, 'a.txt'), 'x\n'); G(d, 'add', '.'); G(d, 'commit', '-q', '-m', 'init'); return d; };

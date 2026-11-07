@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'orch-ui-'));
 const dataDir = path.join(root, 'data');
 process.env.ORCH_DATA_DIR = dataDir;
-assert.ok(dataDir.startsWith(os.tmpdir()));
+assert.ok(fs.realpathSync.native(path.dirname(dataDir)).startsWith(fs.realpathSync.native(os.tmpdir())));
 const DB_FILE = path.join(dataDir, 'db.json');
 const INDEX = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'index.js');
 

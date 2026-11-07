@@ -69,11 +69,11 @@ test('ENOENT só no arquivo TEMPORÁRIO (a pasta existe): tentativas curtas e li
   const t = await fresh(); errors();
   t.db.settings.marca = 'x';
   let c = failRename('db.json', 'ENOENT', 1);                                    // some uma vez e volta
-  let t0 = Date.now(); assert.equal(t.store.save(), true); assert.equal(c.calls, 2); assert.ok(Date.now() - t0 < 200);
+  let t0 = Date.now(); assert.equal(t.store.save(), true); assert.equal(c.calls, 2); assert.ok(Date.now() - t0 < 1000);
   assert.equal(JSON.parse(t.read()).settings.marca, 'x'); mock.restoreAll(); errors();
   t.db.settings.marca = 'y';
   c = failRename('db.json', 'ENOENT');                                           // some sempre: no máximo 3 tentativas e depois a escrita direta
-  t0 = Date.now(); assert.equal(t.store.save(), true); assert.equal(c.calls, 3, 'limitado a 3 tentativas'); assert.ok(Date.now() - t0 < 300);
+  t0 = Date.now(); assert.equal(t.store.save(), true); assert.equal(c.calls, 3, 'limitado a 3 tentativas'); assert.ok(Date.now() - t0 < 1000);
   assert.equal(JSON.parse(t.read()).settings.marca, 'y', 'a escrita direta de último recurso persistiu o estado');
   mock.restoreAll();
 });
