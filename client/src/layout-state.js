@@ -9,6 +9,7 @@ export const LAYOUT_KEY = 'orch.layout.v1';
 export const MAX_ORDER = 24;
 const MAX_GRIDS = 16;
 const TEAM_IDS = ['duo', 'squad', 'full', 'builder']; // espelha server/layouts.js (TEAM_PRESETS)
+const MODE_IDS = ['auto', 'cols', 'rows', 'focus']; // espelha server/layouts.js (LAYOUT_MODES)
 const REC_RE = /^ses_[0-9a-f]{8}$/;
 const KEY_RE = /^([1-9]|1[0-2])x([1-9]|1[0-2])$/;
 const WS_RE = /^[A-Za-z0-9_-]{1,64}$/;
@@ -24,6 +25,7 @@ export function sanitizeLayout(raw) {
   const grids = {};
   if (isObj(r.grids)) for (const [k, g] of Object.entries(r.grids)) if (KEY_RE.test(k) && isObj(g) && okTracks(g.cols) && okTracks(g.rows) && Object.keys(grids).length < MAX_GRIDS) grids[k] = { cols: [...g.cols], rows: [...g.rows] };
   const out = { order, maximized: typeof r.maximized === 'string' && REC_RE.test(r.maximized) ? r.maximized : null, grids };
+  if (MODE_IDS.includes(r.mode)) out.mode = r.mode;
   if (TEAM_IDS.includes(r.team)) out.team = r.team;
   return out;
 }
@@ -117,6 +119,8 @@ export function createLayoutSync({ get = () => api.get('/api/layouts'), put = (i
       change(ws, { grids: { [key]: g } });
     },
     setOrder: (ws, ids) => { const o = [...new Set((ids ?? []).filter((x) => REC_RE.test(x)))].slice(-MAX_ORDER); if (!sameList(o, view(ws).order)) change(ws, { order: o }); },
+    /** Visualização da grade do workspace (auto, cols, rows, focus): vai ao servidor para voltar em qualquer navegador e no app. */
+    setMode: (ws, mode) => { const m = MODE_IDS.includes(mode) ? mode : 'auto'; if (m === (view(ws).mode ?? 'auto')) return; change(ws, { mode: m }); },
     /** Equipe escolhida do workspace (id do preset) ou null para limpar. Só organização: não abre nem fecha terminal. */
     setTeam: (ws, team) => { const t = team === null ? null : (TEAM_IDS.includes(team) ? team : undefined); if (t === undefined || (t ?? null) === (view(ws).team ?? null)) return; change(ws, { team: t }); },
     /** O usuário FECHOU o terminal: sai da ordem salva e, se estava ampliado, do estado ampliado. */

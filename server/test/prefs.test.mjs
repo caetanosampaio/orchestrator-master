@@ -9,7 +9,7 @@ test('sanitizePrefs: qualquer entrada vira um objeto completo e válido', () => 
   assert.equal(p.name.length <= 40, true); assert.ok(!/[‮\u0007]/.test(p.name), 'sem controles nem bidi'); assert.match(p.name, /^Ana/);
   assert.equal(p.isolate, false, 'só o booleano true liga'); assert.equal(p.role, DEFAULT_PREFS.role, 'papel fora do padrão ^[a-z]{1,20}$'); assert.equal(p.fontSize, FONT_RANGE.max); assert.equal(p.motion, 'auto');
   assert.equal(sanitizePrefs({ fontSize: 3 }).fontSize, FONT_RANGE.min); assert.equal(sanitizePrefs({ fontSize: 14.6 }).fontSize, 15); assert.equal(sanitizePrefs({ fontSize: 'abc' }).fontSize, DEFAULT_PREFS.fontSize);
-  assert.deepEqual(sanitizePrefs({ isolate: true, role: 'reviewer', motion: 'reduced', fontSize: 16, name: 'Bia' }), { name: 'Bia', isolate: true, role: 'reviewer', fontSize: 16, motion: 'reduced' });
+  assert.deepEqual(sanitizePrefs({ isolate: true, role: 'reviewer', motion: 'reduced', fontSize: 16, name: 'Bia' }), { name: 'Bia', isolate: true, role: 'reviewer', provider: 'claude', autoRestore: true, fontSize: 16, motion: 'reduced' });
 });
 
 test('setPref: valida, notifica quem escuta e ignora chaves desconhecidas (funciona sem localStorage)', () => {

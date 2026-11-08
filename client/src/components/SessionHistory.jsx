@@ -8,7 +8,8 @@ import ConversationHistory from './ConversationHistory.jsx';
 import { Btn, Icon, fmtTime } from './ui.jsx';
 
 function Row({ r, busy, locked, onResume }) {
-  const why = r.resumable ? null : (r.blockedMessage || 'Esta sessão não pode ser retomada agora.');
+  const can = r.resumable || r.reopen; // reopen: volta como terminal novo (sem conversa para retomar)
+  const why = can ? null : (r.blockedMessage || 'Esta sessão não pode ser retomada agora.');
   return (
     <li className={`sh-row${r.restore ? ' restore' : ''}`} style={{ '--role': r.color || 'var(--brand)' }}>
       <div className="sh-main">
@@ -23,7 +24,7 @@ function Row({ r, busy, locked, onResume }) {
         {why && <div className="sh-why small" role="note">{why}</div>}
       </div>
       <div className="sh-act">
-        <Btn kind="primary" disabled={!r.resumable || locked} onClick={() => onResume(r, false)} title={r.resumable ? 'Reabre a MESMA sessão do Claude Code (o histórico da conversa é restaurado)' : why}>{busy === r.id ? 'Abrindo…' : 'Retomar'}</Btn>
+        <Btn kind="primary" disabled={!can || locked} onClick={() => onResume(r, false)} title={r.reopen ? 'Esta sessão não tem conversa para retomar: abre um terminal NOVO no lugar dela (mesmo papel, agente e worktree)' : r.resumable ? 'Reabre a MESMA sessão do Claude Code (o histórico da conversa é restaurado)' : why}>{busy === r.id ? 'Abrindo…' : r.reopen ? 'Reabrir' : 'Retomar'}</Btn>
         <Btn kind="quiet" disabled={!r.resumable || locked} onClick={() => onResume(r, true)} title={r.resumable ? 'Abre uma CÓPIA da sessão em outro terminal; a original fica intacta' : why}>Fork</Btn>
       </div>
     </li>
@@ -51,7 +52,7 @@ export function SessionHistoryBody({ ws, topicId, where, order = [], autoRestore
     try {
       let ack = false, res;
       for (;;) {
-        try { res = await api.post('/api/terminals/resume', resumeBody({ recordId: r.id, fork, ack })); break; } catch (e) {
+        try { res = await api.post('/api/terminals/resume', resumeBody({ recordId: r.id, fork, reopen: r.reopen, ack })); break; } catch (e) {
           // configuração executável do projeto não revisada: o servidor só abre com a confirmação explícita (uma pergunta; nunca automática)
           if (!ack && needsConfigAck(e) && window.confirm(`${e.message}\n\n${fork ? 'Abrir o fork' : 'Retomar a sessão'} mesmo assim?`)) { ack = true; continue; }
           throw e;
@@ -76,7 +77,7 @@ export function SessionHistoryBody({ ws, topicId, where, order = [], autoRestore
         if (stopped) break;
         setProgress({ i: i + 1, n: plan.open.length }); setBusy(r.id);
         for (;;) {
-          try { await api.post('/api/terminals/resume', resumeBody({ recordId: r.id, ack })); results.push({ row: r, ok: true }); break; } catch (e) {
+          try { await api.post('/api/terminals/resume', resumeBody({ recordId: r.id, reopen: r.reopen, ack })); results.push({ row: r, ok: true }); break; } catch (e) {
             if (!ack && !declined && needsConfigAck(e)) { if (window.confirm(`${e.message}\n\nRestaurar as sessões mesmo assim?`)) { ack = true; continue; } declined = true; }
             const limit = e?.status === 409 && /Limite de/.test(e.message || '');
             results.push({ row: r, ok: false, error: limit ? 'limite de terminais' : needsConfigAck(e) ? 'configuração do projeto não confirmada' : (e?.message || 'erro') });

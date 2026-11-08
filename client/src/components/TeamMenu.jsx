@@ -9,8 +9,8 @@ const W = 380, GAP = 6, EDGE = 8;
  * Equipe do workspace: identificação compacta (ex.: "Squad ▾") que abre o gerenciamento. Consulta a composição atual, altera o preset, adiciona/remove agentes e abre
  * terminais avulsos. Nada aqui encerra processo sem confirmação; cada ação chama o que o cockpit já faz (abrir, encerrar, gravar a equipe do workspace).
  */
-export default function TeamMenu({ defaultRole = 'builder', preset, saved = true, sessions, stateOf, roles, byRole, room, busy, where, onChange, onAdd, onRemove, onReset }) {
-  const [open, setOpen] = useState(false), [pos, setPos] = useState(null), [role, setRole] = useState(defaultRole);
+export default function TeamMenu({ defaultRole = 'builder', providers = [], defaultProvider = 'claude', preset, saved = true, sessions, stateOf, roles, byRole, room, busy, where, onChange, onAdd, onRemove, onReset }) {
+  const [open, setOpen] = useState(false), [pos, setPos] = useState(null), [role, setRole] = useState(defaultRole), [prov, setProv] = useState(defaultProvider);
   const btn = useRef(null), pop = useRef(null);
   const team = presetById(preset);
   const live = useMemo(() => sessions.filter((s) => s.status === 'running'), [sessions]);
@@ -61,7 +61,9 @@ export default function TeamMenu({ defaultRole = 'builder', preset, saved = true
             <div className="tm-row">
               <label className="sr" htmlFor="tm-role">Papel do novo terminal</label>
               <select id="tm-role" className="oc-sel" value={role} onChange={(e) => setRole(e.target.value)}>{roles.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}</select>
-              <Btn disabled={busy || room < 1} onClick={() => onAdd([role])} title="Abre um terminal com este papel; entra no worktree do squad quando há um ativo"><Icon name="plus" size={12} /> Terminal</Btn>
+              {providers.length > 1 && <><label className="sr" htmlFor="tm-prov">Agente do novo terminal</label>
+              <select id="tm-prov" className="oc-sel" value={prov} onChange={(e) => setProv(e.target.value)}>{providers.map((p) => <option key={p.id} value={p.id} disabled={!p.available}>{p.label}{p.available ? '' : ' (não instalado)'}</option>)}</select></>}
+              <Btn disabled={busy || room < 1} onClick={() => onAdd([role], prov)} title="Abre um terminal com este papel e este agente (Claude Code ou Codex); cada agente que edita ganha o seu worktree quando há mais de um"><Icon name="plus" size={12} /> Terminal</Btn>
             </div>
             {room < 1 && <p className="small dim">Limite de terminais atingido: encerre algum antes de abrir outro.</p>}
           </section>

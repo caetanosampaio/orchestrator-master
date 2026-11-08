@@ -18,6 +18,16 @@ export const claudeProvider = Object.freeze({
   id: 'claude',
   label: 'Claude Code',
   resolve: resolveClaude,
+  notFoundMessage: 'Claude Code não foi encontrado no PATH.',
+  // O que a CLI sabe fazer; o terminals.js só liga o recurso quando o provedor declara a capacidade.
+  capabilities: Object.freeze({ resume: true, fork: true, hooks: true, plugins: true, accounts: true, transcript: true }),
+  mcpTransport: 'file', // credencial do Maestro em arquivo (--mcp-config)
+  // Variáveis acrescentadas ao ambiente do pane (só se o ambiente ainda não define a variável: quem quiser outro valor exporta antes). CLAUDE_CODE_NO_FLICKER=1 liga o renderer em tela cheia
+  // (alt-screen, preenche o terminal). Sem isto o Claude Code o DESLIGA SOZINHO na máquina quando um lançamento "não terminou de iniciar" (acontece quando o servidor reinicia e mata os panes
+  // durante a partida) e os panes seguintes abrem no modo clássico, sem preencher o terminal, até alguém rodar /tui fullscreen em cada um. A variável vence essa desativação automática.
+  paneEnv: Object.freeze({ CLAUDE_CODE_NO_FLICKER: '1' }),
+  // Como uma tarefa do Maestro é entregue: o texto vai como bloco (o Claude Code o trata como colagem) e o Enter segue separado, `delayMs` depois.
+  submit: Object.freeze({ bracketed: false, delayMs: 200 }),
   /**
    * Argumentos do pane. mode: 'new' (--session-id fixo, papel e nome), 'resume' (mesma sessão) ou 'fork' (cópia com UUID novo; a original fica intacta).
    * Na retomada o Claude Code restaura histórico, prompt de sistema, nome e permission mode: NÃO se repassa nada disso.

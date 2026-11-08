@@ -66,10 +66,10 @@ export function paneState(session, workingIds = new Set(), pendingIds = new Set(
   return workingIds.has(session.id) ? 'working' : 'idle';
 }
 
-// Providers (CLIs) conhecidos. Hoje só o Claude Code roda nos panes: as sessões não carregam o campo `provider`, então valem como Claude Code. O Codex ainda não tem integração.
+// Providers (CLIs) conhecidos. Sessões antigas não carregam o campo `provider` e valem como Claude Code. A disponibilidade real (CLI instalada no PATH) vem do servidor em GET /api/terminals (`providers`).
 export const PROVIDERS = [
   { id: 'claude', label: 'Claude Code CLI', available: true },
-  { id: 'codex', label: 'Codex CLI', available: false },
+  { id: 'codex', label: 'Codex CLI', available: true },
 ];
 export const providerOf = (s) => (typeof s?.provider === 'string' && s.provider ? s.provider : 'claude');
 

@@ -247,5 +247,5 @@ test('terminais: o limite vale para criações simultâneas (isolate); wrapper c
   const spawned = []; const lib2 = { spawn(f, a) { spawned.push(a); return { pid: 1_900_400_000 + spawned.length, onData() {}, onExit() {}, write() {}, resize() {} }; } };
   const sh = createTerminalManager({ db, ptyLib: lib2, resolveCommand: () => ({ file: 'cmd.exe', args: ['/d', '/s', '/c', 'claude.cmd'], viaShell: true }), killTree() {}, waitFor: () => true, mcp });
   const r = await sh.create({}); assert.equal(r.ok, true); assert.ok(!spawned[0].includes('--mcp-config'), 'sem coordenação via cmd.exe com caminho perigoso'); assert.equal(revoked.length, 1);
-  assert.deepEqual(Object.keys(sh.peek(r.session.id)).sort(), ['id', 'lastOutputAt', 'role', 'status', 'title']); assert.equal(sh.peek('term_00000000'), null);
+  assert.deepEqual(Object.keys(sh.peek(r.session.id)).sort(), ['id', 'lastOutputAt', 'provider', 'role', 'status', 'title']); assert.equal(sh.peek('term_00000000'), null);
 });

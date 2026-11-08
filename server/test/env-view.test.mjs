@@ -65,12 +65,14 @@ test('friendlyNames: o nome personalizado (displayName) vence; o original contin
   assert.deepEqual([e[0].name, e[0].original, e[0].renamed, e[0].path], ['Loja', 'api', true, 'C:/x/api']);
 });
 
-test('providerSummary: contagens vêm só das sessões reais; encerrado não é ativo; Codex fica indisponível e zerado', () => {
+test('providerSummary: contagens vêm só das sessões reais; encerrado não é ativo; Codex existe como provider e só conta o que for real', () => {
   const S = (id, over = {}) => ({ id, workspaceId: 'a', status: 'running', exitCode: null, ...over });
   const sessions = [S('1'), S('2'), S('3'), S('4', { status: 'exited', exitCode: 1 }), S('5', { status: 'exited', exitCode: 0 })];
   const [claude, codex] = providerSummary(sessions, new Set(['1', '5']));  // '5' encerrado: estar em workingIds não o torna ativo
   assert.deepEqual([claude.total, claude.active, claude.working, claude.idle, claude.failed, claude.exited], [5, 3, 1, 2, 1, 1]);
-  assert.deepEqual([codex.id, codex.available, codex.total, codex.active], ['codex', false, 0, 0]);
+  assert.deepEqual([codex.id, codex.available, codex.total, codex.active], ['codex', true, 0, 0]);
+  const mixed = providerSummary([S('1'), S('c1', { provider: 'codex' }), S('c2', { provider: 'codex', status: 'exited', exitCode: 0 })], new Set(['c1']));
+  assert.deepEqual([mixed[0].total, mixed[1].total, mixed[1].active, mixed[1].working], [1, 2, 1, 1], 'panes do Codex entram na linha do Codex');
   assert.equal(providerOf({}), 'claude');
   const none = providerSummary([], new Set());
   assert.deepEqual(none.map((r) => r.total), [0, 0], 'sem sessões: nada é inventado');

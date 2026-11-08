@@ -1,7 +1,7 @@
 // Preferências da interface (nome exibido, isolamento padrão, papel padrão, fonte dos terminais, movimento). A fonte principal é o servidor (db.settings.ui, ver ui-state.js); aqui fica o cache no localStorage:
 // (localStorage; vale por origem, e o Electron muda de porta a cada abertura). Núcleo puro (sem React): o hook usePrefs está em hooks.js. Valores inválidos voltam ao padrão, nunca quebram a tela.
 const KEY = 'orch.prefs.v1';
-export const DEFAULT_PREFS = Object.freeze({ name: '', isolate: false, role: 'builder', fontSize: 13, motion: 'auto' });
+export const DEFAULT_PREFS = Object.freeze({ name: '', isolate: false, role: 'builder', provider: 'claude', autoRestore: true, fontSize: 13, motion: 'auto' });
 export const FONT_RANGE = Object.freeze({ min: 11, max: 18 });
 
 /** Aceita qualquer coisa; devolve sempre um objeto completo e válido. */
@@ -12,13 +12,16 @@ export function sanitizePrefs(raw) {
     name: typeof r.name === 'string' ? r.name.replace(/[\p{Cc}\p{Cf}]/gu, '').trim().slice(0, 40) : DEFAULT_PREFS.name,
     isolate: r.isolate === true,
     role: typeof r.role === 'string' && /^[a-z]{1,20}$/.test(r.role) ? r.role : DEFAULT_PREFS.role,
+    provider: typeof r.provider === 'string' && /^[a-z]{1,20}$/.test(r.provider) ? r.provider : DEFAULT_PREFS.provider,
+    autoRestore: r.autoRestore !== false,
     fontSize: Number.isFinite(fs) ? Math.min(FONT_RANGE.max, Math.max(FONT_RANGE.min, Math.round(fs))) : DEFAULT_PREFS.fontSize,
     motion: r.motion === 'reduced' ? 'reduced' : 'auto',
   };
 }
 
 const store = () => { try { return typeof localStorage !== 'undefined' ? localStorage : null; } catch { return null; } }; // o acesso pode lançar (janela privada, dados bloqueados)
-let current = (() => { try { return sanitizePrefs(JSON.parse(store()?.getItem(KEY) ?? 'null')); } catch { return { ...DEFAULT_PREFS }; } })();
+// Migração: quem desligou a restauração automática quando ela era só do navegador (chave antiga) mantém a escolha; ela segue ao servidor pelo sincronizador (ui-state.js).
+let current = (() => { try { const raw = JSON.parse(store()?.getItem(KEY) ?? 'null'), p = sanitizePrefs(raw); if (!(raw && typeof raw === 'object' && 'autoRestore' in raw) && store()?.getItem('forge.autoRestore') === '0') p.autoRestore = false; return p; } catch { return { ...DEFAULT_PREFS }; } })();
 const subs = new Set();
 
 export const getPrefs = () => current;

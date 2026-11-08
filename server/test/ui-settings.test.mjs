@@ -56,13 +56,13 @@ test('PUT grava (parcial) e GET devolve; o disco tem settings.ui', async () => {
   r = await put({ expandedWorkspaces: { ws_aaaaaaaa: true } }); assert.equal(r.status, 200);
   r = await put({ expandedWorkspaces: { ws_bbbbbbbb: false } }); assert.equal(r.status, 200);
   const g = await (await call('/api/ui')).json();
-  assert.deepEqual(g, { ui: { name: 'Ana', isolate: true, role: 'reviewer', fontSize: 16, motion: 'reduced', sidebarCollapsed: true, expandedWorkspaces: { ws_aaaaaaaa: true, ws_bbbbbbbb: false } }, persisted: true }, 'campos não enviados ficam; expandidos são mesclados por chave');
+  assert.deepEqual(g, { ui: { name: 'Ana', isolate: true, role: 'reviewer', provider: 'claude', autoRestore: true, fontSize: 16, motion: 'reduced', sidebarCollapsed: true, expandedWorkspaces: { ws_aaaaaaaa: true, ws_bbbbbbbb: false } }, persisted: true }, 'campos não enviados ficam; expandidos são mesclados por chave');
   assert.deepEqual(disk().settings.ui, g.ui);
 });
 
 test('campos inválidos são recusados (400 em pt-BR) e NADA muda', async () => {
   const before = JSON.stringify(disk().settings.ui);
-  const bad = [{ fontSize: 10 }, { fontSize: 19 }, { fontSize: 13.5 }, { fontSize: '14' }, { motion: 'turbo' }, { role: 'Builder' }, { role: 'a'.repeat(21) }, { isolate: 'sim' }, { sidebarCollapsed: 1 }, { name: 42 }, { name: 'x'.repeat(41) },
+  const bad = [{ fontSize: 10 }, { fontSize: 19 }, { fontSize: 13.5 }, { fontSize: '14' }, { motion: 'turbo' }, { role: 'Builder' }, { role: 'a'.repeat(21) }, { provider: 'Codex' }, { provider: 7 }, { provider: '' }, { autoRestore: 'sim' }, { autoRestore: 0 }, { isolate: 'sim' }, { sidebarCollapsed: 1 }, { name: 42 }, { name: 'x'.repeat(41) },
     { expandedWorkspaces: [] }, { expandedWorkspaces: { 'ws bad!': true } }, { expandedWorkspaces: { ws_aaaaaaaa: 'sim' } }, { fontSize: 15, motion: 'turbo' }];
   for (const b of bad) { const r = await put(b); assert.equal(r.status, 400, JSON.stringify(b)); assert.match((await r.json()).error, /deve|só aceita/); }
   for (const body of [[], 'texto', null]) assert.equal((await put(body)).status, 400);
@@ -268,4 +268,21 @@ test('revisão: __proto__ como id de workspace é recusado no PUT e ignorado no 
   const r = await put({ expandedWorkspaces: JSON.parse('{"__proto__":true}') }); assert.equal(r.status, 400);
   assert.deepEqual(readLocal(memStorage({ [UI_KEY]: '{"expandedWorkspaces":{"__proto__":true,"ws_aaaaaaaa":true}}' })).expandedWorkspaces, { ws_aaaaaaaa: true });
   assert.equal(({}).polluted, undefined);
+});
+
+test('provider e autoRestore: gravam no banco, voltam no GET e valores fora do tipo são recusados sem mudar nada', async () => {
+  let r = await put({ provider: 'codex', autoRestore: false }); assert.equal(r.status, 200);
+  const g = await (await call('/api/ui')).json(); assert.equal(g.ui.provider, 'codex'); assert.equal(g.ui.autoRestore, false);
+  assert.equal(disk().settings.ui.provider, 'codex'); assert.equal(disk().settings.ui.autoRestore, false);
+  r = await put({ autoRestore: 'não' }); assert.equal(r.status, 400); assert.equal((await (await call('/api/ui')).json()).ui.autoRestore, false);
+  r = await put({ autoRestore: true }); assert.equal(r.status, 200); assert.equal((await (await call('/api/ui')).json()).ui.autoRestore, true);
+  assert.equal(U.readUi({ settings: { ui: { provider: 'X!' , autoRestore: 'lixo' } }, workspaces: [] }).provider, 'claude', 'banco editado à mão: volta ao padrão');
+  assert.equal(U.readUi({ settings: { ui: { autoRestore: 'lixo' } }, workspaces: [] }).autoRestore, true, 'só um false explícito desliga');
+});
+
+test('cliente (prefs): provider e autoRestore existem nas preferências sincronizadas; o desligamento antigo da restauração (chave local) é preservado na migração', async () => {
+  const P = await import('../../client/src/prefs.js');
+  assert.equal(P.DEFAULT_PREFS.provider, 'claude'); assert.equal(P.DEFAULT_PREFS.autoRestore, true);
+  assert.deepEqual(Object.keys(P.DEFAULT_PREFS).sort(), Object.keys(U.DEFAULT_UI).filter((k) => !['sidebarCollapsed', 'expandedWorkspaces'].includes(k)).sort(), 'cliente e servidor falam dos mesmos campos');
+  assert.equal(P.sanitizePrefs({ autoRestore: false }).autoRestore, false); assert.equal(P.sanitizePrefs({ autoRestore: 'x' }).autoRestore, true); assert.equal(P.sanitizePrefs({ provider: 'Codex' }).provider, 'claude'); assert.equal(P.sanitizePrefs({ provider: 'codex' }).provider, 'codex');
 });

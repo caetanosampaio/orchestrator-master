@@ -2,8 +2,7 @@ import { useEffect, useState, useSyncExternalStore } from 'react';
 import { getPrefs, setPref, subscribePrefs, DEFAULT_PREFS } from './prefs.js';
 import { getUi } from './ui-state.js';
 import { getLayouts } from './layout-state.js';
-import { getModes, subscribeModes, modeOf, setModeOf } from './layout-mode.js';
-import { readAutoRestore, writeAutoRestore } from './session-history.js';
+import { layoutModeId } from './env-view.js';
 
 const mq = () => window.matchMedia?.('(prefers-reduced-motion: reduce)');
 /** Preferência do sistema por menos movimento (reativa a mudanças). */
@@ -38,16 +37,15 @@ export function usePrefs() {
   return [prefs, setPref];
 }
 
-/** Modo de organização da grade do workspace: [modo, mudar(modo)]. Compartilhado entre o cockpit e as Configurações. */
+/** Modo de organização da grade do workspace: [modo, mudar(modo)]. Vive no layout do workspace NO SERVIDOR (volta em qualquer navegador e no app, mesmo com a porta do Electron mudando). */
 export function useLayoutMode(wsId) {
-  const modes = useSyncExternalStore(subscribeModes, getModes, getModes);
-  return [modeOf(modes, wsId), (m) => setModeOf(wsId, m)];
+  const l = getLayouts();
+  const snap = useSyncExternalStore(l.subscribe, l.getSnapshot, l.getSnapshot);
+  return [layoutModeId(wsId ? snap.layouts[wsId]?.mode : undefined), (m) => { if (wsId) l.actions.setMode(wsId, m); }];
 }
 
-// Restauração automática das sessões: preferência local (padrão ligada), compartilhada pelo cockpit (que restaura) e pelas Configurações (onde se liga e desliga).
-let autoOn = readAutoRestore(); const autoSubs = new Set();
-const subAuto = (f) => { autoSubs.add(f); return () => autoSubs.delete(f); };
+// Restauração automática das sessões: preferência do usuário (padrão ligada), guardada no servidor junto das demais; compartilhada pelo cockpit (que restaura) e pelas Configurações (onde se liga e desliga).
 export function useAutoRestore() {
-  const on = useSyncExternalStore(subAuto, () => autoOn, () => true);
-  return [on, (v) => { autoOn = !!v; writeAutoRestore(autoOn); for (const f of autoSubs) f(); }];
+  const prefs = useSyncExternalStore(subscribePrefs, getPrefs, () => DEFAULT_PREFS);
+  return [prefs.autoRestore !== false, (v) => setPref('autoRestore', !!v)];
 }

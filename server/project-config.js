@@ -43,10 +43,10 @@ async function notReviewed(dir, rel) {
 
 const hasFiles = (abs) => { try { return fs.readdirSync(abs, { recursive: true, withFileTypes: true }).some((e) => !e.isDirectory()); } catch { return false; } };
 
-/** Configuração de projeto executável que NÃO está versionada e intacta. Devolve `[{ path, why }]` (vazio = nada a confirmar). */
-export async function inspectProjectConfig(dir) {
+/** Configuração de projeto executável que NÃO está versionada e intacta. Devolve `[{ path, why }]` (vazio = nada a confirmar). `files`/`dirs` (padrão: os do Claude Code) vêm do provedor: o Codex só usa pastas (.codex), sem interpretar TOML. */
+export async function inspectProjectConfig(dir, { files = CONFIG_FILES, dirs = CONFIG_DIRS } = {}) {
   const found = [];
-  for (const rel of CONFIG_FILES) {
+  for (const rel of files) {
     const abs = path.join(dir, ...rel.split('/'));
     let st; try { st = fs.lstatSync(abs); } catch { continue; } // não existe: nada a executar
     if (st.isSymbolicLink()) { found.push({ path: rel, why: 'é um link simbólico' }); continue; }
@@ -58,7 +58,7 @@ export async function inspectProjectConfig(dir) {
     const why = await notReviewed(dir, rel);
     if (why) found.push({ path: rel, why: `${what}; ${why}` });
   }
-  for (const rel of CONFIG_DIRS) {
+  for (const rel of dirs) {
     const abs = path.join(dir, ...rel.split('/'));
     let st; try { st = fs.lstatSync(abs); } catch { continue; }
     if (st.isSymbolicLink()) { found.push({ path: rel, why: 'é um link simbólico' }); continue; }

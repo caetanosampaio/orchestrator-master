@@ -34,6 +34,18 @@ function TerminalPane({ session, role, state, waiting, maximized, fontSize, stre
   const [conn, setConn] = useState(() => stream.status?.() ?? 'open');
   useEffect(() => stream.onStatus?.(setConn), [stream]); // 'reconnecting' aparece discreto no cabeçalho
   const [started, setStarted] = useState(false); // false até chegar a primeira saída: o Claude Code leva alguns segundos para iniciar (vários ao mesmo tempo, mais)
+  // Autocorreção do tamanho: o PTY nasce com um tamanho padrão (e reabre assim depois de reiniciar o servidor); se o tamanho que o servidor informa diverge do que o xterm ocupa de verdade, reenvia o
+  // do xterm sem precisar ampliar/restaurar o painel na mão. Só com o painel visível e depois da 1ª saída; uma tentativa por par de tamanhos (o servidor limita cols/rows: nunca vira laço).
+  const syncTried = useRef('');
+  useEffect(() => {
+    const term = termRef.current, host = hostRef.current;
+    if (!term || !host || !running || !started || host.clientWidth <= 40 || host.clientHeight <= 40) return undefined;
+    if (term.cols === session.cols && term.rows === session.rows) return undefined;
+    const key = `${term.cols}x${term.rows}>${session.cols}x${session.rows}`;
+    if (syncTried.current === key) return undefined;
+    const t = setTimeout(() => { syncTried.current = key; noteInteraction(id); api.post(`/api/terminals/${id}/resize`, { cols: term.cols, rows: term.rows }).catch(() => {}); }, 300);
+    return () => clearTimeout(t);
+  }, [session.cols, session.rows, running, started, id]); // eslint-disable-line react-hooks/exhaustive-deps -- noteInteraction é estável
 
   useEffect(() => {
     const host = hostRef.current; if (!host) return undefined;
@@ -110,7 +122,7 @@ function TerminalPane({ session, role, state, waiting, maximized, fontSize, stre
         {waiting?.length > 0 && <span className="oc-pwait" role="status" title={waitTitle}><Icon name="clock" size={12} /><span className="oc-pwait-t">{waiting.length > 1 ? `${waiting.length} tarefas aguardando você` : waitText ? `Aguardando você: ${waitText}` : 'Aguardando você'}</span></span>}
         <span className="oc-pgrow" />
         {conn === 'reconnecting' && <span className="oc-reconn" role="status" title="A conexão com os terminais caiu; tentando de novo automaticamente.">reconectando…</span>}
-        <span className="oc-ptag" title="Provider deste terminal">Claude Code</span>
+        <span className={`oc-ptag prov-${session.provider || 'claude'}`} title="Agente (CLI) deste terminal">{session.providerLabel || 'Claude Code'}</span>
         {accTag && <span className="oc-ptag acc" title={`Conta: ${accTag}`}><span className="sr">Conta: </span>{accTag}</span>}
         {session.worktreeId && <span className="oc-ptag wt" title="Roda num worktree próprio">worktree</span>}
         {hasUse && <span className="oc-pusage" title={use.title}><span className="sr">Consumo: </span>{use.tokens} tok<span aria-hidden="true"> · </span><span className="sr">custo </span>{use.cost}</span>}
@@ -163,6 +175,10 @@ export default function TerminalGrid({ onOpenWorkspaces, onOpenSettings }) {
   const roles = terminals?.roles ?? [], byRole = Object.fromEntries(roles.map((r) => [r.id, r]));
   const role = byRole[prefs.role] ? prefs.role : roles[0]?.id ?? 'builder';
   const isolate = prefs.isolate;
+  // Agente (provider) dos terminais novos: Claude Code ou Codex. A escolha é uma preferência do usuário (guardada no servidor); a lista e a disponibilidade também vêm dele.
+  const providers = terminals?.providers ?? [];
+  const provider = providers.find((p) => p.id === prefs.provider && p.available) ? prefs.provider : 'claude';
+  const pickProvider = (id) => setPref('provider', id);
   const sessions = terminals?.sessions ?? [];
   // Sessões do workspace + tópico ativos. As demais seguem rodando e MONTADAS (ocultas): trocar de aba ou de tópico nunca encerra nem remonta terminal.
   const topicId = null; // a interface não usa mais tópicos: o workspace mostra todos os terminais dele e os novos nascem sem tópico
@@ -224,7 +240,7 @@ export default function TerminalGrid({ onOpenWorkspaces, onOpenSettings }) {
       const results = [];
       try {
         for (const r of plan.open) {
-          try { await api.post('/api/terminals/resume', resumeBody({ recordId: r.id })); results.push({ row: r, ok: true }); } catch (e) {
+          try { await api.post('/api/terminals/resume', resumeBody({ recordId: r.id, reopen: r.reopen })); results.push({ row: r, ok: true }); } catch (e) {
             const limit = e?.status === 409 && /Limite de/.test(e.message || '');
             results.push({ row: r, ok: false, error: limit ? 'limite de terminais' : needsConfigAck(e) ? 'precisa da sua confirmação: abra o Histórico' : (e?.message || 'erro') });
             if (limit) break;
@@ -242,16 +258,18 @@ export default function TerminalGrid({ onOpenWorkspaces, onOpenSettings }) {
   const opening = useRef(false); // trava síncrona: dois cliques seguidos nunca abrem duas vezes (o estado `busy` só vale depois da renderização)
   const nextSquad = () => 1 + Math.max(0, ...sessions.map((x) => Number(/ S(\d+)\.\d+$/.exec(x.title)?.[1] ?? 0)));
   /** Abre os terminais. `join` = chave de squad (session.squadId) de um squad ATIVO deste workspace: o terminal entra no worktree dele. Devolve false se não abriu nada por decisão/trava. */
-  const open = async (list, { squad = false, join = null, confirmMore = true } = {}) => {
+  const open = async (list, { squad = false, join = null, confirmMore = true, provider: useProvider = provider } = {}) => {
     if (opening.current) return false;
     if (!ws) { onOpenWorkspaces?.(); return false; }
     if (squad && confirmMore && liveMine > 0 && !window.confirm(`Já há ${liveMine} ${liveMine === 1 ? 'terminal ativo' : 'terminais ativos'} em ${where}. Abrir MAIS ${list.length} terminais de uma nova equipe?`)) return false;
     opening.current = true; setBusy(true);
     const n = squad ? nextSquad() : null;
-    if (list.length > 1) notify(`Abrindo ${list.length} terminais; o Claude Code leva alguns segundos para iniciar em cada um.`);
+    if (list.length > 1) notify(`Abrindo ${list.length} terminais; o agente leva alguns segundos para iniciar em cada um.`);
     try {
       // em paralelo: cada terminal é um processo próprio; as falhas são individuais. Os do squad levam o número dele no título (ex.: Construtor S1)
-      const spawn = (r, i, ack, squadId) => api.post('/api/terminals', { role: r, isolate, ...(squadId ? { squadId } : {}), workspaceId: ws.id, topicId, ...(ack ? { acknowledgeProjectConfig: true } : {}), ...(n ? { title: `${byRole[r]?.label ?? r} S${n}.${i + 1}` } : {}) });
+      const editors = list.filter((r) => byRole[r]?.edits).length;
+      // Worktree DESLIGADO = automático: o servidor dá worktree próprio a cada agente que edita assim que há mais de um no workspace (qualquer agente); LIGADO = worktree sempre, um squad compartilha UM.
+      const spawn = (r, i, ack, squadId) => api.post('/api/terminals', { role: r, provider: useProvider, isolate: isolate ? true : 'auto', ...(!isolate && editors > 1 ? { expectEditors: editors } : {}), ...(squadId ? { squadId } : {}), workspaceId: ws.id, topicId, ...(ack ? { acknowledgeProjectConfig: true } : {}), ...(n ? { title: `${byRole[r]?.label ?? r} S${n}.${i + 1}` } : {}) });
       // Worktree: um squad inteiro compartilha UM worktree. O 1º terminal o cria; os outros entram nele (esperam o 1º para saber o id). Terminal avulso continua com o seu.
       let rs;
       if (isolate && squad && list.length > 1) {
@@ -266,6 +284,7 @@ export default function TerminalGrid({ onOpenWorkspaces, onOpenSettings }) {
         const again = await Promise.allSettled(held.map((i) => spawn(list[i], i, true)));
         held.forEach((i, k) => { rs[i] = again[k]; });
       }
+      for (const x of rs) if (x.status === 'fulfilled' && x.value?.warning) notify(x.value.warning, 'error'); // ex.: sem Git, o isolamento automático não pôde criar o worktree
       const bad = rs.filter((r) => r.status === 'rejected');
       if (bad.length) notify(`${bad.length} de ${list.length} terminais não abriram: ${bad[0].reason?.message ?? 'erro'}`, 'error');
     } finally { opening.current = false; setBusy(false); loadTerminals(); }
@@ -273,7 +292,7 @@ export default function TerminalGrid({ onOpenWorkspaces, onOpenSettings }) {
   };
   // ---- equipe do workspace ----
   const liveRolesMine = mine.filter((x) => x.status === 'running').map((x) => x.role);
-  const squadKeyMine = mine.find((x) => x.status === 'running' && x.squadId)?.squadId ?? null; // worktree do squad ativo: terminais novos entram nele
+  const squadKeyMine = isolate ? mine.find((x) => x.status === 'running' && x.squadId)?.squadId ?? null : null; // só com "Worktree" ligado há worktree de squad compartilhado: terminais novos entram nele (no automático cada agente tem o seu)
   const roleLabel = (r) => byRole[r]?.label ?? r;
   /** Workspace sem equipe: escolher o preset a configura e abre os terminais (o fluxo de sempre). A equipe só é gravada se o usuário não cancelou. */
   const configure = async (p) => { const ran = await open(p.roles, { squad: p.roles.length > 1 }); if (ran !== false && ws) layoutActions.setTeam(ws.id, p.id); };
@@ -286,7 +305,7 @@ export default function TerminalGrid({ onOpenWorkspaces, onOpenSettings }) {
     layoutActions.setTeam(ws.id, id);
     if (im.open.length) await open(im.open, { join: squadKeyMine, confirmMore: false });
   };
-  const addAgents = (roles) => open(roles, { join: squadKeyMine });
+  const addAgents = (roles, prov) => open(roles, { join: squadKeyMine, ...(prov ? { provider: prov } : {}) });
   const removeAgent = async (s) => {
     if (s.status === 'running' && !window.confirm(`Encerrar "${s.title}"?\n\nO processo é interrompido. A sessão continua no histórico e pode ser retomada; o worktree é mantido${s.squadId ? ' (ele é compartilhado com o resto da equipe)' : ''}.`)) return;
     await close(s);
@@ -332,7 +351,7 @@ export default function TerminalGrid({ onOpenWorkspaces, onOpenSettings }) {
             <Icon name="workspace" size={14} /><b>{ws ? where : 'Nenhum workspace'}</b><Icon name="chevronsUpDown" size={12} />
           </button>
           {ws && (hasTeam
-            ? <TeamMenu defaultRole={role} preset={teamId} saved={!!team} sessions={mine} stateOf={(x) => paneState(x, workingIds, pendingIds)} roles={roles} byRole={byRole} room={room} busy={busy} where={where} onChange={changeTeam} onAdd={addAgents} onRemove={removeAgent} onReset={resetTeam} />
+            ? <TeamMenu defaultRole={role} providers={providers} defaultProvider={provider} preset={teamId} saved={!!team} sessions={mine} stateOf={(x) => paneState(x, workingIds, pendingIds)} roles={roles} byRole={byRole} room={room} busy={busy} where={where} onChange={changeTeam} onAdd={addAgents} onRemove={removeAgent} onReset={resetTeam} />
             : <div className="tbx-presets" role="group" aria-label="Configurar a equipe do workspace">
                 {PRESETS.map((p) => <Btn key={p.id} kind="quiet" disabled={busy || p.roles.length > room} onClick={() => configure(p)} title={`${p.label}: ${p.roles.map(roleLabel).join(', ')}`}>{p.label}</Btn>)}
               </div>)}
@@ -340,7 +359,13 @@ export default function TerminalGrid({ onOpenWorkspaces, onOpenSettings }) {
         {/* Grupo 2: controles operacionais (à direita). Visualização e Histórico ficam em Configurações */}
         {ws && (
           <div className="tbx-g tbx-end">
-            <label className="oc-iso" title="Terminal avulso trabalha num git worktree próprio; um squad inteiro compartilha UM worktree (isolado do projeto principal, mas os terminais do squad editam os mesmos arquivos). Exige repositório Git.">
+            {providers.length > 1 && (
+              <label className="oc-prov-sel" title="Agente dos terminais NOVOS (presets de equipe e + Terminal). Dá para misturar: no menu da equipe, cada terminal novo pode ser de um agente diferente.">
+                <span className="sr">Agente dos novos terminais</span>
+                <select className="oc-sel" value={provider} onChange={(e) => pickProvider(e.target.value)} aria-label="Agente dos novos terminais">{providers.map((p) => <option key={p.id} value={p.id} disabled={!p.available}>{p.label}{p.available ? '' : ' (não instalado)'}</option>)}</select>
+              </label>
+            )}
+            <label className="oc-iso" title="Desligado (automático): cada agente que edita ganha um worktree Git próprio assim que há mais de um no workspace, sem conflito de arquivos (sem Git, abre na pasta normal e avisa). Ligado: sempre worktree, e um squad inteiro compartilha UM (os terminais do squad editam os mesmos arquivos). Exige repositório Git.">
               <input type="checkbox" role="switch" checked={isolate} onChange={(e) => setPref('isolate', e.target.checked)} /><span className="oc-switch-track" aria-hidden="true"><i /></span>Worktree
             </label>
             {total.panes > 0 && <span className="oc-total" title={total.partialCost ? 'Há panes sem custo conhecido: o total em dólares não é exibido. Crie data/pricing.json com os preços por modelo (USD por milhão de tokens) para ver o custo.' : total.cost === '—' ? 'Custo indisponível: crie data/pricing.json com os preços por modelo (USD por milhão de tokens).' : 'Soma dos terminais deste workspace'}>{total.tokens} tok · {total.cost}</span>}

@@ -224,3 +224,25 @@ test('cliente: 404 (workspace removido) esquece o layout; 5xx mantém e tenta de
   srv.status = 500; c.actions.setMaximized('wsA', R(3)); await sleep(60); assert.equal(lay(c, 'wsA').maximized, R(3), 'a tela mantém'); srv.status = null; await sleep(120); assert.equal(srv.layouts.wsA.maximized, R(3));
   srv.status = 400; c.actions.setMaximized('wsA', R(6)); await sleep(60); srv.status = null; await sleep(60); assert.equal(lay(c, 'wsA').maximized, R(3), 'valor recusado: volta ao do servidor'); c.stop();
 });
+
+// ---- visualização da grade (mode) no layout do workspace: volta em qualquer navegador e no app ----
+test('mode: PUT grava a visualização do workspace, GET devolve, null limpa e valor inválido é recusado sem mudar nada', async () => {
+  let r = await putL('wsA', { mode: 'focus' }); assert.equal(r.status, 200); assert.equal((await r.json()).layout.mode, 'focus');
+  assert.equal((await (await call('/api/layouts')).json()).layouts.wsA.mode, 'focus'); assert.equal(disk().settings.layouts.wsA.mode, 'focus');
+  for (const bad of ['Focus', 'grade', 7, '', {}]) { r = await putL('wsA', { mode: bad }); assert.equal(r.status, 400, String(bad)); }
+  assert.equal(disk().settings.layouts.wsA.mode, 'focus');
+  assert.equal((await putL('wsB', { mode: 'cols', team: 'squad' })).status, 200); assert.equal(disk().settings.layouts.wsB.mode, 'cols', 'por workspace: o A não muda'); assert.equal(disk().settings.layouts.wsA.mode, 'focus');
+  r = await putL('wsA', { mode: null }); assert.equal(r.status, 200); assert.equal((await (await call('/api/layouts')).json()).layouts.wsA.mode, undefined, 'null volta ao automático (a leitura descarta)');
+  assert.deepEqual(L.readLayout({ mode: 'lixo', order: [] }).mode, undefined);
+  assert.equal(C.sanitizeLayout({ mode: 'rows' }).mode, 'rows'); assert.equal(C.sanitizeLayout({ mode: 'x' }).mode, undefined);
+});
+
+test('cliente: setMode grava a visualização no servidor (um PUT), volta do servidor após "reabrir o app" (cache vazio) e valor inválido vira automático', async () => {
+  const srv = mkServer(); const c = mk(srv, memStorage()); await c.start();
+  c.actions.setMode('wsA', 'focus'); assert.equal(lay(c, 'wsA').mode, 'focus', 'aparece na hora'); await sleep(60); assert.deepEqual(srv.calls, [['wsA', { mode: 'focus' }]]);
+  c.actions.setMode('wsA', 'focus'); await sleep(40); assert.equal(srv.calls.length, 1, 'igual ao atual: não envia de novo');
+  c.stop();
+  // novo "app" (porta diferente do Electron = localStorage vazio): a visualização vem do servidor
+  const again = mk(srv, memStorage()); await again.start(); await sleep(40); assert.equal(lay(again, 'wsA').mode, 'focus', 'sobrevive ao fechar e abrir');
+  again.actions.setMode('wsA', 'lixo'); await sleep(60); assert.equal(srv.layouts.wsA.mode, 'auto'); again.stop();
+});

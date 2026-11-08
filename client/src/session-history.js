@@ -21,13 +21,14 @@ export function historyRows({ history, workspaceId, topics = [], topicId, onlyTo
     reasonLabel: REASON_LABEL[h.closedReason] ?? null, topicId: h.topicId ?? null, topicTitle: h.topicId ? (title.get(h.topicId) ?? 'tópico arquivado') : 'Geral',
     resumable: h.resumable === true, active: h.active === true, blockedCode: h.blockedReason ?? null, blockedShort: BLOCKED_SHORT[h.blockedReason] ?? null, blockedMessage: h.blockedMessage ?? null,
     resumes: Number.isInteger(h.resumes) ? h.resumes : 0, usesWorktree: !!h.worktreeId, startedAt: h.startedAt ?? null, endedAt: h.endedAt ?? h.interruptedAt ?? null, forked: !!h.forkedFrom,
-    restore: h.state === 'interrupted' && h.resumable === true,
+    reopen: h.state === 'interrupted' && h.resumable !== true && h.reopenable === true, // estava aberto mas não tem como retomar a conversa (nunca conversou, ou o Codex): volta como terminal NOVO, com o mesmo papel e worktree
+    restore: h.state === 'interrupted' && (h.resumable === true || h.reopenable === true),
   }));
   return { restore: rows.filter((r) => r.restore), others: rows.filter((r) => !r.restore) };
 }
 
 /** Corpo do POST /api/terminals/resume: só o id do registro (UUID, caminhos e papel vêm do banco, nunca do cliente). */
-export const resumeBody = ({ recordId, fork = false, ack = false, cols = 120, rows = 32 }) => ({ recordId, fork: fork === true, cols, rows, ...(ack ? { acknowledgeProjectConfig: true } : {}) });
+export const resumeBody = ({ recordId, fork = false, reopen = false, ack = false, cols = 120, rows = 32 }) => ({ recordId, fork: fork === true && reopen !== true, ...(reopen === true ? { reopen: true } : {}), cols, rows, ...(ack ? { acknowledgeProjectConfig: true } : {}) });
 
 /** O servidor recusou por configuração executável não revisada: a tela pergunta e só repete com a confirmação explícita. */
 export const needsConfigAck = (e) => e?.code === 'project_config_unreviewed';
@@ -40,7 +41,7 @@ export const restoreSummary = (rows) => (rows.restore.length ? `${rows.restore.l
  * `room` = terminais ainda permitidos (limite do servidor menos os vivos).
  */
 export function restorePlan(restoreRows, room) {
-  const rows = arr(restoreRows).filter((r) => r && r.restore && r.resumable);
+  const rows = arr(restoreRows).filter((r) => r && r.restore && (r.resumable || r.reopen));
   const n = Math.max(0, Number.isFinite(room) ? Math.floor(room) : 0);
   return { open: rows.slice(0, n), skipped: rows.slice(n) };
 }
