@@ -15,13 +15,13 @@
   --line: #252525; --line-strong: #363636; --line-control: #666666;
 
   /* texto: --strong títulos e valores; --text corpo; --dim apoio; --faint só placeholder e metadado (todos ≥ 4,5:1 sobre --raise2) */
-  --strong: #ececec; --text: #d2d2d2; --dim: #9a9a9a; --faint: #858585;
+  --strong: #f7f7f7; --text: #ececec; --dim: #c4c4c4; --faint: #a8a8a8;
   /* ação primária e foco: bone. É a identidade: nenhuma cor de marca. */
   --bone: #8f2f2f; --bone-hover: #a83a3a; --ink: #f2f2f2; --focus: #c94a4a; /* vermelho discreto: só marca, ação primária e foco */
 
   /* estados (cor + glifo + texto, nunca só a cor), com o MESMO significado em todo o produto, dessaturados para não competir com o conteúdo:
      --muted cinza = ocioso, na fila, desconectado | --run laranja = executando (--run-text é o mesmo laranja mais claro, só para texto: ≥ 4,5:1 sobre o preto) | --ok verde = concluído | --warn âmbar = aguardando decisão humana | --interrupted cinza-azulado = interrompido | --err vermelho suave = erro */
-  --run: #5fa377; --run-text: #7fb592; --ok: #477d58; --warn: #a98349; --err: #c96a6a; --muted: #858585; /* --run, --warn e --err servem de TEXTO (AA ≥ 4,5:1, teste agent-status): os tons escuros da paleta (#477D58, #92713E, #B84646) ficam nos LEDs e preenchimentos */ --interrupted: #a78bfa;
+  --run: #5fa377; --run-text: #7fb592; --ok: #477d58; --warn: #a98349; --err: #c96a6a; --muted: #9e9e9e; /* --run, --warn e --err servem de TEXTO (AA ≥ 4,5:1, teste agent-status): os tons escuros da paleta (#477D58, #92713E, #B84646) ficam nos LEDs e preenchimentos */ --interrupted: #a78bfa;
   /* agentes (Planner e Executor): inativo = cinza, executando = âmbar com pulsação suave, erro = vermelho. O verde é só de tarefas concluídas. */
   --ag-idle: var(--muted); --ag-run: var(--warn); --ag-err: var(--err);
   --ok-bg: rgba(71, 125, 88, .12); --warn-bg: rgba(146, 113, 62, .14); --err-bg: rgba(184, 70, 70, .14);

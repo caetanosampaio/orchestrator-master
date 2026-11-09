@@ -28,7 +28,7 @@
 .oc-brand { display: inline-flex; align-items: center; gap: var(--sp-3); min-width: 0; color: var(--strong); }
 .oc-brand svg { flex: none; border-radius: 5px; transition: transform var(--dur-3) var(--ease), filter var(--dur-3) ease; }
 .oc-brand:hover svg { transform: rotate(-6deg) scale(1.06); filter: drop-shadow(0 0 8px rgba(230, 80, 30, .45)); }
-.oc-brand-name { font-family: var(--mono); font-size: 12px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; white-space: nowrap; }
+.oc-brand-name { font-family: var(--mono); font-size: 12px; font-weight: 660; letter-spacing: .14em; text-transform: uppercase; white-space: nowrap; }
 .oc-brand-name::after { content: '_'; margin-left: 1px; color: var(--brand); animation: oc-caret 1.1s steps(1) infinite; }
 .side-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .oc-side.collapsed .side-label, .oc-side.collapsed .oc-env-badges { display: none; }
@@ -49,7 +49,7 @@
 .oc-env-ico { position: relative; flex: none; display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: var(--r-1); background: var(--coal-3); color: var(--dim); transition: color var(--dur-ui) ease, transform var(--dur-3) var(--ease); }
 .oc-env:hover .oc-env-ico { transform: scale(1.08); color: var(--strong); }
 .oc-env.on .oc-env-ico { color: var(--brand); }
-.oc-env-name { flex: 1; min-width: 0; font-weight: 500; }
+.oc-env-name { flex: 1; min-width: 0; font-weight: 600; }
 .oc-dot { position: absolute; right: -2px; bottom: -2px; width: 8px; height: 8px; border-radius: 50%; background: var(--dot, transparent); box-shadow: 0 0 0 2px var(--bg); transition: background-color var(--dur-4, .35s) ease, filter var(--dur-4, .35s) ease; }
 .oc-env.on .oc-dot { box-shadow: 0 0 0 2px #1a0f0a; }
 .tone-live .oc-dot { --dot: var(--ok); --pulse: 3.4s; --ring: .35; } .tone-warn .oc-dot { --dot: var(--warn); --pulse: 1.9s; --ring: .55; }
@@ -68,7 +68,7 @@
 .oc-env-pen:hover { color: var(--brand); }
 @media (hover: none) { .oc-env-pen { opacity: .7; pointer-events: auto; transform: none; } .oc-envrow .oc-env-badges { opacity: 1 !important; } .oc-env-pen { position: static; margin: 0; } .oc-envrow { display: flex; align-items: center; } }
 .oc-env-edit { cursor: text; }
-.oc-env-input { flex: 1; min-width: 0; padding: 5px 8px; border: 0; border-radius: var(--r-1); background: var(--coal-1); color: var(--strong); font: inherit; font-size: var(--fs-sm); font-weight: 500; box-shadow: inset 0 0 0 1px var(--brand); outline: none; }
+.oc-env-input { flex: 1; min-width: 0; padding: 5px 8px; border: 0; border-radius: var(--r-1); background: var(--coal-1); color: var(--strong); font: inherit; font-size: var(--fs-sm); font-weight: 600; box-shadow: inset 0 0 0 1px var(--brand); outline: none; }
 .oc-env-add { justify-content: center; }
 .oc-env-empty { padding: var(--sp-3) var(--sp-2); color: var(--dim); font-size: var(--fs-sm); } .oc-env-empty p { margin: 0 0 var(--sp-2); }
 .oc-link { background: none; border: 0; padding: 0; color: var(--brand); font: inherit; font-size: var(--fs-sm); cursor: pointer; text-decoration: none; } .oc-link:hover { text-decoration: underline; }
@@ -81,8 +81,8 @@
 .oc-gear:hover { color: var(--brand); background: var(--coal-2); } .oc-gear:hover svg { transform: rotate(75deg); }
 .oc-gear:active { transform: scale(.92); }
 .oc-me { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--sp-2); }
-.oc-avatar { flex: none; display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--coal-3); color: var(--strong); font-family: var(--mono); font-size: 11px; font-weight: 600; box-shadow: inset 0 0 0 1px var(--coal-line); }
-.oc-me-t { min-width: 0; display: flex; flex-direction: column; line-height: 1.3; font-size: var(--fs-sm); } .oc-me-t b { font-weight: 500; color: var(--strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.oc-avatar { flex: none; display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--coal-3); color: var(--strong); font-family: var(--mono); font-size: 11px; font-weight: 660; box-shadow: inset 0 0 0 1px var(--coal-line); }
+.oc-me-t { min-width: 0; display: flex; flex-direction: column; line-height: 1.3; font-size: var(--fs-sm); } .oc-me-t b { font-weight: 600; color: var(--strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---------- indicadores vivos ---------- */
 .oc-eq { display: inline-flex; align-items: flex-end; gap: 2px; height: 11px; }
@@ -107,14 +107,14 @@
 .oc-dialog-lg { width: min(100%, 780px); }
 .oc-dialog:focus { outline: none; }
 .oc-dialog-head { flex: none; display: flex; align-items: center; justify-content: space-between; padding: var(--sp-3) var(--sp-3) var(--sp-3) var(--sp-5); border-bottom: 1px solid var(--coal-line); }
-.oc-dialog-head h2 { margin: 0; font-family: var(--mono); font-size: 12.5px; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: var(--strong); }
+.oc-dialog-head h2 { margin: 0; font-family: var(--mono); font-size: 12.5px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--strong); }
 .oc-dialog-body { flex: 1; min-height: 0; overflow: auto; padding: var(--sp-5); display: flex; flex-direction: column; gap: var(--sp-5); }
-.oc-h { margin: 0 0 var(--sp-2); font-family: var(--mono); font-size: var(--caps-size); font-weight: 500; letter-spacing: var(--caps-track); text-transform: uppercase; color: var(--faint); }
+.oc-h { margin: 0 0 var(--sp-2); font-family: var(--mono); font-size: var(--caps-size); font-weight: 600; letter-spacing: var(--caps-track); text-transform: uppercase; color: var(--faint); }
 .oc-wslist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .oc-wsrow { width: 100%; display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-2) var(--sp-3); border: 0; border-radius: var(--r-2); background: var(--coal-2); color: var(--dim); font: inherit; text-align: left; cursor: pointer; box-shadow: inset 0 0 0 1px var(--coal-line); transition: background-color var(--dur-ui) ease, box-shadow var(--dur-ui) ease; }
 .oc-wsrow:hover { background: var(--coal-3); box-shadow: inset 0 0 0 1px var(--line-control); }
 .oc-wsrow.on { box-shadow: inset 0 0 0 1px var(--brand-line); }
-.oc-wsrow-t { flex: 1; min-width: 0; display: flex; flex-direction: column; } .oc-wsrow-t b { color: var(--strong); font-weight: 500; } .oc-wsrow-t .mono { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.oc-wsrow-t { flex: 1; min-width: 0; display: flex; flex-direction: column; } .oc-wsrow-t b { color: var(--strong); font-weight: 600; } .oc-wsrow-t .mono { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .oc-pill { flex: none; padding: 1px 9px; border-radius: 999px; font-family: var(--mono); font-size: 11px; color: var(--dim); box-shadow: inset 0 0 0 1px var(--line-strong); }
 .oc-pill.ok { color: var(--ok-text); box-shadow: inset 0 0 0 1px rgba(71, 125, 88, .4); }
 .oc-form { display: flex; flex-direction: column; gap: var(--sp-3); } .oc-form label { display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-sm); color: var(--dim); }
@@ -131,19 +131,19 @@
 .oc-set-panel { padding: var(--sp-5); display: flex; flex-direction: column; gap: var(--sp-4); animation: oc-fade var(--dur-2) ease both; min-width: 0; }
 .oc-lead { margin: 0; }
 .oc-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-5); padding-bottom: var(--sp-4); border-bottom: 1px solid var(--coal-line); } .oc-row:last-child { border-bottom: 0; }
-.oc-row-t { display: flex; flex-direction: column; gap: 3px; min-width: 0; max-width: 46ch; } .oc-row-t b { font-weight: 500; color: var(--strong); font-size: var(--fs-md); }
+.oc-row-t { display: flex; flex-direction: column; gap: 3px; min-width: 0; max-width: 46ch; } .oc-row-t b { font-weight: 600; color: var(--strong); font-size: var(--fs-md); }
 .oc-row-c { flex: none; display: flex; align-items: center; gap: var(--sp-2); } .oc-row-c input[type="text"], .oc-row-c input:not([type]), .oc-row-c select { min-width: 190px; }
 .oc-state { display: inline-flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 12.5px; } .oc-state i { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
 .oc-state.ok { color: var(--ok-text); } .oc-state.ok i { background: var(--ok); } .oc-state.bad { color: var(--danger-text); } .oc-state.bad i { background: var(--err); }
 .oc-seg { display: inline-flex; padding: 2px; border-radius: var(--r-2); background: var(--coal-2); box-shadow: inset 0 0 0 1px var(--coal-line); }
 .oc-seg button { border: 0; border-radius: var(--r-1); padding: 5px 12px; background: transparent; color: var(--dim); font: inherit; font-size: var(--fs-sm); cursor: pointer; transition: background-color var(--dur-ui) ease, color var(--dur-ui) ease; }
-.oc-seg button.on { background: var(--brand); color: var(--ink); font-weight: 600; }
+.oc-seg button.on { background: var(--brand); color: var(--ink); font-weight: 660; }
 .oc-range { width: 190px; accent-color: var(--brand); }
 .oc-prov { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
 .oc-prov li { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); border-radius: var(--r-3); background: var(--coal-2); box-shadow: inset 0 0 0 1px var(--coal-line); }
 .oc-prov li.on { box-shadow: inset 0 0 0 1px var(--brand-line); } .oc-prov li.off { opacity: .6; }
 .oc-prov-i { display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: var(--r-2); background: var(--coal-3); color: var(--brand); } .oc-prov li.off .oc-prov-i { color: var(--dim); }
-.oc-prov-t { flex: 1; display: flex; flex-direction: column; } .oc-prov-t b { font-weight: 500; color: var(--strong); }
+.oc-prov-t { flex: 1; display: flex; flex-direction: column; } .oc-prov-t b { font-weight: 600; color: var(--strong); }
 /* Logo do provider: azulejo reto em carvão, como os demais controles; cada marca mantém a sua cor de identidade, sem brilho. */
 .oc-prov .oc-prov-i.logo { width: 40px; height: 40px; background: var(--coal-3); box-shadow: inset 0 0 0 1px var(--coal-line); }
 .oc-prov li.on .oc-prov-i.logo { box-shadow: inset 0 0 0 1px var(--brand-line); }
@@ -163,7 +163,7 @@ input:focus-visible + .oc-switch-track { outline: 2px solid var(--focus); outlin
 .tg { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .oc-bar { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); min-height: 46px; padding: var(--sp-2) var(--sp-3); border-bottom: 1px solid var(--coal-line); }
 .oc-wschip { display: inline-flex; align-items: center; gap: 8px; max-width: 280px; padding: 5px 10px; border: 0; border-radius: var(--r-2); background: var(--coal-2); color: var(--dim); font: inherit; font-size: var(--fs-sm); cursor: pointer; box-shadow: inset 0 0 0 1px var(--coal-line); transition: box-shadow var(--dur-ui) ease, color var(--dur-ui) ease; }
-.oc-wschip b { font-family: var(--mono); font-weight: 500; font-size: 12.5px; color: var(--strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.oc-wschip b { font-family: var(--mono); font-weight: 600; font-size: 12.5px; color: var(--strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .oc-wschip:hover { color: var(--strong); box-shadow: inset 0 0 0 1px var(--brand-line); }
 .oc-grp { display: inline-flex; align-items: center; gap: var(--sp-2); }
 .oc-sel { background: var(--coal-2); color: var(--text); border: 0; box-shadow: inset 0 0 0 1px var(--line-strong); border-radius: var(--r-2); padding: 6px 8px; font: inherit; font-size: var(--fs-sm); }
@@ -197,10 +197,10 @@ input:focus-visible + .oc-switch-track { outline: 2px solid var(--focus); outlin
 .oc-ind.tone-live { --dot: var(--ok); --pulse: 3.4s; --ring: .45; } .oc-ind.tone-work { --dot: var(--run); --pulse: 1.3s; --ring: .65; filter: drop-shadow(0 0 3px var(--dot)); }
 .oc-ind.tone-live::after, .oc-ind.tone-work::after { animation: oc-ring var(--pulse, 2.4s) cubic-bezier(.2, .6, .3, 1) infinite; }
 .oc-pop { position: fixed; z-index: var(--z-toast, 60); overflow: auto; display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); background: var(--coal-1); border-radius: var(--r-3); box-shadow: 0 0 0 1px var(--coal-line), var(--shadow-pop); outline: none; animation: oc-pop var(--dur-2) var(--ease) both; }
-.oc-pop-h { margin: 0; display: flex; flex-direction: column; gap: 2px; } .oc-pop-h b { font-family: var(--mono); font-size: var(--caps-size); letter-spacing: var(--caps-track); text-transform: uppercase; color: var(--faint); font-weight: 500; } .oc-pop-h span { font-size: var(--fs-sm); color: var(--strong); }
+.oc-pop-h { margin: 0; display: flex; flex-direction: column; gap: 2px; } .oc-pop-h b { font-family: var(--mono); font-size: var(--caps-size); letter-spacing: var(--caps-track); text-transform: uppercase; color: var(--faint); font-weight: 600; } .oc-pop-h span { font-size: var(--fs-sm); color: var(--strong); }
 .oc-pop-empty { margin: 0; font-size: var(--fs-sm); color: var(--dim); }
 .oc-pop-prov { display: flex; flex-direction: column; gap: 6px; padding: var(--sp-2) var(--sp-3); border-radius: var(--r-2); background: var(--coal-2); box-shadow: inset 0 0 0 1px var(--coal-line); }
-.oc-pop-prov h3 { margin: 0; display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 12px; font-weight: 500; color: var(--strong); } .oc-pop-prov h3 svg { color: var(--brand); } .oc-pop-prov h3 span { margin-left: auto; color: var(--dim); font-variant-numeric: tabular-nums; }
+.oc-pop-prov h3 { margin: 0; display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--strong); } .oc-pop-prov h3 svg { color: var(--brand); } .oc-pop-prov h3 span { margin-left: auto; color: var(--dim); font-variant-numeric: tabular-nums; }
 .oc-pop-prov dl { margin: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; } .oc-pop-prov dl div { display: flex; flex-direction: column; gap: 1px; padding-left: 7px; border-left: 2px solid var(--coal-line); }
 .oc-pop-prov dt { font-size: 11px; color: var(--dim); } .oc-pop-prov dd { margin: 0; font-family: var(--mono); font-size: 16px; font-variant-numeric: tabular-nums; color: var(--faint); }
 .oc-pop-prov .work dd { color: var(--run-text); } .oc-pop-prov .work { border-color: rgba(95, 163, 119, .5); }
@@ -221,8 +221,8 @@ input:focus-visible + .oc-switch-track { outline: 2px solid var(--focus); outlin
 .oc-pdot { position: relative; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--dot, var(--muted)); transition: background-color var(--dur-4, .35s) ease, filter var(--dur-4, .35s) ease; }
 .oc-pdot.st-idle { --dot: var(--ok); --pulse: 3.4s; --ring: .35; } .oc-pdot.st-boot { --dot: var(--warn); --pulse: 1.5s; --ring: .6; }
 .oc-pdot.st-working { --dot: var(--run); --pulse: 1.2s; --ring: .65; } .oc-pdot.st-failed { --dot: var(--err); --pulse: 2.4s; --ring: .5; } .oc-pdot.st-exited { --dot: var(--muted); }
-.oc-prole { flex: none; color: var(--role); font-weight: 600; font-family: var(--mono); letter-spacing: .02em; }
-.oc-ptitle { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--role); font-family: var(--mono); font-weight: 600; } .oc-ptitle.sub { color: var(--dim); font-weight: 400; }
+.oc-prole { flex: none; color: var(--role); font-weight: 660; font-family: var(--mono); letter-spacing: .02em; }
+.oc-ptitle { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--role); font-family: var(--mono); font-weight: 660; } .oc-ptitle.sub { color: var(--dim); font-weight: 520; }
 .oc-pgrow { flex: 1 1 0; min-width: 0; }
 .oc-ptag { flex: none; padding: 0 7px; border-radius: 999px; font-family: var(--mono); font-size: 10.5px; color: var(--dim); box-shadow: inset 0 0 0 1px var(--coal-line); } .oc-ptag.wt { color: var(--warn-text); box-shadow: inset 0 0 0 1px rgba(146, 113, 62, .35); }
 .oc-pusage { flex: none; color: var(--text); font-family: var(--mono); font-variant-numeric: tabular-nums; }
@@ -247,11 +247,11 @@ input:focus-visible + .oc-switch-track { outline: 2px solid var(--focus); outlin
 
 /* ---------- estados vazios ---------- */
 .oc-empty { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--sp-3); padding: var(--sp-6); text-align: center; animation: oc-fade var(--dur-3) ease both; }
-.oc-empty h3 { margin: 0; font-size: var(--fs-xl); font-weight: 560; color: var(--strong); } .oc-empty p { margin: 0; max-width: 56ch; line-height: var(--lh-read); }
+.oc-empty h3 { margin: 0; font-size: var(--fs-xl); font-weight: 630; color: var(--strong); } .oc-empty p { margin: 0; max-width: 56ch; line-height: var(--lh-read); }
 .oc-empty-ico { display: inline-grid; place-items: center; width: 56px; height: 56px; border-radius: var(--r-4); background: var(--coal-2); color: var(--brand); box-shadow: inset 0 0 0 1px var(--coal-line), var(--glow-sm); }
 .oc-squads { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--sp-3); margin-top: var(--sp-2); }
 .oc-squad { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-2); width: 220px; padding: var(--sp-4); border: 0; border-radius: var(--r-3); background: var(--coal-2); color: var(--text); font: inherit; text-align: left; cursor: pointer; box-shadow: inset 0 0 0 1px var(--coal-line); transition: transform var(--dur-3) var(--ease), box-shadow var(--dur-ui) ease, background-color var(--dur-ui) ease; }
-.oc-squad b { font-weight: 560; color: var(--strong); }
+.oc-squad b { font-weight: 630; color: var(--strong); }
 .oc-squad:hover:not(:disabled) { transform: translateY(-2px); background: var(--coal-3); box-shadow: inset 0 0 0 1px var(--brand-line), var(--glow-sm); } .oc-squad:active:not(:disabled) { transform: translateY(0) scale(.98); } .oc-squad:disabled { opacity: .5; cursor: not-allowed; }
 .oc-squad-roles { display: flex; flex-wrap: wrap; gap: 4px; }
 .oc-chip { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px; border-radius: 999px; font-family: var(--mono); font-size: 11px; color: var(--dim); box-shadow: inset 0 0 0 1px var(--coal-line); } .oc-chip i { width: 6px; height: 6px; border-radius: 50%; background: var(--role, var(--brand)); }
@@ -271,7 +271,7 @@ input:focus-visible + .oc-switch-track { outline: 2px solid var(--focus); outlin
 .mp-tl { list-style: none; margin: 0; padding: 0 var(--sp-3) var(--sp-2); max-height: 180px; overflow: auto; display: flex; flex-direction: column; gap: 2px; border-top: 1px solid var(--coal-line); padding-top: var(--sp-2); }
 .mp-tl li { display: flex; gap: var(--sp-2); align-items: baseline; min-width: 0; font-size: var(--fs-xs); color: var(--dim); }
 .mp-tl li.bad { color: var(--danger-text); }
-.mp-tl li b { flex: none; font-weight: 500; color: var(--text); }
+.mp-tl li b { flex: none; font-weight: 600; color: var(--text); }
 .mp-tl time { flex: none; }
 .mp-clip { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mp-st { flex: none; padding: 0 6px; border-radius: 999px; box-shadow: inset 0 0 0 1px var(--line-strong); }
@@ -324,7 +324,7 @@ html[data-motion="reduced"] .oc-gear:hover svg, html[data-motion="reduced"] .oc-
    Mesma paleta: grafite/preto, laranja para ativo e execução, verde saudável, vermelho falha. Movimento curto e desligado por prefers-reduced-motion / "Animações reduzidas". */
 /* workspace = linha principal */
 .oc-side .oc-env { min-height: 42px; font-size: var(--fs-md); transition: background-color var(--dur-ui) ease, box-shadow var(--dur-3) ease, color var(--dur-ui) ease; }
-.oc-side .oc-env-name { font-weight: 600; letter-spacing: .005em; }
+.oc-side .oc-env-name { font-weight: 660; letter-spacing: .005em; }
 .oc-side .oc-env[aria-expanded="true"] { color: var(--text); }
 .oc-side .oc-env:hover { background: linear-gradient(90deg, rgba(255, 255, 255, .06), rgba(255, 255, 255, .018)); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .06); color: var(--strong); }
 .oc-side .oc-env:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
@@ -343,8 +343,8 @@ html[data-motion="reduced"] .oc-gear:hover svg, html[data-motion="reduced"] .oc-
 .tp::before { top: 6px; bottom: 6px; }
 .tp:hover { background: rgba(255, 255, 255, .04); color: var(--strong); }
 .tp.on { background: rgba(95, 163, 119, .075); color: var(--strong); }
-.tp-name { font-weight: 450; }
-.tp.on .tp-name { font-weight: 550; }
+.tp-name { font-weight: 520; }
+.tp.on .tp-name { font-weight: 620; }
 .tp-dot { width: 6px; height: 6px; }
 .tp.tone-work .tp-dot { animation: oc-breathe 2.4s ease-in-out infinite; }
 .tp-badges .oc-badge { min-width: 18px; padding: 0 5px; font-size: 10.5px; }
@@ -370,7 +370,7 @@ html[data-motion="reduced"] .oc-envs ul.tp-in, html[data-motion="reduced"] .tp.t
 .tp.tone-work .tp-dot { background: var(--glyph-work); box-shadow: 0 0 5px rgba(var(--glyph-work-rgb), .6); animation: none; }
 .oc-side .tone-work .oc-dot { --dot: var(--glyph-work); }
 /* workspace como cabeçalho de grupo: peso forte e contagens apagadas à direita (só a atividade e a atenção ganham cor) */
-.oc-side .oc-env-name { font-weight: 650; }
+.oc-side .oc-env-name { font-weight: 690; }
 .oc-env-badges .oc-badge.live, .oc-env-badges .oc-badge.off { box-shadow: none; background: none; color: var(--faint); padding-inline: 4px; }
 .oc-env-badges .oc-badge.live i { opacity: .8; }
 .oc-side .oc-env.on .oc-env-badges .oc-badge.live, .oc-side .oc-env.on .oc-env-badges .oc-badge.off { color: var(--dim); }
@@ -393,7 +393,7 @@ html[data-motion="reduced"] .oc-scan i { animation: none; } html[data-motion="re
    Todos os ícones têm o mesmo movimento simples (pulso de opacidade e escala), com ritmo diferente por estado. Desligado por prefers-reduced-motion / "Animações reduzidas". */
 .oc-side { --ws-idle: var(--led-idle); --ws-work: var(--run); --ws-attn: #b84646; --ws-attn-text: #d98080; }
 .oc-side .oc-env { min-height: 34px; padding: 0 var(--sp-2); gap: var(--sp-3); font-size: 13px; letter-spacing: 0; border-radius: var(--r-1); }
-.oc-side .oc-env-name { font-weight: 500; }
+.oc-side .oc-env-name { font-weight: 600; }
 .oc-side .oc-env:hover { background: rgba(255, 255, 255, .045); box-shadow: none; }
 .oc-side .oc-env.on { background: rgba(95, 163, 119, .09); box-shadow: none; color: var(--strong); }
 .oc-side .oc-env.on::before { top: 7px; bottom: 7px; box-shadow: none; }
@@ -408,7 +408,7 @@ html[data-motion="reduced"] .oc-scan i { animation: none; } html[data-motion="re
 @keyframes ws-spin { to { transform: rotate(360deg); } }
 @keyframes ws-pulse { 0%, 100% { opacity: var(--lo); transform: scale(var(--s0)); } 50% { opacity: 1; transform: scale(var(--s1)); } }
 .oc-cnt { flex: none; min-width: 14px; text-align: right; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--faint); }
-.oc-cnt.attn { color: var(--ws-attn-text); font-weight: 600; }
+.oc-cnt.attn { color: var(--ws-attn-text); font-weight: 660; }
 .oc-env-badges { gap: 8px; }
 /* O movimento dos ícones de estado dos workspaces NÃO obedece ao "reduzir movimento" do sistema (a regra global acima apagaria todas as animações do app com
    animation: none !important; sem isso a sidebar ficaria parada para quem tem os efeitos de animação do Windows desligados). Só o interruptor do próprio app
@@ -439,7 +439,7 @@ html[data-motion="reduced"] .wsi, html[data-motion="reduced"] .wsi svg { animati
 .prereq-issues { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-4); }
 .prereq-issue { padding: var(--sp-4); border-radius: var(--r-3); background: var(--warn-bg); color: var(--warn-text); box-shadow: inset 3px 0 0 var(--warn); }
 .prereq-issue.blocking { background: rgba(138, 31, 18, .16); color: var(--text); box-shadow: inset 3px 0 0 var(--brand); }
-.prereq-issue h3 { margin: 0 0 var(--sp-2); font-family: var(--mono); font-size: 12.5px; font-weight: 600; letter-spacing: .04em; color: var(--strong); }
+.prereq-issue h3 { margin: 0 0 var(--sp-2); font-family: var(--mono); font-size: 12.5px; font-weight: 660; letter-spacing: .04em; color: var(--strong); }
 .prereq-issue p { margin: 0 0 var(--sp-2); overflow-wrap: anywhere; }
 .prereq-issue ol { margin: 0; padding-left: 1.25em; display: flex; flex-direction: column; gap: 2px; }
 .prereq-issue code { font-family: var(--mono); padding: 1px 5px; border-radius: var(--r-1); background: rgba(255, 255, 255, .08); color: var(--strong); }
@@ -455,7 +455,7 @@ html[data-motion="reduced"] .wsi, html[data-motion="reduced"] .wsi svg { animati
 .acc-card { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); border-radius: var(--r-2); background: var(--coal-1); box-shadow: inset 0 0 0 1px var(--coal-line); min-width: 0; }
 .acc-card.def { box-shadow: inset 0 0 0 1px var(--line-strong); }
 .acc-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); min-width: 0; }
-.acc-name { font-weight: 500; color: var(--strong); overflow-wrap: anywhere; }
+.acc-name { font-weight: 600; color: var(--strong); overflow-wrap: anywhere; }
 .acc-sum { margin: 0; overflow-wrap: anywhere; }
 .acc-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
 .acc-login, .acc-confirm, .acc-add { display: flex; flex-direction: column; gap: var(--sp-3); padding-top: var(--sp-2); border-top: 1px solid var(--coal-line); }
