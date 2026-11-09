@@ -68,12 +68,13 @@ test('claudeStateFile: pasta da conta > CLAUDE_CONFIG_DIR do ambiente > pasta pe
   assert.equal(claudeStateFile({ home: '/h', env: {} }), path.join('/h', '.claude.json'));
 });
 
-test('codex.paneArgs: trustDir vira confiança só deste processo (-c projects.<pasta>.trust_level); pasta estranha fica sem o argumento', () => {
-  const trust = (o) => codexProvider.paneArgs({ prompt: 'x', ...o }).filter((a, i, l) => l[i - 1] === '-c' && a.startsWith('projects.'));
-  assert.deepEqual(trust({ trustDir: '/home/u/meu projeto' }), ["projects.'/home/u/meu projeto'.trust_level='trusted'"]);
+test('codex.paneArgs: trustDir vira confiança só deste processo (-c projects={<pasta>={trust_level}}, funciona com ponto no caminho); pasta estranha fica sem o argumento', () => {
+  const trust = (o) => codexProvider.paneArgs({ prompt: 'x', ...o }).filter((a, i, l) => l[i - 1] === '-c' && a.startsWith('projects='));
+  assert.deepEqual(trust({ trustDir: '/home/u/meu projeto' }), ["projects={'/home/u/meu projeto'={trust_level='trusted'}}"]);
+  assert.deepEqual(trust({ trustDir: 'C:\\proj.orch-worktrees\\wt_ab12' }), ["projects={'C:\\proj.orch-worktrees\\wt_ab12'={trust_level='trusted'}}"], 'caminho com ponto: a chave vai entre aspas dentro da tabela inline, sem ser quebrada no ponto');
   assert.deepEqual(trust({}), []); assert.deepEqual(trust({ trustDir: null }), []);
   assert.deepEqual(trust({ trustDir: "/home/u/it's" }), [], 'aspa simples encerraria a chave literal'); assert.deepEqual(trust({ trustDir: '/x\n/y' }), []);
-  assert.deepEqual(trust({ trustDir: 'C:\\Users\\u\\proj', quote: false }), ["projects.'C:\\Users\\u\\proj'.trust_level='trusted'"]);
+  assert.deepEqual(trust({ trustDir: 'C:\\Users\\u\\proj', quote: false }), ["projects={'C:\\Users\\u\\proj'={trust_level='trusted'}}"]);
   assert.deepEqual(trust({ trustDir: 'C:\\a&b', quote: false }), [], 'wrapper .cmd: metacaractere do cmd.exe fica de fora');
 });
 
@@ -96,7 +97,7 @@ test('terminais: com trustFolders o Claude tem a pasta confiada ANTES do spawn (
   assert.ok(!w.spawned[0].args.some((x) => x.startsWith('projects.')), 'o Claude não recebe argumento de confiança');
   const b = await w.mgr.create({ role: 'builder', provider: 'codex' }); assert.equal(b.status, 201, b.error);
   assert.deepEqual(w.trusted[1], { provider: 'codex', cwd: w.ws, configDir: null });
-  assert.ok(w.spawned[1].args.includes(`projects.'${w.ws}'.trust_level='trusted'`), w.spawned[1].args.join(' '));
+  assert.ok(w.spawned[1].args.includes(`projects={'${w.ws}'={trust_level='trusted'}}`), w.spawned[1].args.join(' '));
 });
 
 test('terminais: sem trustFolders nada muda (testes e ORCH_NO_TRUST); trustFolders que lança nunca impede o terminal de abrir', async () => {
