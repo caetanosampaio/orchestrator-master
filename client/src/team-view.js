@@ -48,3 +48,50 @@ export function inferTeam(roles = []) {
   const k = key(Array.isArray(roles) ? roles : []);
   return PRESETS.find((p) => key(p.roles) === k)?.id ?? null;
 }
+
+// ---- Equipe mista: um agente por vaga do preset (Claude Code e Codex na mesma equipe, abertos de uma vez) ----
+/** Papéis que coordenam, revisam ou investigam; os demais (Construtor) constroem. Usado só pelos atalhos de mistura. */
+export const LEAD_ROLES = Object.freeze(['maestro', 'reviewer', 'scout']);
+/** Atalhos de distribuição dos agentes. `claude-leads`: Claude Code coordena e revisa, Codex constrói (e o inverso em `codex-leads`). */
+export const MIXES = Object.freeze([
+  Object.freeze({ id: 'all-claude', label: 'Todos Claude Code', needs: ['claude'] }),
+  Object.freeze({ id: 'all-codex', label: 'Todos Codex', needs: ['codex'] }),
+  Object.freeze({ id: 'claude-leads', label: 'Claude lidera e revisa, Codex constrói', needs: ['claude', 'codex'] }),
+  Object.freeze({ id: 'codex-leads', label: 'Codex lidera e revisa, Claude constrói', needs: ['claude', 'codex'] }),
+]);
+export const mixById = (id) => MIXES.find((m) => m.id === id) ?? null;
+
+/** Agente de cada vaga (na ordem de `roles`) para um atalho. Atalho desconhecido: tudo no `fallback`. */
+export function mixAgents(roles, mixId, fallback = 'claude') {
+  const list = Array.isArray(roles) ? roles : [];
+  if (mixId === 'all-claude') return list.map(() => 'claude');
+  if (mixId === 'all-codex') return list.map(() => 'codex');
+  if (mixId === 'claude-leads') return list.map((r) => (LEAD_ROLES.includes(r) ? 'claude' : 'codex'));
+  if (mixId === 'codex-leads') return list.map((r) => (LEAD_ROLES.includes(r) ? 'codex' : 'claude'));
+  return list.map(() => fallback);
+}
+
+/** Atalhos oferecidos: só os que usam provedores instalados (`available` = ids). */
+export const availableMixes = (available = []) => MIXES.filter((m) => m.needs.every((id) => available.includes(id)));
+
+/** Atalho inicial: a mistura Claude lidera/Codex constrói quando os dois existem; senão tudo no único provedor disponível. */
+export function defaultMix(available = []) {
+  if (available.includes('claude') && available.includes('codex')) return 'claude-leads';
+  return available.includes('codex') && !available.includes('claude') ? 'all-codex' : 'all-claude';
+}
+
+/** O plano é abrível? Cada vaga com um agente disponível e o total cabe nas vagas livres. */
+export function composeProblem(agents, available = [], room = Infinity) {
+  const list = Array.isArray(agents) ? agents : [];
+  if (!list.length) return 'Escolha uma equipe.';
+  if (list.length > room) return `A equipe precisa de ${list.length} vagas e há ${Math.max(0, room)} livres.`;
+  const bad = list.find((a) => !available.includes(a));
+  return bad ? `O agente "${bad}" não está disponível.` : null;
+}
+
+/** Resumo curto: "2 Claude Code, 2 Codex CLI" (ordem de primeira aparição). */
+export function mixSummary(agents, labelOf = (id) => id) {
+  const count = new Map();
+  for (const a of agents ?? []) count.set(a, (count.get(a) ?? 0) + 1);
+  return [...count].map(([id, n]) => `${n} ${labelOf(id)}`).join(', ');
+}

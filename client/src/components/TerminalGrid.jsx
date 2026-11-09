@@ -12,10 +12,14 @@ import { Btn, Icon } from './ui.jsx';
 import { paneUsage, squadUsage } from '../usage-view.js';
 import { createTerminalStream, isOld } from '../terminal-stream.js';
 import ProviderLogo from './ProviderLogo.jsx';
-import { providerOptionLabel, paneState, pendingByPane, paneName, shapeFor, focusPlacement, evenTracks, dragTracks, dividerAt } from '../env-view.js';
+import { paneState, pendingByPane, paneName, shapeFor, focusPlacement, evenTracks, dragTracks, dividerAt } from '../env-view.js';
 import MaestroPopover from './MaestroPopover.jsx';
 import TeamMenu from './TeamMenu.jsx';
-import { PRESETS, presetById, changeImpact, inferTeam } from '../team-view.js';
+import TeamComposer from './TeamComposer.jsx';
+import SquadGallery from './SquadGallery.jsx';
+import { useSquads } from '../use-squads.js';
+import { builtinSquads, launchPlan, draftFromPreset, draftFromSquad } from '../squads.js';
+import { PRESETS, presetById, changeImpact, inferTeam, defaultMix } from '../team-view.js';
 
 // Presets de equipe (team-view.js): o mesmo fluxo abre 2, 4 ou 6 terminais do Claude Code em paralelo, cada um com o seu papel. Os ids gravados continuam duo/squad/full; só o rótulo do squad de quatro virou "Squad".
 export const SQUADS = PRESETS.filter((p) => p.id !== 'builder');
@@ -162,6 +166,9 @@ export default function TerminalGrid({ onOpenWorkspaces, onOpenSettings }) {
   const { state, notify, terminals, maestro, setMaestro, workingIds, loadTerminals } = useStore();
   const [prefs, setPref] = usePrefs();
   const [busy, setBusy] = useState(false);
+  const [compose, setCompose] = useState(null); // squad em montagem na tela sem terminais (rascunho do editor): { id, name, slots[{role,provider}], mix }
+  const sq = useSquads(); // squads salvos (/api/team-templates)
+  const [launchingId, setLaunchingId] = useState(null), [freshId, setFreshId] = useState(null), [saving, setSaving] = useState(false);
   const [layouts, layoutActions, layoutsReady] = useLayouts(); // layout por workspace (ordem, ampliado, trilhas), no servidor
   const [restorable, setRestorable] = useState(0); // sessões deste workspace que estavam abertas e podem voltar
   const [autoRestore] = useAutoRestore(); // restaurar sozinho as sessões do último encerramento ao entrar no workspace (liga/desliga em Configurações > Histórico de sessões)
@@ -180,6 +187,7 @@ export default function TerminalGrid({ onOpenWorkspaces, onOpenSettings }) {
   const providers = terminals?.providers ?? [];
   const provider = providers.find((p) => p.id === prefs.provider && p.available) ? prefs.provider : 'claude';
   const pickProvider = (id) => setPref('provider', id);
+  const agentLabel = providers.find((p) => p.id === provider)?.label ?? 'Claude Code';
   const sessions = terminals?.sessions ?? [];
   // Sessões do workspace + tópico ativos. As demais seguem rodando e MONTADAS (ocultas): trocar de aba ou de tópico nunca encerra nem remonta terminal.
   const topicId = null; // a interface não usa mais tópicos: o workspace mostra todos os terminais dele e os novos nascem sem tópico
@@ -193,8 +201,6 @@ export default function TerminalGrid({ onOpenWorkspaces, onOpenSettings }) {
   const total = squadUsage(mine);
   const [mode] = useLayoutMode(ws?.id); // escolhido em Configurações > Visualização
   const team = (ws && L.team) || null; // equipe escolhida DESTE workspace (gravada no layout por workspace)
-  // Workspace "com equipe" = preset gravado OU já tem terminais (então a configuração inicial não se aplica mais). Sem preset gravado, a identificação sai dos papéis que estão lá.
-  const hasTeam = !!ws && (!!team || mine.length > 0);
   const teamId = team ?? inferTeam(mine.map((x) => x.role));
   const maxId = L.maximized ? (mine.find((s) => s.recordId === L.maximized)?.id ?? null) : null;
 
@@ -259,7 +265,7 @@ export default function TerminalGrid({ onOpenWorkspaces, onOpenSettings }) {
   const opening = useRef(false); // trava síncrona: dois cliques seguidos nunca abrem duas vezes (o estado `busy` só vale depois da renderização)
   const nextSquad = () => 1 + Math.max(0, ...sessions.map((x) => Number(/ S(\d+)\.\d+$/.exec(x.title)?.[1] ?? 0)));
   /** Abre os terminais. `join` = chave de squad (session.squadId) de um squad ATIVO deste workspace: o terminal entra no worktree dele. Devolve false se não abriu nada por decisão/trava. */
-  const open = async (list, { squad = false, join = null, confirmMore = true, provider: useProvider = provider } = {}) => {
+  const open = async (list, { squad = false, join = null, confirmMore = true, provider: useProvider = provider, providers: perSlot = null } = {}) => {
     if (opening.current) return false;
     if (!ws) { onOpenWorkspaces?.(); return false; }
     if (squad && confirmMore && liveMine > 0 && !window.confirm(`Já há ${liveMine} ${liveMine === 1 ? 'terminal ativo' : 'terminais ativos'} em ${where}. Abrir MAIS ${list.length} terminais de uma nova equipe?`)) return false;
@@ -270,7 +276,7 @@ export default function TerminalGrid({ onOpenWorkspaces, onOpenSettings }) {
       // em paralelo: cada terminal é um processo próprio; as falhas são individuais. Os do squad levam o número dele no título (ex.: Construtor S1)
       const editors = list.filter((r) => byRole[r]?.edits).length;
       // Worktree DESLIGADO = automático: o servidor dá worktree próprio a cada agente que edita assim que há mais de um no workspace (qualquer agente); LIGADO = worktree sempre, um squad compartilha UM.
-      const spawn = (r, i, ack, squadId) => api.post('/api/terminals', { role: r, provider: useProvider, isolate: isolate ? true : 'auto', ...(!isolate && editors > 1 ? { expectEditors: editors } : {}), ...(squadId ? { squadId } : {}), workspaceId: ws.id, topicId, ...(ack ? { acknowledgeProjectConfig: true } : {}), ...(n ? { title: `${byRole[r]?.label ?? r} S${n}.${i + 1}` } : {}) });
+      const spawn = (r, i, ack, squadId) => api.post('/api/terminals', { role: r, provider: (perSlot && perSlot[i]) || useProvider, isolate: isolate ? true : 'auto', ...(!isolate && editors > 1 ? { expectEditors: editors } : {}), ...(squadId ? { squadId } : {}), workspaceId: ws.id, topicId, ...(ack ? { acknowledgeProjectConfig: true } : {}), ...(n ? { title: `${byRole[r]?.label ?? r} S${n}.${i + 1}` } : {}) });
       // Worktree: um squad inteiro compartilha UM worktree. O 1º terminal o cria; os outros entram nele (esperam o 1º para saber o id). Terminal avulso continua com o seu.
       let rs;
       if (isolate && squad && list.length > 1) {
@@ -296,7 +302,22 @@ export default function TerminalGrid({ onOpenWorkspaces, onOpenSettings }) {
   const squadKeyMine = isolate ? mine.find((x) => x.status === 'running' && x.squadId)?.squadId ?? null : null; // só com "Worktree" ligado há worktree de squad compartilhado: terminais novos entram nele (no automático cada agente tem o seu)
   const roleLabel = (r) => byRole[r]?.label ?? r;
   /** Workspace sem equipe: escolher o preset a configura e abre os terminais (o fluxo de sempre). A equipe só é gravada se o usuário não cancelou. */
-  const configure = async (p) => { const ran = await open(p.roles, { squad: p.roles.length > 1 }); if (ran !== false && ws) layoutActions.setTeam(ws.id, p.id); };
+  const configure = async (p, perSlot = null) => { const ran = await open(p.roles, { squad: p.roles.length > 1, providers: perSlot }); if (ran !== false && ws) layoutActions.setTeam(ws.id, p.id); return ran; };
+  const availableIds = providers.filter((p) => p.available).map((p) => p.id);
+  /** Abre um plano { roles, providers, teamId }: todos os terminais de uma vez, cada um com o agente da sua vaga; o preset só é gravado como equipe do workspace quando bate exatamente. */
+  const openPlan = async (plan) => { const ran = await open(plan.roles, { squad: plan.roles.length > 1, providers: plan.providers }); if (ran !== false && ws && plan.teamId) layoutActions.setTeam(ws.id, plan.teamId); return ran; };
+  const openSquad = async (s) => { setLaunchingId(s.id); try { await openPlan(launchPlan(s)); } finally { setLaunchingId(null); } };
+  const startCompose = (from = null) => setCompose(from ? draftFromSquad(from) : draftFromPreset('squad', defaultMix(availableIds), availableIds));
+  const openDraft = async () => { if (!compose) return; const ran = await openPlan(launchPlan(compose)); if (ran !== false) setCompose(null); };
+  const saveDraft = async () => {
+    if (!compose || saving) return; setSaving(true);
+    try {
+      const name = compose.name.trim(), t = compose.id ? await sq.update(compose.id, { name, slots: compose.slots }) : await sq.create(name, compose.slots);
+      setCompose(null); setFreshId(t.id); setTimeout(() => setFreshId((c) => (c === t.id ? null : c)), 2600); notify(`Squad "${t.name}" salvo.`);
+    } catch (e) { notify(e?.message || 'Não foi possível salvar o squad.', 'error'); } finally { setSaving(false); }
+  };
+  const deleteSquad = async (s) => { try { await sq.remove(s.id); notify(`Squad "${s.name}" excluído.`); } catch (e) { notify(e?.message || 'Não foi possível excluir o squad.', 'error'); } };
+  const showSquads = providers.length > 1 && !sq.missing; // com um só agente (ou servidor antigo) os presets simples bastam
   /** Trocar o preset: informa o impacto e confirma. Nunca encerra nada; só abre o que faltar, no worktree do squad quando há um ativo. */
   const changeTeam = async (id) => {
     const target = presetById(id); if (!target || !ws) return;
@@ -305,6 +326,21 @@ export default function TerminalGrid({ onOpenWorkspaces, onOpenSettings }) {
     if (im.needsConfirm && !window.confirm(im.text)) return;
     layoutActions.setTeam(ws.id, id);
     if (im.open.length) await open(im.open, { join: squadKeyMine, confirmMore: false });
+  };
+  /**
+   * Aplica a troca de preset decidida no menu Equipe: grava a equipe, FECHA os terminais que saem (`closing`, já confirmados no painel) e abre os que entram, cada um com o seu agente.
+   * Fechar usa a mesma rota do botão de cada terminal; as sessões continuam no histórico e os worktrees são mantidos.
+   */
+  const changeTeamWith = async (id, slots, closing = []) => {
+    if (!ws || !presetById(id)) return;
+    const join = squadKeyMine; // lido ANTES de fechar
+    layoutActions.setTeam(ws.id, id);
+    if (closing.length) {
+      setBusy(true); const closed = [];
+      try { for (const s of closing) { try { await api.post(`/api/terminals/${s.id}/close`); closed.push(s.recordId); } catch (e) { notify(e?.message || `Não foi possível encerrar "${s.title}".`, 'error'); } } }
+      finally { setBusy(false); await loadTerminals(); for (const rid of closed) layoutActions.forget(ws.id, rid); } // esquece DEPOIS de a lista sair da tela (como em "Encerrar todos")
+    }
+    if (slots.length) await open(slots.map((s) => s.role), { join, confirmMore: false, providers: slots.map((s) => s.provider) });
   };
   const addAgents = (roles, prov) => open(roles, { join: squadKeyMine, ...(prov ? { provider: prov } : {}) });
   const removeAgent = async (s) => {
@@ -351,21 +387,13 @@ export default function TerminalGrid({ onOpenWorkspaces, onOpenSettings }) {
           <button type="button" className="oc-wschip" onClick={onOpenWorkspaces} title={ws ? `${ws.path}\nTrocar ou adicionar workspace` : 'Escolher um workspace'}>
             <Icon name="workspace" size={14} /><b>{ws ? where : 'Nenhum workspace'}</b><Icon name="chevronsUpDown" size={12} />
           </button>
-          {ws && (hasTeam
-            ? <TeamMenu defaultRole={role} providers={providers} defaultProvider={provider} preset={teamId} saved={!!team} sessions={mine} stateOf={(x) => paneState(x, workingIds, pendingIds)} roles={roles} byRole={byRole} room={room} busy={busy} where={where} onChange={changeTeam} onAdd={addAgents} onRemove={removeAgent} onReset={resetTeam} />
-            : <div className="tbx-presets" role="group" aria-label="Configurar a equipe do workspace">
-                {PRESETS.map((p) => <Btn key={p.id} kind="quiet" disabled={busy || p.roles.length > room} onClick={() => configure(p)} title={`${p.label}: ${p.roles.map(roleLabel).join(', ')}`}>{p.label}</Btn>)}
-              </div>)}
+          {ws && (
+            <TeamMenu role={role} onRole={(r) => setPref('role', r)} providers={providers} provider={provider} onProvider={pickProvider} preset={teamId} saved={!!team} sessions={mine} stateOf={(x) => paneState(x, workingIds, pendingIds)} roles={roles} byRole={byRole} room={room} busy={busy} where={where} onChange={changeTeam} onChangeWith={changeTeamWith} onAdd={addAgents} onRemove={removeAgent} onReset={resetTeam} />
+          )}
         </div>
         {/* Grupo 2: controles operacionais (à direita). Visualização e Histórico ficam em Configurações */}
         {ws && (
           <div className="tbx-g tbx-end">
-            {providers.length > 1 && (
-              <label className="oc-prov-sel" title="Agente dos terminais NOVOS (presets de equipe e + Terminal). Dá para misturar: no menu da equipe, cada terminal novo pode ser de um agente diferente.">
-                <span className="sr">Agente dos novos terminais</span>
-                <select className="oc-sel" value={provider} onChange={(e) => pickProvider(e.target.value)} aria-label="Agente dos novos terminais">{providers.map((p) => <option key={p.id} value={p.id} disabled={!p.available}>{providerOptionLabel(p)}</option>)}</select>
-              </label>
-            )}
             <label className="oc-iso" title="Desligado (automático): cada agente que edita ganha um worktree Git próprio assim que há mais de um no workspace, sem conflito de arquivos (sem Git, abre na pasta normal e avisa). Ligado: sempre worktree, e um squad inteiro compartilha UM (os terminais do squad editam os mesmos arquivos). Exige repositório Git.">
               <input type="checkbox" role="switch" checked={isolate} onChange={(e) => setPref('isolate', e.target.checked)} /><span className="oc-switch-track" aria-hidden="true"><i /></span>Worktree
             </label>
@@ -384,15 +412,20 @@ export default function TerminalGrid({ onOpenWorkspaces, onOpenSettings }) {
           <Btn kind="primary" onClick={onOpenWorkspaces}>Abrir ou adicionar workspace</Btn>
         </div>
       ) : mine.length === 0 ? (
-        <div className="oc-empty min">
+        <div className={`oc-empty min${showSquads ? ' has-squads' : ''}`}>
           <Icon name="terminal" size={18} />
           <h3>{where}</h3>
           <p className="dim">Nenhum terminal ativo.</p>
-          <div className="oc-empty-act">
-            {PRESETS.map((p, k) => <Btn key={p.id} kind={k === PRESETS.length - 1 ? 'primary' : 'quiet'} disabled={busy || p.roles.length > room} onClick={() => configure(p)} title={`${p.label}: ${p.roles.map(roleLabel).join(', ')}`}>{k === PRESETS.length - 1 && <Icon name="plus" size={12} />}{p.label}</Btn>)}
+          {showSquads && !compose && <SquadGallery builtins={builtinSquads(availableIds)} mine={sq.squads} byRole={byRole} providers={providers} busy={busy} launchingId={launchingId} freshId={freshId} onOpen={openSquad} onEdit={startCompose} onDelete={deleteSquad} onNew={() => startCompose()} />}
+          {compose && <TeamComposer draft={compose} onChange={setCompose} onOpen={openDraft} onSave={saveDraft} onCancel={() => setCompose(null)} providers={providers} roles={roles} squads={sq.squads} busy={busy || saving} room={room} />}
+          {!compose && <div className="oc-empty-act">
+            {PRESETS.filter((p) => p.id !== 'builder').map((p) => <Btn key={p.id} kind="quiet" disabled={busy || p.roles.length > room} onClick={() => configure(p)} title={`${p.label}: ${p.roles.map(roleLabel).join(', ')}, com ${agentLabel}`}>{p.label}</Btn>)}
+            {/* O botão segue o papel e o agente escolhidos no menu Equipe (Construtor = o preset de um só Construtor; outro papel abre um terminal avulso dele) */}
+            <Btn kind="primary" disabled={busy || room < 1} onClick={() => (role === 'builder' ? configure(presetById('builder')) : open([role]))} title={`Abre um terminal ${roleLabel(role)} com ${agentLabel}`}><Icon name="plus" size={12} />{roleLabel(role)}</Btn>
             {restorable > 0 && <Btn kind="quiet" onClick={() => onOpenSettings?.('historico')} title="Abre Configurações > Histórico de sessões para retomá-las, na ordem em que estavam">Restaurar {restorable} {restorable === 1 ? 'sessão' : 'sessões'}</Btn>}
-          </div>
-          <p className="dim small oc-foot">Os terminais <b>não passam</b> pelas aprovações do ciclo automático: o que o agente faz ali é decisão sua.</p>
+          </div>}
+          {!compose && <p className="dim small oc-agent">Novos terminais com <ProviderLogo id={provider} size={12} /> <b>{agentLabel}</b> · mude o papel e o agente no menu <b>Equipe</b>.</p>}
+          {!compose && <p className="dim small oc-foot">Os terminais <b>não passam</b> pelas aprovações do ciclo automático: o que o agente faz ali é decisão sua.</p>}
         </div>
       ) : null}
 
