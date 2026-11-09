@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
 import { useStore } from '../store.jsx';
 import { Btn as BaseBtn } from './ui.jsx';
+import { providerById, codexAccountState } from '../provider-view.js';
 import {
   LOGIN_METHODS, DEFAULT_METHOD, LOGIN_INTRO, LOGIN_POLL_MS, NAME_MAX, MAX_ACCOUNTS,
   safeLoginUrl, accountState, loginButtonLabel, accountActions, canAddAccount, providerSelectable,
@@ -11,7 +12,7 @@ import {
 /** Btn do projeto usa `kind` (classes); aqui `variant`/`size` ficam legíveis. */
 const Btn = ({ variant = '', size = '', ...p }) => <BaseBtn kind={`${variant} ${size}`.trim()} type="button" {...p} />;
 
-const FALLBACK_PROVIDERS = [{ id: 'claude', label: 'Claude Code', available: true, canLogin: true }, { id: 'codex', label: 'Codex', available: false, comingSoon: true }];
+const FALLBACK_PROVIDERS = [{ id: 'claude', label: 'Claude Code', available: true, canLogin: true }, { id: 'codex', label: 'Codex CLI', canLogin: false, note: 'O login é feito no próprio Codex CLI ("codex login" num terminal); o FORGE não gerencia contas do Codex.' }];
 
 /** Painel de login de UMA conta: escolha do método, andamento (link, código, saída) e resultado. O servidor guarda o login; aqui só se consulta a cada ~1,5 s enquanto `running`. */
 function LoginPanel({ account, resume, onFinished, onClose, onRunning }) {
@@ -109,7 +110,7 @@ function LoginPanel({ account, resume, onFinished, onClose, onRunning }) {
   );
 }
 
-/** Aba "Contas" das Configurações: contas do Claude Code (Codex em breve), login pelo navegador, conta padrão e remoção. */
+/** Aba "Contas" das Configurações: contas do Claude Code (login pelo navegador, conta padrão e remoção) e o estado do login do Codex CLI (que é do próprio CLI). */
 export default function AccountsPanel() {
   const { refresh, loadAccounts } = useStore();
   const [data, setData] = useState({ accounts: [], providers: [] });
@@ -124,6 +125,7 @@ export default function AccountsPanel() {
   const [name, setName] = useState('');
   const [prov, setProv] = useState('claude');
   const [saving, setSaving] = useState(false);
+  const [checking, setChecking] = useState(false); // "Verificar de novo" do cartão do Codex
   const alive = useRef(true);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
 
@@ -186,10 +188,19 @@ export default function AccountsPanel() {
     finally { setSaving(false); }
   };
   const addState = canAddAccount({ count: data.accounts.length, name, provider: selected });
+  const codex = data.providers.length ? providerById(data.providers, 'codex') : null, cx = codex ? codexAccountState(codex) : null; // sem a lista do servidor (servidor antigo) o cartão não afirma nada
+  const codexCard = cx && (
+    <section className="acc-card acc-codex" aria-label="Codex CLI">
+      <div className="acc-head"><b className="acc-name">{codex.label}</b><span className="oc-pill" title={codex.note || undefined}>login no próprio CLI</span></div>
+      <div className={`oc-state ${cx.kind === 'ok' ? 'ok' : cx.kind === 'bad' ? 'bad' : ''}`} role="status"><i aria-hidden="true" /><span>{cx.text}</span></div>
+      <p className="dim small acc-sum">{cx.detail}</p>
+      <div className="acc-actions"><Btn size="sm" disabled={checking} onClick={async () => { setChecking(true); try { await load(true); } finally { if (alive.current) setChecking(false); } }}>{checking ? 'Verificando…' : 'Verificar de novo'}</Btn></div>
+    </section>
+  );
 
   return (
     <div className="acc">
-      <p className="dim small oc-lead">Cada conta tem o próprio login do Claude Code, guardado só neste computador. A conta Sistema é a do Claude Code que você já usa fora do FORGE.</p>
+      <p className="dim small oc-lead">Cada conta tem o próprio login do Claude Code, guardado só neste computador. A conta Sistema é a do Claude Code que você já usa fora do FORGE. O Codex CLI usa o login dele mesmo, mostrado mais abaixo.</p>
       {msg && <p className={`oc-note ${msg.kind === 'err' ? 'err' : 'ok'}`} role={msg.kind === 'err' ? 'alert' : 'status'}>{msg.text}</p>}
       {loadErr && <p className="oc-note err" role="alert">{loadErr}</p>}
       {!loaded && <p className="dim small" role="status">Carregando contas…</p>}
@@ -231,6 +242,7 @@ export default function AccountsPanel() {
         })}
       </ul>
       {loaded && !loadErr && !data.accounts.length && <p className="dim small">Nenhuma conta ainda.</p>}
+      {loaded && !loadErr && codexCard}
 
       {!loadErr && (adding ? (
         <form className="acc-add" onSubmit={add} aria-label="Adicionar conta">
@@ -243,7 +255,7 @@ export default function AccountsPanel() {
               return (
                 <label key={p.id} className={`acc-popt${ok ? '' : ' off'}`}>
                   <input type="radio" name="acc-prov" value={p.id} checked={prov === p.id} disabled={!ok} onChange={() => setProv(p.id)} />
-                  <span>{p.label}</span>{!ok && <span className="oc-pill">em breve</span>}
+                  <span>{p.label}</span>{!ok && <span className="oc-pill" title={p.note || undefined}>{p.canLogin === false ? 'login no próprio CLI' : 'indisponível'}</span>}
                 </label>
               );
             })}

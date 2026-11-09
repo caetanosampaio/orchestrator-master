@@ -58,12 +58,15 @@ test('accountActions: um login por vez; Sistema não remove; padrão não vira p
   const busy = v.accountActions(a, { busy: true }); assert.equal(busy.login, false); assert.equal(busy.remove, false); assert.equal(busy.makeDefault, false);
 });
 
-test('canAddAccount: nome, limite e provedor (Codex em breve)', () => {
-  const claude = { id: 'claude', available: true, canLogin: true }, codex = { id: 'codex', available: false, comingSoon: true };
+test('canAddAccount: nome, limite e provedor (o login do Codex é do próprio CLI)', () => {
+  const claude = { id: 'claude', available: true, canLogin: true }, codex = { id: 'codex', available: true, canLogin: false, note: 'O login é feito no próprio Codex CLI.' };
   assert.equal(v.canAddAccount({ count: 1, name: 'x', provider: claude }).ok, true);
   assert.equal(v.canAddAccount({ count: 1, name: '', provider: claude }).ok, false);
   assert.equal(v.canAddAccount({ count: v.MAX_ACCOUNTS, name: 'x', provider: claude }).ok, false);
-  assert.equal(v.canAddAccount({ count: 1, name: 'x', provider: codex }).ok, false);
+  const cx = v.canAddAccount({ count: 1, name: 'x', provider: codex });
+  assert.equal(cx.ok, false);
+  assert.equal(cx.reason, codex.note);
+  assert.doesNotMatch(cx.reason, /em breve/i);
   assert.equal(v.canAddAccount({ count: 1, name: 'x', provider: null }).ok, false);
   assert.equal(v.canAddAccount({ count: 1, name: 'x', provider: claude, busy: true }).ok, false);
   assert.equal(v.providerSelectable(claude), true); assert.equal(v.providerSelectable(codex), false); assert.equal(v.providerSelectable(undefined), false);

@@ -110,7 +110,7 @@ function TerminalPane({ session, role, state, waiting, maximized, fontSize, stre
   const use = paneUsage(session.usage);
   const boot = running && !started; // ainda sem a primeira saída: o processo existe, mas o Claude Code não terminou de iniciar
   const shown = boot ? 'boot' : state;
-  const label = boot ? STATE_LABEL.boot : state === 'exited' ? (session.exitCode === null || session.exitCode === undefined ? 'encerrado' : `encerrado (${session.exitCode})`) : state === 'failed' ? `falhou (${session.exitCode})` : STATE_LABEL[state];
+  const label = boot ? STATE_LABEL.boot : state === 'exited' ? (session.exitCode === null || session.exitCode === undefined ? 'encerrado' : `encerrado (${session.exitCode})`) : state === 'failed' ? (Number.isInteger(session.exitCode) ? `falhou (${session.exitCode})` : 'erro do agente') : STATE_LABEL[state];
   const nm = paneName(session, role), hasUse = !!session.usage && Number.isFinite(session.usage.total);
   const wait = waiting?.[0], waitText = wait ? String(wait.text ?? wait.note ?? '').replace(/\s+/g, ' ').trim() : '';
   const waitTitle = waiting?.length ? `Aguardando a sua decisão: ${waiting.map((t) => t.text || t.note || t.id).join(' | ')}\nAprove ou recuse no painel do Maestro.` : '';

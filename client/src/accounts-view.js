@@ -89,17 +89,18 @@ export function accountActions(account, { busy = false, loginRunningId = null } 
   };
 }
 
-/** Pode adicionar? Limite de contas, nome válido e provedor ativo. */
+/** Pode adicionar? Limite de contas, nome válido e provedor que o FORGE sabe conectar (Claude Code; o Codex usa o login do próprio CLI). */
 export function canAddAccount({ count = 0, name = '', provider = null, busy = false } = {}) {
   if (busy) return { ok: false, reason: '' };
   if (count >= MAX_ACCOUNTS) return { ok: false, reason: `Limite de ${MAX_ACCOUNTS} contas atingido.` };
-  if (!provider || provider.available === false || provider.comingSoon || provider.canLogin === false) return { ok: false, reason: 'Provedor indisponível.' };
+  if (!provider || provider.available === false) return { ok: false, reason: 'Provedor indisponível.' };
+  if (provider.canLogin === false) return { ok: false, reason: provider.note || 'O login deste provedor é feito no próprio CLI.' };
   const v = validateName(name);
   return v.ok ? { ok: true, reason: '' } : { ok: false, reason: v.error };
 }
 
-/** Provedor selecionável? Codex aparece, mas desabilitado ("em breve"). */
-export const providerSelectable = (p) => !!p && p.comingSoon !== true && p.available !== false && p.canLogin !== false;
+/** Provedor selecionável para criar conta do FORGE? Só o que o FORGE sabe conectar (canLogin). O Codex aparece na lista, mas o login dele é do próprio CLI. */
+export const providerSelectable = (p) => !!p && p.available !== false && p.canLogin !== false;
 
 /** Código colado só pode ser enviado com texto e sem login encerrado. */
 export const canSendCode = (text, login) => login?.state === 'running' && login?.needsCode === true && String(text ?? '').trim().length > 0;

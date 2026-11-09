@@ -81,9 +81,10 @@ export const providerOf =(s) => (typeof s?.provider === 'string' && s.provider ?
  * Painel por provider, só das sessões reais registradas (todos os ambientes). Encerrado nunca conta como ativo: `active` = processos rodando.
  * @returns {{id:string,label:string,available:boolean,total:number,active:number,working:number,idle:number,failed:number,exited:number}[]}
  */
-export function providerSummary(sessions = [], workingIds = new Set()) {
+export function providerSummary(sessions = [], workingIds = new Set(), live = null) {
   const known = new Set(PROVIDERS.map((p) => p.id));
-  const rows = PROVIDERS.map((p) => ({ ...p }));
+  // `live` = providers como o servidor informa (GET /api/terminals): disponibilidade e login reais; sem ele vale o padrão estático (todos disponíveis).
+  const rows = PROVIDERS.map((p) => { const l = Array.isArray(live) ? live.find((x) => x && x.id === p.id) : null; return { ...p, ...(l ? { available: l.available !== false, ...(l.auth ? { auth: l.auth } : {}) } : Array.isArray(live) ? { available: false } : {}) }; });
   for (const s of sessions) if (!known.has(providerOf(s))) { known.add(providerOf(s)); rows.push({ id: providerOf(s), label: providerOf(s), available: true }); }
   return rows.map((r) => {
     const mine = sessions.filter((s) => providerOf(s) === r.id), st = mine.map((s) => paneState(s, workingIds));
