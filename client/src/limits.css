@@ -1,0 +1,31 @@
+/* Limites das contas (canto superior direito do cockpit): faixa compacta no formato da referência + seção no painel de status. */
+.lm-strip { display: inline-flex; align-items: center; gap: 4px; min-width: 0; line-height: 1; }
+.lm-btn { display: inline-flex; align-items: center; gap: 7px; flex: none; height: 24px; padding: 0 8px; border: 0; border-radius: 2px; background: transparent; color: var(--text); font: inherit; cursor: pointer; transition: background-color .15s ease; }
+.lm-btn:hover, .lm-btn[aria-expanded="true"] { background: var(--coal-2); }
+.lm-bars { display: inline-flex; flex-direction: column; gap: 3px; width: 44px; }
+.lm-bar { position: relative; display: block; height: 4px; background: var(--line-strong); overflow: hidden; }
+.lm-bar u { position: absolute; inset: 0 auto 0 0; display: block; width: 0; transition: width .6s ease, background-color .6s ease; }
+.lm-t { font: 700 11.5px var(--mono); color: var(--dim); font-variant-numeric: tabular-nums; min-width: 2ch; }
+.lm-btn.band-warn .lm-t { color: var(--warn-text, #d1a24c); } .lm-btn.band-crit .lm-t { color: #f06a6a; }
+.lm-sep { flex: none; width: 1px; height: 14px; margin: 0 2px; background: var(--line-strong); }
+.lm-empty .lm-t { color: var(--faint); }
+/* o botão do status global: LED + faixa de limites (os contadores de agentes foram para o painel) */
+.ss-btn .lm-strip { margin-left: 2px; }
+
+/* Painel de UM provedor (abre ao clicar nas barras dele) */
+.lm-pop { position: fixed; z-index: var(--z-pop, 60); overflow: auto; padding: var(--sp-3) var(--sp-4) var(--sp-3); background: var(--raise, #1a1414); border-radius: 2px; box-shadow: 0 0 0 1px var(--line-strong), 0 10px 28px rgba(0, 0, 0, .55); font-size: 12.5px; color: var(--text); outline: none; white-space: normal; }
+.lm-pop-h { display: flex; align-items: center; gap: 8px; margin: 0 0 var(--sp-2); padding-bottom: var(--sp-2); border-bottom: 1px solid var(--line); } .lm-pop-h b { font: 700 12.5px var(--mono); color: var(--strong); } .lm-pop-h span { margin-left: auto; color: var(--dim); font-size: 11.5px; }
+.lm-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.lm-row { padding: 8px 10px; box-shadow: inset 0 0 0 1px var(--line); }
+.lm-row-h { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; } .lm-row-h b { color: var(--strong); font-weight: 700; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lm-plan { margin-left: auto; padding: 0 6px; font: 600 10.5px var(--mono); text-transform: uppercase; color: var(--dim); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.lm-win { margin: 0 0 10px; } .lm-win:last-child { margin-bottom: 0; }
+.lm-win-h { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 4px; }
+.lm-w-n { font: 600 11px var(--mono); letter-spacing: var(--caps-track); text-transform: uppercase; color: var(--dim); }
+.lm-win-h b { font: 700 20px/1 var(--mono); color: var(--strong); font-variant-numeric: tabular-nums; }
+.lm-win.band-warn .lm-win-h b { color: var(--warn-text, #d1a24c); } .lm-win.band-crit .lm-win-h b { color: #f06a6a; }
+.lm-track { position: relative; display: block; height: 9px; background: var(--line-strong); overflow: hidden; } .lm-track u { position: absolute; inset: 0 auto 0 0; display: block; transition: width .6s ease, background-color .6s ease; }
+.lm-win p { margin: 5px 0 0; } .lm-win.off { opacity: .7; }
+.lm-note { margin: 0; } .lm-foot { margin: 10px 0 0; }
+@media (max-width: 900px) { .lm-btn { padding: 0 5px; gap: 5px; } .lm-bars { width: 32px; } }
+@media (prefers-reduced-motion: reduce) { .lm-bar u, .lm-track u, .lm-btn { transition: none; } }

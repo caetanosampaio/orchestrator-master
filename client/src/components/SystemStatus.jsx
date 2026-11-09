@@ -1,12 +1,16 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../store.jsx';
 import { systemStatus, statusLine } from '../system-status.js';
+import { useLimits } from '../use-limits.js';
+import { limitsSummary } from '../limits-view.js';
+import { LimitsBars } from './LimitsStrip.jsx';
 
 const W = 360, GAP = 6, EDGE = 8;
 const GROUPS = [['failed', 'Com falha', 'err'], ['waiting', 'Aguardando você', 'warn'], ['working', 'Executando', 'work']];
 
 /**
- * Status global do FORGE: UMA linha compacta (LED geral + ativos · executando · aguardando · falhas) que expande num painel. Substitui as pílulas da barra superior, o "N/10 terminais",
+ * Status global do FORGE (canto superior direito do cockpit): o LED geral dos agentes (com o número de ativos; clicar abre o painel com executando · aguardando · falhas) e, ao lado, os LIMITES DAS CONTAS:
+ * um botão por provedor (Claude Code, Codex), cada um com as suas 2 barras (diário e semanal) e o tempo até o reset; clicar num provedor abre os limites das contas dele. Substitui as pílulas da barra superior, o "N/10 terminais",
  * o "N ativos" da barra de terminais e o do rodapé da sidebar. O painel só traz o que não está visível em outro lugar: quem está executando, aguardando ou com falha (e em qual workspace),
  * as vagas de terminal e os providers. É um popover fixo na janela: encaixa na tela e fecha com clique fora ou Esc.
  */
@@ -14,6 +18,7 @@ export default function SystemStatus() {
   const { terminals, maestro, workingIds, workspaces } = useStore();
   const s = useMemo(() => systemStatus({ sessions: terminals?.sessions, workingIds, tasks: maestro?.tasks, workspaces, max: terminals?.maxSessions, providers: terminals?.providers }), [terminals, workingIds, maestro, workspaces]);
   const [open, setOpen] = useState(false), [pos, setPos] = useState(null);
+  const { limits, now, refresh } = useLimits();
   const btn = useRef(null), pop = useRef(null);
 
   useLayoutEffect(() => {
@@ -34,17 +39,16 @@ export default function SystemStatus() {
     return () => { document.removeEventListener('pointerdown', down); document.removeEventListener('keydown', key, true); };
   }, [open]);
 
-  const cell = (n, label, cls) => <span className={`ss-c${n > 0 ? ` has ${cls}` : ''}`}><b>{n}</b><span className="ss-l"> {label}</span></span>;
   return (
     <>
-      <button type="button" ref={btn} className={`ss-btn tone-${s.tone}`} aria-haspopup="dialog" aria-expanded={open} aria-controls="ss-panel" title={`${statusLine(s)} — clique para detalhes`} onClick={() => setOpen((o) => !o)}>
+      <button type="button" ref={btn} className={`ss-btn tone-${s.tone}`} aria-haspopup="dialog" aria-expanded={open} aria-controls="ss-panel" title={`${statusLine(s)}
+${limitsSummary(limits, now)}
+Clique para detalhes`} onClick={() => setOpen((o) => !o)}>
         <i className="ss-led" aria-hidden="true" />
-        {cell(s.ativos, s.ativos === 1 ? 'ativo' : 'ativos', 'live')}<span className="ss-sep" aria-hidden="true">·</span>
-        {cell(s.executando, 'executando', 'work')}<span className="ss-sep" aria-hidden="true">·</span>
-        {cell(s.aguardando, 'aguardando', 'warn')}<span className="ss-sep" aria-hidden="true">·</span>
-        {cell(s.falhas, s.falhas === 1 ? 'falha' : 'falhas', 'err')}
-        <span className="sr">{statusLine(s)}</span>
+        <span className="ss-c has live"><b>{s.ativos}</b></span>
+        <span className="sr">{statusLine(s)}. {limitsSummary(limits, now)}</span>
       </button>
+      <LimitsBars limits={limits} now={now} refresh={refresh} />
       {open && (
         <div id="ss-panel" ref={pop} className="ss-panel" role="dialog" aria-label="Status do sistema" style={pos ?? { visibility: 'hidden' }}>
           <p className="ss-h"><b>Status</b><span>{statusLine(s)}</span></p>
