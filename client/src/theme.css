@@ -12,10 +12,10 @@ h1, h2, h3, h4 { letter-spacing: -.018em; }
 
 /* ---------- rótulos de console: mono, caixa alta, espaçamento largo ---------- */
 .k, .side-title, .panel > header h3, .tab, .ck-canvas .k, .demo, .side-count, .toggle-k {
-  font-family: var(--mono); font-size: var(--caps-size); font-weight: 500; letter-spacing: var(--caps-track); text-transform: uppercase;
+  font-family: var(--mono); font-size: var(--caps-size); font-weight: 600; letter-spacing: var(--caps-track); text-transform: uppercase;
 }
 .k { color: var(--dim); }
-.panel > header h3 { color: var(--strong); font-weight: 560; }
+.panel > header h3 { color: var(--strong); font-weight: 630; }
 .tab::after { background: var(--brand); box-shadow: var(--glow-sm); }
 .tab[aria-selected="true"] { color: var(--strong); }
 .status, .ag, .mono, .num { font-family: var(--mono); font-size: 12.5px; }
@@ -26,11 +26,11 @@ h1, h2, h3, h4 { letter-spacing: -.018em; }
 .app { background: var(--bg); }
 .sheet { margin: 0; border-radius: 0; background: var(--surface); box-shadow: -1px 0 0 var(--line); }
 .topbar { min-height: 46px; border-bottom: 1px solid var(--line); }
-.topbar-title { font-family: var(--mono); font-size: 12.5px; font-weight: 500; text-transform: uppercase; letter-spacing: .12em; color: var(--strong); }
+.topbar-title { font-family: var(--mono); font-size: 12.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .12em; color: var(--strong); }
 .topbar-title::before { content: '\276F'; margin-right: .7em; color: var(--brand); text-shadow: 0 0 10px rgba(95, 163, 119, .55); }
 .topbar-chips { display: inline-flex; align-items: center; gap: var(--sp-2); min-width: 0; }
 .hchip { display: inline-flex; align-items: center; gap: 6px; max-width: 240px; padding: 3px 10px; font-family: var(--mono); font-size: 11.5px; letter-spacing: .04em; color: var(--dim); background: var(--raise); border-radius: 999px; box-shadow: inset 0 0 0 1px var(--line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.hchip b { font-weight: 500; color: var(--strong); overflow: hidden; text-overflow: ellipsis; }
+.hchip b { font-weight: 600; color: var(--strong); overflow: hidden; text-overflow: ellipsis; }
 .hchip i { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
 .hchip.live i { background: var(--run); box-shadow: 0 0 8px var(--run); animation: oc-ping 1.6s ease-in-out infinite; }
 .hchip.degraded i { background: var(--warn); }
@@ -38,7 +38,7 @@ h1, h2, h3, h4 { letter-spacing: -.018em; }
 
 /* ---------- barra lateral: seções em caixa alta com contadores, item ativo com barra de acento ---------- */
 .side { background: var(--bg); gap: var(--sp-2); padding: var(--sp-3); }
-.brand-name { font-family: var(--mono); font-size: 13px; font-weight: 600; letter-spacing: .16em; text-transform: uppercase; }
+.brand-name { font-family: var(--mono); font-size: 13px; font-weight: 660; letter-spacing: .16em; text-transform: uppercase; }
 .brand-name::after { content: '_'; margin-left: 1px; color: var(--brand); animation: oc-caret 1.1s steps(1) infinite; }
 .brand svg { filter: drop-shadow(0 0 8px rgba(95, 163, 119, .4)); border-radius: 4px; }
 .side-title { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-3) var(--sp-3) var(--sp-1); color: var(--faint); }
@@ -52,18 +52,18 @@ h1, h2, h3, h4 { letter-spacing: -.018em; }
 .side-link.active svg { color: var(--brand); }
 .side-count { background: transparent; color: var(--warn-text); box-shadow: inset 0 0 0 1px rgba(146, 113, 62, .45); border-radius: 999px; }
 .side-foot { border-top: 1px solid var(--line); }
-.side-name { font-family: var(--mono); font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); font-weight: 500; }
+.side-name { font-family: var(--mono); font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); font-weight: 600; }
 .ws-btn { background: var(--raise); box-shadow: inset 0 0 0 1px var(--line); border-radius: var(--r-2); }
 .ws-ico { border-radius: var(--r-1); background: var(--raise2); color: var(--brand); }
-.ws-text b { font-family: var(--mono); font-weight: 500; font-size: 12.5px; }
+.ws-text b { font-family: var(--mono); font-weight: 600; font-size: 12.5px; }
 .ws-text .k { font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .side.modal { box-shadow: 0 0 0 1px var(--line-strong), var(--shadow-pop); }
 .menu { background: var(--raise); border-radius: var(--r-3); }
 .toast { background: var(--raise2); box-shadow: var(--shadow-pop); border-radius: var(--r-3); }
 
 /* ---------- botões: hairline + mono; o primário é o único com preenchimento e brilho ---------- */
-.btn { font-family: var(--mono); font-size: 12.5px; font-weight: 500; letter-spacing: .01em; border-radius: var(--r-2); background: var(--raise); box-shadow: inset 0 0 0 1px var(--line-strong); }
-.btn.primary { background: var(--brand); color: var(--ink); font-weight: 600; box-shadow: var(--glow-sm); }
+.btn { font-family: var(--mono); font-size: 12.5px; font-weight: 600; letter-spacing: .01em; border-radius: var(--r-2); background: var(--raise); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.btn.primary { background: var(--brand); color: var(--ink); font-weight: 660; box-shadow: var(--glow-sm); }
 .btn.danger { background: transparent; box-shadow: inset 0 0 0 1px rgba(255, 101, 104, .5); }
 .btn.quiet { background: transparent; box-shadow: none; }
 .icon-btn { border-radius: var(--r-2); }
