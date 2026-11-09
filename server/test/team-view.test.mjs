@@ -56,10 +56,11 @@ test('cliente: sanitizeLayout mantém só equipe válida; setTeam grava por work
   sync.actions.setTeam('wsA', null); await sync.flush(); assert.equal(puts.at(-1)[1].team, null); assert.equal(sync.getSnapshot().layouts.wsA.team ?? null, null); assert.equal(sync.getSnapshot().layouts.wsB.team, 'duo', 'o outro workspace não foi tocado');
 });
 
-test('toolbar: dois grupos num único container (equipe | operacionais), presets só sem equipe, identificação compacta com equipe, + Terminal, Visualização e Histórico fora da barra', () => {
+test('toolbar: dois grupos num único container (equipe | operacionais), menu Equipe sempre presente (presets na tela principal), sem seletor de agente solto, Visualização e Histórico fora da barra', () => {
   const g = src('components/TerminalGrid.jsx');
   assert.match(g, /className="oc-bar tbx"/); assert.equal((g.match(/className="tbx-g/g) ?? []).length, 2, 'dois grupos: workspace e equipe | controles operacionais');
-  assert.match(g, /hasTeam\s*\n?\s*\? <TeamMenu/); assert.match(g, /tbx-presets/);
+  assert.match(g, /ws && \(\s*\n?\s*<TeamMenu role=\{role\} onRole=/); assert.doesNotMatch(g, /tbx-presets|oc-prov-sel/, 'sem presets nem seletor de agente soltos na barra: a escolha mora no menu Equipe e aparece na tela principal');
+  assert.match(g, /oc-empty-act/); assert.match(g, /Novos terminais com/, 'a tela principal mostra o agente escolhido');
   assert.doesNotMatch(g, /Novo terminal<|<Icon name="plus" size=\{14\} \/> Terminal/, 'o + Terminal destacado saiu da barra');
   assert.doesNotMatch(g, /LAYOUT_MODES|oc-seg|aria-label="Histórico"|setHistOpen|<SessionHistory/, 'Grade/Colunas/Linhas/Foco e Histórico saíram da tela principal');
   const menu = src('components/TeamMenu.jsx');
@@ -75,4 +76,63 @@ test('Configurações: Visualização (modo da grade do workspace aberto) e Hist
   assert.match(st, /onAutoRestore=\{setAutoRestore\}/, 'o interruptor da restauração automática continua no histórico');
   assert.match(src('components/TerminalGrid.jsx'), /useLayoutMode\(ws\?\.id\)/, 'o cockpit lê o mesmo modo que as Configurações gravam');
   assert.match(src('components/TerminalGrid.jsx'), /onOpenSettings\?\.\('historico'\)/, 'o botão "Restaurar sessões" do estado vazio leva ao histórico, em Configurações');
+});
+
+// ---- equipe mista ----
+import { LEAD_ROLES, MIXES, mixAgents, availableMixes, defaultMix, composeProblem, mixSummary, mixById } from '../../client/src/team-view.js';
+
+test('mixAgents: atalhos por vaga (Squad = maestro, builder, builder, reviewer)', () => {
+  const squad = ['maestro', 'builder', 'builder', 'reviewer'];
+  assert.deepEqual(mixAgents(squad, 'all-claude'), ['claude', 'claude', 'claude', 'claude']);
+  assert.deepEqual(mixAgents(squad, 'all-codex'), ['codex', 'codex', 'codex', 'codex']);
+  assert.deepEqual(mixAgents(squad, 'claude-leads'), ['claude', 'codex', 'codex', 'claude']);
+  assert.deepEqual(mixAgents(squad, 'codex-leads'), ['codex', 'claude', 'claude', 'codex']);
+  assert.deepEqual(mixAgents(['maestro', 'scout', 'builder', 'builder', 'builder', 'reviewer'], 'claude-leads'), ['claude', 'claude', 'codex', 'codex', 'codex', 'claude'], 'Squad de 6: batedor também lidera');
+  assert.deepEqual(mixAgents(['builder', 'reviewer'], 'desconhecido', 'codex'), ['codex', 'codex'], 'atalho desconhecido: tudo no fallback');
+  assert.deepEqual(mixAgents(null, 'all-claude'), []);
+  assert.ok(LEAD_ROLES.includes('maestro') && !LEAD_ROLES.includes('builder'));
+  assert.equal(mixById('claude-leads').needs.length, 2); assert.equal(mixById('x'), null);
+});
+
+test('availableMixes / defaultMix: só atalhos cujos provedores existem; padrão é Claude lidera quando há os dois', () => {
+  assert.deepEqual(availableMixes(['claude', 'codex']).map((m) => m.id), MIXES.map((m) => m.id));
+  assert.deepEqual(availableMixes(['claude']).map((m) => m.id), ['all-claude']);
+  assert.deepEqual(availableMixes(['codex']).map((m) => m.id), ['all-codex']);
+  assert.deepEqual(availableMixes([]).map((m) => m.id), []);
+  assert.equal(defaultMix(['claude', 'codex']), 'claude-leads'); assert.equal(defaultMix(['claude']), 'all-claude'); assert.equal(defaultMix(['codex']), 'all-codex');
+});
+
+test('composeProblem: vazio, sem vagas, agente indisponível e plano válido', () => {
+  assert.match(composeProblem([], ['claude']), /Escolha uma equipe/);
+  assert.match(composeProblem(['claude', 'codex', 'claude'], ['claude', 'codex'], 2), /3 vagas e há 2 livres/);
+  assert.match(composeProblem(['claude', 'codex'], ['claude']), /"codex" não está disponível/);
+  assert.equal(composeProblem(['claude', 'codex'], ['claude', 'codex'], 10), null);
+});
+
+test('mixSummary: contagem por agente na ordem de aparição', () => {
+  const label = { claude: 'Claude Code', codex: 'Codex CLI' };
+  assert.equal(mixSummary(['claude', 'codex', 'codex', 'claude'], (id) => label[id]), '2 Claude Code, 2 Codex CLI');
+  assert.equal(mixSummary([], (id) => id), '');
+});
+
+test('tela sem terminais: galeria de squads e editor ligados ao cockpit; cada terminal abre com o agente da sua vaga', () => {
+  const g = src('components/TerminalGrid.jsx');
+  assert.match(g, /<SquadGallery /); assert.match(g, /<TeamComposer /); assert.match(g, /useSquads\(\)/);
+  assert.match(g, /providers: perSlot = null/); assert.match(g, /\(perSlot && perSlot\[i\]\) \|\| useProvider/, 'o agente de cada vaga vai no POST');
+  assert.match(g, /openPlan\(launchPlan\(/, 'abrir um squad usa o plano (papéis e agentes por vaga)');
+  assert.doesNotMatch(g, /Equipe mista…/, 'o botão antigo foi substituído pela galeria de squads');
+  const gal = src('components/SquadGallery.jsx');
+  for (const t of ['Squads do FORGE', 'Meus squads', 'Novo squad', 'role="alertdialog"']) assert.match(gal, new RegExp(t), t);
+  const cmp = src('components/TeamComposer.jsx');
+  for (const t of ['Adicionar vaga', 'Salvar squad', 'Abrir equipe', 'Começar de']) assert.match(cmp, new RegExp(t), t);
+  const css = src('retro.css'); for (const k of ['sq-in', 'sq-boot', 'sq-glow', 'sq-wave', 'sq-flash']) assert.match(css, new RegExp(`@keyframes ${k}`), `animação ${k}`);
+});
+
+test('troca de preset: um passo por vez, escolha Manter/Fechar explícita e botão fixo sem animação', () => {
+  const menu = src('components/TeamMenu.jsx'), css = src('retro.css');
+  assert.match(menu, /\{!plan && <>/, 'durante a troca o menu mostra só a troca');
+  assert.match(menu, /className="tm-seg"/); assert.match(menu, />Manter<\/button>/); assert.match(menu, />Fechar<\/button>/);
+  assert.match(menu, /Trocar para \{target\.label\}<\/Btn>/, 'o botão diz o destino da troca'); assert.match(menu, /<b>Resultado:<\/b>/, 'o resultado em palavras fica acima do botão');
+  assert.match(menu, /Voltar aos presets/); assert.doesNotMatch(menu, /nunca encerra processos/, 'a troca pode fechar terminais (com confirmação): o texto não pode negar isso');
+  const act = css.slice(css.indexOf('.tm-plan-act {')); assert.match(act, /position: sticky/); assert.doesNotMatch(css, /tm-cta|animation:[^;}]*tm-/, 'o botão de aplicar não pisca');
 });
