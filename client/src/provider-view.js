@@ -2,15 +2,23 @@
 // PURO (sem React, sem rede). Nada é presumido: sem `auth` o login é desconhecido e o texto diz só o que se sabe ("instalado"). O login do Claude Code é tratado em Configurações > Contas.
 
 /**
- * @param {{available?:boolean, auth?:{known?:boolean, loggedIn?:boolean|null}}|null|undefined} p provider como o servidor devolve
+ * Estado de um provider, do mais forte ao mais fraco: não instalado > não conectado > ATIVO (há terminais dele em uso: `active` > 0) > conectado (login feito, sem terminais) > instalado (login desconhecido).
+ * @param {{available?:boolean, active?:number, auth?:{known?:boolean, loggedIn?:boolean|null}}|null|undefined} p provider (linha de providerSummary ou item do servidor)
  * @returns {{kind:'ok'|'bad'|'off', text:string}}
  */
 export function providerStatus(p) {
   if (!p) return { kind: 'off', text: 'indisponível' };
   if (p.available === false) return { kind: 'off', text: 'não instalado' };
   if (p.auth?.known === true && p.auth.loggedIn === false) return { kind: 'bad', text: 'não conectado' };
+  if (Number(p.active) > 0) return { kind: 'ok', text: 'ativo' };
   if (p.auth?.known === true && p.auth.loggedIn === true) return { kind: 'ok', text: 'conectado' };
   return { kind: 'ok', text: 'instalado' };
+}
+
+/** Dá ao Claude Code o estado de login da conta padrão (prereqs.login de /api/state: { known, loggedIn }); o servidor só informa `auth` para o Codex. Sem informação, devolve a lista como veio. */
+export function withClaudeLogin(providers, login) {
+  if (!Array.isArray(providers) || login?.known !== true) return providers;
+  return providers.map((p) => (p && p.id === 'claude' ? { ...p, auth: { known: true, loggedIn: login.loggedIn === true } } : p));
 }
 
 /** Provider pelo id na lista do servidor (ou undefined). */

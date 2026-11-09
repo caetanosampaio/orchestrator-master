@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useStore } from '../store.jsx';
 import { usePrefs, useLayoutMode, useLayouts, useAutoRestore } from '../hooks.js';
-import { LAYOUT_MODES } from '../env-view.js';
+import { LAYOUT_MODES, providerSummary } from '../env-view.js';
 import { SessionHistoryBody } from './SessionHistory.jsx';
 import { FONT_RANGE } from '../prefs.js';
 import Dialog from './Dialog.jsx';
@@ -9,7 +9,7 @@ import { Btn, Icon } from './ui.jsx';
 import MaestroControls from './MaestroControls.jsx';
 import AccountsPanel from './AccountsPanel.jsx';
 import ProviderLogo from './ProviderLogo.jsx';
-import { providerStatus, providerById } from '../provider-view.js';
+import { providerStatus, withClaudeLogin } from '../provider-view.js';
 import WorktreePanel from './WorktreePanel.jsx';
 import { terminalWorktrees } from '../worktree-view.js';
 
@@ -33,7 +33,7 @@ const Switch = ({ checked, onChange, label }) => (
 
 /** Configurações básicas (engrenagem da sidebar). Só opções que existem de verdade: preferências locais da interface e o estado real do Claude Code. */
 export default function SettingsDialog({ onClose, initial = 'perfil' }) {
-  const { state, terminals, refresh, workspaces } = useStore();
+  const { state, terminals, refresh, workspaces, workingIds } = useStore();
   const [wtScope, setWtScope] = useState('open'); // worktrees: do workspace aberto ou de todos
   const openWs = state?.activeWorkspace ?? null;
   const [mode, setMode] = useLayoutMode(openWs?.id);
@@ -44,7 +44,9 @@ export default function SettingsDialog({ onClose, initial = 'perfil' }) {
   const [tab, setTab] = useState(initial);
   const [checking, setChecking] = useState(false);
   const roles = terminals?.roles ?? [];
-  const pill = (id) => { if (!Array.isArray(terminals?.providers)) return null; const s = providerStatus(providerById(terminals.providers, id)); return <span className={`oc-pill${s.kind === 'ok' ? ' ok' : s.kind === 'bad' ? ' bad' : ''}`}>{s.text}</span>; };
+  // Selo do provider: ativo (terminais em uso) > conectado (login feito) > instalado; vem dos terminais reais e do login que o servidor informa, e muda sozinho a cada atualização.
+  const provRows = Array.isArray(terminals?.providers) ? providerSummary(terminals.sessions ?? [], workingIds, withClaudeLogin(terminals.providers, state?.prereqs?.login)) : null;
+  const pill = (id) => { if (!provRows) return null; const s = providerStatus(provRows.find((r) => r.id === id)); return <span className={`oc-pill${s.kind === 'ok' ? ' ok' : s.kind === 'bad' ? ' bad' : ''}`}>{s.text}</span>; };
   const ex = state?.executor;
   const recheck = async () => { setChecking(true); try { await refresh(); } finally { setChecking(false); } };
   const onKey = (e) => {

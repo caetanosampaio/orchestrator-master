@@ -158,6 +158,12 @@ export default function AccountsPanel() {
     return () => { off = true; };
   }, [load]);
 
+  // Atualização automática enquanto a aba está aberta: um login feito fora do FORGE (ex.: `codex login`) aparece em poucos segundos. Pausa com a aba oculta e durante um login em andamento.
+  useEffect(() => {
+    const t = setInterval(() => { if (!document.hidden && !runningId) load(false); }, 5000);
+    return () => clearInterval(t);
+  }, [load, runningId]);
+
   const providers = data.providers.length ? data.providers : FALLBACK_PROVIDERS;
   const selected = providers.find((p) => p.id === prov);
 
