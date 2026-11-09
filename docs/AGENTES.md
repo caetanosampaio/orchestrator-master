@@ -16,7 +16,7 @@ O FORGE executa agentes de linha de comando em terminais reais (PTY). Cada termi
 | Maestro (MCP) | arquivo `--mcp-config` (pasta restrita ao usuário em macOS/Linux) | `-c mcp_servers.<nome>.*`, token só no ambiente (`FORGE_MCP_TOKEN`) |
 | Skills e MCPs por papel (loadouts) | sim (plugin de sessão em `--plugin-dir`) | não |
 | Tokens e custo por terminal | sim (lidos do transcript, preços do usuário) | não |
-| Confiança de pasta | o FORGE grava a resposta no `.claude.json` antes de abrir | argumento `projects.'<pasta>'.trust_level='trusted'`, só para o processo |
+| Confiança de pasta | o FORGE grava a resposta no `.claude.json` antes de abrir | argumento `-c projects={'<pasta>'={trust_level='trusted'}}` (tabela inline: a forma `projects.'<pasta>'.trust_level` é quebrada no ponto do caminho, como em `.orch-worktrees`), só para o processo; as pastas que você já confiou no config continuam valendo |
 | Permissões | as do Claude Code | `-s workspace-write -a on-request`; `--no-daemon` (modo embutido, que os `-c` exigem; sem ele o Codex avisa "Running without the shared background server") |
 | Configuração de projeto vigiada | `.claude/settings.json`, `.claude/settings.local.json`, `.mcp.json`, `.claude/agents`, `.claude/skills` | pasta `.codex` inteira |
 
