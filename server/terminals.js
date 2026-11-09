@@ -49,7 +49,7 @@ let ptyCache;
 const loadPty = () => { if (ptyCache !== undefined) return ptyCache; try { ptyCache = createRequire(import.meta.url)('node-pty'); } catch { ptyCache = null; } return ptyCache; };
 
 /** `ptyLib`, `resolveCommand(s)`, `track` e `worktrees` só são injetados nos testes/boot; o padrão é o node-pty real e a CLI do provedor no PATH. `provider` é o PADRÃO (panes e registros sem o campo). */
-export function createTerminalManager({ db, ptyLib = null, provider = getProvider(), loadouts = null, agentStatus = null, resolveCommand = provider.resolve, resolveCommands = {}, trustFolders = null, track = null, worktrees = null, maxSessions = MAX_SESSIONS, now = store.now, uid = store.uid, killTree = killTreeSync, waitFor = waitGone, usage = null, newSessionId = randomUUID, mcp = null, inspectConfig = inspectProjectConfig, persist = null, isChildAlive = null, transcriptExists = null, pidIsAlive = pidAlive, maxRecords = MAX_RECORDS, sweepMs = SWEEP_MS, setTimer = setInterval, clearTimer = clearInterval, onEnd = null, accounts = null } = {}) {
+export function createTerminalManager({ db, ptyLib = null, provider = getProvider(), loadouts = null, agentStatus = null, resolveCommand = provider.resolve, resolveCommands = {}, trustFolders = null, track = null, worktrees = null, maxSessions = MAX_SESSIONS, now = store.now, uid = store.uid, killTree = killTreeSync, waitFor = waitGone, usage = null, newSessionId = randomUUID, mcp = null, inspectConfig = inspectProjectConfig, persist = null, isChildAlive = null, transcriptExists = null, pidIsAlive = pidAlive, maxRecords = MAX_RECORDS, sweepMs = SWEEP_MS, setTimer = setInterval, clearTimer = clearInterval, onEnd = null, accounts = null, statusLine = null } = {}) {
   // Provedor de cada pane: o padrão do gerenciador ou o registrado no pane/registro (id desconhecido cai no padrão: nunca lança numa leitura).
   const provOf = (id) => (id === undefined || id === null || id === provider.id ? provider : isProvider(id) ? getProvider(id) : provider);
   const cmdOf = (p) => (p === provider ? resolveCommand() : (resolveCommands[p.id] ?? p.resolve)());
@@ -247,11 +247,14 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
     let pluginDir = null; // skills do papel (loadouts.js): pacote gerado fora do workspace; sem ele (falha ao gravar, caminho que o wrapper .cmd não aguenta) o terminal abre igual
     try { pluginDir = can(prov, 'plugins') ? loadouts?.pluginDirFor(role) ?? null : null; } catch { pluginDir = null; }
     if (pluginDir && cmd.viaShell && /[&|<>^%"!()]/.test(pluginDir)) pluginDir = null;
+    let settingsFile = null; // status line do FORGE (rate-limits.js): grava o limite real da conta; sem ela (desligada, do usuário, caminho inseguro) o terminal abre igual
+    try { settingsFile = prov.capabilities?.statusLine === true ? statusLine?.settingsFileFor(accountId) ?? null : null; } catch { settingsFile = null; }
+    if (settingsFile && cmd.viaShell && /[&|<>^%"!()]/.test(settingsFile)) settingsFile = null;
     if (mcpCfg?.token) env[prov.mcpTokenEnv] = mcpCfg.token; // transporte por ambiente (Codex): o token vive só no ambiente deste processo, nunca em arquivo nem na linha de comando
     const mcpArg = !mcpCfg ? null : mcpCfg.token ? { url: mcpCfg.url, serverName: mcp.serverName } : { configPath: mcpCfg.configPath, serverName: mcp.serverName };
     // Avisos de "confiar nesta pasta?": o Claude Code guarda a resposta em arquivo (gravada aqui, antes do spawn); o Codex recebe a confiança por argumento. Só quando o boot liga `trustFolders` (nunca nos testes).
     if (typeof trustFolders === 'function') { try { trustFolders({ provider: prov.id, cwd, configDir: prov.id === 'claude' ? accounts?.configDirOf(accountId) ?? null : null }); } catch { /* melhor esforço: a pergunta aparece normalmente */ } }
-    const args = prov.paneArgs({ mode, prompt: ROLES[role].prompt, label, sessionId: claudeSessionId, resumeSessionId: rec?.claudeSessionId, mcp: mcpArg, pluginDir, quote: !cmd.viaShell, trustDir: typeof trustFolders === 'function' ? cwd : null });
+    const args = prov.paneArgs({ mode, prompt: ROLES[role].prompt, label, sessionId: claudeSessionId, resumeSessionId: rec?.claudeSessionId, mcp: mcpArg, pluginDir, settingsFile, quote: !cmd.viaShell, trustDir: typeof trustFolders === 'function' ? cwd : null });
     let p;
     try { p = pty.spawn(cmd.file, [...cmd.args, ...args], { name: 'xterm-256color', cols: c, rows: r, cwd, env, useConpty: true }); }
     catch (e) { revokeMcp(id); return fail(500, `Não foi possível iniciar o terminal: ${String(e?.message ?? e).slice(0, 160)}`); }
