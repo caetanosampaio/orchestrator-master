@@ -12,7 +12,7 @@ const GROUPS = [['failed', 'Com falha', 'err'], ['waiting', 'Aguardando você', 
  */
 export default function SystemStatus() {
   const { terminals, maestro, workingIds, workspaces } = useStore();
-  const s = useMemo(() => systemStatus({ sessions: terminals?.sessions, workingIds, tasks: maestro?.tasks, workspaces, max: terminals?.maxSessions }), [terminals, workingIds, maestro, workspaces]);
+  const s = useMemo(() => systemStatus({ sessions: terminals?.sessions, workingIds, tasks: maestro?.tasks, workspaces, max: terminals?.maxSessions, providers: terminals?.providers }), [terminals, workingIds, maestro, workspaces]);
   const [open, setOpen] = useState(false), [pos, setPos] = useState(null);
   const btn = useRef(null), pop = useRef(null);
 
@@ -61,7 +61,7 @@ export default function SystemStatus() {
           </section>
           <section className="ss-g" aria-label="Providers">
             <h3><i aria-hidden="true" />Providers</h3>
-            <ul>{s.providers.map((p) => <li key={p.id}><b>{p.label}</b><span className="dim"> · {p.available || p.total ? `${p.total} ${p.total === 1 ? 'sessão' : 'sessões'}, ${p.active} ${p.active === 1 ? 'ativa' : 'ativas'}` : 'em breve · sem integração'}</span></li>)}</ul>
+            <ul>{s.providers.map((p) => <li key={p.id}><b>{p.label}</b><span className="dim"> · {p.available || p.total ? `${p.total} ${p.total === 1 ? 'sessão' : 'sessões'}, ${p.active} ${p.active === 1 ? 'ativa' : 'ativas'}` : 'não instalado'}{p.available && p.auth?.known && p.auth.loggedIn === false ? ' · não conectado' : ''}</span></li>)}</ul>
           </section>
         </div>
       )}

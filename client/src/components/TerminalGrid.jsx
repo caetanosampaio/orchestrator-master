@@ -8,10 +8,11 @@ import { usePrefs, useLayouts, useLayoutMode, useAutoRestore } from '../hooks.js
 import { orderSessions, mergeOrder, sameList, EMPTY as EMPTY_LAYOUT } from '../layout-state.js';
 import { historyRows, resumeBody, needsConfigAck, restorePlan, batchSummary, lastShutdownRestore, attemptKey } from '../session-history.js';
 import { accountTagName } from '../accounts-view.js';
-import { Btn, Icon, WorkStar } from './ui.jsx';
+import { Btn, Icon } from './ui.jsx';
 import { paneUsage, squadUsage } from '../usage-view.js';
 import { createTerminalStream, isOld } from '../terminal-stream.js';
-import { paneState, pendingByPane, paneName, shapeFor, focusPlacement, evenTracks, dragTracks, dividerAt } from '../env-view.js';
+import ProviderLogo from './ProviderLogo.jsx';
+import { providerOptionLabel, paneState, pendingByPane, paneName, shapeFor, focusPlacement, evenTracks, dragTracks, dividerAt } from '../env-view.js';
 import MaestroPopover from './MaestroPopover.jsx';
 import TeamMenu from './TeamMenu.jsx';
 import { PRESETS, presetById, changeImpact, inferTeam } from '../team-view.js';
@@ -109,20 +110,20 @@ function TerminalPane({ session, role, state, waiting, maximized, fontSize, stre
   const use = paneUsage(session.usage);
   const boot = running && !started; // ainda sem a primeira saída: o processo existe, mas o Claude Code não terminou de iniciar
   const shown = boot ? 'boot' : state;
-  const label = boot ? STATE_LABEL.boot : state === 'exited' ? (session.exitCode === null || session.exitCode === undefined ? 'encerrado' : `encerrado (${session.exitCode})`) : state === 'failed' ? `falhou (${session.exitCode})` : STATE_LABEL[state];
+  const label = boot ? STATE_LABEL.boot : state === 'exited' ? (session.exitCode === null || session.exitCode === undefined ? 'encerrado' : `encerrado (${session.exitCode})`) : state === 'failed' ? (Number.isInteger(session.exitCode) ? `falhou (${session.exitCode})` : 'erro do agente') : STATE_LABEL[state];
   const nm = paneName(session, role), hasUse = !!session.usage && Number.isFinite(session.usage.total);
   const wait = waiting?.[0], waitText = wait ? String(wait.text ?? wait.note ?? '').replace(/\s+/g, ' ').trim() : '';
   const waitTitle = waiting?.length ? `Aguardando a sua decisão: ${waiting.map((t) => t.text || t.note || t.id).join(' | ')}\nAprove ou recuse no painel do Maestro.` : '';
   return (
     <section className={`oc-pane st-${state}${waiting?.length ? ' has-wait' : ''}${maximized ? ' max' : ''}`} style={{ '--role': role?.color || 'var(--brand)' }} aria-label={`Terminal ${session.title}, ${label}${waiting?.length ? ', aguardando a sua decisão' : ''}`} onMouseDownCapture={() => noteInteraction(id)} onFocusCapture={() => noteInteraction(id)} onBlurCapture={() => noteInteraction(id)}>
       <header className="oc-ph">
-        <span className={`oc-pstate st-${shown}`} role="status">{shown === 'working' ? <WorkStar size={13} /> : <i className={`oc-pdot st-${shown}`} aria-hidden="true" />}{label}</span>
+        <span className={`oc-pstate st-${shown} pv-${session.provider || 'claude'}`} role="status">{shown === 'working' && (session.provider || 'claude') === 'claude' ? <ProviderLogo id="claude" size={14} className="pv-work" /> : <i className={`oc-pdot st-${shown}`} aria-hidden="true" />}{label}</span>
         {nm.role && <b className="oc-prole">{nm.role}</b>}
         <b className={`oc-ptitle${nm.role ? ' sub' : ''}`} title={session.title}>{nm.name}</b>
         {waiting?.length > 0 && <span className="oc-pwait" role="status" title={waitTitle}><Icon name="clock" size={12} /><span className="oc-pwait-t">{waiting.length > 1 ? `${waiting.length} tarefas aguardando você` : waitText ? `Aguardando você: ${waitText}` : 'Aguardando você'}</span></span>}
         <span className="oc-pgrow" />
         {conn === 'reconnecting' && <span className="oc-reconn" role="status" title="A conexão com os terminais caiu; tentando de novo automaticamente.">reconectando…</span>}
-        <span className={`oc-ptag prov-${session.provider || 'claude'}`} title="Agente (CLI) deste terminal">{session.providerLabel || 'Claude Code'}</span>
+        <span className={`oc-pmark${shown === 'working' ? ' working' : ''}`} role="img" aria-label={`Agente: ${session.providerLabel || 'Claude Code'}`} title={session.providerLabel || 'Claude Code'}><ProviderLogo id={session.provider || 'claude'} size={20} variant="mascot" /></span>
         {accTag && <span className="oc-ptag acc" title={`Conta: ${accTag}`}><span className="sr">Conta: </span>{accTag}</span>}
         {session.worktreeId && <span className="oc-ptag wt" title="Roda num worktree próprio">worktree</span>}
         {hasUse && <span className="oc-pusage" title={use.title}><span className="sr">Consumo: </span>{use.tokens} tok<span aria-hidden="true"> · </span><span className="sr">custo </span>{use.cost}</span>}
@@ -362,7 +363,7 @@ export default function TerminalGrid({ onOpenWorkspaces, onOpenSettings }) {
             {providers.length > 1 && (
               <label className="oc-prov-sel" title="Agente dos terminais NOVOS (presets de equipe e + Terminal). Dá para misturar: no menu da equipe, cada terminal novo pode ser de um agente diferente.">
                 <span className="sr">Agente dos novos terminais</span>
-                <select className="oc-sel" value={provider} onChange={(e) => pickProvider(e.target.value)} aria-label="Agente dos novos terminais">{providers.map((p) => <option key={p.id} value={p.id} disabled={!p.available}>{p.label}{p.available ? '' : ' (não instalado)'}</option>)}</select>
+                <select className="oc-sel" value={provider} onChange={(e) => pickProvider(e.target.value)} aria-label="Agente dos novos terminais">{providers.map((p) => <option key={p.id} value={p.id} disabled={!p.available}>{providerOptionLabel(p)}</option>)}</select>
               </label>
             )}
             <label className="oc-iso" title="Desligado (automático): cada agente que edita ganha um worktree Git próprio assim que há mais de um no workspace, sem conflito de arquivos (sem Git, abre na pasta normal e avisa). Ligado: sempre worktree, e um squad inteiro compartilha UM (os terminais do squad editam os mesmos arquivos). Exige repositório Git.">

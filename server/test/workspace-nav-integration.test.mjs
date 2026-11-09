@@ -16,8 +16,9 @@ const binDir = path.join(root, 'bin'); fs.mkdirSync(binDir);
 const INDEX = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'index.js');
 const DB_FILE = path.join(dataDir, 'db.json');
 
-// claude falso: fica vivo até ser encerrado (um PTY nunca fecha o stdin); ignora todos os argumentos.
-fs.writeFileSync(path.join(binDir, 'keep.mjs'), 'setInterval(() => {}, 1000);\n');
+// claude falso: no terminal (PTY, stdin é TTY) fica vivo até ser encerrado; chamado sem TTY (as consultas `--version` e `auth status` do servidor) responde e SAI.
+// Antes ele nunca terminava: cada consulta estourava o tempo limite, o servidor encerrava só o cmd.exe do .cmd e o node neto ficava vivo (um processo vazado por consulta, no Windows).
+fs.writeFileSync(path.join(binDir, 'keep.mjs'), "if (!process.stdin.isTTY) { console.log('2.0.0 (fake)'); process.exit(0); }\nsetInterval(() => {}, 1000);\n");
 fs.writeFileSync(path.join(binDir, 'claude.cmd'), `@echo off\r\n"${process.execPath}" "${path.join(binDir, 'keep.mjs')}"\r\n`);
 // Linux/macOS: o provider procura `claude` (sem extensão) no PATH; um script executável faz o mesmo papel do .cmd
 fs.writeFileSync(path.join(binDir, 'claude'), `#!/bin/sh\nexec "${process.execPath}" "${path.join(binDir, 'keep.mjs')}"\n`, { mode: 0o755 });

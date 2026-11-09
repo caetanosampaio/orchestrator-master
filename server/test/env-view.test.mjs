@@ -119,3 +119,15 @@ test('topic-state: persistência tolerante a texto inválido e a armazenamento q
   const broken = { getItem() { throw new Error('x'); }, setItem() { throw new Error('x'); } };
   assert.deepEqual(loadOpenMap(broken), {}); assert.doesNotThrow(() => saveOpenMap({}, broken));
 });
+
+test('environments: `agent` (logo da sidebar) é o provider do maestro; sem maestro, o do terminal executando; sem terminal ativo, null', () => {
+  const W = [ws('a', 'A', 'C:/a'), ws('b', 'B', 'C:/b'), ws('c', 'C', 'C:/c')];
+  const s = [
+    sess('m', 'a', { role: 'maestro', provider: 'codex' }), sess('x', 'a', { role: 'builder', agent: { state: 'running' } }),
+    sess('y', 'b', { role: 'builder', provider: 'claude' }), sess('z', 'b', { role: 'builder', provider: 'codex', agent: { state: 'running' } }),
+    sess('q', 'c', { status: 'exited', exitCode: 0, role: 'maestro', provider: 'codex' }),
+  ];
+  const by = Object.fromEntries(environments({ workspaces: W, sessions: s }).map((e) => [e.id, e.agent]));
+  assert.deepEqual(by, { a: 'codex', b: 'codex', c: null });
+  assert.equal(environments({ workspaces: [ws('d', 'D', 'C:/d')], sessions: [sess('k', 'd', { role: 'maestro' })] })[0].agent, 'claude', 'sessão sem o campo provider vale Claude Code');
+});

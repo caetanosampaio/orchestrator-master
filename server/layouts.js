@@ -4,7 +4,7 @@
 import * as store from './store.js';
 import { now } from './store.js';
 
-export const MAX_ORDER = 24;
+export const MAX_ORDER = 50; // acompanha MAX_SESSIONS (terminais.js): a ordem da grade precisa caber todos os terminais
 export const MAX_GRIDS = 16;
 export const MAX_TRACKS = 8;
 export const LAYOUT_MODES = Object.freeze(['auto', 'cols', 'rows', 'focus']); // visualização da grade (client/src/env-view.js); só o id fica gravado, junto do layout do workspace

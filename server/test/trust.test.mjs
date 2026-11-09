@@ -17,6 +17,8 @@ let n = 0;
 const stateFile = (content, mode = 0o600) => { const f = path.join(tmp, `claude-${++n}.json`); if (content !== undefined) fs.writeFileSync(f, typeof content === 'string' ? content : JSON.stringify(content, null, 2), { mode }); return f; };
 const folder = () => { const d = path.join(tmp, `proj-${++n}`); fs.mkdirSync(d); return fs.realpathSync.native(d); };
 const read = (f) => JSON.parse(fs.readFileSync(f, 'utf8'));
+// No Windows o trust.js registra a pasta também com barras normais (/); nas outras plataformas só há uma chave.
+const keysOf = (p) => (process.platform === 'win32' ? [p, p.replace(/\\/g, '/')] : [p]);
 
 test('trust: pasta nova ganha hasTrustDialogAccepted; o resto do arquivo, as permissões e as outras pastas ficam intactos; nenhum temporário sobra', () => {
   const other = folder(), dir = folder();
@@ -26,13 +28,13 @@ test('trust: pasta nova ganha hasTrustDialogAccepted; o resto do arquivo, as per
   const j = read(f);
   assert.equal(j.numStartups, 7); assert.equal(j.theme, 'dark'); assert.deepEqual(j.projects[other], { hasTrustDialogAccepted: true, allowedTools: ['Bash(ls)'], lastCost: 1.5 });
   assert.equal(j.projects[dir].hasTrustDialogAccepted, true); assert.deepEqual(j.projects[dir].allowedTools, []); assert.deepEqual(j.projects[dir].mcpServers, {});
-  assert.equal(fs.statSync(f).mode & 0o777, 0o600);
+  if (process.platform !== 'win32') assert.equal(fs.statSync(f).mode & 0o777, 0o600); // o Windows não tem modo POSIX (reporta 0o666)
   assert.deepEqual(fs.readdirSync(tmp).filter((x) => x.includes('.forge-')), []);
 });
 
 test('trust: pasta já confiável não reescreve o arquivo; entrada existente só vira confiável (mantém allowedTools e demais campos)', () => {
   const dir = folder();
-  const f = stateFile({ projects: { [dir]: { hasTrustDialogAccepted: true } } });
+  const f = stateFile({ projects: Object.fromEntries(keysOf(dir).map((k) => [k, { hasTrustDialogAccepted: true }])) });
   const before = fs.readFileSync(f, 'utf8'); fs.utimesSync(f, new Date(1e12), new Date(1e12));
   assert.deepEqual(trustClaudeFolder(dir, { file: f }), { ok: true, changed: false });
   assert.equal(fs.readFileSync(f, 'utf8'), before); assert.equal(fs.statSync(f).mtimeMs, 1e12, 'nem tocou no arquivo');
@@ -57,7 +59,7 @@ test('trust: pasta alcançada por link simbólico é registrada pelo caminho rea
   const real = folder(), link = path.join(tmp, `ln-${++n}`); fs.symlinkSync(real, link);
   const f = stateFile({ projects: {} });
   assert.equal(trustClaudeFolder(link, { file: f }).changed, true);
-  assert.deepEqual(Object.keys(read(f).projects).sort(), [real, path.resolve(link)].sort());
+  assert.deepEqual(Object.keys(read(f).projects).sort(), [real, path.resolve(link)].flatMap(keysOf).sort());
 });
 
 test('claudeStateFile: pasta da conta > CLAUDE_CONFIG_DIR do ambiente > pasta pessoal do usuário', () => {
