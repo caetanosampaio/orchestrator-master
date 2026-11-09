@@ -4,7 +4,7 @@
 
 ## Resumo
 
-O FORGE roda **inteiramente na sua máquina**. Ele não tem servidor próprio e não envia dados a ninguém. Quem conversa com a Anthropic é o **Claude Code**, que você instala e usa com a sua conta, sob os termos da Anthropic.
+O FORGE roda **inteiramente na sua máquina**. Ele não tem servidor próprio e não envia dados a ninguém. Quem conversa com a Anthropic é o **Claude Code** e, se você usar o Codex, quem conversa com a OpenAI é o **Codex CLI**: você os instala e usa com a sua conta, sob os termos de cada empresa.
 
 ## O que o FORGE grava em disco
 
@@ -15,7 +15,7 @@ Tudo fica na pasta de dados do app (`%APPDATA%\FORGE\data` no Windows; `~/Librar
 | `db.json` (e `db.json.bak`) | Caminhos dos workspaces, objetivos e relatórios das missões, tarefas, atividade e o registro das sessões de terminal | Texto simples. Pode conter trechos do seu código e dos seus pedidos. |
 | `history/` | **Cópia do texto das conversas** (suas mensagens e as do assistente) de cada workspace, até 4 MB por sessão | Não copia saída de ferramentas, raciocínio nem anexos. A remoção automática de segredos (senhas, chaves) é de **melhor esforço**: não confie nela como garantia. |
 | `loadouts/`, `agent-status/` | Configuração dos agentes e estado reportado por eles | |
-| `mcp/` | Credenciais temporárias do canal MCP entre o FORGE e os terminais | Em macOS/Linux a pasta tem permissão restrita ao seu usuário. |
+| `mcp/` | Credenciais temporárias do canal MCP entre o FORGE e os terminais | Em macOS/Linux a pasta tem permissão restrita ao seu usuário. Só o Claude Code usa arquivo; para o Codex a credencial vai apenas no ambiente do processo e não é gravada. |
 | `accounts/<id>/claude/` | **Credenciais de login** de cada conta do Claude Code cadastrada em Configurações > Contas (e os históricos que o Claude Code grava para aquela conta) | É a pasta de configuração que o próprio Claude Code usa para a conta. Em Windows e Linux o login fica em arquivo dentro dela; trate-a como senha. Remover a conta no FORGE desconecta e apaga a pasta. A conta "Sistema" é o Claude Code da própria pessoa, fora dessa pasta. |
 | `pricing.json` | Tabela de preços que **você** cria para estimar custos | |
 | `logs/server.log` (pasta `logs`, ao lado de `data`) | Log técnico do servidor | Pode registrar caminhos e mensagens de erro. |
@@ -25,6 +25,7 @@ A **saída dos terminais** fica apenas em memória enquanto a sessão existe (ce
 ## O que fica fora do controle do FORGE
 
 - O Claude Code mantém os **próprios** históricos e transcritos (em `~/.claude`). Apagar dados no FORGE não apaga isso.
+- O Codex CLI mantém o **próprio** login, configuração e históricos (em `~/.codex`). O FORGE **não** guarda nem lê as credenciais do Codex: só consulta `codex login status` e usa o código de saída para saber se há login. Apagar dados no FORGE não apaga o que está em `~/.codex`.
 - Os arquivos do seu projeto, os worktrees e as branches que os agentes criam ficam nas suas pastas.
 - **Os agentes rodam com as permissões do seu usuário.** Um agente (ou um projeto malicioso aberto num terminal) consegue ler a pasta de login de **todas** as contas cadastradas, não só da que ele usa. No Windows essas pastas não têm proteção extra de acesso. Abra apenas projetos em que você confia e não coloque a pasta de dados em locais sincronizados ou compartilhados (nuvem, rede).
 
