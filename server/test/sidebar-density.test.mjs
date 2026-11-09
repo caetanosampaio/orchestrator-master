@@ -4,7 +4,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const css = fs.readFileSync(new URL('../../client/src/retro.css', import.meta.url), 'utf8');
-const block = css.slice(css.indexOf('/* ---------- Sidebar compacta'));
+// A guarda vale só para a seção "Sidebar compacta": ela termina na próxima seção (`/* ---------- ...`). Regras posteriores (selo do provider, mascote...) têm posicionamento e transform de propósito.
+const start = css.indexOf('/* ---------- Sidebar compacta');
+const after = css.slice(start + 1).search(/\r?\n\/\* ---------- /);
+const block = after < 0 ? css.slice(start) : css.slice(start, start + 1 + after);
 
 test('compactação por espaçamento estrutural: padding, gap e min-height', () => {
   assert.match(block, /\.oc-side \{ padding: var\(--sp-2\) var\(--sp-3\); gap: var\(--sp-1\); \}/);

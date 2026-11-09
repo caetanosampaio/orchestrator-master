@@ -1,0 +1,75 @@
+# Arquitetura do FORGE
+
+Visão técnica do FORGE 0.1.0. Para instalar e usar, veja o [README](../README.md); para a integração com cada agente, [AGENTES.md](AGENTES.md).
+
+## Camadas
+
+```
+Electron (desktop/)  ->  servidor Node + Express (server/, só 127.0.0.1)  ->  CLIs dos agentes (node-pty)
+      |                          |                                              Claude Code / Codex CLI
+ token de sessão          db.json, history/, mcp/                                      ^
+      v                          v                                                     |
+ React + Vite (client/) <-- API REST + SSE --  Maestro (MCP local em /mcp) ------------+
+```
+
+| Camada | Pasta | Papel |
+|---|---|---|
+| Desktop | `desktop/` | Electron 43: sobe o servidor, gera o token de sessão, migra dados do nome antigo, rotaciona logs, reinicia o servidor se cair (máx. 3 em 2 min), empacota Windows (Setup e Portable) e macOS (`.dmg`, Intel). |
+| Servidor | `server/` | API Node (ESM, Express 4; dependências de execução: `express` e `node-pty`). Escuta só em `127.0.0.1`. |
+| Cliente | `client/` | React 18 + Vite + `@xterm/xterm`. A lógica de visão fica em módulos `.js` puros (`env-view.js`, `provider-view.js`, `layout-state.js`...), testados a partir de `server/test/`. |
+| Testes | `server/test/` | `node:test`, cerca de 170 arquivos. `fake-cli.mjs` simula o agente; `manual/` tem scripts que usam o Claude de verdade. |
+
+## Servidor
+
+**Terminais e agentes**
+- `terminals.js`: cria e fecha PTYs, transmite a saída por SSE, retoma e reabre sessões, mantém limites (50 simultâneos) e o estado de cada agente.
+- `providers/`: adaptadores `claude.js` e `codex.js` atrás de uma interface comum (ver [AGENTES.md](AGENTES.md)).
+- `maestro.js`: servidor MCP local; tarefas pendentes até a aprovação do usuário.
+- `agent-status.js` e `agent-status-hook.mjs`: estado do Claude Code por hooks. O do Codex é lido do terminal.
+- `loadouts.js`: skills e MCPs por papel, como plugin de sessão em pasta própria (fora do projeto).
+- `terminal-usage.js`: tokens e custo do Claude Code a partir do transcript, com preços só do `pricing.json` do usuário.
+
+**Isolamento e contas**
+- `worktrees.js`: worktrees git por agente ou por equipe, com detecção de conflito e integração controlada. Só roda Git com argumentos fixos, sem shell, sem hooks e sem rede.
+- `accounts.js`, `account-login.js`, `claude-cli.js`: contas do Claude Code como pastas de configuração próprias, login pelo navegador, conta padrão. O Codex aparece na lista de provedores com o estado do login dele, mas o FORGE não o gerencia.
+- `trust.js`: resposta à pergunta "confiar nesta pasta?" do Claude Code; o Codex recebe a confiança por argumento.
+
+**Infraestrutura**
+- `store.js`: persistência em JSON com gravação atômica (arquivo temporário + rename). Falha de gravação desfaz o estado parcial (`saveOrThrow` + rollback).
+- `instance-lock.js`, `orphans.js`, `child-registry.js`, `shutdown.js`, `proc.js`: trava de instância, limpeza de processos órfãos (no Windows os filhos não morrem com o pai) e encerramento ordenado (filhos, flush, trava).
+- `origin-guard.js` e `session-token.js`: proteção de rede e token de sessão (ver Segurança).
+- `layouts.js`, `ui-settings.js`, `topics.js`, `conversations.js`: layout da grade por workspace, preferências, tópicos e histórico de conversas.
+
+**Ciclo de missões (sem tela hoje)**
+`cycle.js`, `planner.js`, `executor/`, `plan.js`, `policy.js`, `verify.js`, `evidence.js`, `scope.js`, `supervisor.js`, `delivery.js`, `limits.js`: ciclo autônomo Planner, Executor, verificações reais, evidência, supervisão e relatório de entrega. O Planner só escolhe `continue`, `complete` ou `blocked`, e o backend valida formato, decisão e evidência; concluir exige evidência `verified`, exceto por aceitação humana explícita e registrada. Está exposto em `/api/missions/...` e coberto por testes, mas a interface atual (grade de terminais) não tem telas para ele. Os componentes antigos (`Missions`, `CyclePanel`, `DeliveryReport`...) continuam em `client/src/` sem serem importados.
+
+## Fluxos principais
+
+**Abrir um terminal.** O cliente envia `POST /api/terminals` com papel e provedor (de listas fechadas). O servidor valida o workspace, decide o worktree (um por agente que edita quando há mais de um), confere a configuração de projeto não revisada, monta os argumentos com o adaptador, emite a credencial do Maestro e inicia o PTY. A saída segue por SSE (`/api/terminals/:id/stream`).
+
+**Estado do agente.** Claude: hooks gravam eventos em arquivos que o servidor lê. Codex: o servidor interpreta a sequência OSC 7501 na saída do PTY. Os dois viram `idle`, `running`, `waiting`, `completed` ou `error`; o cliente deriva o estado do painel, do workspace (sidebar) e global a partir disso (`paneState`, `wsTone`).
+
+**Tarefa do Maestro.** O Maestro chama `send_task` por MCP; a tarefa fica pendente; o usuário aprova ou recusa (`/api/maestro/tasks/:id/approve|reject`); aprovada, o texto é entregue ao terminal de destino do jeito que a CLI dele espera.
+
+## Segurança
+
+- Escuta só em loopback; `Host` e `Origin` validados (protege de CSRF e DNS rebinding, **não** é autenticação).
+- No desktop, token de sessão por boot nas ações que alteram estado; o servidor o remove de `process.env` para os filhos não herdarem.
+- Sem shell em tudo que executa processo, com argumentos fixos. Exceção: os wrappers `.cmd` do npm no Windows passam pelo `cmd.exe`, com a linha de comando montada pelo servidor (caminho com metacaractere do `cmd.exe` não é executado).
+- Credencial do Maestro por terminal: guardada em memória; no Claude Code também vai num arquivo `--mcp-config` de modo restrito, e no Codex só no ambiente do processo.
+- Configuração de projeto executável não revisada no Git exige confirmação.
+- Os agentes rodam com as permissões do usuário (limite assumido e documentado).
+- Limites aceitos: terminais interativos não passam pela política e pela evidência do ciclo; as rotas do Maestro só conferem `Host`/`Origin` fora do desktop; `releasePty` mexe em campos internos do `node-pty`.
+
+## Decisões técnicas
+
+- **Poucas dependências:** Express e node-pty no servidor; testes com `node:test`.
+- **JSON em arquivo** em vez de banco: simples e inspecionável; escrita atômica.
+- **Adaptador de provedor:** novos agentes entram sem mexer no núcleo; o que a CLI não tem fica `false` em `capabilities`.
+- **Estado vindo do agente**, não de adivinhação pela saída, sempre que a CLI informa (hooks no Claude, OSC no Codex).
+- **Contratos legados preservados** no rebranding para FORGE: `ORCH_*`, `x-orch-token`, `orch/wt_*`, compatibilidade de leitura do nome MCP antigo.
+- **Dados do usuário protegidos nos testes:** `ORCH_DATA_DIR` temporário em toda suíte.
+
+## Testes e CI
+
+A suíte completa leva alguns minutos e deve rodar com `ORCH_DATA_DIR` temporário. A CI (`.github/workflows/ci.yml`) roda a suíte no Windows, Linux e macOS (o macOS não bloqueia o resultado) e confere o build do cliente. Testes específicos de um sistema ficam em arquivos próprios (`posix-process.test.mjs` e `win-process.test.mjs`) e aparecem como ignorados nos outros sistemas.

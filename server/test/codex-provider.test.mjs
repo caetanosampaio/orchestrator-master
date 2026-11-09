@@ -27,7 +27,7 @@ test('codex.resolve: acha o `codex` no PATH; wrapper .cmd (npm no Windows) passa
 
 test('codex.paneArgs: sandbox e aprovação fixos, prompt em developer_instructions, MCP por -c com o token SÓ no ambiente (nunca na linha de comando)', () => {
   const a = codexProvider.paneArgs({ mode: 'new', prompt: 'Voce e o CONSTRUTOR. Faca (rapido): ok.', mcp: { url: URL_, serverName: NAME } });
-  assert.deepEqual(a.slice(0, 5), ['--no-alt-screen', '-s', 'workspace-write', '-a', 'on-request']);
+  assert.deepEqual(a.slice(0, 6), ['--no-alt-screen', '--no-daemon', '-s', 'workspace-write', '-a', 'on-request']);
   const cs = a.filter((x, i) => a[i - 1] === '-c');
   assert.deepEqual(cs, [
     'developer_instructions="Voce e o CONSTRUTOR. Faca (rapido): ok."',
@@ -36,7 +36,7 @@ test('codex.paneArgs: sandbox e aprovação fixos, prompt em developer_instructi
   ]);
   assert.ok(!a.some((x) => /--session-id|--mcp-config|--plugin-dir|--allowedTools|--append-system-prompt/.test(x)), 'nenhuma flag do Claude');
   // aspas dentro do prompt são escapadas como string TOML; wrapper .cmd (quote:false) vai sem aspas
-  assert.equal(codexProvider.paneArgs({ prompt: 'diga "oi"' })[6], 'developer_instructions="diga \\"oi\\""');
+  assert.equal(codexProvider.paneArgs({ prompt: 'diga "oi"' })[7], 'developer_instructions="diga \\"oi\\""');
   const raw = codexProvider.paneArgs({ prompt: 'Voce e o BATEDOR', mcp: { url: URL_, serverName: NAME }, quote: false }).filter((x, i, l) => l[i - 1] === '-c');
   assert.deepEqual(raw.slice(0, 3), ['developer_instructions=Voce e o BATEDOR', `mcp_servers.${NAME}.url=${URL_}`, `mcp_servers.${NAME}.bearer_token_env_var=${MCP_TOKEN_ENV}`]);
   // sem MCP, ou com nome de servidor que não é chave simples: nenhum argumento de MCP
@@ -151,7 +151,7 @@ test('maestro.deliver: pane do Codex recebe a tarefa entre marcadores de colagem
   assert.equal((d.match(/\x1b/g) ?? []).length, 2, 'só os dois marcadores têm ESC; o texto do agente foi limpo');
   w.timers.shift()(); assert.deepEqual(w.written[1], [CX, '\r']);
   w.call(w.ma, 'send_task', { pane_id: CL, task: 'outra' });
-  assert.ok(!w.written[2][1].includes('\x1b'), 'Claude: texto puro'); w.timers.shift()(); assert.deepEqual(w.written[3], [CL, '\r']);
+  assert.ok(!w.written[2][1].includes('\x1b'), 'Claude: texto puro'); while (w.written.length < 4 && w.timers.length) w.timers.shift()(); assert.deepEqual(w.written[3], [CL, '\r']); // drena também o timer de confirmação do envio do Codex (não escreve nada: sem estado de agente)
 });
 
 test('maestro.list_panes: informa provedor, branch e caminho do worktree para o maestro saber onde cada agente trabalha', () => {
@@ -180,4 +180,23 @@ test('Claude abre com CLAUDE_CODE_NO_FLICKER=1 (renderer em tela cheia, vence o 
     const w2 = world(); await w2.mgr.create({ role: 'builder' });
     assert.equal(w2.spawned[0].opts.env.CLAUDE_CODE_NO_FLICKER, '0', 'quem exporta outro valor manda');
   } finally { if (keep === undefined) delete process.env.CLAUDE_CODE_NO_FLICKER; else process.env.CLAUDE_CODE_NO_FLICKER = keep; }
+});
+
+test('estado do Codex: lido da sequência OSC 7501 do terminal (idle/working/blocked/done), inclusive cortada entre dois pedaços', async () => {
+  let feed = null;
+  const lib = { spawn() { const p = { pid: 1_920_000_001, onData(cb) { feed = cb; }, onExit() {}, write() {}, resize() {} }; return p; } };
+  const w = world({ ptyLib: lib });
+  const r = await w.mgr.create({ role: 'builder', provider: 'codex' });
+  assert.equal(r.ok, true, r.error);
+  const state = () => w.mgr.get(r.session.id).agent?.state ?? null;
+  assert.equal(state(), null, 'sem sinal ainda: cai na leitura pela saída');
+  feed('\x1b]7501;state=working:app=codex\x1b\\'); assert.equal(state(), 'running');
+  feed('texto\x1b]7501;state=blocked:app=codex:kind=permission\x07'); assert.equal(state(), 'waiting');
+  feed('\x1b]7501;state=do'); assert.equal(state(), 'waiting', 'sequência incompleta não muda nada');
+  feed('ne:app=codex\x1b\\'); assert.equal(state(), 'completed');
+  feed('\x1b]7501;state=inventado:app=codex\x07'); feed('\x1b]7501;state=working:app=outro\x07'); assert.equal(state(), 'completed', 'estado desconhecido ou de outro app é ignorado');
+  feed('\x1b]7501;state=working:app=codex\x07'); feed('\x1b]7501;state=error:app=codex\x07');
+  assert.equal(state(), 'error', 'falha do turno (HTTP 4xx/5xx, resposta failed): o painel não fica em "executando"');
+  feed('\x1b]7501;state=working:app=codex\x07');
+  assert.equal(state(), 'running', 'um novo pedido depois do erro volta a executar');
 });

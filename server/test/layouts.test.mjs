@@ -65,7 +65,7 @@ test('PUT é parcial: grids mesclam formato a formato; maximized aceita null; or
 
 test('valores inválidos são recusados (400 em pt-BR) e NADA muda', async () => {
   const before = JSON.stringify(disk().settings.layouts);
-  const bad = [{ order: 'x' }, { order: [R(1), R(1)] }, { order: ['ses_zzzz'] }, { order: Array.from({ length: 25 }, (_, i) => R(i)) }, { maximized: 'term_abc' }, { maximized: 5 },
+  const bad = [{ order: 'x' }, { order: [R(1), R(1)] }, { order: ['ses_zzzz'] }, { order: Array.from({ length: L.MAX_ORDER + 1 }, (_, i) => R(i)) }, { maximized: 'term_abc' }, { maximized: 5 },
     { grids: [] }, { grids: { '2x2': { cols: [1, 1] } } }, { grids: { '2x2': { cols: [1, 'a'], rows: [1, 1] } } }, { grids: { '2x2': { cols: [0, 1], rows: [1, 1] } } }, { grids: { '2x2': { cols: [1, 1], rows: [1, 1], extra: 1 } } },
     { grids: { 'abc': G22 } }, { grids: { '0x2': G22 } }, { grids: { '13x1': G22 } }, { grids: { '2x2': { cols: Array(9).fill(1), rows: [1] } } }, { grids: { '2x2': { cols: [1, 500], rows: [1, 1] } } }];
   for (const b of bad) { const r = await putL('wsA', b); assert.equal(r.status, 400, JSON.stringify(b).slice(0, 80)); assert.match((await r.json()).error, /deve|inválido|não permitid/i); }
@@ -143,7 +143,8 @@ test('orderSessions: segue a ordem salva, os desconhecidos vão depois na ordem 
 });
 test('mergeOrder: mantém quem não está vivo (restauração), acrescenta os novos e respeita o limite', () => {
   assert.deepEqual(C.mergeOrder([R(1), R(2)], [R(3)]), [R(1), R(2), R(3)]); assert.deepEqual(C.mergeOrder([R(1), R(2)], [R(2), R(1)]), [R(1), R(2)], 'sem duplicar');
-  const many = Array.from({ length: 24 }, (_, i) => R(i)); const out = C.mergeOrder(many, [R(99)]); assert.equal(out.length, 24); assert.ok(out.includes(R(99)) && !out.includes(R(0)), 'sai o mais antigo que não está visível');
+  assert.equal(C.MAX_ORDER, L.MAX_ORDER, 'cliente e servidor têm o mesmo limite da ordem'); assert.ok(C.MAX_ORDER >= 50, 'a ordem salva comporta os 50 terminais possíveis (MAX_SESSIONS em terminals.js)');
+  const many = Array.from({ length: C.MAX_ORDER }, (_, i) => R(i)); const out = C.mergeOrder(many, [R(99)]); assert.equal(out.length, C.MAX_ORDER); assert.ok(out.includes(R(99)) && !out.includes(R(0)), 'sai o mais antigo que não está visível');
   assert.deepEqual(C.mergeOrder(undefined, []), []);
 });
 test('sanitizeLayout e roundTracks descartam lixo e arredondam', () => {

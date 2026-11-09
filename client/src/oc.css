@@ -144,6 +144,11 @@
 .oc-prov li.on { box-shadow: inset 0 0 0 1px var(--brand-line); } .oc-prov li.off { opacity: .6; }
 .oc-prov-i { display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: var(--r-2); background: var(--coal-3); color: var(--brand); } .oc-prov li.off .oc-prov-i { color: var(--dim); }
 .oc-prov-t { flex: 1; display: flex; flex-direction: column; } .oc-prov-t b { font-weight: 500; color: var(--strong); }
+/* Logo do provider: azulejo reto em carvão, como os demais controles; cada marca mantém a sua cor de identidade, sem brilho. */
+.oc-prov .oc-prov-i.logo { width: 40px; height: 40px; background: var(--coal-3); box-shadow: inset 0 0 0 1px var(--coal-line); }
+.oc-prov li.on .oc-prov-i.logo { box-shadow: inset 0 0 0 1px var(--brand-line); }
+.oc-prov-name { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.prov-mark { display: block; flex: none; } .prov-mark.claude { color: #d97757; } .prov-mark.codex { color: var(--strong); }
 @media (max-width: 700px) { .oc-set { grid-template-columns: 1fr; } .oc-set-nav { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--coal-line); } .oc-row { flex-direction: column; align-items: flex-start; } }
 
 /* ---------- interruptores ---------- */
@@ -463,3 +468,16 @@ html[data-motion="reduced"] .wsi, html[data-motion="reduced"] .wsi svg { animati
 .acc-popt { display: inline-flex; align-items: center; gap: var(--sp-2); min-height: 32px; } .acc-popt.off { opacity: .6; }
 .oc-ptag.acc { min-width: 0; max-width: 16ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 0 1 auto; }
 @media (max-width: 700px) { .acc .btn, .acc-popt { min-height: 44px; } .acc-field input, .acc-field select { max-width: none; } }
+/* Logo do agente no cabeçalho do terminal (sem caixa nem nome). Trabalhando: pula, balança e se agita (mesma marca para Claude e Codex).
+   Movimento desligado por prefers-reduced-motion e por "Animações reduzidas" (regras globais de animation: none acima). */
+.oc-pmark { flex: none; display: inline-grid; place-items: center; line-height: 0; transform-origin: 50% 85%; }
+.oc-pmark.working { animation: pmark-work 1.1s ease-in-out infinite; }
+@keyframes pmark-work {
+  0% { transform: translateY(0) rotate(0) scale(1, 1); }
+  12% { transform: translateY(1px) rotate(0) scale(1.12, .86); }
+  30% { transform: translateY(-5px) rotate(-12deg) scale(.95, 1.08); }
+  46% { transform: translateY(0) rotate(7deg) scale(1.08, .92); }
+  60% { transform: translateY(-2px) rotate(-6deg) scale(1, 1); }
+  74% { transform: translateY(0) rotate(5deg) scale(1, 1); }
+  100% { transform: translateY(0) rotate(0) scale(1, 1); }
+}

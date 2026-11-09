@@ -82,11 +82,19 @@ test('conta padrão: system por padrão; define por id existente ou system; id d
   w.db.settings.defaultAccountId = 'acc_00000000'; assert.equal(w.accounts.defaultId(), 'system', 'padrão apontando para conta inexistente cai em system');
 });
 
-test('listView: Sistema primeiro, flags, provedores (codex em breve) e status SÓ com os campos do contrato (nada do resto da saída da CLI)', async () => {
-  const w = world(); const a = mk(w, 'Trabalho'); markLoggedIn(path.join(w.accDir(a.id), 'claude')); w.accounts.setDefault(a.id);
+test('listView: Sistema primeiro, flags, provedores (Codex com login próprio) e status SÓ com os campos do contrato (nada do resto da saída da CLI)', async () => {
+  const codex = { resolve: () => ({ file: 'codex' }), authProbe: async () => ({ known: true, loggedIn: false, detail: 'O Codex não está conectado.' }) };
+  const w = world({ codex }); const a = mk(w, 'Trabalho'); markLoggedIn(path.join(w.accDir(a.id), 'claude')); w.accounts.setDefault(a.id);
   const v = await w.accounts.listView();
   assert.deepEqual(v.accounts.map((x) => [x.id, x.system, x.isDefault]), [['system', true, false], [a.id, false, true]]); assert.equal(v.defaultId, a.id);
-  assert.deepEqual(v.providers, [{ id: 'claude', label: 'Claude Code', canLogin: true, available: true }, { id: 'codex', label: 'Codex', available: false, comingSoon: true }]);
+  assert.deepEqual(v.providers, [{ id: 'claude', label: 'Claude Code', canLogin: true, available: true }, { id: 'codex', label: 'Codex CLI', canLogin: false, note: A.PROVIDERS[1].note, available: true, auth: { known: true, loggedIn: false, detail: 'O Codex não está conectado.' } }]);
+  assert.equal((await w.accounts.listView({ status: false })).providers[1].auth, undefined, 'status:false não consulta a CLI do Codex');
+  const none = world({ codex: { resolve: () => null, authProbe: async () => { throw new Error('não deve consultar sem a CLI'); } } });
+  assert.deepEqual((await none.accounts.listView()).providers[1], { ...A.PROVIDERS[1], available: false });
+  const r = w.accounts.create({ provider: 'codex', label: 'x' });
+  assert.equal(r.ok, false);
+  assert.equal(r.code, 'provider_unavailable');
+  assert.doesNotMatch(r.error, /em breve/i);
   assert.deepEqual(Object.keys(v.accounts[1].status).sort(), ['authMethod', 'checked', 'email', 'error', 'loggedIn', 'loginExpiresAt', 'orgName', 'subscriptionType']);
   assert.deepEqual(v.accounts[1].status, { checked: true, loggedIn: true, authMethod: 'claude.ai', email: 'pessoa@example.test', orgName: 'Org Teste', subscriptionType: 'pro', loginExpiresAt: '2030-01-01T00:00:00.000Z', error: null });
   assert.equal(JSON.stringify(v).includes('NAO-PODE-SAIR'), false); assert.equal(JSON.stringify(v).includes('configDirectory'), false);
@@ -268,4 +276,11 @@ test('"Verificar novamente": reset das sondas do Git e do executor força nova c
     const git = createGitProbe({ command: process.execPath, prefixArgs: [script] }); await git(); await git(); assert.equal(n(), 1); git.reset(); await git(); assert.equal(n(), 2);
     const ex = createExecutor({ command: process.execPath, prefixArgs: [script], args: [] }); await ex.probe(); await ex.probe(); assert.equal(n(), 3); ex.resetProbe(); await ex.probe(); assert.equal(n(), 4);
   } finally { if (old === undefined) delete process.env.SONDA_LOG; else process.env.SONDA_LOG = old; }
+});
+
+test('listView({ fresh: true }) zera o cache da sonda do Codex; sem fresh não', async () => {
+  let resets = 0;
+  const w = world({ codex: { resolve: () => ({ file: 'codex' }), authProbe: Object.assign(async () => ({ known: true, loggedIn: true, detail: 'x' }), { reset: () => { resets++; } }) } });
+  await w.accounts.listView(); assert.equal(resets, 0);
+  await w.accounts.listView({ fresh: true }); assert.equal(resets, 1);
 });

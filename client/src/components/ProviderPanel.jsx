@@ -1,13 +1,14 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../store.jsx';
 import { providerSummary } from '../env-view.js';
+import { providerStatus } from '../provider-view.js';
 import { Icon } from './ui.jsx';
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 const W = 300, GAP = 6, EDGE = 8;
 
 function Body({ rows, sessions }) {
-  const live = rows.filter((r) => r.available || r.total > 0), soon = rows.filter((r) => !r.available && r.total === 0);
+  const live = rows.filter((r) => r.available || r.total > 0), absent = rows.filter((r) => !r.available && r.total === 0);
   const active = live.reduce((n, r) => n + r.active, 0);
   return (
     <>
@@ -16,6 +17,7 @@ function Body({ rows, sessions }) {
       {live.map((r) => (
         <section key={r.id} className="oc-pop-prov" aria-label={r.label}>
           <h3><Icon name="terminal" size={13} />{r.label}<span>{plural(r.total, 'sessão', 'sessões')}</span></h3>
+          {r.auth?.known && r.auth.loggedIn === false && <p className="oc-pop-off">Não conectado: faça o login pelo próprio {r.label}.</p>}
           <dl>
             <div className="work"><dt>Trabalhando</dt><dd>{r.working}</dd></div>
             <div className="ok"><dt>Ociosas</dt><dd>{r.idle}</dd></div>
@@ -24,7 +26,7 @@ function Body({ rows, sessions }) {
           {r.exited > 0 && <p className="oc-pop-off">{plural(r.exited, 'encerrada', 'encerradas')} (não contam como ativas)</p>}
         </section>
       ))}
-      {soon.map((r) => <p key={r.id} className="oc-pop-soon"><Icon name="terminal" size={13} />{r.label}<span>em breve · sem integração</span></p>)}
+      {absent.map((r) => <p key={r.id} className="oc-pop-soon"><Icon name="terminal" size={13} />{r.label}<span>{providerStatus(r).text}</span></p>)}
     </>
   );
 }
@@ -34,7 +36,7 @@ function Body({ rows, sessions }) {
 export default function AgentsPopover({ className = '', title, tone = 'none', children }) {
   const { terminals, workingIds } = useStore();
   const sessions = terminals?.sessions ?? [];
-  const rows = useMemo(() => providerSummary(sessions, workingIds), [sessions, workingIds]);
+  const rows = useMemo(() => providerSummary(sessions, workingIds, terminals?.providers ?? null), [sessions, workingIds, terminals?.providers]);
   const [open, setOpen] = useState(false), [pos, setPos] = useState(null);
   const btn = useRef(null), pop = useRef(null);
 

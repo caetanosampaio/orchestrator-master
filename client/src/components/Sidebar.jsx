@@ -3,7 +3,8 @@ import { api, nav } from '../api.js';
 import { useStore } from '../store.jsx';
 import { usePrefs } from '../hooks.js';
 import { environments, wsTone, wsAlert } from '../env-view.js';
-import { Icon, WorkStar } from './ui.jsx';
+import { Icon } from './ui.jsx';
+import ProviderLogo from './ProviderLogo.jsx';
 import { MascotLogo } from './MascotLogo.jsx';
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
@@ -19,15 +20,15 @@ function describe(e) {
 }
 
 /**
- * Indicador de estado do workspace (pixel quadrado, à esquerda do nome), agregado dos terminais: cinza = sem atividade, laranja (estrela girando, como a marca do Claude) = executando,
+ * Indicador de estado do workspace (pixel quadrado, à esquerda do nome), agregado dos terminais: cinza = sem atividade, laranja pulsando = executando,
  * verde fixo = concluído, âmbar = aguardando você, vermelho discreto = falha. O alerta "!" fica do outro lado, depois dos contadores (ver `wsAlert`, em env-view.js).
+ * Executando, a logo do agente que lidera o workspace (`agent`: o do maestro) aparece animada acima do pixel, como um selo de notificação.
  */
-export function WsIcon({ tone }) {
+export function WsIcon({ tone, agent = null }) {
   return (
-    <span className={`wsi wsi-${tone}`} aria-hidden="true">
-      {tone === 'work'
-        ? <WorkStar size={16} />
-        : <i className="wsi-pix" />}
+    <span className={`wsi wsi-${tone}${tone === 'work' && agent ? ` wsi-${agent}` : ''}`} aria-hidden="true">
+      <i className="wsi-pix" />
+      {tone === 'work' && agent && <span className="wsi-agent"><ProviderLogo id={agent} size={11} /></span>}
     </span>
   );
 }
@@ -40,7 +41,7 @@ function EnvRename({ env, onSave, onCancel }) {
   const finish = (save) => { if (done.current) return; done.current = true; if (save) onSave(value); else onCancel(); };
   return (
     <div className="oc-env oc-env-edit on">
-      <WsIcon tone={wsTone(env)} />
+      <WsIcon tone={wsTone(env)} agent={env.agent} />
       <input className="oc-env-input" autoFocus maxLength={MAX_NAME} value={value} aria-label={`Novo nome para o ambiente ${env.original}`} title={`Pasta: ${env.path}\nEnter confirma, Esc cancela. Vazio restaura "${env.original}".`}
         onFocus={(e) => e.target.select()} onChange={(e) => setValue(e.target.value)} onBlur={() => finish(true)}
         onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); finish(true); } else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(false); } }} />
@@ -58,7 +59,7 @@ function EnvItem({ env, collapsed, editing, onPick, onEdit, onSave, onCancel }) 
     <li className="oc-envrow">
       <div className="oc-envrow-head">
         <button type="button" className={`oc-env tone-${tone}${env.active ? ' on' : ''}${wsAlert(tone, env.finished) ? ' has-alert' : ''}`} onClick={() => onPick(env)} aria-current={env.active ? 'true' : undefined} aria-label={full} title={collapsed ? full : env.renamed ? `${env.path}\nNome original: ${env.original}` : env.path}>
-          <WsIcon tone={tone} />
+          <WsIcon tone={tone} agent={env.agent} />
           <span className="oc-env-name side-label">{env.name}</span>
           <span className="oc-env-badges" aria-hidden="true">
             {attn > 0 && <span className="oc-cnt attn" title={describe(env)}>{attn}</span>}

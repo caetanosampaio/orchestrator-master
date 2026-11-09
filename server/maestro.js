@@ -79,7 +79,13 @@ export function stableServerName(db, { save = null, gen = () => randomBytes(3).t
   return name;
 }
 
-export function createMaestro({ getTerminals, mcpDir, url, serverName = SERVER_NAME, lockDir = restrictDir, now = store.now, uid = store.uid, setTimer = setTimeout, autoPerMinute = AUTO_PER_MINUTE, submitDelayMs = null } = {}) {
+// Confirmação do envio: depois do Enter, se o agente está pronto para receber (idle, completed ou error) e NÃO reagiu (nenhuma mudança de estado desde o Enter), o texto ficou parado no campo de entrada
+// (ex.: o Enter foi engolido durante a renderização do Codex): repete o Enter, no máximo ENTER_RETRIES vezes. Só nos provedores cujo estado vem do próprio terminal (Codex): nos hooks do Claude, um hook
+// quebrado deixaria o estado velho e o Enter repetido poderia aprovar um pedido de permissão. Não repete com outra linha sendo digitada nem com saída recente (o usuário pode estar digitando).
+export const ENTER_RETRIES = 2, CONFIRM_MS = 2000, REPORT_RETRY_MS = 3000, REPORT_RETRIES = 40, QUIET_MS = 1500;
+const READY_STATES = new Set(['idle', 'completed', 'error']);
+
+export function createMaestro({ getTerminals, mcpDir, url, serverName = SERVER_NAME, lockDir = restrictDir, now = store.now, uid = store.uid, setTimer = setTimeout, autoPerMinute = AUTO_PER_MINUTE, submitDelayMs = null, confirmMs = CONFIRM_MS, reportRetryMs = REPORT_RETRY_MS } = {}) {
   const byHash = new Map();   // sha256(token) -> { terminalId, role }
   const byTerminal = new Map(); // terminalId -> { hash, file }
   const tasks = [];           // mais antigas primeiro
@@ -130,17 +136,68 @@ export function createMaestro({ getTerminals, mcpDir, url, serverName = SERVER_N
     while (tasks.length > MAX_TASKS) { const i = tasks.findIndex((t) => t.status !== 'pending' && t.status !== 'delivered'); tasks.splice(i < 0 ? 0 : i, 1); }
   }
 
+  /** Depois do Enter: sem reação do agente (estado pronto e sem mudança desde o Enter), repete o Enter. Sem sinal de estado (agent nulo) ou com o agente ocupado, não há como confirmar e nada é repetido. */
+  function confirmSubmit(paneId, enterAt, tries) {
+    if (tries >= ENTER_RETRIES) return;
+    setTimer(() => {
+      const cur = paneOf(paneId), st = cur?.agent;
+      if (!cur || cur.status !== 'running' || !st || !READY_STATES.has(st.state) || !(Date.parse(st.at) < enterAt)) return;
+      if (sending.has(paneId) || Date.now() - Date.parse(cur.lastOutputAt) < 1000) return;
+      if (typeof (isProvider(cur.provider) ? getProvider(cur.provider) : getProvider(DEFAULT_PROVIDER)).oscState !== 'function') return;
+      try { terms().write(paneId, '\r'); } catch { return; }
+      confirmSubmit(paneId, enterAt, tries + 1);
+    }, confirmMs).unref?.();
+  }
+
+  /**
+   * Digita UMA linha no pane e envia com o Enter. Cada CLI tem o seu jeito de receber o bloco (providers: submit); os marcadores de colagem são acrescentados DEPOIS da limpeza do texto (o que o agente escreveu
+   * nunca traz ESC). O Enter vai separado e um instante depois: o Claude Code trata o bloco como colagem e só envia no Enter seguinte; depois dele, `confirmSubmit` repete se o agente não reagiu.
+   */
+  function typeLine(paneId, target, line) {
+    const sub = (isProvider(target.provider) ? getProvider(target.provider) : getProvider(DEFAULT_PROVIDER)).submit ?? { bracketed: false, delayMs: 200 };
+    const w = terms().write(paneId, sub.bracketed ? `\x1b[200~${line}\x1b[201~` : line);
+    if (!w.ok) return w;
+    sending.add(paneId);
+    setTimer(() => {
+      sending.delete(paneId); try { terms().write(paneId, '\r'); } catch { /* o terminal pode ter acabado */ }
+      confirmSubmit(paneId, Date.parse(now()), 0);
+    }, submitDelayMs ?? sub.delayMs ?? 200).unref?.();
+    return { ok: true };
+  }
+
+  /**
+   * Avisa o MAESTRO de que a tarefa terminou: o `report_done` só marca a tarefa, e o Maestro não tem como "ouvir" isso (só enxerga o resultado se chamar `list_tasks`). Aqui o relatório é digitado no terminal dele.
+   * O resumo é texto do AGENTE e passa a ser entrada do Maestro, então: (1) vai entre « » com o aviso de que NÃO é instrução nem mensagem do usuário, e colchetes e « » do resumo são neutralizados (não forja rótulos como
+   * `[Tarefa ...]`); (2) só digita com o estado do Maestro CONHECIDO e diferente de `waiting` (sem estado não dá para saber se o Enter responderia a uma permissão); (3) só digita com o Maestro QUIETO (`QUIET_MS` sem saída: saída
+   * recente é sinal de que o usuário está digitando ou de que ele está trabalhando); (4) não digita por cima de outra entrega. Em qualquer espera tenta de novo a cada `reportRetryMs`, até REPORT_RETRIES vezes; desistindo,
+   * deixa uma nota na tarefa e o resultado continua em `list_tasks`. Maestro que já acabou: nada a fazer.
+   * LIMITE ASSUMIDO: o relatório chega em hora imprevisível e é concatenado ao que estiver no campo de entrada do Maestro (não há sinal confiável de "campo vazio"); a espera por silêncio reduz, não elimina.
+   * Texto de agente na entrada do Maestro continua sendo um canal de injeção de prompt: o que o protege é a aprovação humana de send_task (o modo autônomo a dispensa, com o limite de AUTO_PER_MINUTE).
+   */
+  function notifyMaestro(task, tries = 0) {
+    const from = paneOf(task.from);
+    if (!from || from.status !== 'running' || from.id === task.to) return;
+    const wait = (why) => {
+      if (tries < REPORT_RETRIES) setTimer(() => { try { notifyMaestro(task, tries + 1); } catch { /* aviso: o resultado segue em list_tasks */ } }, reportRetryMs).unref?.();
+      else task.note = `O relatório não foi digitado no maestro (${why}); o resultado está em list_tasks.`;
+    };
+    if (sending.has(task.from)) return wait('ele estava recebendo outra mensagem');
+    if (!from.agent?.state) return wait('o estado dele é desconhecido');
+    if (from.agent.state === 'waiting') return wait('ele estava aguardando uma permissão');
+    if (Date.now() - Date.parse(from.lastOutputAt) < QUIET_MS) return wait('ele estava ocupado ou com digitação em curso');
+    const safe = String(task.summary).replace(/[\[\]«»]/g, ' ').replace(/ {2,}/g, ' ').trim();
+    const w = typeLine(task.from, from, `Relatório de ${task.toTitle} (${task.id}, texto do agente): «${safe}»`);
+    if (!w.ok) task.note = `O relatório não foi digitado no maestro (${w.error}); o resultado está em list_tasks.`;
+  }
+
   function deliver(task, by) {
     if (sending.has(task.to)) return { ok: false, transient: true, error: 'O terminal de destino ainda está recebendo outra tarefa; tente de novo em um instante.' };
     const target = paneOf(task.to);
     if (!target || target.status !== 'running') { task.status = 'failed'; task.decidedAt = now(); task.note = 'O terminal de destino não está ativo.'; return { ok: false, error: task.note }; }
-    const line = `[Tarefa ${task.id} do maestro] ${task.text} (Ao terminar, chame a ferramenta report_done com task_id ${task.id} e um resumo curto.)`;
-    // cada CLI tem o seu jeito de receber o bloco (providers: submit). Os marcadores de colagem são acrescentados DEPOIS da limpeza do texto: o que o agente escreveu nunca traz ESC.
-    const sub = (isProvider(target.provider) ? getProvider(target.provider) : getProvider(DEFAULT_PROVIDER)).submit ?? { bracketed: false, delayMs: 200 };
-    const w = terms().write(task.to, sub.bracketed ? `\x1b[200~${line}\x1b[201~` : line); if (!w.ok) { task.status = 'failed'; task.decidedAt = now(); task.note = w.error; return { ok: false, error: w.error }; }
-    // o Enter vai separado e um instante depois: o Claude Code trata o bloco de texto como colagem e só envia no Enter seguinte
-    sending.add(task.to);
-    setTimer(() => { sending.delete(task.to); try { terms().write(task.to, '\r'); } catch { /* o terminal pode ter acabado */ } }, submitDelayMs ?? sub.delayMs ?? 200).unref?.();
+    // Pane esperando permissão: o Enter responderia ao pedido (aprovaria algo) em vez de enviar a tarefa. A tarefa continua pendente; entregue depois de responder à permissão.
+    if (target.agent?.state === 'waiting') return { ok: false, transient: true, error: 'O terminal de destino está aguardando uma permissão; responda a ela primeiro e tente de novo.' };
+    const line = `[Tarefa ${task.id} do maestro] ${task.text} (Ao terminar, chame a ferramenta report_done com task_id ${task.id} e um resumo curto com: o que foi feito, arquivos alterados e pendências.)`;
+    const w = typeLine(task.to, target, line); if (!w.ok) { task.status = 'failed'; task.decidedAt = now(); task.note = w.error; return { ok: false, error: w.error }; }
     task.status = 'delivered'; task.decidedAt = now(); task.decidedBy = by; task.note = null;
     return { ok: true };
   }
@@ -183,7 +240,9 @@ export function createMaestro({ getTerminals, mcpDir, url, serverName = SERVER_N
       if (!t || t.to !== c.terminalId) return err('Tarefa não encontrada para este pane.');
       if (t.status !== 'delivered') return err(`A tarefa está em "${t.status}"; só tarefas entregues podem ser concluídas.`);
       const summary = cleanLine(a?.summary, MAX_SUMMARY); if (!summary) return err('Informe um resumo curto.');
-      t.status = 'done'; t.doneAt = now(); t.summary = summary; return ok('Tarefa marcada como concluída.');
+      t.status = 'done'; t.doneAt = now(); t.summary = summary;
+      try { notifyMaestro(t); } catch { /* o aviso ao maestro é só um extra: o resultado segue em list_tasks */ }
+      return ok('Tarefa marcada como concluída. O maestro será avisado se estiver disponível.');
     },
   };
 
