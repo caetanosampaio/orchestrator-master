@@ -151,7 +151,7 @@ test('maestro.deliver: pane do Codex recebe a tarefa entre marcadores de colagem
   assert.equal((d.match(/\x1b/g) ?? []).length, 2, 'só os dois marcadores têm ESC; o texto do agente foi limpo');
   w.timers.shift()(); assert.deepEqual(w.written[1], [CX, '\r']);
   w.call(w.ma, 'send_task', { pane_id: CL, task: 'outra' });
-  assert.ok(!w.written[2][1].includes('\x1b'), 'Claude: texto puro'); w.timers.shift()(); assert.deepEqual(w.written[3], [CL, '\r']);
+  assert.ok(!w.written[2][1].includes('\x1b'), 'Claude: texto puro'); while (w.written.length < 4 && w.timers.length) w.timers.shift()(); assert.deepEqual(w.written[3], [CL, '\r']); // drena também o timer de confirmação do envio do Codex (não escreve nada: sem estado de agente)
 });
 
 test('maestro.list_panes: informa provedor, branch e caminho do worktree para o maestro saber onde cada agente trabalha', () => {

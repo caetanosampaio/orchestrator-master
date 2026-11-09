@@ -118,7 +118,7 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
   const readOutput = (id, chars) => { const s = get(id); return s ? s.chunks.join('').slice(-Math.max(1, Math.min(chars | 0 || 4000, BUFFER_BYTES))) : ''; };
   const get = (id) => (ID_RE.test(String(id)) ? sessions.get(id) ?? null : null);
   /** Estado leve de um terminal (sem ler o transcript de uso): para quem só precisa saber se está ativo. */
-  const peek = (id) => { const s = get(id); return s ? { id: s.id, role: s.role, provider: s.provider ?? provider.id, title: s.title, status: s.status, lastOutputAt: s.lastOutputAt } : null; };
+  const peek = (id) => { const s = get(id); return s ? { id: s.id, role: s.role, provider: s.provider ?? provider.id, title: s.title, status: s.status, lastOutputAt: s.lastOutputAt, agent: s.status === 'running' ? safeAgent(s) : null } : null; }; // `agent`: estado real (hooks ou OSC), que o Maestro usa para entregar com segurança
   let creating = 0, seq = 0; // vagas reservadas por criações em andamento (isolate espera o worktree): o limite vale também para squads abertos em paralelo
   const send = (res, event, data) => { try { res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); } catch { /* conexão fechada: o 'close' remove */ } };
 
