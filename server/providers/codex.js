@@ -8,6 +8,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
+import { killTreeSync } from '../orphans.js';
 
 /** Codex no PATH (arquivo real, nunca por shell). `.cmd`/`.bat` (npm no Windows) precisam do cmd.exe. null se não achar. */
 export function resolveCodex({ env = process.env, platform = process.platform } = {}) {
@@ -21,37 +22,42 @@ export function resolveCodex({ env = process.env, platform = process.platform } 
 }
 
 /**
- * O Codex está com a conta conectada? Usa `codex login status` (argumentos fixos, sem shell, timeout curto): só o código de saída conta (0 = conectado), nenhum arquivo de credencial é lido
- * e o texto da CLI nunca é repassado (pode trazer e-mail). Devolve { known, loggedIn, detail }; `known: false` quando a CLI não responde. Cache de `ttlMs` e uma única chamada em andamento.
- * `resolve`/`run` só existem para os testes.
+ * O Codex está com a conta conectada? Usa `codex login status` (argumentos fixos, sem shell, timeout curto): só o código de saída conta (0 = conectado, 1 = não conectado; qualquer outro resultado é "desconhecido"). O FORGE não lê arquivo de credencial
+ * e o texto da CLI nunca é repassado (pode trazer e-mail). Estourou o tempo: encerra a ÁRVORE do processo (no Windows o execFile mata só o cmd.exe do wrapper e o codex neto ficaria vivo). Devolve { known, loggedIn, detail }; `known: false` quando a CLI não responde. Cache de `ttlMs` e uma única chamada em andamento.
+ * `resolve`/`run`/`killTree` só existem para os testes. `reset()` descarta o cache e a consulta em andamento (o resultado dela, antiga, não volta ao cache).
  */
-export function createCodexAuthProbe({ resolve = resolveCodex, env = () => process.env, ttlMs = 15_000, timeoutMs = 6000, run = execFile, now = Date.now } = {}) {
-  let cache = { at: 0, value: null }, inFlight = null;
+export function createCodexAuthProbe({ resolve = resolveCodex, env = () => process.env, ttlMs = 15_000, timeoutMs = 6000, run = execFile, now = Date.now, killTree = killTreeSync } = {}) {
+  let cache = { at: 0, value: null }, inFlight = null, gen = 0;
   const unknown = (detail) => ({ known: false, loggedIn: null, detail });
   function probe() {
     if (cache.value && now() - cache.at < ttlMs) return Promise.resolve(cache.value);
     if (inFlight) return inFlight;
     inFlight = new Promise((done) => {
-      const finish = (value) => { cache = { at: now(), value }; inFlight = null; done(value); };
+      const g = gen;
+      const finish = (value) => { if (g === gen) { cache = { at: now(), value }; inFlight = null; } done(value); };
       let spec; try { spec = resolve({ env: env() }); } catch { spec = null; }
       if (!spec) return finish(unknown('O Codex CLI não foi encontrado no PATH.'));
       try {
-        run(spec.file, [...spec.args, 'login', 'status'], { timeout: timeoutMs, windowsHide: true, env: codexProvider.envFor(env()) }, (err) => {
+        const cmd = loginStatusCommand(spec);
+        if (!cmd) return finish(unknown('Não foi possível consultar o login do Codex (caminho do Codex não suportado).'));
+        let child = null;
+        child = run(spec.file, cmd.args, { timeout: timeoutMs, windowsHide: true, env: codexProvider.envFor(env()), ...cmd.opts }, (err) => {
           if (!err) return finish({ known: true, loggedIn: true, detail: 'Codex conectado.' });
-          if (typeof err.code === 'number') return finish({ known: true, loggedIn: false, detail: 'O Codex não está conectado: rode "codex login" num terminal.' });
+          if (err.killed === true) { try { killTree(child?.pid); } catch { /* informativo */ } return finish(unknown('O Codex não respondeu a tempo ao consultar o login.')); }
+          if (err.code === 1) return finish({ known: true, loggedIn: false, detail: 'O Codex não está conectado: rode "codex login" num terminal.' });
           finish(unknown('Não foi possível consultar o login do Codex.'));
         });
       } catch { finish(unknown('Não foi possível consultar o login do Codex.')); }
     });
     return inFlight;
   }
-  probe.reset = () => { cache = { at: 0, value: null }; };
+  probe.reset = () => { gen++; cache = { at: 0, value: null }; inFlight = null; };
   return probe;
 }
 
 // O Codex avisa o estado por sequência OSC 7501 no próprio terminal (verificado no 0.167.0 contra um modelo falso): ESC ] 7501 ; state=<estado>:app=codex [:kind=...] (BEL ou ESC \).
 // Mapa fechado para os estados do FORGE (agent-status.js); estado novo/desconhecido é ignorado e nunca derruba nada.
-const OSC_STATE = Object.freeze({ idle: 'idle', working: 'running', blocked: 'waiting', done: 'completed' });
+const OSC_STATE = Object.freeze({ idle: 'idle', working: 'running', blocked: 'waiting', done: 'completed', error: 'error' }); // `error`: falha do turno (HTTP 4xx/5xx, resposta `failed`), verificado no 0.167.0; sem ele o painel ficava em "executando" depois do erro
 const OSC_RE = /\x1b\]7501;state=([a-z]{1,12}):app=codex(?::[A-Za-z0-9=_-]{0,40})*(?:\x07|\x1b\\)/g;
 /** Estado mais recente anunciado nos dados do terminal (ou null). `carry` = resto da leitura anterior, para sequência cortada entre dois pedaços; devolve o novo `carry`. */
 export function codexOscState(data, carry = '') {
@@ -60,6 +66,17 @@ export function codexOscState(data, carry = '') {
   for (const m of text.matchAll(OSC_RE)) state = OSC_STATE[m[1]] ?? state;
   const open = text.lastIndexOf('\x1b]7501;');
   return { state, carry: open >= 0 && text.length - open < 120 && !/(?:\x07|\x1b\\)/.test(text.slice(open)) ? text.slice(open) : '' };
+}
+
+/**
+ * Argumentos de `codex login status`. Wrapper .cmd (cmd.exe /d /s /c): o `/s` tira as aspas externas da linha, então o caminho do .cmd (que pode ter espaço, ex.: "C:\Users\Nome Sobrenome\...") vai entre aspas
+ * DENTRO das externas e a linha segue verbatim. Caminho com aspa ou metacaractere do cmd.exe não é executado (null: login desconhecido, nunca "não conectado").
+ */
+export function loginStatusCommand(spec) {
+  if (!spec?.viaShell) return { args: [...(spec?.args ?? []), 'login', 'status'], opts: {} };
+  const f = spec.args.at(-1);
+  if (typeof f !== 'string' || !f || /["&|<>^%!\r\n]/.test(f)) return null;
+  return { args: [...spec.args.slice(0, -1), `""${f}" login status"`], opts: { windowsVerbatimArguments: true } };
 }
 
 export const MCP_TOKEN_ENV = 'FORGE_MCP_TOKEN';

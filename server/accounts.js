@@ -9,6 +9,7 @@ import path from 'node:path';
 import { asyncRoute } from './async-route.js';
 import { launchSpec, envForAccount } from './claude-cli.js';
 import { resolveClaude } from './providers/claude.js';
+import { codexProvider } from './providers/codex.js';
 
 export const SYSTEM_ID = 'system';
 export const ACCOUNT_ID_RE = /^acc_[0-9a-f]{8}$/;
@@ -22,7 +23,8 @@ const GONE = '__conta-removida__';
 
 export const PROVIDERS = Object.freeze([
   { id: 'claude', label: 'Claude Code', canLogin: true },
-  { id: 'codex', label: 'Codex', available: false, comingSoon: true },
+  // Codex: disponível como agente nos terminais, mas o login é o do próprio Codex CLI (`codex login`); o FORGE não cria nem gerencia contas dele (canLogin: false). `available` e `auth` são preenchidos em listView.
+  { id: 'codex', label: 'Codex CLI', canLogin: false, note: 'O login é feito no próprio Codex CLI ("codex login" num terminal); o FORGE não gerencia contas do Codex.' },
 ]);
 
 const CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
@@ -54,7 +56,7 @@ export function normalizeStatus(o) {
  * `command`/`prefixArgs` só são injetados pelos testes (CLI falsa); `unavailable: true` = tratar o Claude Code como ausente (testes que sobem o servidor sem CLI de contas).
  * `isInUse(id)` diz se um terminal em execução usa a conta. `env()` = ambiente base dos filhos.
  */
-export function createAccounts({ db, dataDir, persist, now = () => new Date().toISOString(), uid, command, prefixArgs = [], unavailable = false, resolve = resolveClaude, env = () => process.env, isInUse = () => false, isLoginActive = () => false, isCycleBusy = () => false, statusTtlMs = STATUS_TTL_MS, statusTimeoutMs = 8000, run = null } = {}) {
+export function createAccounts({ db, dataDir, persist, now = () => new Date().toISOString(), uid, command, prefixArgs = [], unavailable = false, resolve = resolveClaude, env = () => process.env, isInUse = () => false, isLoginActive = () => false, isCycleBusy = () => false, codex = codexProvider, statusTtlMs = STATUS_TTL_MS, statusTimeoutMs = 8000, run = null } = {}) {
   if (!db || !dataDir || typeof persist !== 'function') throw new Error('createAccounts: db, dataDir e persist são obrigatórios');
   const injected = command !== undefined;
   const root = path.join(dataDir, 'accounts');
@@ -130,15 +132,26 @@ export function createAccounts({ db, dataDir, persist, now = () => new Date().to
 
   /** `status:false` = sem consultar a CLI (status vazio); `fresh` = descarta o cache de todas as contas antes. */
   async function listView({ status = true, fresh = false } = {}) {
-    if (fresh) for (const a of [SYSTEM, ...list()]) invalidate(a.id);
+    if (fresh) {
+      for (const a of [SYSTEM, ...list()]) invalidate(a.id);
+      try { codex.authProbe?.reset?.(); } catch { /* informativo */ }
+    }
     const accounts = await Promise.all([SYSTEM, ...list()].map(async (a) => (status ? view(a) : { id: a.id, provider: a.provider, label: a.label, system: a.id === SYSTEM_ID, isDefault: a.id === defaultId(), status: emptyStatus(null, false) })));
-    return { accounts, defaultId: defaultId(), providers: PROVIDERS.map((p) => (p.id === 'claude' ? { ...p, available: available() } : { ...p })) };
+    return { accounts, defaultId: defaultId(), providers: await Promise.all(PROVIDERS.map((p) => (p.id === 'claude' ? { ...p, available: available() } : p.id === 'codex' ? codexView(p, status) : { ...p }))) };
+  }
+
+  /** Codex: instalado (CLI no PATH) e, só quando `status`, se o login do próprio Codex está ativo (sonda `codex login status`; nunca devolve e-mail nem texto da CLI). */
+  async function codexView(p, withStatus) {
+    let present = false; try { present = !unavailable && !!codex.resolve(); } catch { present = false; }
+    const view = { ...p, available: present };
+    if (present && withStatus && typeof codex.authProbe === 'function') { try { view.auth = await codex.authProbe(); } catch { view.auth = { known: false, loggedIn: null, detail: 'Não foi possível consultar o login do Codex.' }; } }
+    return view;
   }
 
   const fail = (status, error, extra = {}) => ({ ok: false, status, error, ...extra });
 
   function create({ provider, label } = {}) {
-    if (provider !== 'claude') return fail(400, provider === 'codex' ? 'O Codex ainda não está disponível: em breve.' : 'Provedor indisponível.', { code: 'provider_unavailable' });
+    if (provider !== 'claude') return fail(400, provider === 'codex' ? 'O Codex usa o login do próprio Codex CLI (rode "codex login" num terminal); o FORGE não cria contas dele.' : 'Provedor indisponível.', { code: 'provider_unavailable' });
     const v = validateLabel(label); if (!v.ok) return fail(400, v.error);
     if (list().length >= MAX_ACCOUNTS) return fail(409, `Limite de ${MAX_ACCOUNTS} contas atingido: remova uma antes de adicionar outra.`, { code: 'accounts_limit' });
     let id; do { id = uid('acc'); } while (exists(id) || !ACCOUNT_ID_RE.test(id));

@@ -40,3 +40,60 @@ test('rótulo do provider: avisa só quando sabe que não há login', () => {
   assert.equal(providerOptionLabel({ label: 'Codex CLI', available: true, auth: { known: false, loggedIn: null } }), 'Codex CLI');
   assert.equal(providerOptionLabel({ label: 'Claude Code CLI', available: true }), 'Claude Code CLI');
 });
+
+test('só o código 1 é "não conectado"; outro código (ex.: subcomando inexistente) é desconhecido, sem falso alarme', async () => {
+  for (const code of [2, 127, 255]) {
+    const r = await createCodexAuthProbe({ resolve: () => spec, run: fakeRun(Object.assign(new Error('x'), { code })) })();
+    assert.equal(r.known, false, `código ${code}`); assert.equal(r.loggedIn, null);
+  }
+});
+
+test('estourou o tempo: encerra a árvore do processo da consulta (no Windows o execFile mata só o cmd.exe) e fica desconhecido', async () => {
+  const killed = [];
+  const run = (file, args, opts, cb) => { setImmediate(() => cb(Object.assign(new Error('timeout'), { killed: true, signal: 'SIGTERM', code: null }))); return { pid: 4242 }; };
+  const r = await createCodexAuthProbe({ resolve: () => spec, run, killTree: (pid) => killed.push(pid) })();
+  assert.deepEqual(killed, [4242]);
+  assert.equal(r.known, false); assert.equal(r.loggedIn, null);
+});
+
+test('reset durante uma consulta: o resultado antigo não volta ao cache e a próxima chamada consulta de novo', async () => {
+  const calls = []; let release = null;
+  const run = (file, args, opts, cb) => { calls.push(1); const n = calls.length; if (n === 1) release = () => cb(Object.assign(new Error('x'), { code: 1 })); else setImmediate(() => cb(null)); return { pid: 1 }; };
+  const p = createCodexAuthProbe({ resolve: () => spec, run });
+  const first = p();
+  p.reset();
+  const second = await p();
+  assert.equal(second.loggedIn, true, 'consulta nova depois do reset');
+  release();
+  assert.equal((await first).loggedIn, false, 'a consulta antiga ainda devolve o seu resultado a quem a pediu');
+  assert.equal((await p()).loggedIn, true, 'mas o cache guarda o resultado novo');
+  assert.equal(calls.length, 2);
+});
+
+// Wrapper .cmd do npm (Windows) num caminho com espaço: antes o `cmd /s` quebrava a linha, saía com 1 e o Codex conectado aparecia como "não conectado".
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { loginStatusCommand, resolveCodex } from '../providers/codex.js';
+const WIN = process.platform === 'win32' ? false : 'só se aplica ao Windows (wrapper .cmd)';
+
+test('loginStatusCommand: CLI direta leva só `login status`; .cmd monta a linha do cmd.exe; caminho com metacaractere não executa', () => {
+  assert.deepEqual(loginStatusCommand({ file: '/x/codex', args: [], viaShell: false }), { args: ['login', 'status'], opts: {} });
+  const c = loginStatusCommand({ file: 'cmd.exe', args: ['/d', '/s', '/c', 'C:\\Users\\Nome Sobrenome\\npm\\codex.cmd'], viaShell: true });
+  assert.deepEqual(c.args, ['/d', '/s', '/c', '""C:\\Users\\Nome Sobrenome\\npm\\codex.cmd" login status"']);
+  assert.equal(c.opts.windowsVerbatimArguments, true);
+  for (const bad of ['C:\a&b\codex.cmd', 'C:\a"b\codex.cmd', 'C:\a%PATH%\codex.cmd', 'C:\a^b\codex.cmd', '']) {
+    assert.equal(loginStatusCommand({ file: 'cmd.exe', args: ['/d', '/s', '/c', bad], viaShell: true }), null, bad);
+  }
+});
+
+test('codex.cmd REAL num diretório com espaço: 0 = conectado, 1 = não conectado, outro = desconhecido', { skip: WIN }, async () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'orch-cx '));
+  try {
+    const mk = (code) => { const d = path.join(base, `bin ${code}`); fs.mkdirSync(d); fs.writeFileSync(path.join(d, 'codex.cmd'), `@echo off\r\nif not "%1"=="login" exit /b 99\r\nif not "%2"=="status" exit /b 98\r\nexit /b ${code}\r\n`); return d; };
+    const probeFor = (dir) => createCodexAuthProbe({ resolve: () => resolveCodex({ env: { PATH: dir }, platform: 'win32' }), ttlMs: 0 });
+    assert.equal((await probeFor(mk(0))()).loggedIn, true);
+    const off = await probeFor(mk(1))(); assert.equal(off.known, true); assert.equal(off.loggedIn, false);
+    const other = await probeFor(mk(7))(); assert.equal(other.known, false);
+  } finally { fs.rmSync(base, { recursive: true, force: true }); }
+});

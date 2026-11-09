@@ -195,4 +195,8 @@ test('estado do Codex: lido da sequência OSC 7501 do terminal (idle/working/blo
   feed('\x1b]7501;state=do'); assert.equal(state(), 'waiting', 'sequência incompleta não muda nada');
   feed('ne:app=codex\x1b\\'); assert.equal(state(), 'completed');
   feed('\x1b]7501;state=inventado:app=codex\x07'); feed('\x1b]7501;state=working:app=outro\x07'); assert.equal(state(), 'completed', 'estado desconhecido ou de outro app é ignorado');
+  feed('\x1b]7501;state=working:app=codex\x07'); feed('\x1b]7501;state=error:app=codex\x07');
+  assert.equal(state(), 'error', 'falha do turno (HTTP 4xx/5xx, resposta failed): o painel não fica em "executando"');
+  feed('\x1b]7501;state=working:app=codex\x07');
+  assert.equal(state(), 'running', 'um novo pedido depois do erro volta a executar');
 });
