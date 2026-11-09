@@ -16,6 +16,7 @@ import { setupUiSettings } from './ui-settings.js';
 import { createLoadouts, setupLoadouts } from './loadouts.js';
 import { createAgentStatus, hooksJson } from './agent-status.js';
 import { setupLayouts } from './layouts.js';
+import { setupTeamTemplates } from './team-templates.js';
 import { createConversationStore, setupConversations, startConversationCapture } from './conversations.js';
 import { setupExecution, blockedReason } from './execution.js';
 import { missionStatus } from './mission-status.js';
@@ -405,6 +406,7 @@ setupTopics(app, { db });
 setupLoadouts(app, { loadouts }); // skills por papel: GET/PUT /api/loadouts
 setupUiSettings(app, { db }); // preferências da interface (db.settings.ui): GET/PUT /api/ui
 setupLayouts(app, { db }); // layout da grade por workspace
+setupTeamTemplates(app, { db }); // squads salvos (equipes nomeadas com o agente de cada vaga): GET/POST /api/team-templates, PUT/DELETE /api/team-templates/:id
 setupConversations(app, { db, conversations }); // GET/DELETE /api/workspaces/:id/conversations[/:rec]
 { const capture = startConversationCapture({ db, conversations }); setTimeout(() => { capture.sweep().catch(() => {}); }, 3000).unref?.(); } // captura ao vivo das sessões rodando + varredura única das interrompidas // layout da grade de terminais por workspace (db.settings.layouts): GET /api/layouts, PUT /api/workspaces/:id/layout
 const cycle = setupCycle(app, { db, executor: claudeCodeExecutor, planner, startTaskRun, verifier, router, limits: cycleLimits, multiStep: () => orchestration().planMode, stepRetries: () => orchestration().stepRetries, supervision: () => supervisionMs(supervision()), worktrees, worktreeIsolation: () => worktreeIsolation().enabled });
