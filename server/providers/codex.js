@@ -127,9 +127,11 @@ export const codexProvider = Object.freeze({
   paneArgs({ mode = 'new', prompt, mcp = null, quote = true, trustDir = null }) {
     if (mode !== 'new') throw new Error('O Codex CLI não oferece retomada nem bifurcação neste adaptador.');
     const args = ['--no-alt-screen', '--no-daemon', '-s', 'workspace-write', '-a', 'on-request'];
-    // Confiança da pasta SÓ para este processo (o Codex não pergunta "confiar nesta pasta?"): nada é gravado no config do usuário. A chave usa aspas simples (literal TOML), que valem até no cmd.exe;
+    // Confiança da pasta SÓ para este processo (o Codex não pergunta "confiar nesta pasta?"): nada é gravado no config do usuário. O caminho vai como CHAVE de uma tabela inline (`projects={'<pasta>'={trust_level='trusted'}}`) e não como
+    // `projects.'<pasta>'.trust_level=...`: o parser do -c do Codex quebra a chave no PONTO mesmo entre aspas, e uma pasta com ponto (ex.: `C:\proj.orch-worktrees\wt_x`, a dos worktrees do FORGE) tinha a confiança IGNORADA, com o aviso
+    // "Codex is ignoring 1 unrecognized configuration setting" e a pergunta de confiança na tela (verificado no 0.167.0). A tabela inline é mesclada ao config: as pastas que o usuário já confiou continuam valendo. Aspas simples (literal TOML) valem até no cmd.exe;
     // pasta com aspa simples, controle ou metacaractere do cmd.exe fica sem o argumento (a pergunta aparece normalmente).
-    if (typeof trustDir === 'string' && trustDir && !/['\u0000-\u001f]/.test(trustDir) && (quote || !/[&|<>^%"!]/.test(trustDir))) args.push('-c', `projects.'${trustDir}'.trust_level='trusted'`);
+    if (typeof trustDir === 'string' && trustDir && !/['\u0000-\u001f]/.test(trustDir) && (quote || !/[&|<>^%"!]/.test(trustDir))) args.push('-c', `projects={'${trustDir}'={trust_level='trusted'}}`);
     if (prompt) args.push('-c', `developer_instructions=${tomlStr(prompt, quote)}`);
     if (mcp && SERVER_KEY_RE.test(String(mcp.serverName)) && mcp.url) {
       const k = `mcp_servers.${mcp.serverName}`;
