@@ -57,7 +57,7 @@ No menu **Ajuda** (no Windows, pressione `Alt` para exibir o menu) use **Copiar 
 - Instaladores **sem assinatura de código** e **sem atualização automática**: novas versões precisam ser instaladas manualmente.
 - macOS: pacote apenas para processadores Intel (x64); Apple Silicon ainda não foi validado.
 - Interface apenas em português.
-- Máximo de 10 terminais simultâneos.
+- Máximo de 50 terminais simultâneos.
 
 ## Para desenvolvedores
 

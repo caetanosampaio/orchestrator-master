@@ -181,3 +181,18 @@ test('Claude abre com CLAUDE_CODE_NO_FLICKER=1 (renderer em tela cheia, vence o 
     assert.equal(w2.spawned[0].opts.env.CLAUDE_CODE_NO_FLICKER, '0', 'quem exporta outro valor manda');
   } finally { if (keep === undefined) delete process.env.CLAUDE_CODE_NO_FLICKER; else process.env.CLAUDE_CODE_NO_FLICKER = keep; }
 });
+
+test('estado do Codex: lido da sequência OSC 7501 do terminal (idle/working/blocked/done), inclusive cortada entre dois pedaços', async () => {
+  let feed = null;
+  const lib = { spawn() { const p = { pid: 1_920_000_001, onData(cb) { feed = cb; }, onExit() {}, write() {}, resize() {} }; return p; } };
+  const w = world({ ptyLib: lib });
+  const r = await w.mgr.create({ role: 'builder', provider: 'codex' });
+  assert.equal(r.ok, true, r.error);
+  const state = () => w.mgr.get(r.session.id).agent?.state ?? null;
+  assert.equal(state(), null, 'sem sinal ainda: cai na leitura pela saída');
+  feed('\x1b]7501;state=working:app=codex\x1b\\'); assert.equal(state(), 'running');
+  feed('texto\x1b]7501;state=blocked:app=codex:kind=permission\x07'); assert.equal(state(), 'waiting');
+  feed('\x1b]7501;state=do'); assert.equal(state(), 'waiting', 'sequência incompleta não muda nada');
+  feed('ne:app=codex\x1b\\'); assert.equal(state(), 'completed');
+  feed('\x1b]7501;state=inventado:app=codex\x07'); feed('\x1b]7501;state=working:app=outro\x07'); assert.equal(state(), 'completed', 'estado desconhecido ou de outro app é ignorado');
+});

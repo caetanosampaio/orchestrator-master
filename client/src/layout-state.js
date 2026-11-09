@@ -6,7 +6,7 @@
 import { api } from './api.js';
 
 export const LAYOUT_KEY = 'orch.layout.v1';
-export const MAX_ORDER = 24;
+export const MAX_ORDER = 50; // igual ao servidor (layouts.js) e ao limite de terminais
 const MAX_GRIDS = 16;
 const TEAM_IDS = ['duo', 'squad', 'full', 'builder']; // espelha server/layouts.js (TEAM_PRESETS)
 const MODE_IDS = ['auto', 'cols', 'rows', 'focus']; // espelha server/layouts.js (LAYOUT_MODES)

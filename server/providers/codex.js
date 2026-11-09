@@ -7,6 +7,7 @@
 //   - `--no-alt-screen` mantém a saída no fluxo normal do terminal, que é o que o `read_pane_output` do Maestro consegue ler.
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFile } from 'node:child_process';
 
 /** Codex no PATH (arquivo real, nunca por shell). `.cmd`/`.bat` (npm no Windows) precisam do cmd.exe. null se não achar. */
 export function resolveCodex({ env = process.env, platform = process.platform } = {}) {
@@ -17,6 +18,48 @@ export function resolveCodex({ env = process.env, platform = process.platform } 
     try { if (fs.statSync(f).isFile()) return /\.(cmd|bat)$/i.test(f) ? { file: env.ComSpec || 'cmd.exe', args: ['/d', '/s', '/c', f], viaShell: true } : { file: f, args: [], viaShell: false }; } catch { /* próximo */ }
   }
   return null;
+}
+
+/**
+ * O Codex está com a conta conectada? Usa `codex login status` (argumentos fixos, sem shell, timeout curto): só o código de saída conta (0 = conectado), nenhum arquivo de credencial é lido
+ * e o texto da CLI nunca é repassado (pode trazer e-mail). Devolve { known, loggedIn, detail }; `known: false` quando a CLI não responde. Cache de `ttlMs` e uma única chamada em andamento.
+ * `resolve`/`run` só existem para os testes.
+ */
+export function createCodexAuthProbe({ resolve = resolveCodex, env = () => process.env, ttlMs = 15_000, timeoutMs = 6000, run = execFile, now = Date.now } = {}) {
+  let cache = { at: 0, value: null }, inFlight = null;
+  const unknown = (detail) => ({ known: false, loggedIn: null, detail });
+  function probe() {
+    if (cache.value && now() - cache.at < ttlMs) return Promise.resolve(cache.value);
+    if (inFlight) return inFlight;
+    inFlight = new Promise((done) => {
+      const finish = (value) => { cache = { at: now(), value }; inFlight = null; done(value); };
+      let spec; try { spec = resolve({ env: env() }); } catch { spec = null; }
+      if (!spec) return finish(unknown('O Codex CLI não foi encontrado no PATH.'));
+      try {
+        run(spec.file, [...spec.args, 'login', 'status'], { timeout: timeoutMs, windowsHide: true, env: codexProvider.envFor(env()) }, (err) => {
+          if (!err) return finish({ known: true, loggedIn: true, detail: 'Codex conectado.' });
+          if (typeof err.code === 'number') return finish({ known: true, loggedIn: false, detail: 'O Codex não está conectado: rode "codex login" num terminal.' });
+          finish(unknown('Não foi possível consultar o login do Codex.'));
+        });
+      } catch { finish(unknown('Não foi possível consultar o login do Codex.')); }
+    });
+    return inFlight;
+  }
+  probe.reset = () => { cache = { at: 0, value: null }; };
+  return probe;
+}
+
+// O Codex avisa o estado por sequência OSC 7501 no próprio terminal (verificado no 0.167.0 contra um modelo falso): ESC ] 7501 ; state=<estado>:app=codex [:kind=...] (BEL ou ESC \).
+// Mapa fechado para os estados do FORGE (agent-status.js); estado novo/desconhecido é ignorado e nunca derruba nada.
+const OSC_STATE = Object.freeze({ idle: 'idle', working: 'running', blocked: 'waiting', done: 'completed' });
+const OSC_RE = /\x1b\]7501;state=([a-z]{1,12}):app=codex(?::[A-Za-z0-9=_-]{0,40})*(?:\x07|\x1b\\)/g;
+/** Estado mais recente anunciado nos dados do terminal (ou null). `carry` = resto da leitura anterior, para sequência cortada entre dois pedaços; devolve o novo `carry`. */
+export function codexOscState(data, carry = '') {
+  const text = carry + String(data);
+  let state = null;
+  for (const m of text.matchAll(OSC_RE)) state = OSC_STATE[m[1]] ?? state;
+  const open = text.lastIndexOf('\x1b]7501;');
+  return { state, carry: open >= 0 && text.length - open < 120 && !/(?:\x07|\x1b\\)/.test(text.slice(open)) ? text.slice(open) : '' };
 }
 
 export const MCP_TOKEN_ENV = 'FORGE_MCP_TOKEN';
@@ -31,6 +74,8 @@ export const codexProvider = Object.freeze({
   id: 'codex',
   label: 'Codex CLI',
   resolve: resolveCodex,
+  oscState: codexOscState, // estado do agente lido do terminal (terminals.js), no lugar de hooks
+  authProbe: createCodexAuthProbe(), // login do Codex (o terminals.js expõe em /api/terminals > providers[].auth)
   notFoundMessage: 'O Codex CLI não foi encontrado no PATH (instale com "npm i -g @openai/codex" e faça "codex login").',
   capabilities: Object.freeze({ resume: false, fork: false, hooks: false, plugins: false, accounts: false, transcript: false }),
   mcpTransport: 'env', mcpTokenEnv: MCP_TOKEN_ENV, // credencial do Maestro só no ambiente do processo

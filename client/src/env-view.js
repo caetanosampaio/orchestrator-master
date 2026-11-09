@@ -32,9 +32,11 @@ export function environments({ workspaces = [], sessions = [], activeId = null, 
       const pendingIds = pendingPanes(maestroTasks), st = running.map((s) => paneState(s, workingIds, pendingIds));
       const n = (k) => st.filter((x) => x === k).length;
       const failed = mine.filter(failedExit).length + n('failed');
+      // Provider que "lidera" o workspace (logo da sidebar): o do maestro; sem maestro, o do primeiro terminal executando, senão o do primeiro ativo.
+      const lead = running.find((s) => s.role === 'maestro') ?? running[st.indexOf('working')] ?? running[0];
       return {
         id: w.id, name: names.get(w.id), original: String(w.name ?? '').trim() || base(w.path), renamed: !!String(w.displayName ?? '').trim(), path: w.path, active: w.id === activeId, total: mine.length, running: running.length,
-        working: n('working'), waiting: n('waiting'), done: n('done'), exited: mine.length - running.length, failed, pendingTasks, finished: finished.has(w.id), attention: failed > 0 || n('waiting') > 0,
+        working: n('working'), waiting: n('waiting'), done: n('done'), exited: mine.length - running.length, failed, pendingTasks, finished: finished.has(w.id), agent: lead ? providerOf(lead) : null, attention: failed > 0 || n('waiting') > 0,
       };
     });
 }
@@ -71,7 +73,9 @@ export const PROVIDERS = [
   { id: 'claude', label: 'Claude Code CLI', available: true },
   { id: 'codex', label: 'Codex CLI', available: true },
 ];
-export const providerOf = (s) => (typeof s?.provider === 'string' && s.provider ? s.provider : 'claude');
+/** Texto do provider nos seletores: "(não instalado)" sem a CLI; "(não conectado)" quando a CLI está instalada mas a sonda de login (`auth`) diz que não há conta. Login desconhecido não alerta. */
+export const providerOptionLabel = (p) => `${p.label}${!p.available ? ' (não instalado)' : p.auth?.known && p.auth.loggedIn === false ? ' (não conectado: rode "codex login")' : ''}`;
+export const providerOf =(s) => (typeof s?.provider === 'string' && s.provider ? s.provider : 'claude');
 
 /**
  * Painel por provider, só das sessões reais registradas (todos os ambientes). Encerrado nunca conta como ativo: `active` = processos rodando.

@@ -8,6 +8,7 @@ import Dialog from './Dialog.jsx';
 import { Btn, Icon } from './ui.jsx';
 import MaestroControls from './MaestroControls.jsx';
 import AccountsPanel from './AccountsPanel.jsx';
+import ProviderLogo from './ProviderLogo.jsx';
 import WorktreePanel from './WorktreePanel.jsx';
 import { terminalWorktrees } from '../worktree-view.js';
 
@@ -126,8 +127,8 @@ export default function SettingsDialog({ onClose, initial = 'perfil' }) {
           {tab === 'providers' && <>
             <p className="dim small oc-lead">O provider é o CLI de agente que roda dentro de cada terminal. Escolha o agente dos terminais novos na barra do Cockpit; Claude Code e Codex trocam tarefas pelo mesmo Maestro.</p>
             <ul className="oc-prov">
-              <li className="on"><span className="oc-prov-i"><Icon name="terminal" size={18} /></span><span className="oc-prov-t"><b>Claude Code</b><span className="dim small">Agente padrão dos terminais.</span></span><span className="oc-pill ok">ativo</span></li>
-              <li className="on"><span className="oc-prov-i"><Icon name="terminal" size={18} /></span><span className="oc-prov-t"><b>Codex CLI</b><span className="dim small">Terminais do Codex ao lado do Claude Code, no mesmo Maestro. Instale com <span className="mono">npm i -g @openai/codex</span> e entre com <span className="mono">codex login</span> no terminal. Contas separadas e retomada de sessão ainda não existem para o Codex.</span></span><span className="oc-pill ok">disponível</span></li>
+              <li className="on"><span className="oc-prov-i logo"><ProviderLogo id="claude" size={24} /></span><span className="oc-prov-t"><b className="oc-prov-name">Claude Code</b><span className="dim small">Agente padrão dos terminais.</span></span><span className="oc-pill ok">ativo</span></li>
+              <li className="on"><span className="oc-prov-i logo"><ProviderLogo id="codex" size={24} /></span><span className="oc-prov-t"><b className="oc-prov-name">Codex CLI</b><span className="dim small">Terminais do Codex ao lado do Claude Code, no mesmo Maestro. Instale com <span className="mono">npm i -g @openai/codex</span> e entre com <span className="mono">codex login</span> no terminal. Contas separadas e retomada de sessão ainda não existem para o Codex.</span></span><span className="oc-pill ok">disponível</span></li>
             </ul>
           </>}
 
