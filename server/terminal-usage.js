@@ -71,7 +71,7 @@ export function createUsageReader({ configDir = claudeConfigDir(), pricesFile = 
     }
   }
 
-  /** @returns {null | {input:number, output:number, cacheWrite:number, cacheRead:number, total:number, turns:number, model:string|null, costUsd:number|null}} */
+  /** @returns {null | {input:number, output:number, cacheWrite:number, cacheRead:number, total:number (tudo, inclui o cache), io:number (entrada + saída: o que o terminal mostra ao vivo; sem o contexto em cache), turns:number, model:string|null, costUsd:number|null}} */
   function read(sessionId, dir) {
     if (typeof sessionId !== 'string' || !UUID_RE.test(sessionId)) return null;
     let st = files.get(sessionId);
@@ -90,7 +90,7 @@ export function createUsageReader({ configDir = claudeConfigDir(), pricesFile = 
       const p = priceFor(prc, e.model);
       if (p) cost += (e.input * p.input + e.output * p.output + e.cacheWrite * p.cacheWrite + e.cacheRead * p.cacheRead) / 1e6; else costKnown = false;
     }
-    return { ...t, total: t.input + t.output + t.cacheWrite + t.cacheRead, turns, model, costUsd: costKnown ? Math.round(cost * 1e6) / 1e6 : null };
+    return { ...t, total: t.input + t.output + t.cacheWrite + t.cacheRead, io: t.input + t.output, turns, model, costUsd: costKnown ? Math.round(cost * 1e6) / 1e6 : null };
   }
   const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i; // só UUID: nenhum separador de caminho chega ao sistema de arquivos
   /** Quais destes ids têm transcrição? UM passe pelas pastas de projeto (em vez de uma varredura por id): é o que o histórico usa. Sem cache: reflete o disco agora. */
