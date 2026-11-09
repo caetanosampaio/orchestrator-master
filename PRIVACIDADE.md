@@ -25,7 +25,7 @@ A **saída dos terminais** fica apenas em memória enquanto a sessão existe (ce
 ## O que fica fora do controle do FORGE
 
 - O Claude Code mantém os **próprios** históricos e transcritos (em `~/.claude`). Apagar dados no FORGE não apaga isso.
-- O Codex CLI mantém o **próprio** login, configuração e históricos (em `~/.codex`). O FORGE **não** guarda nem lê as credenciais do Codex: só consulta `codex login status` e usa o código de saída para saber se há login. Apagar dados no FORGE não apaga o que está em `~/.codex`.
+- O Codex CLI mantém o **próprio** login, configuração e históricos (em `~/.codex`). O FORGE **não** guarda nem lê as credenciais do Codex: só consulta `codex login status` (usando o código de saída para saber se há login) e observa a data e o tamanho do `auth.json`, sem abrir o arquivo, para perceber um login ou logout na hora. Apagar dados no FORGE não apaga o que está em `~/.codex`.
 - Os arquivos do seu projeto, os worktrees e as branches que os agentes criam ficam nas suas pastas.
 - **Os agentes rodam com as permissões do seu usuário.** Um agente (ou um projeto malicioso aberto num terminal) consegue ler a pasta de login de **todas** as contas cadastradas, não só da que ele usa. No Windows essas pastas não têm proteção extra de acesso. Abra apenas projetos em que você confia e não coloque a pasta de dados em locais sincronizados ou compartilhados (nuvem, rede).
 
