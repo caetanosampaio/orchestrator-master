@@ -97,3 +97,32 @@ test('codex.cmd REAL num diretório com espaço: 0 = conectado, 1 = não conecta
     const other = await probeFor(mk(7))(); assert.equal(other.known, false);
   } finally { fs.rmSync(base, { recursive: true, force: true }); }
 });
+
+test('atualização rápida: desconectado reconsulta em retryMs, conectado só em ttlMs; mudança do arquivo de login invalida na hora', async () => {
+  let t = 0, sig = 'a', code = 1, calls = 0;
+  const run = (file, args, opts, cb) => { calls++; setImmediate(() => cb(code === 0 ? null : Object.assign(new Error('x'), { code }))); return { pid: 1 }; };
+  const p = createCodexAuthProbe({ resolve: () => spec, run, now: () => t, ttlMs: 30_000, retryMs: 8_000, signature: () => sig });
+  assert.equal((await p()).loggedIn, false); assert.equal(calls, 1);
+  t = 5_000; await p(); assert.equal(calls, 1, 'dentro de retryMs: cache');
+  t = 9_000; code = 0; assert.equal((await p()).loggedIn, true); assert.equal(calls, 2, 'passou retryMs: reconsulta e vê o login');
+  t = 20_000; await p(); assert.equal(calls, 2, 'conectado: cache até ttlMs');
+  sig = 'b'; code = 1; assert.equal((await p()).loggedIn, false); assert.equal(calls, 3, 'o arquivo de login mudou (logout): invalida na hora');
+  sig = 'c'; code = 0; assert.equal((await p()).loggedIn, true); assert.equal(calls, 4, 'login: invalida na hora, sem esperar o tempo');
+});
+
+test('authSignature: só data e tamanho de auth.json (o conteúdo não é lido); sem arquivo = sem-arquivo; muda com login e logout', async () => {
+  const { authSignature } = await import('../providers/codex.js');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'orch-sig-'));
+  try {
+    assert.equal(authSignature({ CODEX_HOME: home }), 'sem-arquivo');
+    const f = path.join(home, 'auth.json');
+    fs.writeFileSync(f, '{"x":1}');
+    const a = authSignature({ CODEX_HOME: home });
+    assert.match(a, /^\d+(\.\d+)?:7$/);
+    assert.ok(!a.includes('"x"'), 'nada do conteúdo na assinatura');
+    fs.writeFileSync(f, '{"x":123456}');
+    assert.notEqual(authSignature({ CODEX_HOME: home }), a);
+    fs.rmSync(f);
+    assert.equal(authSignature({ CODEX_HOME: home }), 'sem-arquivo');
+  } finally { fs.rmSync(home, { recursive: true, force: true }); }
+});

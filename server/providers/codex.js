@@ -6,6 +6,7 @@
 //   - o prompt do papel vai em `developer_instructions`; não há plugins (loadouts) nem hooks de estado ligados ainda (capabilities), então a tela cai na leitura pela saída;
 //   - `--no-alt-screen` mantém a saída no fluxo normal do terminal, que é o que o `read_pane_output` do Maestro consegue ler.
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { killTreeSync } from '../orphans.js';
@@ -24,17 +25,21 @@ export function resolveCodex({ env = process.env, platform = process.platform } 
 /**
  * O Codex está com a conta conectada? Usa `codex login status` (argumentos fixos, sem shell, timeout curto): só o código de saída conta (0 = conectado, 1 = não conectado; qualquer outro resultado é "desconhecido"). O FORGE não lê arquivo de credencial
  * e o texto da CLI nunca é repassado (pode trazer e-mail). Estourou o tempo: encerra a ÁRVORE do processo (no Windows o execFile mata só o cmd.exe do wrapper e o codex neto ficaria vivo). Devolve { known, loggedIn, detail }; `known: false` quando a CLI não responde. Cache de `ttlMs` e uma única chamada em andamento.
- * `resolve`/`run`/`killTree` só existem para os testes. `reset()` descarta o cache e a consulta em andamento (o resultado dela, antiga, não volta ao cache).
+ * Atualização rápida: o cache vale `ttlMs` (conectado) ou `retryMs` (desconectado ou desconhecido, para notar o login logo) e também cai quando a ASSINATURA do arquivo de login muda
+ * (`authSignature`: só data e tamanho de `<CODEX_HOME>/auth.json`, o conteúdo NUNCA é lido). `resolve`/`run`/`killTree`/`signature` só existem para os testes.
+ * `reset()` descarta o cache e a consulta em andamento (o resultado dela, antiga, não volta ao cache).
  */
-export function createCodexAuthProbe({ resolve = resolveCodex, env = () => process.env, ttlMs = 15_000, timeoutMs = 6000, run = execFile, now = Date.now, killTree = killTreeSync } = {}) {
-  let cache = { at: 0, value: null }, inFlight = null, gen = 0;
+export function createCodexAuthProbe({ resolve = resolveCodex, env = () => process.env, ttlMs = 30_000, retryMs = 8_000, timeoutMs = 6000, run = execFile, now = Date.now, killTree = killTreeSync, signature = authSignature } = {}) {
+  let cache = { at: 0, value: null, sig: null }, inFlight = null, gen = 0;
+  const sigNow = () => { try { return signature(env()); } catch { return 'erro'; } };
+  const fresh = () => cache.value && now() - cache.at < (cache.value.loggedIn === true ? ttlMs : retryMs) && cache.sig === sigNow();
   const unknown = (detail) => ({ known: false, loggedIn: null, detail });
   function probe() {
-    if (cache.value && now() - cache.at < ttlMs) return Promise.resolve(cache.value);
+    if (fresh()) return Promise.resolve(cache.value);
     if (inFlight) return inFlight;
     inFlight = new Promise((done) => {
-      const g = gen;
-      const finish = (value) => { if (g === gen) { cache = { at: now(), value }; inFlight = null; } done(value); };
+      const g = gen, sig = sigNow();
+      const finish = (value) => { if (g === gen) { cache = { at: now(), value, sig }; inFlight = null; } done(value); };
       let spec; try { spec = resolve({ env: env() }); } catch { spec = null; }
       if (!spec) return finish(unknown('O Codex CLI não foi encontrado no PATH.'));
       try {
@@ -51,7 +56,7 @@ export function createCodexAuthProbe({ resolve = resolveCodex, env = () => proce
     });
     return inFlight;
   }
-  probe.reset = () => { gen++; cache = { at: 0, value: null }; inFlight = null; };
+  probe.reset = () => { gen++; cache = { at: 0, value: null, sig: null }; inFlight = null; };
   return probe;
 }
 
@@ -66,6 +71,12 @@ export function codexOscState(data, carry = '') {
   for (const m of text.matchAll(OSC_RE)) state = OSC_STATE[m[1]] ?? state;
   const open = text.lastIndexOf('\x1b]7501;');
   return { state, carry: open >= 0 && text.length - open < 120 && !/(?:\x07|\x1b\\)/.test(text.slice(open)) ? text.slice(open) : '' };
+}
+
+/** Assinatura do arquivo de login do Codex (`<CODEX_HOME ou ~/.codex>/auth.json`): data e tamanho, ou "sem-arquivo". Só um `stat`: o conteúdo (credencial) nunca é aberto. Login e logout mudam a assinatura. */
+export function authSignature(env = process.env) {
+  const file = path.join(typeof env.CODEX_HOME === 'string' && env.CODEX_HOME ? env.CODEX_HOME : path.join(os.homedir(), '.codex'), 'auth.json');
+  try { const s = fs.statSync(file); return `${s.mtimeMs}:${s.size}`; } catch { return 'sem-arquivo'; }
 }
 
 /**
