@@ -27,7 +27,7 @@ test('codex.resolve: acha o `codex` no PATH; wrapper .cmd (npm no Windows) passa
 
 test('codex.paneArgs: sandbox e aprovação fixos, prompt em developer_instructions, MCP por -c com o token SÓ no ambiente (nunca na linha de comando)', () => {
   const a = codexProvider.paneArgs({ mode: 'new', prompt: 'Voce e o CONSTRUTOR. Faca (rapido): ok.', mcp: { url: URL_, serverName: NAME } });
-  assert.deepEqual(a.slice(0, 5), ['--no-alt-screen', '-s', 'workspace-write', '-a', 'on-request']);
+  assert.deepEqual(a.slice(0, 6), ['--no-alt-screen', '--no-daemon', '-s', 'workspace-write', '-a', 'on-request']);
   const cs = a.filter((x, i) => a[i - 1] === '-c');
   assert.deepEqual(cs, [
     'developer_instructions="Voce e o CONSTRUTOR. Faca (rapido): ok."',
@@ -36,7 +36,7 @@ test('codex.paneArgs: sandbox e aprovação fixos, prompt em developer_instructi
   ]);
   assert.ok(!a.some((x) => /--session-id|--mcp-config|--plugin-dir|--allowedTools|--append-system-prompt/.test(x)), 'nenhuma flag do Claude');
   // aspas dentro do prompt são escapadas como string TOML; wrapper .cmd (quote:false) vai sem aspas
-  assert.equal(codexProvider.paneArgs({ prompt: 'diga "oi"' })[6], 'developer_instructions="diga \\"oi\\""');
+  assert.equal(codexProvider.paneArgs({ prompt: 'diga "oi"' })[7], 'developer_instructions="diga \\"oi\\""');
   const raw = codexProvider.paneArgs({ prompt: 'Voce e o BATEDOR', mcp: { url: URL_, serverName: NAME }, quote: false }).filter((x, i, l) => l[i - 1] === '-c');
   assert.deepEqual(raw.slice(0, 3), ['developer_instructions=Voce e o BATEDOR', `mcp_servers.${NAME}.url=${URL_}`, `mcp_servers.${NAME}.bearer_token_env_var=${MCP_TOKEN_ENV}`]);
   // sem MCP, ou com nome de servidor que não é chave simples: nenhum argumento de MCP

@@ -4,7 +4,9 @@
 //   - NÃO aceita id de sessão escolhido por quem chama: o id interno do FORGE (agentSessionId) é só uma chave nossa; por isso o pane do Codex não é retomável nem bifurcável (capabilities);
 //   - o MCP do Maestro entra por `-c mcp_servers.<nome>.*` e o token vai SÓ no ambiente do processo (`bearer_token_env_var`): nenhum arquivo é escrito e nada vai para ~/.codex;
 //   - o prompt do papel vai em `developer_instructions`; não há plugins (loadouts) nem hooks de estado ligados ainda (capabilities), então a tela cai na leitura pela saída;
-//   - `--no-alt-screen` mantém a saída no fluxo normal do terminal, que é o que o `read_pane_output` do Maestro consegue ler.
+//   - `--no-alt-screen` mantém a saída no fluxo normal do terminal, que é o que o `read_pane_output` do Maestro consegue ler;
+//   - `--no-daemon`: o FORGE sempre passa `-c` (papel, MCP, confiança), e isso obriga o Codex ao modo embutido (sem o "servidor compartilhado em segundo plano"); pedir o modo embutido explicitamente evita os avisos
+//     "Running without the shared background server" e "Running as administrator: shared background server disabled" (verificado no 0.167.0).
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -124,7 +126,7 @@ export const codexProvider = Object.freeze({
    */
   paneArgs({ mode = 'new', prompt, mcp = null, quote = true, trustDir = null }) {
     if (mode !== 'new') throw new Error('O Codex CLI não oferece retomada nem bifurcação neste adaptador.');
-    const args = ['--no-alt-screen', '-s', 'workspace-write', '-a', 'on-request'];
+    const args = ['--no-alt-screen', '--no-daemon', '-s', 'workspace-write', '-a', 'on-request'];
     // Confiança da pasta SÓ para este processo (o Codex não pergunta "confiar nesta pasta?"): nada é gravado no config do usuário. A chave usa aspas simples (literal TOML), que valem até no cmd.exe;
     // pasta com aspa simples, controle ou metacaractere do cmd.exe fica sem o argumento (a pergunta aparece normalmente).
     if (typeof trustDir === 'string' && trustDir && !/['\u0000-\u001f]/.test(trustDir) && (quote || !/[&|<>^%"!]/.test(trustDir))) args.push('-c', `projects.'${trustDir}'.trust_level='trusted'`);
