@@ -34,6 +34,8 @@ import { createAccounts, setupAccounts } from './accounts.js';
 import { createLoginManager } from './account-login.js';
 import { setClaudeEnvProvider } from './claude-cli.js';
 import { createUsageReader } from './terminal-usage.js';
+import { createRateLimits } from './rate-limits.js';
+import { codexProvider } from './providers/codex.js';
 import { createMaestro, setupMaestro, stableServerName } from './maestro.js';
 import { migrateLegacyDir } from './legacy-dirs.js';
 import { setupChat } from './chat.js';
@@ -99,6 +101,10 @@ const accountsCli = testDeps.accountsCli ?? (testDeps.executor ? { unavailable: 
 let logins = null;
 const accounts = createAccounts({ db, dataDir: store.dataDir, persist: store.saveOrThrow, uid, ...accountsCli, isInUse: (id) => terminals.usesAccount(id), isLoginActive: (id) => logins?.isActive(id) === true, isCycleBusy: () => claudeCodeExecutor.isBusy() || planning() });
 logins = createLoginManager({ accounts, ...accountsCli, track: childRegistry.track });
+// Limite real de uso das contas (janela de 5 h e semanal): a status line do Claude Code grava aqui (claude-statusline-hook.mjs) e o Codex vem dos rollouts; só leitura local, nada sai da máquina (rate-limits.js). Pasta fora do workspace.
+const limitsDir = process.env.ORCH_DATA_DIR ? path.join(store.dataDir, 'rate-limits') : path.join(devHome, 'rate-limits');
+const rateLimits = createRateLimits({ db, accounts, dir: limitsDir, script: fileURLToPath(new URL('./claude-statusline-hook.mjs', import.meta.url)), codexAuth: () => codexProvider.authProbe() });
+rateLimits.sweep();
 setClaudeEnvProvider(() => accounts.envOf(accounts.defaultId())); // Executor e Planner do ciclo usam a conta padrão no momento de cada execução
 const conversations = createConversationStore({ dir: historyDir, configDirOf: (id) => accounts.configDirOf(id) }); // histórico de conversas próprio, por workspace (texto das trocas; ver conversations.js); cada sessão é lida na pasta da conta dela
 // Avisos ao abrir terminais: (1) "confiar nesta pasta?" do Claude Code e do Codex é respondido pelo FORGE (trust.js; o Codex recebe por argumento); (2) a confirmação "Abrir mesmo assim?" por configuração de projeto
@@ -108,7 +114,7 @@ const trustOptions = inTest ? {} : {
   ...(process.env.ORCH_NO_TRUST === '1' ? {} : { trustFolders: ({ provider, cwd, configDir }) => { if (provider === 'claude') trustClaudeFolder(cwd, { configDir }); } }),
   ...(process.env.ORCH_STRICT_PROJECT_CONFIG === '1' ? {} : { inspectConfig: async () => [] }),
 };
-const terminals = createTerminalManager({ ...trustOptions, db, accounts, loadouts, agentStatus, onEnd: (rec) => { if ((rec.provider ?? 'claude') === 'claude' && db.workspaces.some((w) => w.id === rec.workspaceId)) conversations.sync(rec); }, track: childRegistry.track, worktrees, mcp: maestro, persist: store.saveOrThrow, isChildAlive: (terminalId) => childRegistry.pending().some((r) => r && r.kind === 'terminal' && r.terminalId === terminalId && pidAlive(r.pid)), usage: createUsageReader({ pricesFile: path.join(store.dataDir, 'pricing.json') }) }); // terminais interativos (PTY) do Claude Code: um processo por pane, em paralelo
+const terminals = createTerminalManager({ ...trustOptions, db, accounts, loadouts, agentStatus, statusLine: rateLimits, onEnd: (rec) => { if ((rec.provider ?? 'claude') === 'claude' && db.workspaces.some((w) => w.id === rec.workspaceId)) conversations.sync(rec); }, track: childRegistry.track, worktrees, mcp: maestro, persist: store.saveOrThrow, isChildAlive: (terminalId) => childRegistry.pending().some((r) => r && r.kind === 'terminal' && r.terminalId === terminalId && pidAlive(r.pid)), usage: createUsageReader({ pricesFile: path.join(store.dataDir, 'pricing.json') }) }); // terminais interativos (PTY) do Claude Code: um processo por pane, em paralelo
 let worktreeRecovery = { settled: [], inconsistent: [], unregistered: [], unverified: [] }; // E3: preenchido logo DEPOIS do reclaim dos processos filhos (abaixo)
 const app = express();
 // Host válido em toda a /api, Origin permitido quando enviado e OBRIGATÓRIO em POST/PUT/PATCH/DELETE (CSRF, DNS rebinding e chamadas locais sem Origin; ver origin-guard.js).
@@ -412,6 +418,8 @@ setupConversations(app, { db, conversations }); // GET/DELETE /api/workspaces/:i
 const cycle = setupCycle(app, { db, executor: claudeCodeExecutor, planner, startTaskRun, verifier, router, limits: cycleLimits, multiStep: () => orchestration().planMode, stepRetries: () => orchestration().stepRetries, supervision: () => supervisionMs(supervision()), worktrees, worktreeIsolation: () => worktreeIsolation().enabled });
 setupWorktrees(app, { db, manager: worktrees });
 setupTerminals(app, { manager: terminals });
+// Limite real de uso por conta (5 h e semana), somente leitura, sem caminhos/ids/e-mails; a interface consulta a cada ~15-30 s (memo de 2 s). Mesmo apiGuard (Host/Origin) das demais rotas de /api.
+app.get('/api/limits', (req, res) => { try { res.set('Cache-Control', 'no-store').json(rateLimits.view()); } catch { bad(res, 'Não foi possível ler os limites de uso.', 500); } });
 setupAccounts(app, { accounts, logins }); // GET/POST/DELETE /api/accounts[/:id/(default|login...)]: leituras com token de sessão quando configurado
 setupMaestro(app, { maestro });
 setupChat(app, { db, planner, cycle, multiStep: () => orchestration().planMode }); // M5: chat geral; só prepara propostas, executar exige /api/chat/approve

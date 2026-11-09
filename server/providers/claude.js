@@ -20,7 +20,7 @@ export const claudeProvider = Object.freeze({
   resolve: resolveClaude,
   notFoundMessage: 'Claude Code não foi encontrado no PATH.',
   // O que a CLI sabe fazer; o terminals.js só liga o recurso quando o provedor declara a capacidade.
-  capabilities: Object.freeze({ resume: true, fork: true, hooks: true, plugins: true, accounts: true, transcript: true }),
+  capabilities: Object.freeze({ resume: true, fork: true, hooks: true, plugins: true, accounts: true, transcript: true, statusLine: true }),
   mcpTransport: 'file', // credencial do Maestro em arquivo (--mcp-config)
   // Variáveis acrescentadas ao ambiente do pane (só se o ambiente ainda não define a variável: quem quiser outro valor exporta antes). CLAUDE_CODE_NO_FLICKER=1 liga o renderer em tela cheia
   // (alt-screen, preenche o terminal). Sem isto o Claude Code o DESLIGA SOZINHO na máquina quando um lançamento "não terminou de iniciar" (acontece quando o servidor reinicia e mata os panes
@@ -35,8 +35,9 @@ export const claudeProvider = Object.freeze({
    * `pluginDir` = plugin de sessão com as skills do papel (loadouts.js); vale também na retomada, porque o plugin não faz parte da sessão gravada.
    *   Vem ANTES dos argumentos de MCP: `--mcp-config` e `--allowedTools` aceitam vários valores e um argumento depois deles seria lido como valor.
    */
-  paneArgs({ mode, prompt, label, sessionId, resumeSessionId, mcp = null, pluginDir = null }) {
-    const pluginArgs = pluginDir ? ['--plugin-dir', pluginDir] : [];
+  paneArgs({ mode, prompt, label, sessionId, resumeSessionId, mcp = null, pluginDir = null, settingsFile = null }) {
+    // `settingsFile` = arquivo JSON com a status line do FORGE (rate-limits.js), que grava o limite real da conta. Vale nos três modos, junto do plugin e ANTES do MCP; sem ele, nenhum argumento.
+    const pluginArgs = [...(pluginDir ? ['--plugin-dir', pluginDir] : []), ...(settingsFile ? ['--settings', settingsFile] : [])];
     const mcpArgs = mcp ? ['--mcp-config', mcp.configPath, '--allowedTools', `mcp__${mcp.serverName ?? 'forge'}`] : [];
     if (mode === 'new') return ['--append-system-prompt', prompt, '--name', label, '--session-id', sessionId, ...pluginArgs, ...mcpArgs];
     return ['--resume', resumeSessionId, ...(mode === 'fork' ? ['--fork-session', '--session-id', sessionId] : []), ...pluginArgs, ...mcpArgs];
