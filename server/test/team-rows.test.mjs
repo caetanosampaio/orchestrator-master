@@ -62,13 +62,13 @@ test('slotChoiceLabels: usa o rótulo do servidor, o id quando fora da lista e "
   assert.equal(slotChoiceLabels({ provider: 'claude', model: 'opus' }, null).model, 'opus', 'servidor antigo: mostra o id');
 });
 
-test('bonequinhos: cada provider tem a sua cor; desconhecido fica em cinza; o corpo é o mesmo para todos', () => {
+test('bonequinhos: cada provider tem a sua cor; desconhecido fica em cinza; o corpo 3D é o mesmo para todos', () => {
   assert.notEqual(providerColor('claude'), providerColor('codex')); assert.match(providerColor('claude'), /^#[0-9a-f]{6}$/i); assert.equal(providerColor('x'), '#9aa3b2');
   assert.deepEqual(Object.keys(PROVIDER_COLORS).sort(), ['claude', 'codex']);
   const logo = src('components/ProviderLogo.jsx'), m = logo.slice(logo.indexOf('export function ProviderMascot'));
-  assert.match(m, /providerColor\(id\)/); assert.match(m, /fill="currentColor"/); assert.ok(!/CLAUDE_ORANGE|#d87756/i.test(m), 'a cor vem do provider, não fixa no desenho');
+  assert.match(m, /providerColor\(id\)/); assert.match(m, /<Mascot3D /); assert.ok(!/CLAUDE_ORANGE|#d87756/i.test(m), 'a cor vem do provider, não fixa no desenho');
   assert.match(m, /\{label && <span className="pm-name">\{label\}<\/span>\}/, 'o nome do provider acompanha o bonequinho');
-  assert.equal((m.match(/<rect /g) ?? []).length, 4, 'quatro pernas');
+  assert.ok(!/<svg/.test(m), 'o boneco não é mais uma imagem 2D');
 });
 
 test('Configurações é uma PÁGINA (não um diálogo) e a engrenagem abre e fecha; Equipes usa linhas e agentes', () => {
@@ -82,6 +82,6 @@ test('Configurações é uma PÁGINA (não um diálogo) e a engrenagem abre e fe
   const t = src('components/TeamsSettings.jsx');
   assert.match(t, /<TeamRows title="Equipes do FORGE"/); assert.match(t, /<Agents providers=/); assert.match(t, /ProviderMascot id=\{p\.id\}/);
   const rows = src('components/TeamRows.jsx');
-  assert.match(rows, /<ProviderMascot id=\{slot\.provider\}/); assert.match(rows, /slotChoiceLabels\(slot, options\)/); assert.match(rows, /describeSquad\(squad\)/);
+  assert.ok(!/ProviderMascot|Mascot3D/.test(rows), 'as equipes predefinidas não têm bonecos: só provider, modelo e esforço'); assert.match(rows, /<b className="tr-prov">\{labelOf\(slot\.provider\)\}<\/b>/); assert.match(rows, /slotChoiceLabels\(slot, options\)/); assert.match(rows, /describeSquad\(squad\)/);
   assert.match(src('main.jsx'), /import '\.\/teams\.css'/);
 });

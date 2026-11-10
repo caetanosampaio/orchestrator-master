@@ -1,6 +1,7 @@
 import React from 'react';
 import claudeStarUrl from '../assets/claude-star.webp';
 import { providerColor } from '../provider-view.js';
+import Mascot3D from './Mascot3D.jsx';
 
 // Marcas dos agentes (providers).
 //  - Claude Code: a logo oficial (estrela, imagem em assets/claude-star.webp) na sidebar, no botão de "trabalhando" do terminal e nas Configurações;
@@ -75,21 +76,13 @@ export default function ProviderLogo({ id, size = 20, title, className = '', var
 }
 
 /**
- * Bonequinho do provider: o MESMO corpo do mascote do Claude Code (pixel art: corpo, braços, quatro pernas e olhos vazados) para todos, mudando só a cor, que é a do provider
- * (provider-view.js). Com `label`, o nome do provider vem junto: embaixo (`layout="stack"`, padrão) ou ao lado (`layout="inline"`). Só desenho: sem animação própria além do passo das pernas ao passar o mouse
- * (teams.css, desligado por "Animações reduzidas").
+ * Bonequinho do provider, em 3D (Mascot3D): o MESMO corpo para todos (o mascote do Claude Code feito de blocos que giram no espaço e podem ser arrastados), mudando só a cor, que é a do provider
+ * (provider-view.js). Com `label`, o nome do provider vem junto: embaixo (`layout="stack"`, padrão) ou ao lado (`layout="inline"`).
  */
 export function ProviderMascot({ id, size = 40, label = null, layout = 'stack', className = '' }) {
-  const w = size * 1.25, h = (w * 313) / 500;
   return (
     <span className={`pm pm-${layout}${className ? ` ${className}` : ''}`} style={{ '--pm': providerColor(id) }} data-provider={id}>
-      <svg className="pm-body" width={w} height={h} viewBox="0 104 500 313" role={label ? undefined : 'img'} aria-hidden={label ? true : undefined} aria-label={label ? undefined : `Provider ${id}`} focusable="false" shapeRendering="crispEdges">
-        <path fill="currentColor" fillRule="evenodd" d="M63 104h375v125h62v65h-62v62H63v-62H0v-65h63zM125 169h32v60h-32zM344 169h32v60h-32z" />
-        <rect className="pm-leg pm-leg-a" fill="currentColor" x="94" y="356" width="31" height="61" />
-        <rect className="pm-leg pm-leg-b" fill="currentColor" x="157" y="356" width="31" height="61" />
-        <rect className="pm-leg pm-leg-a" fill="currentColor" x="313" y="356" width="31" height="61" />
-        <rect className="pm-leg pm-leg-b" fill="currentColor" x="376" y="356" width="31" height="61" />
-      </svg>
+      <Mascot3D size={size} label={label ? null : `Provider ${id}`} />
       {label && <span className="pm-name">{label}</span>}
     </span>
   );
