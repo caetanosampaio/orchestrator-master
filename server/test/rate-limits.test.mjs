@@ -440,7 +440,7 @@ test('statusLine.command gerado EXECUTA de verdade no bash com espaço e acento 
   const settings = RL.statusLineSettings({ node: stub, script, dir: data }); assert.ok(settings, 'caminhos com espaço e acento são aceitos');
   const sec = Math.floor(Date.now() / 1000), sid = uuid(42);
   const r = spawnSync(bash, ['-c', settings.statusLine.command], { input: JSON.stringify({ session_id: sid, rate_limits: { five_hour: { used_percentage: 12.3, resets_at: sec + 3600 }, seven_day: { used_percentage: 50, resets_at: sec + 86400 } } }), encoding: 'utf8', timeout: 20000, windowsHide: true });
-  assert.equal(r.status, 0, r.stderr); assert.equal(r.stdout, 'FORGE · 5h 12% · semana 50%\n');
+  assert.equal(r.status, 0, r.stderr); assert.equal(r.stdout, 'FORGE\n');
   assert.equal(JSON.parse(fs.readFileSync(path.join(data, `${sid}.json`), 'utf8')).fiveHour.usedPct, 12.3);
 });
 

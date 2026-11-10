@@ -78,3 +78,9 @@ test('uma dupla de barras por PROVEDOR: vale a conta mais perto do limite em cad
   const empate = providerSummary({ provider: 'claude', label: 'C', accounts: [{ id: 'a', connected: true, session: { usedPct: 50, resetsAt: at(5 * 3600e3) }, week: null }, { id: 'b', connected: true, session: { usedPct: 50, resetsAt: at(2 * 3600e3) }, week: null }] });
   assert.equal(empate.session.resetsAt, at(2 * 3600e3), 'empate de uso: vale o reset mais cedo'); assert.equal(empate.critical, 'session');
 });
+
+test('source "api" é aceito no contrato e não gera nota (a barra está preenchida)', () => {
+  const now = Date.now(), at = (ms) => new Date(now + ms).toISOString();
+  const n = normalizeLimits({ updatedAt: at(0), providers: [{ provider: 'claude', label: 'Claude Code', accounts: [{ id: 'system', label: 'Sistema', source: 'api', session: { usedPct: 5, resetsAt: at(3600e3), windowMinutes: 300 }, week: null }] }] }, now);
+  assert.equal(n.providers[0].accounts[0].source, 'api'); assert.equal(sourceNote({ source: 'api' }, 'claude'), null);
+});

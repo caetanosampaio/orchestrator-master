@@ -66,7 +66,7 @@ const cleanWindow = (w, now) => {
   if (pct === null || !Number.isFinite(at) || at <= now) return null; // reset já passou: o dado velho não vale como atual
   return { usedPct: pct, resetsAt: new Date(at).toISOString(), windowMinutes: isNum(w.windowMinutes) ? w.windowMinutes : null };
 };
-const SOURCES = new Set(['statusline', 'rollout', 'statusline-propria', 'desligado', 'sem-dados']);
+const SOURCES = new Set(['api', 'statusline', 'rollout', 'statusline-propria', 'desligado', 'sem-dados']);
 
 /**
  * Normaliza a resposta de /api/limits. Servidor antigo (sem a rota) ou resposta inválida = null (a barra mostra "—").
