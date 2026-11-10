@@ -1,6 +1,8 @@
 // Limite REAL de uso de cada conta (janela curta de 5 h e janela semanal), para a interface: GET /api/limits.
 //
-// Fontes (tudo local; nada sai da máquina, nenhum token ou arquivo de credencial é lido):
+// Fonte principal (quando o login permite): o USO REAL da conta consultado no provedor (usage-api.js: lê o token de login só em memória e chama o endpoint de uso). Cobre tudo que a conta gastou,
+// dentro ou fora do FORGE (terminal externo, navegador). Desliga com ORCH_LIMITS_API=off. Sem credencial, token vencido ou falha: caem as fontes locais abaixo (`source` 'api' vs. 'statusline'/'rollout').
+// Fontes locais (fallback; nada sai da máquina, nenhum token é lido):
 //   - Claude Code (assinantes Pro/Max): a status line do Claude Code recebe no stdin `rate_limits.{five_hour,seven_day}`. O pane é aberto com `--settings <arquivo>` (gerado aqui) que liga a status line a
 //     `claude-statusline-hook.mjs`; o script grava `<pasta>/<session_id>.json` ({ at, fiveHour, sevenDay }). Aqui só se LÊ essa pasta: para cada conta, por janela, vale o dado mais NOVO pela própria janela
 //     (maior `resetsAt`; em empate, MAIOR `usedPct`, pois o uso só cresce dentro da janela; só então o `at`, que é quando o hook rodou e não quando o dado foi medido) entre as sessões dela
@@ -28,6 +30,9 @@ const MEMO_MS = 2000;
 const CONNECTED_TIMEOUT_MS = 10_000; // consulta de login que não responde não prende o estado para sempre
 const CONNECTED_TTL_MS = 60_000; // o login é consultado em segundo plano, no máximo a cada ~1 min (as sondas já têm cache próprio)
 const MAX_RECORDS_PER_ACCOUNT = 30;
+const API_TTL_MS = 30_000; // consulta ao provedor no máximo a cada ~30 s por conta (a interface pergunta a cada ~15 s)
+const API_STALE_MS = 5 * 60_000; // leitura da API mais velha que isto não vale mais como "atual"
+const API_TIMEOUT_MS = 15_000, API_MAX_BACKOFF_MS = 10 * 60_000, API_RATE_LIMITED_MS = 5 * 60_000;
 const MAX_FILE_CACHE = 500;
 const FUTURE_SKEW_MS = 10 * 60_000; // `at` além disto no futuro é lixo
 const STALE_FILE_MS = 30 * 86_400_000;
@@ -75,7 +80,7 @@ const publicWindow = (w, minutes, nowMs) => (w && w.resetsAt * 1000 > nowMs ? { 
  * `db` = banco (só lê `terminalSessions`); `accounts` = módulo de contas (list, configDirOf, available, statusOf); `dir` = pasta onde o hook grava (fora do workspace);
  * `script` = caminho do claude-statusline-hook.mjs; `codexAuth` = sonda de login do Codex (cacheada). `env`, `now` (ms) e `codexReader` são injetáveis nos testes.
  */
-export function createRateLimits({ db, accounts = null, dir: dirIn, script: scriptIn, node = process.execPath, settingsFile: settingsIn = null, codexHome = codexHomeDir(), codexReader = null, codexAuth = null, env = () => process.env, now = Date.now, memoMs = MEMO_MS, connectedTtlMs = CONNECTED_TTL_MS, maxRecordsPerAccount = MAX_RECORDS_PER_ACCOUNT } = {}) {
+export function createRateLimits({ db, accounts = null, dir: dirIn, script: scriptIn, node = process.execPath, settingsFile: settingsIn = null, codexHome = codexHomeDir(), codexReader = null, codexAuth = null, env = () => process.env, now = Date.now, memoMs = MEMO_MS, connectedTtlMs = CONNECTED_TTL_MS, maxRecordsPerAccount = MAX_RECORDS_PER_ACCOUNT, usageApi = null, apiTtlMs = API_TTL_MS, apiStaleMs = API_STALE_MS } = {}) {
   if (!dirIn) throw new Error('createRateLimits: dir é obrigatório');
   const dir = path.resolve(dirIn), script = scriptIn ? path.resolve(scriptIn) : null; // absolutos: a status line roda com outro cwd
   const settingsFile = settingsIn ? path.resolve(settingsIn) : path.join(dir, 'claude-settings.json');
@@ -163,6 +168,38 @@ export function createRateLimits({ db, accounts = null, dir: dirIn, script: scri
     return m;
   }
 
+  // ---- uso REAL da conta no provedor (usage-api.js): inclui o que foi gasto fora do FORGE (terminal externo, navegador). Consulta em segundo plano, nunca bloqueia view() ----
+  const apiOn = () => String(env()?.ORCH_LIMITS_API ?? '').trim().toLowerCase() !== 'off';
+  const apiStates = new Map(); // chave -> { gen, pending, startedAt, nextAt, fails, okAt, data, reason }
+  function apiOf(key, fetchIt) {
+    if (!usageApi || !apiOn()) return null;
+    const t = now();
+    const m = apiStates.get(key) ?? { gen: 0, pending: false, startedAt: 0, nextAt: 0, fails: 0, okAt: 0, data: null, reason: null };
+    apiStates.set(key, m);
+    if (m.pending && t - m.startedAt >= API_TIMEOUT_MS) { m.gen++; m.pending = false; m.fails++; m.reason = 'erro'; m.nextAt = t + Math.min(apiTtlMs * 2 ** m.fails, API_MAX_BACKOFF_MS); } // consulta que nunca resolve: descarta (o resultado tardio é ignorado) e recua
+    if (!m.pending && t >= m.nextAt) {
+      const gen = ++m.gen; m.pending = true; m.startedAt = t;
+      Promise.resolve().then(fetchIt).then(
+        (r) => {
+          if (gen !== m.gen) return;
+          if (r?.ok) { m.data = r; m.okAt = now(); m.fails = 0; m.reason = null; m.nextAt = now() + apiTtlMs; return; }
+          m.fails++; m.reason = typeof r?.reason === 'string' ? r.reason : 'erro';
+          const wait = m.reason === 'sem-credencial' || m.reason === 'token-expirado' ? apiTtlMs : m.reason === 'limitado' ? API_RATE_LIMITED_MS : Math.min(apiTtlMs * 2 ** m.fails, API_MAX_BACKOFF_MS); // recuo: erro/429 não vira martelada
+          m.nextAt = now() + wait;
+        },
+        () => { if (gen === m.gen) { m.fails++; m.reason = 'erro'; m.nextAt = now() + Math.min(apiTtlMs * 2 ** m.fails, API_MAX_BACKOFF_MS); } },
+      ).finally(() => { if (gen === m.gen) m.pending = false; });
+    }
+    return m;
+  }
+  /** Janelas da última leitura da API, só se recente e ainda vigentes; senão null (cai nas fontes locais). */
+  function apiWindows(m, nowMs) {
+    if (!m?.data || nowMs - m.okAt >= apiStaleMs || nowMs < m.okAt - FUTURE_SKEW_MS) return null;
+    const ok = (w) => (w && Date.parse(w.resetsAt) > nowMs ? w : null);
+    const session = ok(m.data.session), week = ok(m.data.week);
+    return session || week ? { session, week, planType: m.data.planType ?? null, at: new Date(m.okAt).toISOString() } : null;
+  }
+
   /** O dado `w` (lido de um arquivo com `at`) é mais novo que o melhor até agora? Pela janela: maior resetsAt; empate: maior usedPct (só cresce na janela); último desempate: `at`. */
   const newer = (w, atMs, best) => !best || w.resetsAt > best.w.resetsAt || (w.resetsAt === best.w.resetsAt && (w.usedPct > best.w.usedPct || (w.usedPct === best.w.usedPct && atMs > best.atMs)));
 
@@ -171,6 +208,10 @@ export function createRateLimits({ db, accounts = null, dir: dirIn, script: scri
     try {
       if (accounts?.statusOf) { const m = connectedOf(`claude:${id}`, async () => { const s = await accounts.statusOf(id); return { connected: s?.checked ? s.loggedIn : null, plan: s?.subscriptionType }; }); acc.connected = m.connected; acc.plan = m.plan; }
     } catch { /* informativo */ }
+    try { // 1) uso real da conta (todos os clientes), se o login permitir
+      const api = apiWindows(apiOf(`claude:${id}`, () => usageApi.claude(id)), nowMs);
+      if (api) { acc.source = 'api'; acc.session = api.session; acc.week = api.week; acc.updatedAt = api.at; if (!acc.plan) acc.plan = api.planType; return acc; }
+    } catch { /* cai nas fontes locais */ }
     try {
       const mode = modeOf(id);
       if (mode === 'off') { acc.source = 'desligado'; return acc; }
@@ -195,6 +236,10 @@ export function createRateLimits({ db, accounts = null, dir: dirIn, script: scri
       if (typeof codexAuth === 'function') { const m = connectedOf('codex', async () => { const a = await codexAuth(); return { connected: a?.known === true && typeof a.loggedIn === 'boolean' ? a.loggedIn : null }; }); acc.connected = m.connected; }
     } catch { /* informativo */ }
     try {
+      const api = apiWindows(apiOf('codex', () => usageApi.codex()), nowMs);
+      if (api) { acc.source = 'api'; acc.plan = cleanPlan(api.planType) ?? null; acc.session = api.session; acc.week = api.week; acc.updatedAt = api.at; return acc; }
+    } catch { /* cai nos rollouts */ }
+    try {
       const r = codex.read();
       if (r) {
         acc.plan = cleanPlan(r.planType) ?? null;
@@ -216,13 +261,14 @@ export function createRateLimits({ db, accounts = null, dir: dirIn, script: scri
     }
     const live = new Set(['codex', ...claude.map((a) => `claude:${a.id}`)]);
     for (const k of [...conn.keys()]) if (!live.has(k)) conn.delete(k); // conta removida: esquece o estado de login dela
+    for (const k of [...apiStates.keys()]) if (!live.has(k)) apiStates.delete(k);
     return { updatedAt: new Date(nowMs).toISOString(), providers: [{ provider: 'claude', label: 'Claude Code', accounts: claude }, { provider: 'codex', label: 'Codex CLI', accounts: [codexAccount(nowMs)] }] };
   }
 
   return {
     settingsFileFor,
     /** Só para teste/diagnóstico: quantas contas têm estado de login em memória. */
-    stats: () => ({ connEntries: conn.size }),
+    stats: () => ({ connEntries: conn.size, apiEntries: apiStates.size }),
     /** Resposta de GET /api/limits (memo curto: a interface consulta a cada ~15-30 s, e chamadas simultâneas dividem o mesmo cálculo). Nunca lança por dado ruim. */
     view() {
       const t = now();

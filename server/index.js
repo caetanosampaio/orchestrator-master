@@ -35,6 +35,7 @@ import { createLoginManager } from './account-login.js';
 import { setClaudeEnvProvider } from './claude-cli.js';
 import { createUsageReader } from './terminal-usage.js';
 import { createRateLimits } from './rate-limits.js';
+import { createUsageApi } from './usage-api.js';
 import { codexProvider } from './providers/codex.js';
 import { createMaestro, setupMaestro, stableServerName } from './maestro.js';
 import { migrateLegacyDir } from './legacy-dirs.js';
@@ -102,9 +103,12 @@ const accountsCli = testDeps.accountsCli ?? (testDeps.executor ? { unavailable: 
 let logins = null;
 const accounts = createAccounts({ db, dataDir: store.dataDir, persist: store.saveOrThrow, uid, ...accountsCli, isInUse: (id) => terminals.usesAccount(id), isLoginActive: (id) => logins?.isActive(id) === true, isCycleBusy: () => claudeCodeExecutor.isBusy() || planning() });
 logins = createLoginManager({ accounts, ...accountsCli, track: childRegistry.track });
-// Limite real de uso das contas (janela de 5 h e semanal): a status line do Claude Code grava aqui (claude-statusline-hook.mjs) e o Codex vem dos rollouts; só leitura local, nada sai da máquina (rate-limits.js). Pasta fora do workspace.
+// Limite real de uso das contas (janela de 5 h e semanal): a status line do Claude Code grava aqui (claude-statusline-hook.mjs) e o Codex vem dos rollouts; e, quando o login permite, o uso REAL da conta vem do provedor (usage-api.js: lê o token só em memória e consulta o endpoint de uso; desliga com ORCH_LIMITS_API=off) (rate-limits.js). Pasta fora do workspace.
 const limitsDir = process.env.ORCH_DATA_DIR ? path.join(store.dataDir, 'rate-limits') : path.join(devHome, 'rate-limits');
-const rateLimits = createRateLimits({ db, accounts, dir: limitsDir, script: fileURLToPath(new URL('./claude-statusline-hook.mjs', import.meta.url)), codexAuth: () => codexProvider.authProbe() });
+// Uso real da conta no provedor (inclui o gasto fora do FORGE): só no servidor de verdade; testes com ORCH_DATA_DIR não leem credenciais nem usam a rede, salvo ORCH_LIMITS_API=on.
+const usageApi = (!process.env.ORCH_DATA_DIR && !process.env.NODE_TEST_CONTEXT) || String(process.env.ORCH_LIMITS_API ?? '').toLowerCase() === 'on' ? createUsageApi({ credsDirOf: (id) => accounts.configDirOf(id) }) : null;
+const rateLimits = createRateLimits({ db, accounts, dir: limitsDir, script: fileURLToPath(new URL('./claude-statusline-hook.mjs', import.meta.url)), codexAuth: () => codexProvider.authProbe(), usageApi });
+if (usageApi) rateLimits.view(); // aquece a 1ª leitura do uso real
 rateLimits.sweep();
 setClaudeEnvProvider(() => accounts.envOf(accounts.defaultId())); // Executor e Planner do ciclo usam a conta padrão no momento de cada execução
 const conversations = createConversationStore({ dir: historyDir, configDirOf: (id) => accounts.configDirOf(id) }); // histórico de conversas próprio, por workspace (texto das trocas; ver conversations.js); cada sessão é lida na pasta da conta dela
