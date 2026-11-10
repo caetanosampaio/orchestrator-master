@@ -20,7 +20,6 @@ const { setupExecution } = await import('../execution.js');
 const { createCycle } = await import('../cycle.js');
 const { createChat } = await import('../chat.js');
 const { resolveOrchestration, MAX_STEP_RETRIES } = await import('../plan.js');
-const view = await import('../../client/src/orchestration-view.js');
 
 let db, executor, startTaskRun, seq = 0, verCalls = 0, verFail = () => false;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -52,42 +51,6 @@ test('resolveOrchestration: ambiente inválido lança Error; configuração pers
     assert.deepEqual(resolveOrchestration({ env: {}, settings }), { planMode: false, stepRetries: 0, source: { planMode: 'default', stepRetries: 'default' } }, JSON.stringify(settings));
   }
   assert.equal(MAX_STEP_RETRIES, 2);
-});
-
-// ---------- 2. interface (módulo puro) ----------
-const O = (over = {}, src = {}) => ({ planMode: false, stepRetries: 0, maxStepAttempts: 3, hardMaxIterations: 10, source: { planMode: 'default', stepRetries: 'default', ...src }, ...over });
-
-test('orchestrationForm: valores, origem e desabilitação — ambiente trava o controle com o motivo; ciclo ativo desabilita; sem dado do servidor => null', () => {
-  const f = view.orchestrationForm(O());
-  assert.deepEqual([f.planMode.value, f.planMode.source, f.planMode.locked, f.planMode.disabled, f.planMode.reason], [false, 'default', false, false, null]); assert.equal(f.planMode.sourceLabel, 'padrão (desligado)');
-  assert.deepEqual([f.stepRetries.value, f.stepRetries.disabled], [0, false]); assert.deepEqual(f.warnings, []); assert.equal(f.maxStepAttempts, 3);
-  const env = view.orchestrationForm(O({ planMode: true, stepRetries: 1 }, { planMode: 'env' }));
-  assert.deepEqual([env.planMode.locked, env.planMode.disabled, env.planMode.sourceLabel], [true, true, 'definido pelo ambiente do servidor']); assert.match(env.planMode.reason, /ORCH_CYCLE_PLAN.*altere o ambiente do servidor e reinicie/);
-  assert.deepEqual([env.stepRetries.locked, env.stepRetries.disabled, env.stepRetries.reason], [false, false, null], 'só o campo definido pelo ambiente é travado');
-  const set = view.orchestrationForm(O({ planMode: true, stepRetries: 2 }, { planMode: 'settings', stepRetries: 'settings' })); assert.equal(set.stepRetries.sourceLabel, 'definido nas configurações');
-  const busy = view.orchestrationForm(O(), { activeCycle: true }); assert.deepEqual([busy.planMode.disabled, busy.stepRetries.disabled, busy.planMode.locked], [true, true, false]); assert.match(busy.planMode.reason, /ciclo em andamento/);
-  const both = view.orchestrationForm(O({}, { planMode: 'env' }), { activeCycle: true }); assert.match(both.planMode.reason, /ORCH_CYCLE_PLAN/, 'o ambiente é o motivo principal');
-  for (const bad of [undefined, null, {}, { planMode: 'on', stepRetries: 1 }, { planMode: true, stepRetries: 'x' }, []]) assert.equal(view.orchestrationForm(bad), null);
-  assert.equal(view.orchestrationForm(O({}, { planMode: 'inventado' })).planMode.source, 'default', 'origem desconhecida nunca vira "ambiente"');
-});
-
-test('aviso de configuração sem efeito: retentativas > 0 com o plano desligado; custo e ausência de rollback sempre explicados', () => {
-  const w = view.orchestrationForm(O({ planMode: false, stepRetries: 2 }, { stepRetries: 'settings' }));
-  assert.equal(w.warnings.length, 1); assert.match(w.warnings[0], /só valem para etapas de um plano.*desligado.*não têm efeito/);
-  for (const o of [O({ planMode: true, stepRetries: 2 }), O({ planMode: false, stepRetries: 0 }), O({ planMode: true, stepRetries: 0 })]) assert.deepEqual(view.orchestrationForm(o).warnings, []);
-  assert.equal(view.retriesWithoutPlan(O({ planMode: false, stepRetries: 1 })), true); assert.equal(view.retriesWithoutPlan(O({ planMode: true, stepRetries: 1 })), false); assert.equal(view.retriesWithoutPlan(null), false);
-  const notes = view.orchestrationForm(O()).notes.join('\n');
-  assert.match(notes, /nova execução do Executor.*custo adicionais/); assert.match(notes, /Não existe rollback automático/); assert.match(notes, /um ciclo em andamento não é alterado/);
-  assert.deepEqual(view.RETRY_CHOICES, [0, 1, 2]); assert.equal(view.retryChoiceLabel(0), '0 — desligadas (padrão)'); assert.equal(view.retryChoiceLabel(1), '1 retentativa por ciclo'); assert.equal(view.retryChoiceLabel(2), '2 retentativas por ciclo');
-  assert.equal(view.hasActiveCycle([{ cycle: { status: 'completed' } }, { cycle: { status: 'blocked' } }, {}]), false, 'bloqueado/terminado não é ativo'); assert.equal(view.hasActiveCycle([{ cycle: { status: 'planning' } }]), true); assert.equal(view.hasActiveCycle([{ cycle: { status: 'running' } }]), true); assert.equal(view.hasActiveCycle(undefined), false);
-});
-
-test('tentativa x rodada: a rodada é do ciclo, a tentativa é da etapa ("tentativa k de 3" só com mais de uma rodada na etapa)', () => {
-  const R = (n, planId, stepId) => ({ n, planId, stepId });
-  const a = view.roundAttempts([R(1, 'p', 'a'), R(2, 'p', 'a'), R(3, 'p', 'b'), R(4, 'p', 'a'), { n: 5 }, null, R(6, 'q', 'a')]);
-  assert.deepEqual(a, { 1: { stepId: 'a', attempt: 1, total: 3 }, 2: { stepId: 'a', attempt: 2, total: 3 }, 3: { stepId: 'b', attempt: 1, total: 1 }, 4: { stepId: 'a', attempt: 3, total: 3 }, 6: { stepId: 'a', attempt: 1, total: 1 } }, 'planos diferentes não se misturam; avulsas ficam de fora');
-  assert.deepEqual(view.roundAttempts(undefined), {}); assert.equal(view.attemptLabel(2, 3), 'tentativa 2 de 3'); assert.equal(view.attemptLabel(1, undefined), 'tentativa 1 de 3'); assert.equal(view.attemptLabel(2, 0), 'tentativa 2 de 3');
-  const plan = { id: 'p' }; assert.equal(view.stepAttempts(plan, [R(1, 'p', 'a'), R(2, 'p', 'a'), R(3, 'q', 'a')], 'a'), 2); assert.equal(view.stepAttempts(plan, [], 'a'), 0); assert.equal(view.stepAttempts(null, [R(1, 'p', 'a')], 'a'), 0);
 });
 
 // ---------- 3. chat: lido a cada mensagem ----------

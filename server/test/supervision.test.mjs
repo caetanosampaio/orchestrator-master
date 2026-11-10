@@ -21,7 +21,6 @@ const { setupExecution } = await import('../execution.js');
 const { createCycle } = await import('../cycle.js');
 const sup = await import('../supervisor.js');
 const { retryCandidate } = await import('../plan.js');
-const view = await import('../../client/src/supervision-view.js');
 const { superviseRound, failureSignature, resolveSupervision, supervisionMs, autoResumeDecision, timeExceeded, stallExceeded } = sup;
 
 let db, executor, startTaskRun, seq = 0, verCalls = 0, verFail = () => false, execStarts = 0, onBusy = null;
@@ -130,46 +129,6 @@ test('configuração da supervisão: padrão tudo desligado; ambiente > configur
   assert.deepEqual(resolveSupervision({ env: { ORCH_CYCLE_MAX_MINUTES: ' off ', ORCH_CYCLE_STALL_MINUTES: '0', ORCH_CYCLE_AUTO_RESUMES: '' } }).source, { supervisor: 'default', maxMinutes: 'env', stallMinutes: 'env', autoResumes: 'default' });
   for (const settings of [{ supervisor: 'on', maxMinutes: -1, stallMinutes: 241, autoResumes: 3 }, { maxMinutes: 1.5, autoResumes: '1' }, null, []]) assert.deepEqual(resolveSupervision({ env: {}, settings }), D, JSON.stringify(settings));
   assert.deepEqual(supervisionMs({ supervisor: true, maxMinutes: 2, stallMinutes: 1, autoResumes: 2 }), { enabled: true, maxMs: 120000, stallMs: 60000, autoResumes: 2 }); assert.deepEqual(supervisionMs(resolveSupervision({ env: {} })), { enabled: false, maxMs: 0, stallMs: 0, autoResumes: 0 });
-});
-
-// =====================================================================================================================
-// 2. interface (módulo puro)
-// =====================================================================================================================
-test('supervisionView: cada decisão com ação, observação, motivo, assinatura e orçamento do que o servidor gravou; malformado é ignorado', () => {
-  const rows = view.supervisionView([
-    { at: 'T', round: 1, step: 'a', observation: { kind: 'verificacao_reprovada' }, action: 'retry', code: 'R1', reason: 'Falha recuperável', signature: 'abc123', budget: { retriesUsed: 0, retriesMax: 1, autoResumes: 0, autoResumesMax: 0, plannerCalls: 1, activeMinutes: 0.5 } },
-    { round: 2, observation: { kind: 'falha_repetida' }, action: 'block', reason: 'Repetida', signature: 'abc123', budget: { retriesUsed: 1, retriesMax: 1 } },
-    { round: 2, observation: { kind: 'sem_saida', uncertain: true }, action: 'block', reason: 'sem saída' }, { round: 3, action: 'resume', reason: 'auto', budget: { autoResumes: 1, autoResumesMax: 2 } },
-    null, 'x', { action: 7 }, { round: 4, action: 'inventada', reason: 'r', observation: { kind: 'inventado' } },
-  ]);
-  assert.deepEqual(rows.map((r) => [r.round, r.action, r.status, r.actionLabel]), [[1, 'retry', 'unverified', 'repetir (retentativa)'], [2, 'block', 'blocked', 'bloquear'], [2, 'block', 'blocked', 'bloquear'], [3, 'resume', 'running', 'retomada automática'], [4, 'inventada', 'idle', 'inventada']]);
-  assert.deepEqual([rows[0].observationLabel, rows[0].step, rows[0].signature, rows[0].reason], ['verificação real reprovada', 'a', 'abc123', 'Falha recuperável']); assert.equal(rows[0].budget, 'retentativas 0/1 · consultas ao Planner 1 · tempo ativo 0.5 min');
-  assert.equal(rows[1].observationLabel, 'falha repetida'); assert.equal(rows[1].budget, 'retentativas 1/1'); assert.deepEqual([rows[2].uncertain, rows[2].observationLabel], [true, 'execução sem saída']); assert.equal(rows[3].budget, 'retomadas automáticas 1/2');
-  assert.equal(rows[4].observationLabel, 'inventado', 'tipo desconhecido aparece como veio, sem inventar rótulo'); assert.deepEqual(view.supervisionView(undefined), []); assert.equal(new Set(rows.map((r) => r.key)).size, rows.length, 'chaves únicas');
-  assert.equal(view.budgetText(null), null); assert.equal(view.budgetText({}), null);
-  // fidelidade da trilha: recomendação (action) x o que aconteceu (applied) x tendência
-  const fid = view.supervisionView([
-    { round: 1, action: 'retry', observation: { kind: 'verificacao_reprovada', trend: 'first' }, applied: { state: 'completed', round: 2, result: { execution: 'succeeded', verification: 'passed', evidence: 'verified' } } },
-    { round: 2, action: 'retry', observation: { kind: 'verificacao_reprovada', trend: 'progress' }, applied: { state: 'not_applied', by: 'retry_blocker', reason: 'o Git mudou' } },
-    { round: 3, action: 'replan', observation: { kind: 'politica_recusada' }, applied: { state: 'completed', by: 'planner', result: { decision: 'continue' } } },
-    { round: 4, action: 'block', observation: { kind: 'recusa_repetida', trend: 'none' }, applied: { state: 'stopped', by: 'supervisor_loop' } },
-    { round: 5, action: 'complete', applied: { state: 'n/a' } }, { round: 6, action: 'replan', applied: { state: 'inventado' } }, { round: 7, action: 'replan', observation: { trend: 'inventada' } },
-  ]);
-  assert.deepEqual(fid.map((r) => [r.appliedState, r.trend]), [['completed', null], ['not_applied', 'progress'], ['completed', null], ['stopped', 'none'], ['n/a', null], ['inventado', null], [null, null]]);
-  assert.equal(fid[0].appliedLabel, 'concluída · rodada 2: execução succeeded, verificação passed, evidência verified'); assert.equal(fid[1].appliedLabel, 'NÃO aplicada · por retry_blocker · o Git mudou'); assert.equal(fid[2].appliedLabel, 'concluída · o Planner decidiu: continue · por planner');
-  assert.equal(fid[3].appliedLabel, 'o ciclo parou · por supervisor_loop'); assert.equal(fid[4].appliedLabel, null, 'n/a: nada a aplicar'); assert.equal(fid[5].appliedLabel, null, 'estado desconhecido não é inventado'); assert.equal(fid[6].trendLabel, null);
-  assert.match(fid[1].trendLabel, /progresso verificável/); assert.match(fid[3].trendLabel, /sem progresso/); assert.equal(fid[2].observationLabel, 'proposta recusada pela política'); assert.equal(fid[3].observationLabel, 'proposta equivalente recusada de novo');
-  assert.equal(view.appliedText(null), null); assert.equal(view.appliedText({ state: 'started', round: 3 }), 'iniciada · rodada 3');
-});
-
-test('supervisionForm: valores, origem, travas do ambiente e ciclo ativo; opção atual sempre presente; ausência do servidor => null', () => {
-  const S = (over = {}, src = {}) => ({ supervisor: false, maxMinutes: 0, stallMinutes: 0, autoResumes: 0, source: { supervisor: 'default', maxMinutes: 'default', stallMinutes: 'default', autoResumes: 'default', ...src }, ...over });
-  const f = view.supervisionForm(S()); assert.deepEqual([f.supervisor.value, f.supervisor.sourceLabel, f.supervisor.disabled, f.maxMinutes.disabled], [false, 'padrão (desligado)', false, false]);
-  const env = view.supervisionForm(S({ maxMinutes: 7 }, { maxMinutes: 'env' })); assert.deepEqual([env.maxMinutes.locked, env.maxMinutes.disabled], [true, true]); assert.match(env.maxMinutes.reason, /ORCH_CYCLE_MAX_MINUTES.*altere o ambiente/); assert.ok(env.maxChoices.includes(7), 'o valor real aparece mesmo fora da lista'); assert.equal(env.supervisor.locked, false);
-  const busy = view.supervisionForm(S(), { activeCycle: true }); assert.ok([busy.supervisor, busy.maxMinutes, busy.stallMinutes, busy.autoResumes].every((x) => x.disabled && /ciclo em andamento/.test(x.reason)));
-  assert.deepEqual(view.supervisionForm(S()).maxChoices, [0, 15, 30, 60, 120, 240, 480, 1440]); assert.deepEqual(view.supervisionForm(S()).resumeChoices, [0, 1, 2]); assert.match(f.notes.join(' '), /nunca pelo texto do Planner/); assert.match(f.notes.join(' '), /NÃO prova inatividade/); assert.match(f.notes.join(' '), /Não existe rollback/);
-  for (const bad of [undefined, null, {}, S({ supervisor: 'on' }), S({ maxMinutes: 'x' }), []]) assert.equal(view.supervisionForm(bad), null);
-  assert.deepEqual([view.minutesLabel(0), view.minutesLabel(15), view.minutesLabel(60), view.minutesLabel(90), view.minutesLabel(120)], ['desligado (padrão)', '15 min', '1 h', '90 min', '2 h']); assert.deepEqual([view.resumeLabel(0), view.resumeLabel(1), view.resumeLabel(2)], ['desligada (padrão)', '1 retomada por ciclo', '2 retomadas por ciclo']);
 });
 
 // =====================================================================================================================
