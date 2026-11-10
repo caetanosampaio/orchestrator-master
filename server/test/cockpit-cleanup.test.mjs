@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const src = (f) => fs.readFileSync(new URL(`../../client/src/${f}`, import.meta.url), 'utf8');
-const grid = src('components/TerminalGrid.jsx'), settings = src('components/SettingsDialog.jsx'), pop = src('components/MaestroPopover.jsx'), ctrl = src('components/MaestroControls.jsx'), app = src('App.jsx');
+const grid = src('components/TerminalGrid.jsx'), settings = src('pages/Settings.jsx'), pop = src('components/MaestroPopover.jsx'), ctrl = src('components/MaestroControls.jsx'), app = src('App.jsx');
 
 test('o cockpit não renderiza mais as barras permanentes do Maestro e dos Worktrees', () => {
   assert.doesNotMatch(grid, /function MaestroPanel|<MaestroPanel/);
@@ -31,5 +31,5 @@ test('aprovações pendentes nunca ficam escondidas: contador no botão, painel 
 });
 
 test('o botão de engrenagem continua abrindo as Configurações (o evento do clique não vira nome de aba) e o painel do Maestro abre na aba certa', () => {
-  assert.match(app, /typeof tab === 'string' \? tab : 'perfil'/); assert.match(app, /<SettingsDialog initial=\{settingsTab\}/); assert.match(app, /onOpenSettings=\{openSettings\}/);
+  assert.match(app, /typeof tab === 'string' \? tab : 'perfil'/); assert.match(app, /<Settings key=\{settingsKey\} initial=\{settingsTab\}/); assert.match(app, /onOpenSettings=\{openSettings\}/);
 });

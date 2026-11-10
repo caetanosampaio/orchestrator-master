@@ -18,6 +18,7 @@ import './retro.css'; // identidade retro-terminal (cantos retos, status em pixe
 import './overclock.css'; // linguagem do Overclock por cima de tudo: preto total, sem brilho, pontos redondos, chips contornados, navegação em texto
 import './missions.css'; // página Missões (central de missões)
 import './missions-workflow.css'; // workflow animado da página Missões
+import './teams.css'; // página de Configurações e Configurações > Equipes (linhas de equipe, bonequinhos dos providers)
 
 getLayouts().start(); // layout da grade por workspace (db.settings.layouts)
 getUi().start(); // preferências: cache local já aplicado; o servidor (db.settings.ui) é lido e vence o cache

@@ -12,7 +12,7 @@ test('nomes e composição: Dupla 2, Squad 4, Squad de 6 = 6, Construtor 1; ids 
   assert.deepEqual(PRESETS.map((p) => [p.id, p.label, p.roles.length]), [['duo', 'Dupla', 2], ['squad', 'Squad', 4], ['full', 'Squad de 6', 6], ['builder', 'Construtor', 1]]);
   assert.deepEqual(presetById('squad').roles, ['maestro', 'builder', 'builder', 'reviewer'], 'a composição real do squad não mudou');
   assert.deepEqual(presetById('full').roles, ['maestro', 'scout', 'builder', 'builder', 'builder', 'reviewer']);
-  for (const f of ['team-view.js', 'components/TerminalGrid.jsx', 'components/TeamMenu.jsx', 'components/SettingsDialog.jsx']) assert.doesNotMatch(src(f), /Squad de 4/, `${f} ainda cita "Squad de 4"`);
+  for (const f of ['team-view.js', 'components/TerminalGrid.jsx', 'components/TeamMenu.jsx', 'pages/Settings.jsx']) assert.doesNotMatch(src(f), /Squad de 4/, `${f} ainda cita "Squad de 4"`);
   assert.ok(isPresetId('duo') && !isPresetId('squad4') && !isPresetId(undefined));
 });
 
@@ -71,7 +71,7 @@ test('toolbar: só os controles operacionais (sem chip de workspace nem menu de 
 });
 
 test('Configurações: Visualização (modo da grade do workspace aberto) e Histórico de sessões moram nas Configurações, com o mesmo controle e o mesmo conteúdo de antes', () => {
-  const st = src('components/SettingsDialog.jsx');
+  const st = src('pages/Settings.jsx');
   assert.match(st, /\['visualizacao', 'Visualização'/); assert.match(st, /\['historico', 'Histórico de sessões'/);
   assert.match(st, /LAYOUT_MODES\.map/); assert.match(st, /useLayoutMode\(openWs\?\.id\)/); assert.match(st, /<SessionHistoryBody ws=\{openWs\}/);
   assert.match(st, /onAutoRestore=\{setAutoRestore\}/, 'o interruptor da restauração automática continua no histórico');

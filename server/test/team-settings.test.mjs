@@ -49,14 +49,14 @@ test('equipes embutidas do estado vazio: presets simples com o agente padrão + 
 });
 
 test('interface: Configurações > Equipes e Arquivos, e o chip do Cockpit virou "Arquivos" na sidebar', () => {
-  const st = src('components/SettingsDialog.jsx');
+  const st = src('pages/Settings.jsx');
   assert.match(st, /\['equipes', 'Equipes'/); assert.match(st, /\['arquivos', 'Arquivos'/); assert.match(st, /<TeamsSettings \/>/); assert.match(st, /onOpenWorkspaces/);
   const t = src('components/TeamsSettings.jsx');
-  assert.match(t, /useSquads\(\)/); assert.match(t, /options=\{sq\.options\}/, 'modelo e esforço vêm do `options` do servidor'); assert.match(t, /onDuplicate=/); assert.match(t, /cleanSlots\(draft\.slots\)/);
+  assert.match(t, /useSquads\(\)/); assert.match(t, /options: sq\.options/, 'modelo e esforço vêm do `options` do servidor'); assert.match(t, /onDuplicate:/); assert.match(t, /cleanSlots\(draft\.slots\)/);
   const sb = src('components/Sidebar.jsx');
   assert.match(sb, /className="oc-side-files"[^>]*onClick=\{onOpenWorkspaces\}/); assert.match(sb, /<Icon name="folderOpen"[^>]*\/><span className="side-label">Arquivos<\/span>/);
   assert.ok(sb.indexOf('oc-side-files') < sb.indexOf('oc-side-user'), 'Arquivos fica acima do usuário');
-  assert.match(src('App.jsx'), /<SettingsDialog initial=\{settingsTab\} onClose=\{closeDialog\} onOpenWorkspaces=\{openWorkspaces\} \/>/);
+  assert.match(src('App.jsx'), /<Settings key=\{settingsKey\} initial=\{settingsTab\} onClose=\{closeSettings\} onOpenWorkspaces=\{openWorkspaces\} \/>/);
   assert.match(src('tokens.css'), /--w-side: 188px;/);
   assert.match(src('use-squads.js'), /options/); assert.match(src('use-squads.js'), /forge:team-templates-changed/, 'o Cockpit recarrega a lista quando as Configurações a mudam');
 });
