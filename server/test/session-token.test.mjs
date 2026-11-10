@@ -33,7 +33,7 @@ test('createTokenGuard: métodos mutáveis e fluxos de terminal exigem o token; 
     const res = { status(c) { out.status = c; return this; }, json() { return this; } };
     g({ method, path: p, get: (k) => headers[k.toLowerCase()] }, res, () => { out.next = true; }); return out;
   };
-  for (const [method, p] of [['GET', '/state'], ['GET', '/terminals'], ['GET', '/maestro'], ['HEAD', '/state'], ['OPTIONS', '/state']]) assert.equal(run({ method, p }).next, true, `${method} ${p} sem token`);
+  for (const [method, p] of [['GET', '/state'], ['GET', '/workspaces'], ['GET', '/layouts'], ['HEAD', '/state'], ['OPTIONS', '/state']]) assert.equal(run({ method, p }).next, true, `${method} ${p} sem token`);
   for (const method of ['POST', 'PUT', 'PATCH', 'DELETE', 'post']) {
     assert.equal(run({ method, p: '/maestro/autonomy' }).status, 403, `${method} sem token`);
     assert.equal(run({ method, p: '/terminals/term_1/input', token: 'errado' }).status, 403, `${method} token errado`);
@@ -43,7 +43,11 @@ test('createTokenGuard: métodos mutáveis e fluxos de terminal exigem o token; 
   for (const p of ['/terminals/stream', '/terminals/term_1/stream', '/TERMINALS/STREAM', '/terminals/stream/']) {
     assert.equal(run({ p }).status, 403, `GET ${p} sem token`); assert.equal(run({ p, token: TOKEN }).next, true, `GET ${p} com token`);
   }
-  assert.equal(run({ p: '/terminals/x/y/stream' }).next, true, 'caminho que não é o fluxo não é tratado como fluxo');
+  // leituras que expõem conteúdo (sessões, missões, relatórios, chat, fila do Maestro, atividade, eventos, worktrees) também exigem o token
+  for (const p of ['/terminals', '/terminals/history', '/terminals/x/y/stream', '/missions', '/missions/mis_1/delivery', '/missions/mis_1/thread', '/chat', '/maestro', '/activity', '/events', '/worktrees', '/worktrees/wt_1', '/MISSIONS/', '/accounts']) {
+    assert.equal(run({ p }).status, 403, `GET ${p} sem token`); assert.equal(run({ p, token: 'errado' }).status, 403, `GET ${p} token errado`); assert.equal(run({ p, token: TOKEN }).next, true, `GET ${p} com token`);
+  }
+  assert.equal(run({ p: '/missionsx' }).next, true, 'prefixo parecido não é protegido por engano');
   // conversas copiadas têm a mesma natureza da saída dos terminais: leitura também exige o token
   for (const p of ['/workspaces/ws_aaaaaaaa/conversations', '/workspaces/ws_aaaaaaaa/conversations/ses_00000001', '/WORKSPACES/ws_a/conversations/']) {
     assert.equal(run({ p }).status, 403, `GET ${p} sem token`); assert.equal(run({ p, token: 'errado' }).status, 403); assert.equal(run({ p, token: TOKEN }).next, true, `GET ${p} com token`);
