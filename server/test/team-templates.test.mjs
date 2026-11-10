@@ -123,3 +123,70 @@ test('leitura tolerante: entradas inválidas, duplicadas ou de papel/provedor de
   assert.equal(r[1].name.length, T.MAX_NAME);
   assert.deepEqual(T.readTemplates({}), []); assert.deepEqual(T.readTemplates(null), []); assert.deepEqual(T.readTemplates({ teamTemplates: 'lixo' }), []);
 });
+
+// ---- model/effort por vaga + options (contrato novo) ----
+test('GET devolve options fechadas por provedor ({ models:[{id,label}], efforts:[{id,label}] })', async () => {
+  const { j } = await jr(await call('/api/team-templates'));
+  assert.deepEqual(Object.keys(j.options).sort(), ['claude', 'codex']);
+  for (const p of ['claude', 'codex']) {
+    assert.deepEqual(Object.keys(j.options[p]).sort(), ['efforts', 'models']);
+    for (const x of [...j.options[p].models, ...j.options[p].efforts]) { assert.equal(typeof x.id, 'string'); assert.equal(typeof x.label, 'string'); assert.deepEqual(Object.keys(x).sort(), ['id', 'label']); }
+  }
+  assert.ok(j.options.claude.efforts.some((e) => e.id === 'max') && !j.options.codex.efforts.some((e) => e.id === 'max'));
+});
+
+test('vagas com model/effort: gravam só o que foi informado, persistem e voltam no GET; omitido continua válido', async () => {
+  const { j: g } = await jr(await call('/api/team-templates')), o = g.options;
+  while (g.templates.length >= T.MAX_TEMPLATES - 1) await call(`/api/team-templates/${g.templates.pop().id}`, 'DELETE'); // o teste anterior encheu o limite: abre espaço
+  const m = o.claude.models[0].id, e = o.claude.efforts[0].id, cm = o.codex.models[0].id, ce = o.codex.efforts.at(-1).id;
+  const body = { name: 'Com modelo', slots: [{ role: 'maestro', provider: 'claude', model: m, effort: e }, { role: 'builder', provider: 'codex', model: cm }, { role: 'reviewer', provider: 'codex', effort: ce }, { role: 'scout', provider: 'claude' }, { role: 'scout', provider: 'claude', model: null, effort: null }] };
+  const r = await jr(await call('/api/team-templates', 'POST', body));
+  assert.equal(r.status, 201, JSON.stringify(r.j));
+  assert.deepEqual(r.j.template.slots, [{ role: 'maestro', provider: 'claude', model: m, effort: e }, { role: 'builder', provider: 'codex', model: cm }, { role: 'reviewer', provider: 'codex', effort: ce }, { role: 'scout', provider: 'claude' }, { role: 'scout', provider: 'claude' }]);
+  const disk = JSON.parse(fs.readFileSync(path.join(process.env.ORCH_DATA_DIR, 'db.json'), 'utf8'));
+  assert.deepEqual(disk.teamTemplates.find((t) => t.id === r.j.template.id).slots[0], { role: 'maestro', provider: 'claude', model: m, effort: e });
+  // PUT troca vagas com model/effort
+  const put = await jr(await call(`/api/team-templates/${r.j.template.id}`, 'PUT', { slots: [{ role: 'builder', provider: 'claude', effort: e }] }));
+  assert.equal(put.status, 200); assert.deepEqual(put.j.template.slots, [{ role: 'builder', provider: 'claude', effort: e }]);
+  assert.deepEqual((await jr(await call('/api/team-templates'))).j.templates.find((t) => t.id === r.j.template.id).slots, [{ role: 'builder', provider: 'claude', effort: e }]);
+});
+
+test('model/effort fora da lista do provedor da vaga => 400 (POST e PUT); nada é gravado', async () => {
+  const { j: g } = await jr(await call('/api/team-templates')), before = g.templates.length, id = g.templates[0].id;
+  const bad = async (slot) => {
+    const p = await jr(await call('/api/team-templates', 'POST', { name: `Ruim ${Math.random()}`, slots: [slot] }));
+    assert.equal(p.status, 400, JSON.stringify(slot)); assert.match(p.j.error, /slots\[0\]/);
+    assert.equal((await jr(await call(`/api/team-templates/${id}`, 'PUT', { slots: [slot] }))).status, 400);
+  };
+  await bad({ role: 'builder', provider: 'claude', model: 'gpt-5' });       // modelo de outro provedor
+  await bad({ role: 'builder', provider: 'codex', model: 'opus' });
+  await bad({ role: 'builder', provider: 'codex', effort: 'max' });         // esforço que só existe no Claude
+  await bad({ role: 'builder', provider: 'claude', effort: 'enorme' });
+  await bad({ role: 'builder', provider: 'claude', model: 'opus --dangerously-skip-permissions' });
+  await bad({ role: 'builder', provider: 'claude', model: '' });
+  await bad({ role: 'builder', provider: 'claude', model: 5 });
+  await bad({ role: 'builder', provider: 'claude', effort: { x: 1 } });
+  await bad({ role: 'builder', provider: 'claude', model: '__proto__' });
+  assert.equal((await jr(await call('/api/team-templates'))).j.templates.length, before);
+});
+
+test('leitura tolerante: template antigo sem model/effort segue válido; model/effort que já não valem saem da vaga, sem derrubar o squad', () => {
+  const r = T.readTemplates({ teamTemplates: [
+    { id: 'tpl_a1a1a1a1', name: 'Antigo', slots: [{ role: 'builder', provider: 'claude' }] },
+    { id: 'tpl_b2b2b2b2', name: 'Velho modelo', slots: [{ role: 'builder', provider: 'claude', model: 'modelo-aposentado', effort: 'high' }, { role: 'reviewer', provider: 'codex', model: 5, effort: 'max' }] },
+  ] });
+  assert.deepEqual(r[0].slots, [{ role: 'builder', provider: 'claude' }]);
+  assert.deepEqual(r[1].slots, [{ role: 'builder', provider: 'claude', effort: 'high' }, { role: 'reviewer', provider: 'codex' }]);
+});
+
+test('rollback: falha ao gravar um squad com model/effort devolve o estado anterior e responde 500', async () => {
+  const real = db.teamTemplates, n = (await jr(await call('/api/team-templates'))).j.templates.length;
+  if (n >= T.MAX_TEMPLATES) { const [t] = real; await call(`/api/team-templates/${t.id}`, 'DELETE'); }
+  const cur = db.teamTemplates, dbFile = path.join(process.env.ORCH_DATA_DIR, 'db.json'), tmpFile = dbFile + '.tmp';
+  fs.rmSync(tmpFile, { force: true }); fs.mkdirSync(tmpFile);
+  try {
+    const r = await jr(await call('/api/team-templates', 'POST', { name: 'Falha modelo', slots: [{ role: 'builder', provider: 'claude', model: 'opus', effort: 'high' }] }));
+    assert.equal(r.status, 500); assert.match(r.j.error, /nada foi alterado/);
+  } finally { fs.rmSync(tmpFile, { recursive: true, force: true }); }
+  assert.equal(db.teamTemplates, cur);
+});

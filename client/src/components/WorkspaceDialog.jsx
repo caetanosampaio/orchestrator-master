@@ -24,7 +24,7 @@ export default function WorkspaceDialog({ onClose }) {
   };
 
   return (
-    <Dialog title="Abrir ou adicionar workspace" onClose={onClose} id="ws-dlg">
+    <Dialog title="Arquivos" onClose={onClose} id="ws-dlg">
       {workspaces.length > 0 && (
         <section aria-label="Workspaces cadastrados">
           <h3 className="oc-h">Cadastrados</h3>

@@ -133,6 +133,8 @@ export default function Sidebar({ modal = false, collapsed = false, onToggle, on
       </nav>
 
       <div className="oc-side-foot">
+        {/* "Arquivos": abrir, trocar e adicionar workspace/pasta (o antigo chip do Cockpit) */}
+        <button type="button" className="oc-side-files" onClick={onOpenWorkspaces} aria-label="Arquivos: abrir, trocar ou adicionar workspace" title="Arquivos: abrir, trocar ou adicionar workspace"><Icon name="folderOpen" size={16} /><span className="side-label">Arquivos</span></button>
         <div className="oc-side-user">
           <span className="oc-me side-label"><span className="oc-avatar" aria-hidden="true">{initials}</span><span className="oc-me-t"><b>{prefs.name || 'Você'}</b></span></span>
         </div>

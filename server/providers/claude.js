@@ -14,10 +14,18 @@ export function resolveClaude({ env = process.env, platform = process.platform }
   return null;
 }
 
+// Listas FECHADAS de modelo e esforço que o servidor aceita (nunca texto livre na linha de comando). Modelos por apelido (a CLI resolve para o mais recente); esforço = `--effort` do Claude Code (verificado no 2.1.322).
+const frozenList = (items) => Object.freeze(items.map(([id, label]) => Object.freeze({ id, label })));
+export const CLAUDE_OPTIONS = Object.freeze({
+  models: frozenList([['fable', 'Fable'], ['opus', 'Opus'], ['sonnet', 'Sonnet'], ['haiku', 'Haiku']]),
+  efforts: frozenList([['low', 'Baixo'], ['medium', 'Médio'], ['high', 'Alto'], ['xhigh', 'Muito alto'], ['max', 'Máximo']]),
+});
+
 export const claudeProvider = Object.freeze({
   id: 'claude',
   label: 'Claude Code',
   resolve: resolveClaude,
+  options: CLAUDE_OPTIONS,
   notFoundMessage: 'Claude Code não foi encontrado no PATH.',
   // O que a CLI sabe fazer; o terminals.js só liga o recurso quando o provedor declara a capacidade.
   capabilities: Object.freeze({ resume: true, fork: true, hooks: true, plugins: true, accounts: true, transcript: true, statusLine: true }),
@@ -35,11 +43,13 @@ export const claudeProvider = Object.freeze({
    * `pluginDir` = plugin de sessão com as skills do papel (loadouts.js); vale também na retomada, porque o plugin não faz parte da sessão gravada.
    *   Vem ANTES dos argumentos de MCP: `--mcp-config` e `--allowedTools` aceitam vários valores e um argumento depois deles seria lido como valor.
    */
-  paneArgs({ mode, prompt, label, sessionId, resumeSessionId, mcp = null, pluginDir = null, settingsFile = null }) {
+  paneArgs({ mode, prompt, label, sessionId, resumeSessionId, mcp = null, pluginDir = null, settingsFile = null, model = null, effort = null }) {
     // `settingsFile` = arquivo JSON com a status line do FORGE (rate-limits.js), que grava o limite real da conta. Vale nos três modos, junto do plugin e ANTES do MCP; sem ele, nenhum argumento.
     const pluginArgs = [...(pluginDir ? ['--plugin-dir', pluginDir] : []), ...(settingsFile ? ['--settings', settingsFile] : [])];
     const mcpArgs = mcp ? ['--mcp-config', mcp.configPath, '--allowedTools', `mcp__${mcp.serverName ?? 'forge'}`] : [];
-    if (mode === 'new') return ['--append-system-prompt', prompt, '--name', label, '--session-id', sessionId, ...pluginArgs, ...mcpArgs];
+    // `model`/`effort` (já validados contra as listas fechadas, ver providers/index.js) só valem na sessão NOVA: retomada e fork herdam o modelo da sessão gravada. Vão ANTES de plugin/MCP (que aceitam vários valores).
+    const modelArgs = [...(model ? ['--model', model] : []), ...(effort ? ['--effort', effort] : [])];
+    if (mode === 'new') return ['--append-system-prompt', prompt, '--name', label, '--session-id', sessionId, ...modelArgs, ...pluginArgs, ...mcpArgs];
     return ['--resume', resumeSessionId, ...(mode === 'fork' ? ['--fork-session', '--session-id', sessionId] : []), ...pluginArgs, ...mcpArgs];
   },
 });

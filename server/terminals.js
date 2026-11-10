@@ -21,7 +21,7 @@ import { pidAlive } from './instance-lock.js';
 import { worktreeProblem } from './worktrees.js';
 import { asyncRoute } from './async-route.js';
 import { inspectProjectConfig } from './project-config.js';
-import { getProvider, isProvider, providerIds as providerIdsList } from './providers/index.js';
+import { getProvider, isProvider, providerIds as providerIdsList, validateChoice, tolerantChoice } from './providers/index.js';
 import { envForAccount } from './claude-cli.js';
 
 const ID_RE = /^term_[0-9a-f]{8}$/, REC_RE = /^ses_[0-9a-f]{8}$/, UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -58,7 +58,7 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
   const sessions = new Map();
   const allSubs = new Set(); // UMA conexão SSE leva a saída de TODOS os terminais: o navegador só abre ~6 conexões por origem; com uma por pane, 7+ terminais travavam a tela e até o botão de fechar
   const live = () => [...sessions.values()].filter((s) => s.status === 'running');
-  const describe = (s) => ({ id: s.id, role: s.role, provider: s.provider ?? provider.id, providerLabel: provOf(s.provider).label, roleLabel: ROLES[s.role]?.label ?? s.role, color: ROLES[s.role]?.color ?? null, title: s.title, workspaceId: s.workspaceId, topicId: s.topicId ?? null, cwd: s.cwd, worktreeId: s.worktreeId, branch: branchOf(s.worktreeId), recordId: s.recordId ?? null, accountId: s.accountId ?? 'system',
+  const describe = (s) => ({ id: s.id, role: s.role, provider: s.provider ?? provider.id, providerLabel: provOf(s.provider).label, roleLabel: ROLES[s.role]?.label ?? s.role, color: ROLES[s.role]?.color ?? null, title: s.title, workspaceId: s.workspaceId, topicId: s.topicId ?? null, cwd: s.cwd, worktreeId: s.worktreeId, branch: branchOf(s.worktreeId), recordId: s.recordId ?? null, accountId: s.accountId ?? 'system', model: s.model ?? null, effort: s.effort ?? null,
     usage: safeUsage(s), status: s.status, pid: s.pid, cols: s.cols, rows: s.rows, startedAt: s.startedAt, endedAt: s.endedAt, exitCode: s.exitCode, lastOutputAt: s.lastOutputAt, bytes: s.bytes, agent: s.status === 'running' ? safeAgent(s) : null, squadId: s.squadKey ?? null });
   /** Estado real do agente (hooks do Claude Code, ver agent-status.js): só vale para esta execução (eventos anteriores ao início do terminal são sobra). Sem hooks = null e a tela cai na leitura pela saída. */
   const safeAgent = (s) => { try { if (!can(provOf(s.provider), 'hooks')) return s.osc ?? null; return agentStatus?.read(s.claudeSessionId, { since: s.startedAt }) ?? null; } catch { return null; } };
@@ -125,6 +125,11 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
   async function create(opts = {}) {
     if (!ROLES[opts?.role ?? 'builder']) return fail(400, `Papel inválido. Use um destes: ${roleIds().join(', ')}.`);
     if (opts?.provider !== undefined && opts?.provider !== null && !isProvider(opts.provider)) return fail(400, 'Provedor inválido.', { code: 'provider_invalid' });
+    // modelo/esforço opcionais: só ids das listas FECHADAS do provedor (providers/index.js); qualquer outra coisa é 400 e nada chega à linha de comando
+    if ((opts?.model ?? opts?.effort ?? null) !== null) {
+      const choice = validateChoice(provOf(opts?.provider ?? undefined).id, { model: opts.model, effort: opts.effort });
+      if (choice.error) return fail(400, choice.error, { code: `${choice.field}_invalid` });
+    }
     if (live().length + creating >= maxSessions) return fail(409, `Limite de ${maxSessions} terminais simultâneos atingido; feche algum antes de abrir outro.`);
     creating++;
     let held = null; // workspace em que este criador está reservado como "editor": criações simultâneas contam umas às outras
@@ -166,7 +171,7 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
   function markShared(wtId) { try { for (const r of records()) if (r && r.worktreeId === wtId) r.sharedWorktree = true; persistLoose(); } catch { /* informativo */ } }
   /** Só o ÚLTIMO terminal a sair devolve o worktree ao estado "execução terminada". */
   function releaseWorktree(wtId, exceptId) { if (!wtId || worktreeUsers(wtId, exceptId).length) return; try { worktrees?.release?.(wtId, 'terminal_ended'); } catch { /* informativo */ } }
-  async function createReserved({ workspaceId, topicId, role = 'builder', title, cols, rows, isolate = false, squadId = null, acknowledgeProjectConfig = false, accountId, provider: providerId = null, isolateAuto = false } = {}) {
+  async function createReserved({ workspaceId, topicId, role = 'builder', title, cols, rows, isolate = false, squadId = null, acknowledgeProjectConfig = false, accountId, provider: providerId = null, isolateAuto = false, model = null, effort = null } = {}) {
     const prov = provOf(providerId ?? undefined);
     // conta: opcional (padrão = conta padrão do FORGE); precisa existir (400) e é conferida de novo no launch, depois dos awaits
     const accountsOn = can(prov, 'accounts'); // contas do FORGE são pastas de configuração do Claude Code: outro provedor usa sempre a configuração dele (Sistema)
@@ -221,7 +226,7 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
         if (gone()) { try { worktrees.release?.(wt.id, 'terminal_ended'); } catch { /* informativo */ } return fail(409, 'O espaço de trabalho foi removido enquanto o terminal era preparado.', { code: 'workspace_not_found' }); }
       }
     }
-    const launched = launch({ prov, id, ws, role, label, cwd, wt, cols, rows, claudeSessionId: newSessionId(), mode: 'new', topicId: tp.topicId, accountId: account, cmd, pty, squadKey: wt ? (peer?.squadKey ?? uid('sq')) : null });
+    const launched = launch({ prov, id, ws, role, label, cwd, wt, cols, rows, claudeSessionId: newSessionId(), mode: 'new', topicId: tp.topicId, accountId: account, model, effort, cmd, pty, squadKey: wt ? (peer?.squadKey ?? uid('sq')) : null });
     if (warning && launched.ok) launched.warning = warning;
     return launched;
   }
@@ -231,7 +236,7 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
    * Na retomada o Claude Code restaura histórico, prompt de sistema, nome e permission mode: NÃO se repassa nada disso. O MCP não é restaurado: credencial NOVA a cada retomada.
    * Falha ao gravar o histórico desfaz tudo (processo, credencial, registro): nunca fica um pane vivo sem registro.
    */
-  function launch({ prov = provider, id, ws, role, label, cwd, wt, cols, rows, claudeSessionId, mode, topicId = null, rec = null, cmd, pty, squadKey = null, accountId = 'system' }) {
+  function launch({ prov = provider, id, ws, role, label, cwd, wt, cols, rows, claudeSessionId, mode, topicId = null, rec = null, cmd, pty, squadKey = null, accountId = 'system', model = null, effort = null }) {
     const resumed = mode !== 'new';
     if (!accountOk(accountId)) return fail(409, 'A conta deste terminal não existe mais (ou está sendo removida); o terminal não foi aberto.', { code: 'account_missing' }); // conferido aqui, síncrono, imediatamente antes do spawn
     const env = { ...(prov.envFor ? prov.envFor(process.env) : envForAccount(process.env, accounts?.configDirOf(accountId) ?? null)), TERM: 'xterm-256color', COLORTERM: 'truecolor' }; delete env.ELECTRON_RUN_AS_NODE; delete env.NODE_OPTIONS;
@@ -254,18 +259,18 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
     const mcpArg = !mcpCfg ? null : mcpCfg.token ? { url: mcpCfg.url, serverName: mcp.serverName } : { configPath: mcpCfg.configPath, serverName: mcp.serverName };
     // Avisos de "confiar nesta pasta?": o Claude Code guarda a resposta em arquivo (gravada aqui, antes do spawn); o Codex recebe a confiança por argumento. Só quando o boot liga `trustFolders` (nunca nos testes).
     if (typeof trustFolders === 'function') { try { trustFolders({ provider: prov.id, cwd, configDir: prov.id === 'claude' ? accounts?.configDirOf(accountId) ?? null : null }); } catch { /* melhor esforço: a pergunta aparece normalmente */ } }
-    const args = prov.paneArgs({ mode, prompt: ROLES[role].prompt, label, sessionId: claudeSessionId, resumeSessionId: rec?.claudeSessionId, mcp: mcpArg, pluginDir, settingsFile, quote: !cmd.viaShell, trustDir: typeof trustFolders === 'function' ? cwd : null });
+    const args = prov.paneArgs({ mode, prompt: ROLES[role].prompt, label, sessionId: claudeSessionId, resumeSessionId: rec?.claudeSessionId, mcp: mcpArg, pluginDir, settingsFile, model, effort, quote: !cmd.viaShell, trustDir: typeof trustFolders === 'function' ? cwd : null });
     let p;
     try { p = pty.spawn(cmd.file, [...cmd.args, ...args], { name: 'xterm-256color', cols: c, rows: r, cwd, env, useConpty: true }); }
     catch (e) { revokeMcp(id); return fail(500, `Não foi possível iniciar o terminal: ${String(e?.message ?? e).slice(0, 160)}`); }
-    const s = { id, role, provider: prov.id, accountId, squadKey, claudeSessionId, recordId: null, holdInput: resumed, title: label, workspaceId: ws.id, topicId, cwd, worktreeId: wt?.id ?? null, status: 'running', pid: p.pid, cols: c, rows: r, startedAt: now(), endedAt: null, exitCode: null, lastOutputAt: null, bytes: 0, chunks: [], chunkBytes: 0, subs: new Set(), tracked: null, p };
+    const s = { id, role, provider: prov.id, accountId, model, effort, squadKey, claudeSessionId, recordId: null, holdInput: resumed, title: label, workspaceId: ws.id, topicId, cwd, worktreeId: wt?.id ?? null, status: 'running', pid: p.pid, cols: c, rows: r, startedAt: now(), endedAt: null, exitCode: null, lastOutputAt: null, bytes: 0, chunks: [], chunkBytes: 0, subs: new Set(), tracked: null, p };
     try { s.tracked = track?.('terminal', p.pid, { terminalId: id, workspaceId: ws.id }) ?? null; } // processo sem registro não pode ficar vivo (o próximo boot não o acharia)
     catch (e) { const gone = abortLaunch(s, wt); return fail(503, `O terminal não pôde ser registrado (${e?.code || e?.message || 'erro'}); ${gone ? 'ele foi encerrado.' : UNCONFIRMED}`, gone ? {} : { code: 'exit_unconfirmed' }); }
     // histórico: retomada normal reaproveita o registro (é a mesma sessão do Claude Code); novo e fork criam um registro
     const list = records(true), before = [...list], links = list.map((x) => [x, x.forkedFrom]), prev = mode === 'resume' ? { ...rec } : null;
     let nrec;
     if (mode === 'resume') { nrec = rec; Object.assign(rec, { terminalId: id, topicId, state: 'running', endedAt: null, exitCode: null, lastResumedAt: s.startedAt, resumes: (rec.resumes ?? 0) + 1 }); delete rec.interruptedAt; delete rec.closedReason; delete rec.unconfirmedExit; }
-    else { nrec = { id: uid('ses'), terminalId: id, provider: prov.id, accountId, claudeSessionId, role, title: label, workspaceId: ws.id, topicId, cwd, worktreeId: wt?.id ?? null, ...(wt && worktreeUsers(wt.id, id).length ? { sharedWorktree: true } : {}), usesMcp: !!mcpCfg, state: 'running', startedAt: s.startedAt, endedAt: null, exitCode: null, resumes: 0, forkedFrom: mode === 'fork' ? rec.id : null }; list.push(nrec); trimRecords(list, rec); }
+    else { nrec = { id: uid('ses'), terminalId: id, provider: prov.id, accountId, ...(model ? { model } : {}), ...(effort ? { effort } : {}), claudeSessionId, role, title: label, workspaceId: ws.id, topicId, cwd, worktreeId: wt?.id ?? null, ...(wt && worktreeUsers(wt.id, id).length ? { sharedWorktree: true } : {}), usesMcp: !!mcpCfg, state: 'running', startedAt: s.startedAt, endedAt: null, exitCode: null, resumes: 0, forkedFrom: mode === 'fork' ? rec.id : null }; list.push(nrec); trimRecords(list, rec); }
     try { persistStrict(); } catch (e) {
       if (prev) { for (const k of Object.keys(rec)) delete rec[k]; Object.assign(rec, prev); } else db.terminalSessions = before;
       for (const [x, f] of links) { if (f === undefined) delete x.forkedFrom; else x.forkedFrom = f; }
@@ -368,7 +373,7 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
     if (again.block) return fail(again.block.status, again.block.message, { code: again.block.code });
     const claudeSessionId = fork || reopen ? newSessionId() : rec.claudeSessionId;
     if ((fork || reopen) && (!UUID_RE.test(String(claudeSessionId)) || records().some((x) => x.claudeSessionId === claudeSessionId))) return fail(500, 'Não foi possível gerar um identificador novo para o fork.');
-    const launched = launch({ prov, id: uid('term'), ws: again.ws, role: rec.role, label: rec.title, cwd: again.cwd, wt: again.wt, cols, rows, claudeSessionId, mode: reopen ? 'new' : fork ? 'fork' : 'resume', accountId: rec.accountId ?? 'system', topicId: checkTopic(rec.topicId, again.ws).topicId ?? null, rec, cmd, pty, squadKey: again.wt ? ([...sessions.values()].find((x) => x.status === 'running' && x.worktreeId === again.wt.id)?.squadKey ?? uid('sq')) : null }); // tópico sumido/arquivado/de outro workspace: a sessão volta para Geral (null), sem bloquear a retomada
+    const launched = launch({ prov, id: uid('term'), ws: again.ws, role: rec.role, label: rec.title, cwd: again.cwd, wt: again.wt, cols, rows, claudeSessionId, mode: reopen ? 'new' : fork ? 'fork' : 'resume', accountId: rec.accountId ?? 'system', ...(reopen ? tolerantChoice(prov.id, rec) : {}), topicId: checkTopic(rec.topicId, again.ws).topicId ?? null, rec, cmd, pty, squadKey: again.wt ? ([...sessions.values()].find((x) => x.status === 'running' && x.worktreeId === again.wt.id)?.squadKey ?? uid('sq')) : null }); // tópico sumido/arquivado/de outro workspace: a sessão volta para Geral (null), sem bloquear a retomada
     if (reopen && launched.ok) { rec.supersededBy = launched.session.recordId; persistLoose(); }
     return launched;
   }
@@ -478,6 +483,7 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
 
 export function setupTerminals(app, { manager }) {
   const body = (req) => (req.body && typeof req.body === 'object' ? req.body : {});
+  const str = (v) => (v === undefined || v === null || typeof v === 'string' ? v : false); // não-texto vira `false`: o gerente recusa com 400 (nunca vira argumento)
   const out = (res, r, pick = (x) => x) => (r.ok ? res.status(r.status).json(pick(r)) : res.status(r.status).json({ error: r.error, ...(r.code ? { code: r.code, files: r.files } : {}) }));
   // `auth` (só provedores com sonda de login, hoje o Codex): { known, loggedIn, detail }; a sonda só roda quando a CLI está instalada e nunca derruba a listagem.
   app.get('/api/terminals', asyncRoute(async (req, res) => {
@@ -488,7 +494,7 @@ export function setupTerminals(app, { manager }) {
     }));
     res.json({ roles: manager.roles(), providers, maxSessions: MAX_SESSIONS, sessions: manager.list() });
   }));
-  app.post('/api/terminals', asyncRoute(async (req, res) => { const b = body(req); out(res, await manager.create({ workspaceId: b.workspaceId, topicId: b.topicId, role: b.role, provider: b.provider === undefined || b.provider === null ? undefined : (typeof b.provider === 'string' ? b.provider : false), title: b.title, cols: b.cols, rows: b.rows, isolate: b.isolate === 'auto' ? 'auto' : b.isolate === true, expectEditors: b.expectEditors, squadId: typeof b.squadId === 'string' ? b.squadId : (b.squadId === undefined || b.squadId === null ? null : false), acknowledgeProjectConfig: b.acknowledgeProjectConfig === true, accountId: b.accountId }), (r) => ({ session: r.session, ...(r.warning ? { warning: r.warning } : {}) })); }));
+  app.post('/api/terminals', asyncRoute(async (req, res) => { const b = body(req); out(res, await manager.create({ workspaceId: b.workspaceId, topicId: b.topicId, role: b.role, provider: b.provider === undefined || b.provider === null ? undefined : (typeof b.provider === 'string' ? b.provider : false), title: b.title, model: str(b.model), effort: str(b.effort), cols: b.cols, rows: b.rows, isolate: b.isolate === 'auto' ? 'auto' : b.isolate === true, expectEditors: b.expectEditors, squadId: typeof b.squadId === 'string' ? b.squadId : (b.squadId === undefined || b.squadId === null ? null : false), acknowledgeProjectConfig: b.acknowledgeProjectConfig === true, accountId: b.accountId }), (r) => ({ session: r.session, ...(r.warning ? { warning: r.warning } : {}) })); }));
   app.get('/api/terminals/stream', (req, res) => { if (manager.subscribeAll(res) === null) res.status(429).json({ error: 'Conexões demais com o fluxo de terminais.' }); });
   app.get('/api/terminals/:id/stream', (req, res) => {
     const r = manager.subscribe(req.params.id, res);

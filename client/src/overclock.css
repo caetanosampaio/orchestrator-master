@@ -49,7 +49,8 @@ html:not([data-motion="reduced"]) .oc-app .wsi-work .wsi-pix, html:not([data-mot
 /* ---------- 5. navegação Cockpit | Missions: células de texto separadas por hairlines; a ativa é branca com sublinhado vermelho ---------- */
 .tb { border-bottom: 1px solid var(--line); }
 .tb-row:first-child { padding-left: 0; }
-.tb-views { align-self: stretch; display: inline-flex; align-items: stretch; margin: 0 4px 0 0; border-right: 1px solid var(--line); }
+.tb-views { align-self: stretch; display: inline-flex; align-items: stretch; margin: 0; }
+.tb-tabs:not([hidden]) { border-left: 1px solid var(--line); } /* divisor sutil entre a navegação e as abas; some junto com elas em Missions */
 .tb-view { position: relative; display: inline-flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 16px; border: 0; border-left: 1px solid var(--line); background: none; color: #7c8494; font: 600 11px var(--mono); letter-spacing: .18em; text-transform: uppercase; cursor: pointer; transition: color 140ms ease; }
 .tb-view:first-child { border-left: 0; }
 .tb-view:hover { color: #f4f4f5; }
@@ -62,7 +63,7 @@ html:not([data-motion="reduced"]) .oc-app .wsi-work .wsi-pix, html:not([data-mot
 .tb-view-n { font-weight: 600; letter-spacing: 0; color: #7c8494; font-variant-numeric: tabular-nums; }
 .tb-view-n.wait { color: #f59e0b; } .tb-view-n.work { color: var(--ws-claude, #e08060); }
 html:not([data-motion="reduced"]) .tb-view-dot { animation: ovc-blink 1.4s ease-in-out infinite; }
-.tb-tabs[hidden] { display: none; } /* shell.css define .tb-row como flex: sem isto o atributo hidden não esconde a linha de abas fora do Cockpit */
+.tb-tabs[hidden] { display: none; } /* shell.css define .tb-tabs como flex: sem isto o atributo hidden não esconde as abas fora do Cockpit */
 
 /* ---------- 6. botões e diálogos: vermelho chapado, linha fina, sem sombra colorida ---------- */
 /* primário: #dc2626 com texto branco (4,8:1); o #ef4444 da marca fica para linhas e texto sobre preto (5,6:1), onde passa */

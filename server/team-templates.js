@@ -1,10 +1,10 @@
-// Squads salvos ("modelos de equipe"): uma equipe NOMEADA e reutilizável, com o papel e o agente (provedor) de cada vaga. Abrir um squad abre todos os terminais de uma vez.
+// Squads salvos ("modelos de equipe"): uma equipe NOMEADA e reutilizável, com o papel, o agente (provedor) e, opcionalmente, o modelo e o esforço de cada vaga ({ role, provider, model?, effort? }; omitido = padrão da CLI). Abrir um squad abre todos os terminais de uma vez.
 // Guardados em db.teamTemplates (globais, valem para qualquer workspace). Tudo que chega pela API é validado de forma ESTRITA (papel e provedor vêm de listas fechadas do servidor);
 // leitura do banco é tolerante (banco antigo, editado à mão ou corrompido nunca derruba nada). Falha ao gravar desfaz o estado parcial e responde 500.
 import * as store from './store.js';
 import { now, uid } from './store.js';
 import { ROLES } from './terminals.js';
-import { isProvider } from './providers/index.js';
+import { isProvider, providerOptions, validateChoice, tolerantChoice } from './providers/index.js';
 
 export const MAX_TEMPLATES = 24, MAX_SLOTS = 12, MAX_NAME = 40;
 const ID_RE = /^tpl_[0-9a-f]{8}$/;
@@ -13,11 +13,25 @@ const cleanName = (s) => s.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, ' ').replace(
 const norm = (s) => s.toLocaleLowerCase('pt-BR');
 const roleOk = (r) => typeof r === 'string' && Object.hasOwn(ROLES, r);
 
-/** Vagas válidas (papel e provedor de listas fechadas) ou null. */
+/** Vagas ESTRITAS (papel, provedor, model e effort de listas fechadas; model/effort só entram na vaga se informados) -> { slots } ou { error }. */
 function cleanSlots(slots) {
+  const generic = { error: `slots deve ser uma lista de 1 a ${MAX_SLOTS} vagas { role, provider, model?, effort? } com papel e provedor válidos.` };
+  if (!Array.isArray(slots) || slots.length < 1 || slots.length > MAX_SLOTS) return generic;
+  const out = [];
+  for (const [i, s] of slots.entries()) {
+    if (!isObj(s) || !roleOk(s.role) || !isProvider(s.provider)) return generic;
+    const c = validateChoice(s.provider, s);
+    if (c.error) return { error: `slots[${i}]: ${c.field} não está entre as opções do provedor ${s.provider} (veja options em GET /api/team-templates).` };
+    out.push({ role: s.role, provider: s.provider, ...c.value });
+  }
+  return { slots: out };
+}
+
+/** Vagas na leitura TOLERANTE: papel/provedor inválidos descartam a lista; model/effort que já não valem (ou ausentes, banco antigo) apenas saem da vaga, o squad continua utilizável. */
+function readSlots(slots) {
   if (!Array.isArray(slots) || slots.length < 1 || slots.length > MAX_SLOTS) return null;
   const out = [];
-  for (const s of slots) { if (!isObj(s) || !roleOk(s.role) || !isProvider(s.provider)) return null; out.push({ role: s.role, provider: s.provider }); }
+  for (const s of slots) { if (!isObj(s) || !roleOk(s.role) || !isProvider(s.provider)) return null; out.push({ role: s.role, provider: s.provider, ...tolerantChoice(s.provider, s) }); }
   return out;
 }
 
@@ -27,7 +41,7 @@ export function readTemplates(db) {
   const out = [], ids = new Set();
   for (const t of raw) {
     if (!isObj(t) || typeof t.id !== 'string' || !ID_RE.test(t.id) || ids.has(t.id) || typeof t.name !== 'string') continue;
-    const name = cleanName(t.name).slice(0, MAX_NAME), slots = cleanSlots(t.slots);
+    const name = cleanName(t.name).slice(0, MAX_NAME), slots = readSlots(t.slots);
     if (!name || !slots) continue;
     ids.add(t.id);
     out.push({ id: t.id, name, slots, createdAt: typeof t.createdAt === 'string' ? t.createdAt : null, updatedAt: typeof t.updatedAt === 'string' ? t.updatedAt : null });
@@ -49,9 +63,9 @@ export function validateTemplateBody(b, { partial = false } = {}) {
     value.name = name;
   }
   if (b.slots !== undefined || !partial) {
-    const slots = cleanSlots(b.slots);
-    if (!slots) return { error: `slots deve ser uma lista de 1 a ${MAX_SLOTS} vagas { role, provider } com papel e provedor válidos.` };
-    value.slots = slots;
+    const r = cleanSlots(b.slots);
+    if (r.error) return { error: r.error };
+    value.slots = r.slots;
   }
   if (partial && !Object.keys(value).length) return { error: 'Informe name e/ou slots.' };
   return { value };
@@ -71,7 +85,7 @@ export function setupTeamTemplates(app, { db }) {
     }
   };
 
-  app.get('/api/team-templates', (req, res) => res.json({ templates: list(), limits: { maxTemplates: MAX_TEMPLATES, maxSlots: MAX_SLOTS, maxName: MAX_NAME } }));
+  app.get('/api/team-templates', (req, res) => res.json({ templates: list(), options: providerOptions(), limits: { maxTemplates: MAX_TEMPLATES, maxSlots: MAX_SLOTS, maxName: MAX_NAME } }));
 
   app.post('/api/team-templates', (req, res) => {
     const v = validateTemplateBody(req.body); if (v.error) return fail(res, 400, v.error);

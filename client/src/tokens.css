@@ -39,7 +39,7 @@
   /* forma */
   --r-1: 2px; --r-2: 4px; --r-3: 6px; --r-4: 8px; /* cantos pequenos: chip 4px, botão/pane 6px, cartão 8px */
   /* larguras */
-  --w-side: 248px; --w-side-min: 64px; --w-inspector: 336px; --w-read: 720px; --w-page: 1080px;
+  --w-side: 188px; --w-side-min: 64px; --w-inspector: 336px; --w-read: 720px; --w-page: 1080px;
 
   /* movimento: ações de teclado e de alta frequência não animam; o resto fica entre 120 e 240 ms. Só transform, opacity e cor.
      --dur-scene (≤ 480 ms) é só para cenas raras: entrada da página e o desenho do grafo ao carregar uma missão. */

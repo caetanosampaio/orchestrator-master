@@ -3,14 +3,15 @@ import { Btn, Icon } from './ui.jsx';
 import ProviderLogo from './ProviderLogo.jsx';
 import { PRESETS, availableMixes, defaultMix } from '../team-view.js';
 import { providerOptionLabel } from '../env-view.js';
-import { MAX_SLOTS, MAX_NAME, draftFromPreset, withSlot, removeSlot, addSlot, applyMix, draftOpenProblem, draftSaveProblem, squadSummary } from '../squads.js';
+import { MAX_SLOTS, MAX_NAME, draftFromPreset, withSlot, withProvider, removeSlot, addSlot, applyMix, draftOpenProblem, draftSaveProblem, squadSummary, slotOptions } from '../squads.js';
 
 /**
  * Editor de squad: nome opcional, vagas livres (papel + agente de cada uma, adicionar e remover) e atalhos de distribuição. Parte de um preset ou de um squad já salvo.
  * Controlado pelo cockpit: `draft` = { id, name, slots[{role,provider}], mix }. "Abrir equipe" abre tudo de uma vez; "Salvar squad" guarda para reutilizar (exige nome).
- * Só escolhe e confirma: quem abre e quem salva é o cockpit.
+ * Só escolhe e confirma: quem abre e quem salva é quem usa o componente. Sem `onOpen` (Configurações > Equipes) não há "Abrir equipe".
+ * `options` (do GET /api/team-templates: { <agente>: { models, efforts } }) liga os seletores de modelo e esforço por vaga; sem ele (servidor antigo) eles não aparecem.
  */
-export default function TeamComposer({ draft, onChange, onOpen, onSave, onCancel, providers = [], roles = [], squads = [], busy = false, room = Infinity }) {
+export default function TeamComposer({ draft, onChange, onOpen = null, onSave, onCancel, providers = [], roles = [], squads = [], busy = false, room = Infinity, options = null }) {
   const available = providers.filter((p) => p.available).map((p) => p.id);
   const labelOf = (id) => providers.find((p) => p.id === id)?.label ?? id;
   const roleOf = Object.fromEntries(roles.map((r) => [r.id, r]));
@@ -23,7 +24,7 @@ export default function TeamComposer({ draft, onChange, onOpen, onSave, onCancel
 
   return (
     <section className="oc-compose" aria-label="Montar squad">
-      <h4>{draft.id ? 'Editar squad' : 'Novo squad'} <span className="dim small">escolha o papel e o agente de cada vaga</span></h4>
+      <h4>{draft.id ? 'Editar squad' : 'Novo squad'} <span className="dim small">escolha o papel e o agente de cada vaga{options ? ', com o modelo e o esforço' : ''}</span></h4>
       <label className="sq-name">
         <span className="sr">Nome do squad</span>
         <input type="text" value={draft.name} maxLength={MAX_NAME} placeholder="Nome do squad (para salvar)" onChange={(e) => onChange({ ...draft, name: e.target.value })} autoComplete="off" />
@@ -34,28 +35,45 @@ export default function TeamComposer({ draft, onChange, onOpen, onSave, onCancel
         <button type="button" disabled={busy} onClick={() => onChange(base('empty'))}>Vazio</button>
       </div>
       <ul className="oc-compose-slots">
-        {draft.slots.map((s, i) => (
+        {draft.slots.map((s, i) => {
+          const opt = slotOptions(options, s.provider);
+          return (
           <li key={key(s)} className="sq-slot" style={{ '--c': roleOf[s.role]?.color || 'var(--brand)' }}>
             <i className="sq-dot" aria-hidden="true" />
             <select className="oc-sel" value={s.role} disabled={busy} onChange={(e) => onChange(withSlot(draft, i, { role: e.target.value }))} aria-label={`Papel da vaga ${i + 1}`}>
               {roles.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
             </select>
             <ProviderLogo id={s.provider} size={14} />
-            <select className="oc-sel" value={s.provider} disabled={busy} onChange={(e) => onChange(withSlot(draft, i, { provider: e.target.value }))} aria-label={`Agente da vaga ${i + 1}`}>
+            <select className="oc-sel" value={s.provider} disabled={busy} onChange={(e) => onChange(withProvider(draft, i, e.target.value))} aria-label={`Agente da vaga ${i + 1}`}>
               {providers.map((p) => <option key={p.id} value={p.id} disabled={!p.available}>{providerOptionLabel(p)}</option>)}
             </select>
+            {opt?.models.length > 0 && (
+              <select className="oc-sel" value={s.model ?? ''} disabled={busy} onChange={(e) => onChange(withSlot(draft, i, { model: e.target.value || undefined }))} aria-label={`Modelo da vaga ${i + 1}`}>
+                <option value="">Modelo: padrão</option>
+                {opt.models.map((m) => <option key={m.id} value={m.id}>{m.label ?? m.id}</option>)}
+                {s.model && !opt.models.some((m) => m.id === s.model) && <option value={s.model}>{s.model}</option>}
+              </select>
+            )}
+            {opt?.efforts.length > 0 && (
+              <select className="oc-sel" value={s.effort ?? ''} disabled={busy} onChange={(e) => onChange(withSlot(draft, i, { effort: e.target.value || undefined }))} aria-label={`Esforço da vaga ${i + 1}`}>
+                <option value="">Esforço: padrão</option>
+                {opt.efforts.map((m) => <option key={m.id} value={m.id}>{m.label ?? m.id}</option>)}
+                {s.effort && !opt.efforts.some((m) => m.id === s.effort) && <option value={s.effort}>{s.effort}</option>}
+              </select>
+            )}
             <button type="button" className="sq-x" disabled={busy} onClick={() => onChange(removeSlot(draft, i))} aria-label={`Remover a vaga ${i + 1}`} title="Remover vaga"><Icon name="close" size={12} /></button>
           </li>
-        ))}
+          );
+        })}
       </ul>
       <div className="oc-compose-mixes" role="group" aria-label="Distribuição dos agentes">
         <button type="button" className="sq-add" disabled={busy || draft.slots.length >= MAX_SLOTS} onClick={() => onChange(addSlot(draft, available))}><Icon name="plus" size={11} /> Adicionar vaga</button>
         {mixes.length > 1 && mixes.map((m) => <button key={m.id} type="button" className={m.id === draft.mix ? 'on' : ''} disabled={busy || !draft.slots.length} onClick={() => onChange(applyMix(draft, m.id, available))} title={m.label}>{m.label}</button>)}
       </div>
-      <p className={`small ${openProblem ? 'oc-compose-bad' : 'dim'}`} role="status">{openProblem ?? `Abre ${squadSummary(draft.slots, labelOf)}.`}</p>
+      <p className={`small ${openProblem ? 'oc-compose-bad' : 'dim'}`} role="status">{openProblem ?? `${onOpen ? 'Abre' : 'Equipe de'} ${squadSummary(draft.slots, labelOf)}.`}</p>
       <div className="oc-compose-act">
-        <Btn kind="primary" disabled={busy || !!openProblem} onClick={onOpen}>Abrir equipe</Btn>
-        <Btn kind="quiet" disabled={busy || !!saveProblem} onClick={onSave} title={saveProblem ?? 'Guardar este squad para abrir com um clique'}>{draft.id ? 'Salvar alterações' : 'Salvar squad'}</Btn>
+        {onOpen && <Btn kind="primary" disabled={busy || !!openProblem} onClick={onOpen}>Abrir equipe</Btn>}
+        <Btn kind={onOpen ? 'quiet' : 'primary'} disabled={busy || !!saveProblem} onClick={onSave} title={saveProblem ?? 'Guardar este squad para abrir com um clique'}>{draft.id ? 'Salvar alterações' : 'Salvar squad'}</Btn>
         <Btn kind="quiet" disabled={busy} onClick={onCancel}>Cancelar</Btn>
       </div>
       {draft.name.trim() && saveProblem && !openProblem && <p className="small oc-compose-bad" role="status">{saveProblem}</p>}
