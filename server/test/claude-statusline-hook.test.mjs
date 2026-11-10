@@ -106,7 +106,8 @@ test('record: .tmp previsível plantado como symlink não é seguido (nome aleat
 test('script: sem rate_limits e com UMA janela, a linha reúne a recebida e a anterior vigente', () => {
   const d = mk(); run(JSON.stringify(input({ rate_limits: { five_hour: { used_percentage: 30, resets_at: future(600) }, seven_day: { used_percentage: 60, resets_at: future(6000) } } })), d);
   const r = run(JSON.stringify(input({ rate_limits: { five_hour: { used_percentage: 31, resets_at: future(600) } } })), d);
-  assert.equal(r.stdout, 'FORGE · 5h 31% · semana 60%\n');
+  assert.equal(r.stdout, 'FORGE\n');
+  assert.equal(read(d).fiveHour.usedPct, 31); assert.equal(read(d).sevenDay.usedPct, 60); // o arquivo (lido pelo cockpit) segue reunindo as duas janelas
 });
 
 test('record: arquivo anterior corrompido ou enorme não impede a gravação nova', () => {
@@ -114,12 +115,10 @@ test('record: arquivo anterior corrompido ou enorme não impede a gravação nov
   fs.writeFileSync(fileOf(d), 'x'.repeat(100_000)); record(d, input(), () => T0 + 1); assert.equal(read(d).fiveHour.usedPct, 23.5);
 });
 
-test('lineFor: linha curta e útil, só com janelas vigentes; sem dado = FORGE; nunca lança', () => {
-  assert.equal(lineFor({ fiveHour: { usedPct: 23.4, resetsAt: SEC0 + 10 }, sevenDay: { usedPct: 40.6, resetsAt: SEC0 + 10 } }, T0), 'FORGE · 5h 23% · semana 41%');
-  assert.equal(lineFor({ fiveHour: null, sevenDay: { usedPct: 9, resetsAt: SEC0 + 10 } }, T0), 'FORGE · semana 9%');
-  assert.equal(lineFor({ fiveHour: { usedPct: 23, resetsAt: SEC0 - 1 }, sevenDay: null }, T0), 'FORGE', 'janela vencida não aparece');
+test('lineFor: o rodapé é sempre só FORGE (sem percentuais, que ficavam velhos entre terminais); nunca lança', () => {
+  assert.equal(lineFor({ fiveHour: { usedPct: 23.4, resetsAt: SEC0 + 10 }, sevenDay: { usedPct: 40.6, resetsAt: SEC0 + 10 } }, T0), 'FORGE');
   for (const bad of [null, undefined, {}, 'x', 5, { fiveHour: { usedPct: NaN, resetsAt: 'a' } }]) assert.equal(lineFor(bad, T0), 'FORGE');
-  assert.doesNotMatch(lineFor({ fiveHour: { usedPct: 1, resetsAt: SEC0 + 10 } }, T0), /[\r\n\x1b]/);
+  assert.doesNotMatch(lineFor(), /[\r\n\x1b%]/);
 });
 
 // ---------- o script de verdade (processo filho) ----------
@@ -129,7 +128,7 @@ const future = (s) => Math.floor(Date.now() / 1000) + s;
 test('script: stdin válido grava o arquivo, imprime UMA linha e sai com 0', () => {
   const d = mk();
   const r = run(JSON.stringify(input({ rate_limits: { five_hour: { used_percentage: 23.4, resets_at: future(3600) }, seven_day: { used_percentage: 41, resets_at: future(86400) } } })), d);
-  assert.equal(r.status, 0); assert.equal(r.stdout, 'FORGE · 5h 23% · semana 41%\n'); assert.equal(r.stderr, '');
+  assert.equal(r.status, 0); assert.equal(r.stdout, 'FORGE\n'); assert.equal(r.stderr, '');
   assert.equal(read(d).fiveHour.usedPct, 23.4);
 });
 
@@ -142,13 +141,13 @@ test('script: sem dados, JSON inválido, stdin vazio, session_id perigoso e past
   const noDir = run(JSON.stringify(input()), undefined); assert.equal(noDir.status, 0); assert.equal(noDir.stdout.split('\n').length, 2, 'uma linha só');
 });
 
-test('script: erro de disco (a pasta é um arquivo) nunca falha e ainda mostra o limite recebido', () => {
+test('script: erro de disco (a pasta é um arquivo) nunca falha e imprime FORGE', () => {
   const f = path.join(root, 'arquivo'); fs.writeFileSync(f, 'x');
   const r = run(JSON.stringify(input({ rate_limits: { five_hour: { used_percentage: 50, resets_at: future(60) } } })), path.join(f, 'sub'));
-  assert.equal(r.status, 0); assert.equal(r.stdout, 'FORGE · 5h 50%\n');
+  assert.equal(r.status, 0); assert.equal(r.stdout, 'FORGE\n');
 });
 
 test('script: sem rate_limits na chamada usa o arquivo anterior da sessão para a linha (se ainda vigente)', () => {
   const d = mk(); run(JSON.stringify(input({ rate_limits: { five_hour: { used_percentage: 30, resets_at: future(600) } } })), d);
-  const r = run(JSON.stringify(input({ rate_limits: undefined })), d); assert.equal(r.status, 0); assert.equal(r.stdout, 'FORGE · 5h 30%\n');
+  const r = run(JSON.stringify(input({ rate_limits: undefined })), d); assert.equal(r.status, 0); assert.equal(r.stdout, 'FORGE\n');
 });
