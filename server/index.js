@@ -46,6 +46,7 @@ import { createChildRegistry } from './child-registry.js';
 import { installShutdown } from './shutdown.js';
 import { apiGuard } from './origin-guard.js';
 import { trustClaudeFolder } from './trust.js';
+import { strictProjectConfig } from './project-config.js';
 import { consumeApiTokenFromEnv, createTokenGuard } from './session-token.js';
 
 const apiToken = consumeApiTokenFromEnv(); // M2: lido e REMOVIDO de process.env antes de qualquer processo filho existir (ver session-token.js)
@@ -108,11 +109,11 @@ rateLimits.sweep();
 setClaudeEnvProvider(() => accounts.envOf(accounts.defaultId())); // Executor e Planner do ciclo usam a conta padrão no momento de cada execução
 const conversations = createConversationStore({ dir: historyDir, configDirOf: (id) => accounts.configDirOf(id) }); // histórico de conversas próprio, por workspace (texto das trocas; ver conversations.js); cada sessão é lida na pasta da conta dela
 // Avisos ao abrir terminais: (1) "confiar nesta pasta?" do Claude Code e do Codex é respondido pelo FORGE (trust.js; o Codex recebe por argumento); (2) a confirmação "Abrir mesmo assim?" por configuração de projeto
-// não revisada no Git (project-config.js) não é mais exigida. Para VOLTAR a exigir a confirmação: ORCH_STRICT_PROJECT_CONFIG=1; para não gravar a confiança do Claude Code: ORCH_NO_TRUST=1. Testes ficam de fora.
+// não revisada no Git (project-config.js) é EXIGIDA por padrão (hooks, MCP e comandos do projeto não rodam sem o usuário confirmar). Para DESLIGAR a confirmação: ORCH_STRICT_PROJECT_CONFIG=0; para não gravar a confiança do Claude Code: ORCH_NO_TRUST=1. Testes ficam de fora.
 const inTest = Object.keys(testDeps).length > 0 || !!process.env.NODE_TEST_CONTEXT;
 const trustOptions = inTest ? {} : {
   ...(process.env.ORCH_NO_TRUST === '1' ? {} : { trustFolders: ({ provider, cwd, configDir }) => { if (provider === 'claude') trustClaudeFolder(cwd, { configDir }); } }),
-  ...(process.env.ORCH_STRICT_PROJECT_CONFIG === '1' ? {} : { inspectConfig: async () => [] }),
+  ...(strictProjectConfig() ? {} : { inspectConfig: async () => [] }),
 };
 const terminals = createTerminalManager({ ...trustOptions, db, accounts, loadouts, agentStatus, statusLine: rateLimits, onEnd: (rec) => { if ((rec.provider ?? 'claude') === 'claude' && db.workspaces.some((w) => w.id === rec.workspaceId)) conversations.sync(rec); }, track: childRegistry.track, worktrees, mcp: maestro, persist: store.saveOrThrow, isChildAlive: (terminalId) => childRegistry.pending().some((r) => r && r.kind === 'terminal' && r.terminalId === terminalId && pidAlive(r.pid)), usage: createUsageReader({ pricesFile: path.join(store.dataDir, 'pricing.json') }) }); // terminais interativos (PTY) do Claude Code: um processo por pane, em paralelo
 let worktreeRecovery = { settled: [], inconsistent: [], unregistered: [], unverified: [] }; // E3: preenchido logo DEPOIS do reclaim dos processos filhos (abaixo)

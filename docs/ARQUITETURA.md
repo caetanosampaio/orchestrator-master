@@ -43,7 +43,7 @@ Electron (desktop/)  ->  servidor Node + Express (server/, só 127.0.0.1)  ->  C
 - `layouts.js`, `ui-settings.js`, `topics.js`, `conversations.js`: layout da grade por workspace, preferências, tópicos e histórico de conversas.
 
 **Ciclo de missões (sem tela hoje)**
-`cycle.js`, `planner.js`, `executor/`, `plan.js`, `policy.js`, `verify.js`, `evidence.js`, `scope.js`, `supervisor.js`, `delivery.js`, `limits.js`: ciclo autônomo Planner, Executor, verificações reais, evidência, supervisão e relatório de entrega. O Planner só escolhe `continue`, `complete` ou `blocked`, e o backend valida formato, decisão e evidência; concluir exige evidência `verified`, exceto por aceitação humana explícita e registrada. Está exposto em `/api/missions/...` e coberto por testes, mas a interface atual (grade de terminais) não tem telas para ele. Os componentes antigos (`Missions`, `CyclePanel`, `DeliveryReport`...) continuam em `client/src/` sem serem importados.
+`cycle.js`, `planner.js`, `executor/`, `plan.js`, `policy.js`, `verify.js`, `evidence.js`, `scope.js`, `supervisor.js`, `delivery.js`, `limits.js`: ciclo autônomo Planner, Executor, verificações reais, evidência, supervisão e relatório de entrega. O Planner só escolhe `continue`, `complete` ou `blocked`, e o backend valida formato, decisão e evidência; concluir exige evidência `verified`, exceto por aceitação humana explícita e registrada. Está exposto em `/api/missions/...` e coberto por testes, mas a interface atual (grade de terminais) não tem telas para ele. As telas antigas do ciclo (`Missions`, `CyclePanel`, `DeliveryReport` e afins) foram removidas do cliente; continuam no histórico do Git se o ciclo voltar a ter interface.
 
 ## Fluxos principais
 
@@ -56,10 +56,10 @@ Electron (desktop/)  ->  servidor Node + Express (server/, só 127.0.0.1)  ->  C
 ## Segurança
 
 - Escuta só em loopback; `Host` e `Origin` validados (protege de CSRF e DNS rebinding, **não** é autenticação).
-- No desktop, token de sessão por boot nas ações que alteram estado; o servidor o remove de `process.env` para os filhos não herdarem.
+- No desktop, token de sessão por boot nas ações que alteram estado e nas leituras de conteúdo sensível (terminais e sessões, conversas, contas, missões, chat, fila do Maestro, atividade, eventos e worktrees); o servidor o remove de `process.env` para os filhos não herdarem. Estado, workspaces, layouts e preferências seguem de leitura aberta (só Host/Origin).
 - Sem shell em tudo que executa processo, com argumentos fixos. Exceção: os wrappers `.cmd` do npm no Windows passam pelo `cmd.exe`, com a linha de comando montada pelo servidor (caminho com metacaractere do `cmd.exe` não é executado).
 - Credencial do Maestro por terminal: guardada em memória; no Claude Code também vai num arquivo `--mcp-config` de modo restrito, e no Codex só no ambiente do processo.
-- Configuração de projeto executável não revisada no Git exige confirmação.
+- Configuração de projeto executável não revisada no Git (hooks, MCP, comandos) exige confirmação ao abrir o terminal. A exigência vem **ligada por padrão**; `ORCH_STRICT_PROJECT_CONFIG=0` a desliga. O FORGE também grava a confiança da pasta no `.claude.json` do Claude Code (`ORCH_NO_TRUST=1` desliga).
 - Os agentes rodam com as permissões do usuário (limite assumido e documentado).
 - Limites aceitos: terminais interativos não passam pela política e pela evidência do ciclo; as rotas do Maestro só conferem `Host`/`Origin` fora do desktop; `releasePty` mexe em campos internos do `node-pty`.
 

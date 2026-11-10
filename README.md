@@ -79,7 +79,7 @@ No menu **Ajuda** (no Windows, pressione `Alt` para exibir o menu) use **Copiar 
 ## Segurança em resumo
 
 - O servidor interno escuta **somente** em `127.0.0.1` (a própria máquina), numa porta livre, e valida `Host` e `Origin` de cada requisição.
-- No app desktop, ações que alteram estado (aprovar tarefas, escrever em terminais) exigem um token de sessão gerado a cada abertura e injetado só na janela do app.
+- No app desktop, ações que alteram estado (aprovar tarefas, escrever em terminais) e leituras de conteúdo sensível (saída dos terminais, conversas, contas) exigem um token de sessão gerado a cada abertura e injetado só na janela do app.
 - Cada conta do Claude Code cadastrada tem a sua pasta de login dentro dos dados do FORGE, e os agentes rodam com as suas permissões e podem lê-las: abra apenas projetos em que você confia.
 - O Codex é aberto com o sandbox `workspace-write` e aprovação `on-request`; a credencial do Maestro vai só no ambiente do processo, nunca em arquivo nem na linha de comando.
 - Configuração de projeto que executa comandos (`.claude/settings.json`, `.mcp.json`, `.claude/agents`, `.claude/skills` e, para o Codex, a pasta `.codex`) e não está revisada no Git exige a sua confirmação antes de abrir o terminal.

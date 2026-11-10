@@ -16,6 +16,9 @@ export const CONFIG_DIRS = Object.freeze(['.claude/agents', '.claude/skills']);
 const ACTIVE_KEYS = Object.freeze(['hooks', 'statusLine', 'apiKeyHelper', 'awsAuthRefresh', 'awsCredentialExport', 'otelHeadersHelper', 'env', 'mcpServers', 'enableAllProjectMcpServers', 'enabledMcpjsonServers', 'enabledPlugins', 'extraKnownMarketplaces']);
 const MAX_BYTES = 256 * 1024;
 
+/** A confirmação de configuração de projeto não revisada vem LIGADA; só `ORCH_STRICT_PROJECT_CONFIG=0` a desliga (qualquer outro valor, ou ausente, mantém a exigência). */
+export const strictProjectConfig = (env = process.env) => String(env.ORCH_STRICT_PROJECT_CONFIG ?? '').trim() !== '0';
+
 const git = (cwd, args) => new Promise((resolve) => execFile('git', ['-c', 'core.fsmonitor=false', ...args], { cwd, timeout: 8000, windowsHide: true, maxBuffer: 1 << 20, env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' } }, (e, out) => resolve(e ? null : out)));
 
 const isFilled = (v) => v !== undefined && v !== null && v !== false && v !== '' && !(Array.isArray(v) && !v.length) && !(typeof v === 'object' && !Array.isArray(v) && !Object.keys(v).length);

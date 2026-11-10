@@ -9,7 +9,7 @@ import { execFileSync } from 'node:child_process';
 const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'orch-projcfg-')));
 process.env.ORCH_DATA_DIR = path.join(tmp, 'data');
 const store = await import('../store.js');
-const { inspectProjectConfig, activeKeys } = await import('../project-config.js');
+const { inspectProjectConfig, activeKeys, strictProjectConfig } = await import('../project-config.js');
 const T = await import('../terminals.js');
 store.load(); store.saveOrThrow();
 after(() => { fs.rmSync(tmp, { recursive: true, force: true }); });
@@ -90,4 +90,10 @@ test('.claude/agents e .claude/skills: versionados e intactos passam; não versi
   const sk = repo({ 'src/a.js': '1' }); sk.put('.claude/skills/x/SKILL.md', 'x'); assert.deepEqual((await inspectProjectConfig(sk.d)).map((f) => f.path), ['.claude/skills']);
   const ign = repo({ '.gitignore': '.claude/agents/\n' }); ign.put('.claude/agents/z.md', 'x'); assert.deepEqual((await inspectProjectConfig(ign.d)).map((f) => f.path), ['.claude/agents'], 'ignorado pelo Git');
   const empty = repo({}); fs.mkdirSync(path.join(empty.d, '.claude', 'agents'), { recursive: true }); assert.deepEqual(await inspectProjectConfig(empty.d), []);
+});
+
+test('a confirmação de configuração de projeto vem LIGADA por padrão; só ORCH_STRICT_PROJECT_CONFIG=0 a desliga', () => {
+  assert.equal(strictProjectConfig({}), true, 'sem a variável: exige');
+  for (const v of ['1', '', 'true', 'off', 'no', ' 1 ']) assert.equal(strictProjectConfig({ ORCH_STRICT_PROJECT_CONFIG: v }), true, `valor ${JSON.stringify(v)} não desliga`);
+  for (const v of ['0', ' 0 ']) assert.equal(strictProjectConfig({ ORCH_STRICT_PROJECT_CONFIG: v }), false, `valor ${JSON.stringify(v)} desliga`);
 });
