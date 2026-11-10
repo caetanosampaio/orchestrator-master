@@ -329,9 +329,16 @@ function decide(kind) {
     const task = m && find(m.tasks, req.params.tid);
     if (!task) return bad(res, 'Tarefa não encontrada.', 404);
     if (task.status !== 'awaiting_approval') return bad(res, 'A tarefa não está aguardando aprovação.', 409);
+    const prev = { status: task.status, rejected: task.rejected, decidedAt: task.decidedAt, hadRejected: Object.hasOwn(task, 'rejected'), hadDecidedAt: Object.hasOwn(task, 'decidedAt') };
     task.status = kind === 'approve' ? 'completed' : 'failed';
     task.rejected = kind === 'reject'; // distingue rejeição humana de falha de execução
     task.decidedAt = now();
+    try { store.saveOrThrow(); } catch { // a decisão não ficou gravada: volta ao estado anterior (nada fica "aprovado" só na memória)
+      task.status = prev.status;
+      if (prev.hadRejected) task.rejected = prev.rejected; else delete task.rejected;
+      if (prev.hadDecidedAt) task.decidedAt = prev.decidedAt; else delete task.decidedAt;
+      return bad(res, 'Não foi possível registrar a decisão: o banco não pôde ser gravado; nada foi alterado.', 500);
+    }
     store.log(
       kind === 'approve' ? 'approval' : 'rejection',
       `${kind === 'approve' ? 'Aprovada' : 'Rejeitada'}: ${task.title}${m.demo ? ' [demo]' : ''}`,
@@ -426,5 +433,8 @@ setupMaestro(app, { maestro });
 setupChat(app, { db, planner, cycle, multiStep: () => orchestration().planMode }); // M5: chat geral; só prepara propostas, executar exige /api/chat/approve
 
 app.use('/api', (req, res) => bad(res, 'Rota não encontrada.', 404));
-app.use((err, req, res, next) => bad(res, err.type === 'entity.parse.failed' ? 'JSON inválido.' : 'Erro interno.', err.status || 500));
+app.use((err, req, res, next) => {
+  if (err.type === 'entity.too.large') return bad(res, 'Requisição grande demais (o limite é 100 KB).', 413);
+  return bad(res, err.type === 'entity.parse.failed' ? 'JSON inválido.' : 'Erro interno.', err.status || 500);
+});
 app.listen(PORT, HOST, () => console.log(`FORGE API em http://${HOST}:${PORT}`));
