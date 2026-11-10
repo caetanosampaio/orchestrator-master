@@ -1,0 +1,98 @@
+/* Workflow da página Missões (components/MissionWorkflow.jsx): pipeline em fases. Tudo escopado em .mwf-root; prefixo mwf-.
+   Linguagem do Overclock: preto total, hairline, cantos pequenos, mono, cor chapada. SEM brilho (nada de box-shadow com halo, drop-shadow ou blur).
+   Movimento mecânico, igual aos keyframes do site deles (spawn, blink, caret, dash, eq, meter, shimmer de texto, stamp-in), e TODO desligado em movimento reduzido. */
+
+.mwf-root {
+  --mwf-idle: #4b5563; --mwf-idle-t: #9ca3af;
+  --mwf-work: var(--ws-claude, #e08060);
+  --mwf-ok: #22c55e; --mwf-warn: #f59e0b; --mwf-err: #ef4444; --mwf-cancel: #6b7280;
+  --mwf-hair: rgba(255, 255, 255, .08); --mwf-hair-2: rgba(255, 255, 255, .14);
+  --st: var(--mwf-idle); --st-t: var(--mwf-idle-t);
+  display: flex; min-width: 0; max-width: 100%; min-height: 0; background: #000; font-family: var(--mono); color: var(--text, #f4f4f5);
+}
+.mwf-empty { align-items: center; justify-content: center; min-height: 200px; color: #7c8494; font-size: 12px; } .mwf-empty p { margin: 0; }
+.mwf-viewport { flex: 1; min-width: 0; max-height: 620px; overflow: auto; scrollbar-width: thin; scrollbar-color: #27272a transparent; }
+.mwf-stage { position: relative; display: flex; align-items: flex-start; gap: 56px; width: max-content; min-width: 100%; padding: 0 20px 28px 3px; } /* 3px à esquerda: o anel de foco do 1º cartão não é cortado */
+.mwf-edges { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; } /* 100% do stage: nunca alarga a área rolável */
+
+/* ---------- fase (coluna) ---------- */
+.mwf-col { flex: none; width: 216px; display: flex; flex-direction: column; gap: 12px; }
+.mwf-col-h { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 10px; height: 36px; background: #000; border-bottom: 1px solid var(--mwf-hair); }
+.mwf-col-n { color: var(--brand, #ef4444); font-size: 11px; font-weight: 600; letter-spacing: .18em; }
+.mwf-col-l { color: #9ca3af; font-size: 11px; font-weight: 600; letter-spacing: .18em; text-transform: uppercase; }
+.mwf-par { margin-left: auto; }
+
+/* ---------- chips ---------- */
+.mwf-chip { flex: none; padding: 0 5px; border: 1px solid var(--mwf-hair-2); border-radius: 4px; color: #9ca3af; font-size: 11px; line-height: 16px; font-weight: 500; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+.mwf-chip.warn { border-color: rgba(245, 158, 11, .5); color: var(--mwf-warn); }
+.mwf-par.live { border-color: color-mix(in srgb, var(--mwf-work) 60%, transparent); color: var(--mwf-work); }
+
+/* ---------- cartão do nó ---------- */
+.mwf-node { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 6px; width: 100%; padding: 10px 12px 11px 12px; border: 1px solid var(--mwf-hair-2); border-left: 2px solid var(--st); border-radius: 6px; background: #050505; color: inherit; font: inherit; text-align: left; cursor: pointer; overflow: hidden;
+  transition: border-color 140ms ease, background-color 140ms ease; }
+.mwf-node:hover { border-color: rgba(255, 255, 255, .3); border-left-color: var(--st); }
+.mwf-node.on { border-color: var(--brand, #ef4444); background: #0d0404; } /* selecionado: contorno vermelho (como o item ativo do Overclock) */
+.mwf-node:focus-visible { outline: 1px dashed var(--brand, #ef4444); outline-offset: 2px; }
+.mwf-s-idle { --st: var(--mwf-idle); --st-t: var(--mwf-idle-t); }
+.mwf-s-working { --st: var(--mwf-work); --st-t: var(--mwf-work); }
+.mwf-s-completed { --st: var(--mwf-ok); --st-t: var(--mwf-ok); }
+.mwf-s-approval { --st: var(--mwf-warn); --st-t: var(--mwf-warn); }
+.mwf-s-attention { --st: var(--mwf-err); --st-t: #f87171; }
+.mwf-s-cancelled { --st: var(--mwf-cancel); --st-t: #7c8494; }
+.mwf-s-cancelled .mwf-title-t { color: #9ca3af; text-decoration: line-through; text-decoration-color: #4b5563; }
+
+.mwf-row { display: flex; align-items: center; gap: 7px; min-height: 16px; }
+.mwf-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--st); }
+.mwf-s-cancelled .mwf-dot { background: transparent; border: 1px solid var(--mwf-cancel); }
+.mwf-state { color: var(--st-t); font-size: 11px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; transform-origin: 0 50%; }
+.mwf-chips { margin-left: auto; display: inline-flex; gap: 4px; }
+.mwf-title { font-size: 13px; line-height: 1.35; font-weight: 600; color: #fff; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.mwf-kind { color: #7c8494; font-weight: 400; }
+.mwf-sub { color: #9ca3af; font-size: 12px; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* estágios no estilo terminal: glifo | nome | valor */
+.mwf-stages { display: flex; flex-direction: column; gap: 2px; margin-top: 2px; padding-top: 7px; border-top: 1px solid var(--mwf-hair); }
+.mwf-stage-l { display: grid; grid-template-columns: 14px 40px 1fr; align-items: center; font-size: 12px; line-height: 18px; }
+.mwf-stage-g { color: var(--mwf-idle); text-align: left; }
+.mwf-stage-n { color: #7c8494; }
+.mwf-stage-v { color: #b6b7c0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mwf-g-working .mwf-stage-v { color: var(--mwf-work); } .mwf-g-completed .mwf-stage-g { color: var(--mwf-ok); } .mwf-g-attention .mwf-stage-g, .mwf-g-attention .mwf-stage-v { color: #f87171; }
+.mwf-eq { display: inline-flex; align-items: flex-end; gap: 1.5px; height: 9px; } .mwf-eq i { width: 2px; height: 100%; background: var(--mwf-work); transform-origin: 50% 100%; transform: scaleY(.55); }
+.mwf-caret { margin-left: 2px; font-style: normal; color: var(--mwf-work); }
+.mwf-gate { color: var(--mwf-warn); font-size: 12px; }
+.mwf-meter { position: absolute; left: 0; right: 0; bottom: 0; height: 1px; background: var(--mwf-work); transform-origin: 0 50%; transform: scaleX(.5); }
+
+/* ---------- conectores ortogonais ---------- */
+.mwf-edge path { fill: none; stroke: var(--mwf-hair-2); stroke-width: 1; shape-rendering: crispEdges; stroke-dasharray: 3 3; }
+.mwf-edge .mwf-arrow { fill: #3f3f46; stroke: none; }
+.mwf-e-done path { stroke: rgba(34, 197, 94, .55); stroke-dasharray: none; } .mwf-e-done .mwf-arrow { fill: rgba(34, 197, 94, .8); }
+.mwf-e-active path { stroke: var(--mwf-work); stroke-dasharray: 4 4; } .mwf-e-active .mwf-arrow { fill: var(--mwf-work); }
+.mwf-e-wait path { stroke: rgba(245, 158, 11, .75); stroke-dasharray: 4 4; } .mwf-e-wait .mwf-arrow, .mwf-edge-gate { fill: var(--mwf-warn); stroke: none; }
+.mwf-e-err path { stroke: rgba(239, 68, 68, .8); stroke-dasharray: none; } .mwf-e-err .mwf-arrow { fill: var(--mwf-err); }
+
+/* ---------- movimento (só com movimento permitido) ---------- */
+@keyframes mwf-spawn { 0% { opacity: 0; transform: scale(.94) translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes mwf-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes mwf-blink { 0%, 100% { opacity: 1; } 50% { opacity: .18; } }
+@keyframes mwf-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+@keyframes mwf-caret { 50% { opacity: 0; } }
+@keyframes mwf-dash { to { stroke-dashoffset: -8px; } }
+@keyframes mwf-eq { 0%, 100% { transform: scaleY(.55); } 50% { transform: scaleY(1.12); } }
+@keyframes mwf-meter { 0%, 100% { transform: scaleX(.5); } 60% { transform: scaleX(1); } }
+@keyframes mwf-shimmer { 0% { background-position: 130% 0; } to { background-position: -90% 0; } }
+@keyframes mwf-stamp { 0% { opacity: 0; transform: rotate(-4deg) scale(1.7); } }
+
+@media (prefers-reduced-motion: no-preference) {
+  html:not([data-motion="reduced"]) .mwf-enter .mwf-node { animation: mwf-spawn 360ms cubic-bezier(.23, 1, .32, 1) both; animation-delay: var(--d, 0ms); }
+  html:not([data-motion="reduced"]) .mwf-enter .mwf-edges { animation: mwf-fade 300ms ease 420ms both; }
+  html:not([data-motion="reduced"]) .mwf-s-working .mwf-dot { animation: mwf-blink 1.2s ease-in-out infinite; }
+  html:not([data-motion="reduced"]) .mwf-s-approval .mwf-dot, html:not([data-motion="reduced"]) .mwf-gate, html:not([data-motion="reduced"]) .mwf-edge-gate, html:not([data-motion="reduced"]) .mwf-par.live { animation: mwf-pulse 1.6s ease-in-out infinite; }
+  html:not([data-motion="reduced"]) .mwf-caret { animation: mwf-caret 1s steps(1) infinite; }
+  html:not([data-motion="reduced"]) .mwf-eq i { animation: mwf-eq .9s ease-in-out infinite; }
+  html:not([data-motion="reduced"]) .mwf-eq i:nth-child(2) { animation-delay: .15s; } html:not([data-motion="reduced"]) .mwf-eq i:nth-child(3) { animation-delay: .3s; }
+  html:not([data-motion="reduced"]) .mwf-meter { animation: mwf-meter 1.8s ease-in-out infinite; }
+  html:not([data-motion="reduced"]) .mwf-e-active path:not(.mwf-arrow) { animation: mwf-dash .5s linear infinite; }
+  html:not([data-motion="reduced"]) .mwf-state.stamp { animation: mwf-stamp 320ms cubic-bezier(.23, 1, .32, 1) both; }
+  /* "pensando": o brilho de TEXTO do Claude Code (um gradiente que varre as letras), não um halo */
+  html:not([data-motion="reduced"]) .mwf-s-working .mwf-title-t { background: linear-gradient(100deg, #fff 38%, var(--mwf-work) 50%, #fff 62%) 0 0 / 220% 100%; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent; animation: mwf-shimmer 2.4s linear infinite; }
+}

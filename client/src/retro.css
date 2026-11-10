@@ -112,7 +112,7 @@
 .oc-prole { text-transform: uppercase; letter-spacing: var(--caps-track); font-size: 11px; color: var(--dim); }
 .oc-pbody { position: relative; }
 /* scanline: faixa de 1px a cada 3px, ~3,5% de opacidade; não captura mouse e some em "animações reduzidas" */
-.oc-pbody::after { content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 2; background: repeating-linear-gradient(to bottom, transparent 0 2px, rgba(255, 255, 255, .03) 2px 3px); }
+.oc-pbody::after { content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 2; background: repeating-linear-gradient(to bottom, transparent 0 2px, rgba(255, 255, 255, .015) 2px 3px); }
 html[data-motion="reduced"] .oc-pbody::after { display: none; }
 @media (prefers-reduced-motion: reduce) { .oc-pbody::after { display: none; } .oc-pdot { animation: none !important; } }
 

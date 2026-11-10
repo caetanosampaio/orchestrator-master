@@ -1,7 +1,7 @@
 /* FORGE — tokens do sistema visual.
    Fonte única de cor, tipografia, espaço, forma e movimento. Os demais .css só consomem estes valores.
-   Linguagem (console de agentes, inspirada em ADEs como o Overclock): preto de terminal em degraus tonais finos, contornos de 1px (hairline) em vez de sombra, cantos pequenos (4 a 12px),
-   rótulos em mono caixa alta com espaçamento largo, e acentos em laranja e vermelho (verde só para saudável e concluído). Brilho (glow) só em foco, ação primária e estado ativo.
+   Linguagem (console de agentes, alinhada ao Overclock): PRETO TOTAL (#000) com superfícies quase pretas, contornos de 1px em branco translúcido (hairline) em vez de sombra, cantos pequenos (4 a 8px),
+   rótulos em mono caixa alta com espaçamento largo, vermelho CHAPADO como marca e ação primária, e cores vivas só para estado. SEM brilho (glow), sem degradê decorativo: o movimento é mecânico (piscar, cursor, traço marchando, carimbo).
    Cor continua sendo ESTADO com significado fixo (verde concluído, âmbar espera, vermelho falha, violeta interrompido) e sempre vem com glifo e texto, nunca só a cor.
    Fontes: Geist e Geist Mono, empacotadas no build (o produto continua rodando offline). O PALCO do Cockpit (canvas do grafo) segue sendo o único fundo atmosférico. */
 
@@ -9,23 +9,23 @@
   color-scheme: dark; /* controles nativos no tema escuro */
 
   /* camadas: --bg é o chassi (atrás da sidebar); --surface é a folha de conteúdo; --raise é qualquer coisa elevada dentro dela; --raise2 é hover/selecionado/pressionado. */
-  --bg: #090909; --surface: #101010; --raise: #101010; --raise2: #171717; --raise3: #202020; --canvas: #090909; --term-bg: #090909;
+  --bg: #000000; --surface: #000000; --raise: #050505; --raise2: #0a0a0a; --raise3: #121212; --canvas: #000000; --term-bg: #000000;
   /* --raise-quiet: rgba(255, 255, 255, .03); --edge: rgba(255, 255, 255, .4);
   /* separadores: raros. --line divide listas; --line-strong contorna o que precisa de limite; --line-control contorna campos (≥ 3:1). */
-  --line: #252525; --line-strong: #363636; --line-control: #666666;
+  --line: rgba(255, 255, 255, .08); --line-strong: rgba(255, 255, 255, .14); --line-control: #6b7280; /* hairlines em branco translúcido (como o cockpit do Overclock); --line-control segue sólido (≥ 3:1) */
 
   /* texto: --strong títulos e valores; --text corpo; --dim apoio; --faint só placeholder e metadado (todos ≥ 4,5:1 sobre --raise2) */
-  --strong: #f7f7f7; --text: #ececec; --dim: #c4c4c4; --faint: #a8a8a8;
+  --strong: #ffffff; --text: #f4f4f5; --dim: #b6b7c0; --faint: #9ca3af;
   /* ação primária e foco: bone. É a identidade: nenhuma cor de marca. */
-  --bone: #8f2f2f; --bone-hover: #a83a3a; --ink: #f2f2f2; --focus: #c94a4a; /* vermelho discreto: só marca, ação primária e foco */
+  --bone: #dc2626; --bone-hover: #ef4444; --ink: #ffffff; --focus: #ef4444; /* vermelho da marca, chapado: ação primária, aba ativa e foco (texto branco sobre #dc2626 = 4,8:1) */
 
   /* estados (cor + glifo + texto, nunca só a cor), com o MESMO significado em todo o produto, dessaturados para não competir com o conteúdo:
      --muted cinza = ocioso, na fila, desconectado | --run laranja = executando (--run-text é o mesmo laranja mais claro, só para texto: ≥ 4,5:1 sobre o preto) | --ok verde = concluído | --warn âmbar = aguardando decisão humana | --interrupted cinza-azulado = interrompido | --err vermelho suave = erro */
-  --run: #5fa377; --run-text: #7fb592; --ok: #477d58; --warn: #a98349; --err: #c96a6a; --muted: #9e9e9e; /* --run, --warn e --err servem de TEXTO (AA ≥ 4,5:1, teste agent-status): os tons escuros da paleta (#477D58, #92713E, #B84646) ficam nos LEDs e preenchimentos */ --interrupted: #a78bfa;
+  --run: #22c55e; --run-text: #4ade80; --ok: #16a34a; --warn: #f59e0b; --err: #ef4444; --muted: #9ca3af; /* --run, --warn e --err servem de TEXTO (AA ≥ 4,5:1, teste agent-status): os tons escuros da paleta (#477D58, #92713E, #B84646) ficam nos LEDs e preenchimentos */ --interrupted: #a78bfa;
   /* agentes (Planner e Executor): inativo = cinza, executando = âmbar com pulsação suave, erro = vermelho. O verde é só de tarefas concluídas. */
   --ag-idle: var(--muted); --ag-run: var(--warn); --ag-err: var(--err);
-  --ok-bg: rgba(71, 125, 88, .12); --warn-bg: rgba(146, 113, 62, .14); --err-bg: rgba(184, 70, 70, .14);
-  --ok-text: #7fb592; --warn-text: #c9a46a; --danger-text: #d98080;
+  --ok-bg: rgba(34, 197, 94, .10); --warn-bg: rgba(245, 158, 11, .12); --err-bg: rgba(239, 68, 68, .12);
+  --ok-text: #4ade80; --warn-text: #fbbf24; --danger-text: #f87171;
 
   /* tipografia: fontes do sistema (nada externo; o produto roda offline). Mono só para hora, caminho e comando. */
   --sans: var(--mono); /* o app inteiro usa a fonte de terminal (a sans original só vale como reserva do sistema se a mono faltar) */
@@ -37,7 +37,7 @@
   /* espaço (base 4) */
   --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px; --sp-6: 32px;
   /* forma */
-  --r-1: 0; --r-2: 2px; --r-3: 2px; --r-4: 4px; /* bordas retas, estilo terminal */
+  --r-1: 2px; --r-2: 4px; --r-3: 6px; --r-4: 8px; /* cantos pequenos: chip 4px, botão/pane 6px, cartão 8px */
   /* larguras */
   --w-side: 248px; --w-side-min: 64px; --w-inspector: 336px; --w-read: 720px; --w-page: 1080px;
 
@@ -52,12 +52,12 @@
   --shadow-pop: 0 24px 60px -10px rgba(0, 0, 0, .75), 0 0 0 1px var(--line-strong);
 
   /* marca e brilho (o laranja é a identidade e também a cor de "executando"; o vermelho é de falha e de alerta) */
-  --brand: var(--bone); --brand-bg: rgba(143, 47, 47, .12); --brand-line: rgba(143, 47, 47, .5);
-  --glow-sm: 0 0 0 1px rgba(201, 74, 74, .55); --glow-md: 0 0 0 1px rgba(201, 74, 74, .7); /* foco: contorno de 1px, sem brilho */
+  --brand: #ef4444; --brand-bg: rgba(239, 68, 68, .10); --brand-line: rgba(239, 68, 68, .5);
+  --glow-sm: 0 0 0 1px rgba(239, 68, 68, .55); --glow-md: 0 0 0 1px rgba(239, 68, 68, .7); /* foco: contorno de 1px, sem brilho */
   /* LEDs de status: único lugar com luz. Cor viva do ponto + halo curto */
-  --led-run: #69b085; --led-ok: #58966d; --led-warn: #b78f50; --led-err: #cc5555; --led-idle: #5c5c5c; /* núcleo dos LEDs um pouco mais claro; o halo (box-shadow) está em retro.css */
+  --led-run: #22c55e; --led-ok: #22c55e; --led-warn: #f59e0b; --led-err: #ef4444; --led-idle: #4b5563; /* núcleo dos LEDs um pouco mais claro; o halo (box-shadow) está em retro.css */
   /* rótulos de console: mono, caixa alta, espaçamento largo */
-  --caps-track: .09em; --caps-size: 11.5px;
+  --caps-track: .16em; --caps-size: 11px;
   /* cor por agente (identificação, nunca estado): construtor, piloto, revisor, batedor, torre */
-  --c-builder: #a3e635; --c-pilot: #f59e0b; --c-review: #8b5cf6; --c-scout: #2563eb; --c-tower: #ec4899;
+  --c-builder: #a3e635; --c-pilot: #f59e0b; --c-review: #8b5cf6; --c-scout: #22d3ee; --c-tower: #ec4899;
 }
