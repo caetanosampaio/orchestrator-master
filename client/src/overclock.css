@@ -1,0 +1,80 @@
+/* FORGE — camada Overclock (carregada depois de retro.css). Alinha o produto à linguagem do overclock.sh, estudada no site e no CSS publicado:
+   preto total, hairlines em branco translúcido, vermelho CHAPADO, pontos de estado redondos, chips contornados de raio 4px, aba ativa com sublinhado de 2px.
+   Regra desta camada: NENHUM brilho (box-shadow com halo, drop-shadow, text-shadow). Estado é cor + texto; movimento é mecânico (piscar, cursor, traço).
+   Só sobrescreve aparência; não muda estrutura nem comportamento. */
+
+/* ---------- 1. estado sem halo: ponto redondo, cor chapada ---------- */
+.oc-pdot, .oc-dot, .wt-dot, .tb-c i, .wsi-pix, .mpo-led, .ss-led, .ss-g h3 i, .tm-led, .sq-dot, .wt-done { border-radius: 50% !important; box-shadow: none !important; filter: none !important; }
+.wsi svg, .oc-pstate .pv-work, .tp .tp-mark, .oc-ind, .oc-brand:hover svg { filter: none !important; }
+.oc-alert { text-shadow: none; color: var(--err); font-size: 15px; }
+.oc-side .oc-badge.work { box-shadow: inset 0 0 0 1px rgba(224, 128, 96, .45); }
+.sq-card:hover:not(.launching):not(:disabled) { box-shadow: inset 0 0 0 1px var(--brand); transform: translateY(-1px); }
+.sq-card.launching { box-shadow: inset 0 0 0 1px var(--brand); animation: sq-in .5s cubic-bezier(.2, .8, .2, 1) both; }
+.oc-env::before { box-shadow: none; }
+/* trabalhando pisca como o site-blink do Overclock (opacidade, sem escala nem brilho) */
+@keyframes ovc-blink { 0%, 100% { opacity: 1; } 50% { opacity: .18; } }
+@keyframes ovc-caret { 50% { opacity: 0; } }
+html:not([data-motion="reduced"]) .oc-app .wsi-work .wsi-pix, html:not([data-motion="reduced"]) .oc-app .oc-pdot.st-working, html:not([data-motion="reduced"]) .oc-app .oc-pdot.st-boot { animation: ovc-blink 1.2s ease-in-out infinite; }
+
+/* ---------- 2. sidebar: linha ativa só com o fundo tingido (sem barra, sem sublinhado, sem degradê) ---------- */
+.oc-side { background: #000; border-right: 1px solid var(--line); }
+.oc-side .oc-env:not(.oc-env-add):not(.oc-env-edit)::after { display: none; }
+.oc-side .oc-env { border-radius: 4px; }
+.oc-side .oc-env:hover { background: rgba(255, 255, 255, .04); box-shadow: none; }
+.oc-side .oc-env.on, .oc-env.on { background: rgba(239, 68, 68, .10); box-shadow: none; color: #fff; }
+.oc-env::before { display: none; }
+.oc-side-title { color: #7c8494; font-weight: 600; } /* #7c8494 = 5,2:1 sobre o preto (o #6b7280 do Overclock dá 4,3:1: abaixo de AA para texto pequeno) */
+.oc-cnt { color: #7c8494; }
+
+/* ---------- 3. abas de workspace: texto + sublinhado vermelho de 2px na ativa ---------- */
+.wt-item { color: #9ca3af; border-radius: 0; }
+.wt-item:hover { color: #fff; }
+.wt-item.on { color: #fff; box-shadow: inset 0 -2px 0 var(--brand); background: transparent; }
+
+/* ---------- 4. terminais: borda lateral na cor do papel, cabeçalho com chips contornados (como os panes do Overclock) ---------- */
+.oc-pane { border-radius: 6px; border-top: 0; border-left: 2px solid var(--role); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.oc-pane:focus-within { box-shadow: inset 0 0 0 1px rgba(239, 68, 68, .6); } /* pane em foco: contorno vermelho fino */
+.oc-pane.st-working:not(:focus-within), .oc-pane.has-wait:not(.st-failed):not(:focus-within) { box-shadow: inset 0 0 0 1px var(--line-strong); }
+.oc-pane.st-failed:not(:focus-within) { box-shadow: inset 0 0 0 1px rgba(239, 68, 68, .45); }
+.oc-ph { background: #000; border-bottom: 1px solid var(--line); padding: 6px 10px; gap: 8px; }
+.oc-prole { padding: 1px 7px; border: 1px solid color-mix(in srgb, var(--role) 55%, transparent); border-radius: 4px; background: color-mix(in srgb, var(--role) 8%, transparent); color: var(--role); font-size: 11px; font-weight: 700; letter-spacing: .08em; }
+.oc-ptitle, .oc-ptitle.sub { padding: 1px 7px; border: 1px solid var(--line-strong); border-radius: 4px; color: var(--dim); font-size: 11px; font-weight: 500; }
+.oc-ptitle::before { content: none; }
+.oc-ptag { padding: 1px 7px; border: 1px solid var(--line-strong); border-radius: 4px; box-shadow: none; } .oc-ptag.wt { border-color: rgba(245, 158, 11, .45); box-shadow: none; }
+.oc-pusage { padding: 1px 7px; border: 1px solid rgba(34, 197, 94, .4); border-radius: 4px; background: rgba(34, 197, 94, .06); color: #4ade80; font-size: 11px; font-weight: 600; }
+.oc-pbtn { border-radius: 4px; }
+.oc-pf { background: #000; border-top: 1px solid var(--line); color: #7c8494; }
+.oc-pbody::after { display: none; } /* sem scanline: o preto do terminal é puro */
+
+/* ---------- 5. navegação Cockpit | Missions: células de texto separadas por hairlines; a ativa é branca com sublinhado vermelho ---------- */
+.tb { border-bottom: 1px solid var(--line); }
+.tb-row:first-child { padding-left: 0; }
+.tb-views { align-self: stretch; display: inline-flex; align-items: stretch; margin: 0 4px 0 0; border-right: 1px solid var(--line); }
+.tb-view { position: relative; display: inline-flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 16px; border: 0; border-left: 1px solid var(--line); background: none; color: #7c8494; font: 600 11px var(--mono); letter-spacing: .18em; text-transform: uppercase; cursor: pointer; transition: color 140ms ease; }
+.tb-view:first-child { border-left: 0; }
+.tb-view:hover { color: #f4f4f5; }
+.tb-view.on { color: #fff; }
+.tb-view::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--brand); transform: scaleX(0); transform-origin: left; transition: transform 180ms cubic-bezier(.23, 1, .32, 1); }
+.tb-view.on::after { transform: scaleX(1); }
+.tb-view:focus-visible { outline: 1px dashed var(--brand); outline-offset: -4px; }
+.tb-view-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--ws-claude, #e08060); }
+.tb-view-dot.wait { background: #f59e0b; }
+.tb-view-n { font-weight: 600; letter-spacing: 0; color: #7c8494; font-variant-numeric: tabular-nums; }
+.tb-view-n.wait { color: #f59e0b; } .tb-view-n.work { color: var(--ws-claude, #e08060); }
+html:not([data-motion="reduced"]) .tb-view-dot { animation: ovc-blink 1.4s ease-in-out infinite; }
+.tb-tabs[hidden] { display: none; } /* shell.css define .tb-row como flex: sem isto o atributo hidden não esconde a linha de abas fora do Cockpit */
+
+/* ---------- 6. botões e diálogos: vermelho chapado, linha fina, sem sombra colorida ---------- */
+/* primário: #dc2626 com texto branco (4,8:1); o #ef4444 da marca fica para linhas e texto sobre preto (5,6:1), onde passa */
+.btn.primary { background: var(--bone); box-shadow: none; }
+@media (hover: hover) and (pointer: fine) { .btn.primary:hover:not(:disabled) { background: #b91c1c; box-shadow: none; } }
+
+/* ---------- 7. páginas: o Cockpit fica montado e só é escondido fora dele ---------- */
+.oc-view { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; }
+.oc-view[hidden] { display: none; }
+.oc-dialog { border-radius: 8px; box-shadow: 0 0 0 1px var(--line-strong), 0 30px 80px rgba(0, 0, 0, .8); background: #050505; }
+.oc-iconbtn { border-radius: 4px; }
+.oc-plus { box-shadow: inset 0 0 0 1px var(--line-strong); }
+
+@media (prefers-reduced-motion: reduce) { .tb-view-dot, .wsi-work .wsi-pix, .oc-pdot { animation: none !important; } .tb-view::after { transition: none; } }
+html[data-motion="reduced"] .tb-view::after { transition: none; }

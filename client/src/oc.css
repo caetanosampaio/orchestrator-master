@@ -2,7 +2,7 @@
    laranja como ação e "executando", vermelho para falha e alerta, verde só para saudável. Cores e fontes vêm de tokens.css; aqui só layout e movimento.
    Movimento: curto, só opacidade/transform/cor; desligado por prefers-reduced-motion e pela preferência "Animações reduzidas" (html[data-motion="reduced"]). */
 
-:root { --coal-1: #101010; --coal-2: #171717; --coal-3: #202020; --coal-line: #252525; --dur-ui: 160ms; }
+:root { --coal-1: #000000; --coal-2: #0a0a0a; --coal-3: #121212; --coal-line: rgba(255, 255, 255, .08); --dur-ui: 160ms; }
 
 /* ---------- casca ---------- */
 .oc-app { display: flex; height: 100%; background: var(--bg); }

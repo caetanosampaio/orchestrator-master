@@ -25,7 +25,7 @@ import { PRESETS, presetById, changeImpact, inferTeam, defaultMix } from '../tea
 export const SQUADS = PRESETS.filter((p) => p.id !== 'builder');
 const MAX_CHUNK = 60_000; // o servidor aceita até 64 KB por entrada
 const FONT_FAMILY = "'Geist Mono Variable', 'Geist Mono', 'Cascadia Mono', Consolas, monospace";
-const THEME = { background: '#090909', foreground: '#d2d2d2', cursor: '#c94a4a', cursorAccent: '#090909', selectionBackground: 'rgba(168, 58, 58, .35)', red: '#b84646', brightRed: '#c94a4a', green: '#5fa377', brightGreen: '#7fb592', yellow: '#92713e', brightYellow: '#c9a46a' };
+const THEME = { background: '#000000', foreground: '#d2d2d2', cursor: '#c94a4a', cursorAccent: '#000000', selectionBackground: 'rgba(168, 58, 58, .35)', red: '#b84646', brightRed: '#c94a4a', green: '#5fa377', brightGreen: '#7fb592', yellow: '#92713e', brightYellow: '#c9a46a' };
 const STATE_LABEL = { working: 'executando', idle: 'ocioso', done: 'concluído', waiting: 'aguardando', exited: 'encerrado', failed: 'falhou', boot: 'iniciando' };
 const shortPath = (p) => { const parts = String(p ?? '').split(/[\\/]+/).filter(Boolean); return parts.length > 2 ? `…/${parts.slice(-2).join('/')}` : parts.join('/') || String(p ?? ''); };
 
