@@ -94,7 +94,9 @@ test('saneamento: o texto vira UMA linha sem controles nem ESC e com tamanho lim
   const w = world(), ma = maestroOf(w);
   w.call(ma, 'send_task', { pane_id: B1, task: 'a\r\nb\x1b[31mvermelho\x1b[0m\x03\x00\u2028c  \t d' });
   assert.equal(w.m.snapshot().tasks[0].text, 'a b vermelho c d');
-  w.call(ma, 'send_task', { pane_id: B1, task: 'x'.repeat(M.MAX_TASK_TEXT + 500) }); assert.equal(w.m.snapshot().tasks[0].text.length, M.MAX_TASK_TEXT);
+  const exact = w.call(ma, 'send_task', { pane_id: B1, task: 'x'.repeat(M.MAX_TASK_TEXT) }); assert.equal(exact.isError, undefined, 'no limite exato é aceita'); assert.equal(w.m.snapshot().tasks[0].text.length, M.MAX_TASK_TEXT);
+  const antes = w.m.snapshot().tasks.length, longa = w.call(ma, 'send_task', { pane_id: B1, task: 'x'.repeat(M.MAX_TASK_TEXT + 500) });
+  assert.equal(longa.isError, true, 'acima do limite é recusada, nunca cortada em silêncio'); assert.match(w.text(longa), /NÃO foi enviada/); assert.equal(w.m.snapshot().tasks.length, antes, 'nenhuma tarefa criada');
   w.m.decide(w.m.snapshot().tasks[0].id, true); const line = w.ft.written.at(-1)[1]; assert.ok(!/[\u0000-\u001f\u007f]/.test(line), 'a linha entregue não tem controles'); // eslint-disable-line no-control-regex
   assert.equal(M.cleanLine('\x1b]0;título\x07oi', 50), 'oi', 'sequência OSC removida');
 });
@@ -388,7 +390,7 @@ test('report_done: maestro que já terminou não recebe nada (o resultado segue 
   assert.equal(tasksIn(w.text(w.call(builderOf(w), 'list_tasks')))[0].status, 'done');
   const w2 = world(); w2.ft.panes.get(MA).agent = { state: 'waiting', at: new Date().toISOString() };
   doneTask(w2);
-  let n = 0; while (w2.timers.length && n < 100) { w2.timers.shift()(); n++; }
+  let n = 0; while (w2.timers.length && n < M.REPORT_RETRIES + 50) { w2.timers.shift()(); n++; }
   assert.equal(n, M.REPORT_RETRIES, 'para de tentar depois de REPORT_RETRIES');
   assert.equal(typedTo(w2, MA).length, 0);
   assert.match(w2.m.snapshot().tasks[0].note, /relatório não foi digitado no maestro.*list_tasks/);
@@ -406,4 +408,83 @@ test('report_done: falha ao digitar no maestro deixa nota; exceção do aviso n�
   const r2 = w2.call(builderOf(w2), 'report_done', { task_id: id, summary: 'ok' });
   assert.match(w2.text(r2), /^Tarefa marcada como concluída/, 'o builder não vê "erro interno"');
   assert.equal(w2.m.snapshot().tasks[0].status, 'done');
+});
+
+// ---- relatório ao maestro que está trabalhando: espera o fim da vez dele em vez de desistir depois de 2 minutos ----
+test('report_done: maestro TRABALHANDO (saída contínua) não perde o relatório; ele entra quando a vez termina, mesmo muito depois', () => {
+  const w = world(); const ma = w.ft.panes.get(MA);
+  ma.agent = { state: 'running', at: new Date().toISOString() }; ma.lastOutputAt = new Date().toISOString();
+  doneTask(w);
+  for (let i = 0; i < 60; i++) { ma.lastOutputAt = new Date().toISOString(); w.timers.shift()(); } // 3 min de spinner: antes desistia aos 2 min
+  assert.equal(typedTo(w, MA).length, 0); assert.equal(w.timers.length, 1, 'continua esperando'); assert.equal(w.m.snapshot().tasks[0].note, null, 'sem nota de desistência');
+  ma.agent = { state: 'completed', at: new Date().toISOString() }; ma.lastOutputAt = '2026-11-03T11:00:00.000Z'; // terminou a vez e ficou quieto
+  w.timers.shift()(); assert.equal(typedTo(w, MA).length, 1, 'relatório digitado');
+});
+
+test('report_done: `running` com saída recente espera; `running` SEM saída há 15 s é estado velho (Esc não dispara o hook Stop) e não bloqueia', () => {
+  const w = world(); const ma = w.ft.panes.get(MA);
+  ma.agent = { state: 'running', at: new Date(Date.now() - 60_000).toISOString() }; ma.lastOutputAt = new Date(Date.now() - 5_000).toISOString(); // quieto há 5 s: ainda pode estar pensando
+  doneTask(w); assert.equal(typedTo(w, MA).length, 0, 'espera');
+  ma.lastOutputAt = new Date(Date.now() - (M.STALE_RUNNING_MS + 1000)).toISOString();
+  w.timers.shift()(); assert.equal(typedTo(w, MA).length, 1, 'estado velho: entra');
+});
+
+test('report_done: dois relatórios pendentes entram um por vez (o segundo espera a vez do maestro depois do primeiro)', () => {
+  const w = world(); w.ft.panes.get(MA).agent = IDLE; w.ft.panes.get(B2).agent = IDLE; w.m.setAutonomous(true);
+  w.call(maestroOf(w), 'send_task', { pane_id: B1, task: 'a' }); w.call(maestroOf(w), 'send_task', { pane_id: B2, task: 'b' });
+  const [t2, t1] = w.m.snapshot().tasks.map((t) => t.id); while (w.timers.length) w.timers.shift()();
+  w.call(builderOf(w, B1), 'report_done', { task_id: t1, summary: 'um' }); w.call(builderOf(w, B2), 'report_done', { task_id: t2, summary: 'dois' });
+  assert.equal(typedTo(w, MA).filter((x) => x[1] !== '\r').length, 1, 'só o primeiro; o segundo não se cola na mesma linha');
+  w.timers.shift()(); // Enter do primeiro
+  w.ft.panes.get(MA).agent = { state: 'running', at: new Date().toISOString() }; w.ft.panes.get(MA).lastOutputAt = new Date().toISOString(); // o maestro começou a responder ao primeiro
+  w.timers.shift()(); assert.equal(typedTo(w, MA).filter((x) => x[1] !== '\r').length, 1, 'segundo espera enquanto o maestro trabalha');
+  w.ft.panes.get(MA).agent = { state: 'completed', at: new Date().toISOString() }; w.ft.panes.get(MA).lastOutputAt = '2026-11-03T11:00:00.000Z';
+  while (w.timers.length && typedTo(w, MA).filter((x) => x[1] !== '\r').length < 2) w.timers.shift()();
+  assert.equal(typedTo(w, MA).filter((x) => x[1] !== '\r').length, 2, 'segundo entra depois');
+});
+
+test('report_done: resumo acima do limite é cortado COM aviso no próprio texto e na resposta ao agente', () => {
+  const w = world(); w.ft.panes.get(MA).agent = IDLE;
+  const { r } = doneTask(w, 'y'.repeat(M.MAX_SUMMARY + 800));
+  assert.match(w.text(r), /foi cortado/);
+  const t = w.m.snapshot().tasks[0]; assert.ok(t.summary.length <= M.MAX_SUMMARY); assert.match(t.summary, /\(texto cortado\)$/);
+  const w2 = world(); w2.ft.panes.get(MA).agent = IDLE; const ok = doneTask(w2, 'curto');
+  assert.ok(!/cortado/.test(w2.text(ok.r)));
+});
+
+// ---- modo autônomo: entrega que não saiu na hora é tentada de novo sozinha ----
+test('autônomo: tarefa a um pane ocupado com outra entrega é entregue sozinha quando ele libera (sem aprovação manual)', () => {
+  const w = world(), ma = maestroOf(w); w.m.setAutonomous(true);
+  w.call(ma, 'send_task', { pane_id: B1, task: 'um' }); w.call(ma, 'send_task', { pane_id: B1, task: 'dois' });
+  assert.equal(w.m.snapshot().tasks.find((t) => t.text === 'dois').status, 'pending');
+  w.timers.shift()(); // Enter da primeira entrega libera o pane
+  w.timers.shift()(); // nova tentativa automática da segunda
+  const t2 = w.m.snapshot().tasks.find((t) => t.text === 'dois'); assert.equal(t2.status, 'delivered'); assert.equal(t2.decidedBy, 'auto'); assert.equal(t2.note, null);
+  assert.equal(w.ft.written.filter((x) => x[0] === B1 && x[1] !== '\r').length, 2);
+});
+
+test('autônomo: pane aguardando permissão recebe a tarefa sozinho depois que a permissão é respondida; nada é digitado antes', () => {
+  const w = world(); w.m.setAutonomous(true); const t0 = new Date().toISOString();
+  w.ft.panes.get(B1).agent = { state: 'waiting', at: t0 };
+  w.call(maestroOf(w), 'send_task', { pane_id: B1, task: 'faça y' });
+  for (let i = 0; i < 5; i++) w.timers.shift()(); assert.equal(w.ft.written.length, 0, 'segue sem digitar enquanto espera a permissão'); assert.equal(w.m.snapshot().tasks[0].status, 'pending');
+  w.ft.panes.get(B1).agent = { state: 'idle', at: t0 };
+  w.timers.shift()(); assert.equal(w.m.snapshot().tasks[0].status, 'delivered'); assert.equal(w.ft.written.length, 1);
+});
+
+test('autônomo: acima do limite por minuto a tarefa é entregue sozinha quando a janela libera', () => {
+  const w = world({ autoPerMinute: 1 }), ma = maestroOf(w); w.m.setAutonomous(true);
+  w.call(ma, 'send_task', { pane_id: B1, task: 'um' }); w.call(ma, 'send_task', { pane_id: B2, task: 'dois' });
+  assert.equal(w.m.snapshot().tasks.find((t) => t.text === 'dois').status, 'pending');
+  const real = Date.now; Date.now = () => real() + 61_000;
+  try { w.timers.shift()(); w.timers.shift()(); } finally { Date.now = real; }
+  assert.equal(w.m.snapshot().tasks.find((t) => t.text === 'dois').status, 'delivered');
+});
+
+test('autônomo: a nova tentativa para quando o usuário recusa, aprova, desliga o modo ou a tarefa expira; destino encerrado vira falha', () => {
+  const stop = (fn) => { const w = world(); w.m.setAutonomous(true); w.ft.panes.get(B1).agent = { state: 'waiting', at: new Date().toISOString() }; w.call(maestroOf(w), 'send_task', { pane_id: B1, task: 'x' }); const id = w.m.snapshot().tasks[0].id; fn(w, id); w.ft.panes.get(B1).agent = { state: 'idle', at: new Date().toISOString() }; let n = 0; while (w.timers.length && n++ < 20) w.timers.shift()(); return { w, n }; };
+  assert.equal(stop((w, id) => w.m.decide(id, false)).w.m.snapshot().tasks[0].status, 'rejected');
+  const off = stop((w) => w.m.setAutonomous(false)); assert.equal(off.w.m.snapshot().tasks[0].status, 'pending', 'desligado: não entrega sozinha'); assert.equal(off.w.ft.written.length, 0);
+  const exp = stop((w) => w.tick(M.PENDING_TTL_MS + 1000)); assert.equal(exp.w.m.snapshot().tasks[0].status, 'expired'); assert.ok(exp.n < 20, 'o ciclo de tentativas termina');
+  const gone = stop((w) => { w.ft.panes.get(B1).status = 'exited'; }); assert.equal(gone.w.m.snapshot().tasks[0].status, 'failed');
 });
