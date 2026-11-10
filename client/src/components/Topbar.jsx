@@ -8,8 +8,8 @@ import { openTabs, closePlan } from '../workspace-nav.js';
 import { missionState } from '../missions-view.js';
 
 /**
- * Barra superior em 2 linhas. Linha 1: marca, estado, recursos (terminais e contadores reais) e configurações; em telas estreitas leva o botão da navegação.
- * Linha 2: abas dos workspaces abertos. Tudo vem de /api/state e das sessões reais; nada é simulado.
+ * Barra superior em LINHA ÚNICA: [Cockpit][Missions] | abas dos workspaces abertos (ocupam o meio e rolam na horizontal; somem em Missions) | status global e configurações.
+ * Em telas estreitas o botão da navegação vem antes de tudo. Tudo vem de /api/state e das sessões reais; nada é simulado.
  */
 export default function Topbar({ narrow, onMenu, menuRef, navOpen, onOpenSettings, onOpenWorkspaces, view = 'cockpit', onView = () => {}, missions = null }) {
   const { state, workspaces, terminals, maestro, workingIds, openWorkspaceIds, act, unseenWs } = useStore();
@@ -46,12 +46,13 @@ export default function Topbar({ narrow, onMenu, menuRef, navOpen, onOpenSetting
               : busyMissions > 0 && <b className="tb-view-n work" aria-label={`${busyMissions} em andamento`}>{busyMissions}</b>}
           </button>
         </nav>
-        <span className="grow" />
+        {/* Abas no meio (flex:1). Fora do Cockpit ficam escondidas, mas montadas; o espaçador mantém o status à direita. */}
+        <div className="tb-tabs" hidden={view !== 'cockpit'}>
+          <WorkspaceTabs tabs={tabs} unseen={unseen} onActivate={activate} onClose={close} onAdd={onOpenWorkspaces} />
+        </div>
+        {view !== 'cockpit' && <span className="grow" />}
         <SystemStatus />
-        <button type="button" className="oc-iconbtn" onClick={onOpenSettings} aria-label="Configurações" title="Configurações"><Icon name="gear" size={18} /></button>
-      </div>
-      <div className="tb-row tb-tabs" hidden={view !== 'cockpit'}>
-        <WorkspaceTabs tabs={tabs} unseen={unseen} onActivate={activate} onClose={close} onAdd={onOpenWorkspaces} />
+        <button type="button" className="oc-iconbtn tb-gear" onClick={onOpenSettings} aria-label="Configurações" title="Configurações"><Icon name="gear" size={18} /></button>
       </div>
     </header>
   );

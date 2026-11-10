@@ -86,7 +86,7 @@ export default function App() {
         </div>
       )}
       <PrereqModal suspended={!!dialog} onOpenAccounts={() => openSettings('accounts')} /> {/* se afasta enquanto um diálogo (ex.: Configurações > Contas) está aberto */}
-      {dialog === 'settings' && <SettingsDialog initial={settingsTab} onClose={closeDialog} />}
+      {dialog === 'settings' && <SettingsDialog initial={settingsTab} onClose={closeDialog} onOpenWorkspaces={openWorkspaces} />}
       {dialog === 'workspaces' && <WorkspaceDialog onClose={closeDialog} />}
     </div>
   );

@@ -10,7 +10,8 @@
     "dir": "npm run stage && electron-builder --win dir",
     "dist": "npm run stage && electron-builder --win portable nsis",
     "dir:mac": "npm run stage && electron-builder --mac dir",
-    "dist:mac": "npm run stage && electron-builder --mac dmg"
+    "dist:mac": "npm run stage && electron-builder --mac dmg",
+    "update:mac": "bash scripts/update-mac.sh"
   },
   "devDependencies": {
     "electron": "^43.8.7",

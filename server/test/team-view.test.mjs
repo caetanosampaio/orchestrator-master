@@ -56,11 +56,12 @@ test('cliente: sanitizeLayout mantém só equipe válida; setTeam grava por work
   sync.actions.setTeam('wsA', null); await sync.flush(); assert.equal(puts.at(-1)[1].team, null); assert.equal(sync.getSnapshot().layouts.wsA.team ?? null, null); assert.equal(sync.getSnapshot().layouts.wsB.team, 'duo', 'o outro workspace não foi tocado');
 });
 
-test('toolbar: dois grupos num único container (equipe | operacionais), menu Equipe sempre presente (presets na tela principal), sem seletor de agente solto, Visualização e Histórico fora da barra', () => {
+test('toolbar: só os controles operacionais (sem chip de workspace nem menu de equipe); equipes e workspace moraram fora do Cockpit; sem seletor de agente solto, Visualização e Histórico fora da barra', () => {
   const g = src('components/TerminalGrid.jsx');
-  assert.match(g, /className="oc-bar tbx"/); assert.equal((g.match(/className="tbx-g/g) ?? []).length, 2, 'dois grupos: workspace e equipe | controles operacionais');
-  assert.match(g, /ws && \(\s*\n?\s*<TeamMenu role=\{role\} onRole=/); assert.doesNotMatch(g, /tbx-presets|oc-prov-sel/, 'sem presets nem seletor de agente soltos na barra: a escolha mora no menu Equipe e aparece na tela principal');
-  assert.match(g, /oc-empty-act/); assert.match(g, /Novos terminais com/, 'a tela principal mostra o agente escolhido');
+  assert.match(g, /className="oc-bar tbx"/); assert.equal((g.match(/className="tbx-g/g) ?? []).length, 1, 'um grupo só: controles operacionais');
+  assert.doesNotMatch(g, /oc-wschip|TeamMenu|TeamComposer|name="workspace"/, 'o chip do workspace e a gestão de equipe saíram da barra do Cockpit');
+  assert.doesNotMatch(g, /tbx-presets|oc-prov-sel/, 'sem presets nem seletor de agente soltos na barra');
+  assert.match(g, /<SquadGallery /); assert.match(g, /onManage=\{\(\) => onOpenSettings\?\.\('equipes'\)\}/, 'o estado vazio leva a Configurações > Equipes');
   assert.doesNotMatch(g, /Novo terminal<|<Icon name="plus" size=\{14\} \/> Terminal/, 'o + Terminal destacado saiu da barra');
   assert.doesNotMatch(g, /LAYOUT_MODES|oc-seg|aria-label="Histórico"|setHistOpen|<SessionHistory/, 'Grade/Colunas/Linhas/Foco e Histórico saíram da tela principal');
   const menu = src('components/TeamMenu.jsx');
@@ -115,16 +116,17 @@ test('mixSummary: contagem por agente na ordem de aparição', () => {
   assert.equal(mixSummary([], (id) => id), '');
 });
 
-test('tela sem terminais: galeria de squads e editor ligados ao cockpit; cada terminal abre com o agente da sua vaga', () => {
+test('tela sem terminais: galeria de equipes ligada ao cockpit (gestão em Configurações > Equipes); cada terminal abre com o agente, o modelo e o esforço da sua vaga', () => {
   const g = src('components/TerminalGrid.jsx');
-  assert.match(g, /<SquadGallery /); assert.match(g, /<TeamComposer /); assert.match(g, /useSquads\(\)/);
+  assert.match(g, /<SquadGallery /); assert.doesNotMatch(g, /<TeamComposer /, 'o editor mora em Configurações > Equipes'); assert.match(g, /useSquads\(\)/);
   assert.match(g, /providers: perSlot = null/); assert.match(g, /\(perSlot && perSlot\[i\]\) \|\| useProvider/, 'o agente de cada vaga vai no POST');
-  assert.match(g, /openPlan\(launchPlan\(/, 'abrir um squad usa o plano (papéis e agentes por vaga)');
-  assert.doesNotMatch(g, /Equipe mista…/, 'o botão antigo foi substituído pela galeria de squads');
+  assert.match(g, /perModel\?\.\[i\] \? \{ model: perModel\[i\] \}/); assert.match(g, /perEffort\?\.\[i\] \? \{ effort: perEffort\[i\] \}/, 'modelo e esforço por vaga vão no POST só quando escolhidos');
+  assert.match(g, /openPlan\(launchPlan\(/, 'abrir uma equipe usa o plano (papéis, agentes, modelos e esforços por vaga)');
+  assert.doesNotMatch(g, /Equipe mista…/, 'o botão antigo foi substituído pela galeria de equipes');
   const gal = src('components/SquadGallery.jsx');
-  for (const t of ['Squads do FORGE', 'Meus squads', 'Novo squad', 'role="alertdialog"']) assert.match(gal, new RegExp(t), t);
+  for (const t of ['Equipes do FORGE', 'Minhas equipes', 'Nova equipe', 'Gerenciar equipes', 'role="alertdialog"']) assert.match(gal, new RegExp(t), t);
   const cmp = src('components/TeamComposer.jsx');
-  for (const t of ['Adicionar vaga', 'Salvar squad', 'Abrir equipe', 'Começar de']) assert.match(cmp, new RegExp(t), t);
+  for (const t of ['Adicionar vaga', 'Salvar squad', 'Abrir equipe', 'Começar de', 'Modelo da vaga', 'Esforço da vaga']) assert.match(cmp, new RegExp(t), t);
   const css = src('retro.css'); for (const k of ['sq-in', 'sq-boot', 'sq-glow', 'sq-wave', 'sq-flash']) assert.match(css, new RegExp(`@keyframes ${k}`), `animação ${k}`);
 });
 

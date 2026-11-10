@@ -110,7 +110,8 @@ main:focus { outline: none; }
 .tb-c.live.has { color: var(--ok-text); box-shadow: inset 0 0 0 1px rgba(71, 125, 88, .35); } .tb-c.live.has i { background: var(--ok); }
 .tb-c.warn.has { color: var(--warn-text); background: var(--warn-bg); box-shadow: inset 0 0 0 1px rgba(146, 113, 62, .45); } .tb-c.warn.has i { background: var(--warn); }
 .tb-c.err.has { color: var(--danger-text); background: var(--err-bg); box-shadow: inset 0 0 0 1px rgba(184, 70, 70, .5); } .tb-c.err.has i { background: var(--err); }
-.tb-tabs { padding-top: 2px; align-items: flex-end; gap: var(--sp-1); }
+.tb-tabs { flex: 1; min-width: 0; align-self: stretch; display: flex; align-items: flex-end; gap: var(--sp-1); padding: 2px 0 0 var(--sp-2); } /* meio da linha única: encolhe e a lista de abas rola na horizontal */
+.tb-row > .tb-views, .tb-row > .nav-toggle, .tb-row > .tb-gear { flex: none; }
 
 .wt { flex: 1; min-width: 0; display: flex; align-items: flex-end; gap: var(--sp-1); }
 .wt-list { min-width: 0; display: flex; align-items: flex-end; gap: 2px; overflow-x: auto; scrollbar-width: thin; }

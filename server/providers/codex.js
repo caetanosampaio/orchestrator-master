@@ -100,10 +100,19 @@ const DROP_ENV = /^(CLAUDE_|ANTHROPIC_)/i;
 /** Valor TOML de texto: entre aspas (JSON é um subconjunto válido de string TOML). Num wrapper .cmd (cmd.exe) as aspas quebram a linha de comando: vai o texto cru, que o Codex aceita como literal. */
 const tomlStr = (v, quote) => (quote ? JSON.stringify(String(v)) : String(v));
 
+// Listas FECHADAS de modelo e esforço (nunca texto livre na linha de comando). Esforço = `-c model_reasoning_effort=<nível>` (valores minimal/low/medium/high/xhigh confirmados no binário do codex-cli 0.167.0).
+// ATENÇÃO: os ids de modelo abaixo não puderam ser conferidos contra o catálogo da conta (sem login nesta máquina); ajuste esta lista se o seu plano usa outros nomes.
+const frozenList = (items) => Object.freeze(items.map(([id, label]) => Object.freeze({ id, label })));
+export const CODEX_OPTIONS = Object.freeze({
+  models: frozenList([['gpt-5-codex', 'GPT-5 Codex'], ['gpt-5', 'GPT-5'], ['gpt-5-mini', 'GPT-5 mini']]),
+  efforts: frozenList([['low', 'Baixo'], ['medium', 'Médio'], ['high', 'Alto'], ['xhigh', 'Muito alto']]),
+});
+
 export const codexProvider = Object.freeze({
   id: 'codex',
   label: 'Codex CLI',
   resolve: resolveCodex,
+  options: CODEX_OPTIONS,
   oscState: codexOscState, // estado do agente lido do terminal (terminals.js), no lugar de hooks
   authProbe: createCodexAuthProbe(), // login do Codex (o terminals.js expõe em /api/terminals > providers[].auth)
   notFoundMessage: 'O Codex CLI não foi encontrado no PATH (instale com "npm i -g @openai/codex" e faça "codex login").',
@@ -124,7 +133,7 @@ export const codexProvider = Object.freeze({
    * `quote: false` é para wrapper .cmd. As ferramentas do Maestro são pré-aprovadas só nesse servidor (default_tools_approval_mode), como o --allowedTools do Claude;
    * a aprovação humana das TAREFAS continua no próprio Maestro (send_task fica pendente até o usuário decidir).
    */
-  paneArgs({ mode = 'new', prompt, mcp = null, quote = true, trustDir = null }) {
+  paneArgs({ mode = 'new', prompt, mcp = null, quote = true, trustDir = null, model = null, effort = null }) {
     if (mode !== 'new') throw new Error('O Codex CLI não oferece retomada nem bifurcação neste adaptador.');
     const args = ['--no-alt-screen', '--no-daemon', '-s', 'workspace-write', '-a', 'on-request'];
     // Confiança da pasta SÓ para este processo (o Codex não pergunta "confiar nesta pasta?"): nada é gravado no config do usuário. O caminho vai como CHAVE de uma tabela inline (`projects={'<pasta>'={trust_level='trusted'}}`) e não como
@@ -132,6 +141,9 @@ export const codexProvider = Object.freeze({
     // "Codex is ignoring 1 unrecognized configuration setting" e a pergunta de confiança na tela (verificado no 0.167.0). A tabela inline é mesclada ao config: as pastas que o usuário já confiou continuam valendo. Aspas simples (literal TOML) valem até no cmd.exe;
     // pasta com aspa simples, controle ou metacaractere do cmd.exe fica sem o argumento (a pergunta aparece normalmente).
     if (typeof trustDir === 'string' && trustDir && !/['\u0000-\u001f]/.test(trustDir) && (quote || !/[&|<>^%"!]/.test(trustDir))) args.push('-c', `projects={'${trustDir}'={trust_level='trusted'}}`);
+    // Modelo e esforço (já validados contra as listas fechadas): ids só com [a-z0-9.-], então valem inclusive no cmd.exe.
+    if (model) args.push('-m', model);
+    if (effort) args.push('-c', `model_reasoning_effort=${tomlStr(effort, quote)}`);
     if (prompt) args.push('-c', `developer_instructions=${tomlStr(prompt, quote)}`);
     if (mcp && SERVER_KEY_RE.test(String(mcp.serverName)) && mcp.url) {
       const k = `mcp_servers.${mcp.serverName}`;

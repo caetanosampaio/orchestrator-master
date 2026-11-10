@@ -1,5 +1,5 @@
 // Squads: equipes nomeadas e reutilizáveis (papel + agente de cada vaga). PURO (sem React, sem rede): modelos embutidos, rascunho do editor e validações. Os salvos vêm de /api/team-templates.
-import { presetById, mixAgents, LEAD_ROLES, inferTeam, mixSummary } from './team-view.js';
+import { presetById, mixAgents, LEAD_ROLES, inferTeam, mixSummary, PRESETS } from './team-view.js';
 
 export const MAX_SLOTS = 12, MAX_NAME = 40, MAX_SQUADS = 24;
 const norm = (s) => String(s ?? '').toLocaleLowerCase('pt-BR');
@@ -19,11 +19,39 @@ export function builtinSquads(available = []) {
   ];
 }
 
-/** O que o cockpit precisa para abrir um squad: papéis e agentes na ordem das vagas, e o preset gravado como equipe do workspace quando bate exatamente com um. */
+/**
+ * Predefinições embutidas simples: os presets de equipe (Dupla, Squad, Squad de 6, Construtor) com UM agente só (`provider`, o padrão do usuário).
+ * Aparecem no estado vazio do Cockpit ao lado das mistas e dos squads salvos; não são excluíveis nem editáveis (só "usar como base").
+ */
+export function presetSquads(provider = 'claude') {
+  return PRESETS.map((p) => ({ id: `builtin:preset-${p.id}`, name: p.label, builtin: true, slots: p.roles.map((role) => ({ role, provider })) }));
+}
+
+/** Vaga limpa para enviar ao servidor ou editar: `model` e `effort` só existem quando escolhidos ("Padrão" = ausente). */
+export const slotOf = (s) => ({ role: s.role, provider: s.provider, ...(s.model ? { model: s.model } : {}), ...(s.effort ? { effort: s.effort } : {}) });
+export const cleanSlots = (slots) => (Array.isArray(slots) ? slots : []).map(slotOf);
+
+/**
+ * O que o cockpit precisa para abrir um squad: papéis e agentes na ordem das vagas, e o preset gravado como equipe do workspace quando bate exatamente com um.
+ * `models` e `efforts` (um valor por vaga, na mesma ordem; vazio = padrão do agente) só entram quando alguma vaga os define.
+ */
 export function launchPlan(squad) {
   const slots = Array.isArray(squad?.slots) ? squad.slots : [];
   const roles = slots.map((s) => s.role);
-  return { roles, providers: slots.map((s) => s.provider), teamId: roles.length ? inferTeam(roles) : null };
+  return {
+    roles, providers: slots.map((s) => s.provider), teamId: roles.length ? inferTeam(roles) : null,
+    ...(slots.some((s) => s.model) ? { models: slots.map((s) => s.model || null) } : {}),
+    ...(slots.some((s) => s.effort) ? { efforts: slots.map((s) => s.effort || null) } : {}),
+  };
+}
+
+/** Modelos e níveis de esforço oferecidos para um agente (`options` do GET /api/team-templates), ou null quando o servidor não informa (servidor antigo: sem os seletores). */
+export function slotOptions(options, providerId) {
+  const o = options && typeof options === 'object' ? options[providerId] : null;
+  if (!o || typeof o !== 'object') return null;
+  const list = (a) => (Array.isArray(a) ? a.filter((x) => x && typeof x.id === 'string' && x.id) : []);
+  const models = list(o.models), efforts = list(o.efforts);
+  return models.length || efforts.length ? { models, efforts } : null;
 }
 
 /** "4 terminais · 2 Claude Code, 2 Codex CLI". */
@@ -41,9 +69,16 @@ export function draftFromPreset(presetId, mix, available = []) {
 }
 /** Rascunho para editar um squad salvo (muda o próprio) ou usar um embutido como ponto de partida (salva como novo: id nulo, sem nome). */
 export function draftFromSquad(squad) {
-  return { id: squad?.builtin ? null : (squad?.id ?? null), name: squad?.builtin ? '' : (squad?.name ?? ''), slots: (squad?.slots ?? []).map((s) => ({ role: s.role, provider: s.provider })), mix: 'custom' };
+  return { id: squad?.builtin ? null : (squad?.id ?? null), name: squad?.builtin ? '' : (squad?.name ?? ''), slots: cleanSlots(squad?.slots), mix: 'custom' };
+}
+/** Rascunho para DUPLICAR: as mesmas vagas, sem id (salva como novo) e com o nome "… (cópia)" cortado no limite. */
+export function draftFromCopy(squad) {
+  const d = draftFromSquad({ ...squad, builtin: false });
+  return { ...d, id: null, name: cleanName(`${squad?.name ?? ''} (cópia)`).slice(0, MAX_NAME).trim() };
 }
 export const withSlot = (draft, i, patch) => ({ ...draft, mix: 'custom', slots: draft.slots.map((s, k) => (k === i ? { ...s, ...patch } : s)) });
+/** Trocar o agente de uma vaga zera modelo e esforço: as listas mudam de um agente para outro. */
+export const withProvider = (draft, i, provider) => ({ ...draft, mix: 'custom', slots: draft.slots.map((s, k) => (k === i ? (s.provider === provider ? s : { role: s.role, provider }) : s)) });
 export const removeSlot = (draft, i) => ({ ...draft, mix: 'custom', slots: draft.slots.filter((_, k) => k !== i) });
 export function addSlot(draft, available = [], role = 'builder') {
   if (draft.slots.length >= MAX_SLOTS) return draft;
@@ -52,7 +87,7 @@ export function addSlot(draft, available = [], role = 'builder') {
 /** Aplica um atalho de distribuição de agentes mantendo os papéis. */
 export function applyMix(draft, mixId, available = []) {
   const agents = mixAgents(draft.slots.map((s) => s.role), mixId, available[0] ?? 'claude');
-  return { ...draft, mix: mixId, slots: draft.slots.map((s, i) => ({ ...s, provider: agents[i] })) };
+  return { ...draft, mix: mixId, slots: draft.slots.map((s, i) => (agents[i] === s.provider ? s : { role: s.role, provider: agents[i] })) }; // trocar de agente zera modelo e esforço
 }
 
 /** Problema que impede de ABRIR o rascunho agora (ou null): precisa de vagas, agentes disponíveis e espaço. */

@@ -11,6 +11,7 @@ import AccountsPanel from './AccountsPanel.jsx';
 import ProviderLogo from './ProviderLogo.jsx';
 import { providerStatus, withClaudeLogin } from '../provider-view.js';
 import WorktreePanel from './WorktreePanel.jsx';
+import TeamsSettings from './TeamsSettings.jsx';
 import { terminalWorktrees } from '../worktree-view.js';
 
 const SECTIONS = [
@@ -18,6 +19,8 @@ const SECTIONS = [
   ['accounts', 'Contas', 'user'],
   ['geral', 'Preferências gerais', 'sliders'],
   ['visualizacao', 'Visualização', 'panel'],
+  ['equipes', 'Equipes', 'layers'],
+  ['arquivos', 'Arquivos', 'folderOpen'],
   ['historico', 'Histórico de sessões', 'clock'],
   ['aparencia', 'Aparência', 'sun'],
   ['cli', 'Claude Code CLI', 'terminal'],
@@ -32,7 +35,7 @@ const Switch = ({ checked, onChange, label }) => (
 );
 
 /** Configurações básicas (engrenagem da sidebar). Só opções que existem de verdade: preferências locais da interface e o estado real do Claude Code. */
-export default function SettingsDialog({ onClose, initial = 'perfil' }) {
+export default function SettingsDialog({ onClose, initial = 'perfil', onOpenWorkspaces = null }) {
   const { state, terminals, refresh, workspaces, workingIds } = useStore();
   const [wtScope, setWtScope] = useState('open'); // worktrees: do workspace aberto ou de todos
   const openWs = state?.activeWorkspace ?? null;
@@ -43,7 +46,6 @@ export default function SettingsDialog({ onClose, initial = 'perfil' }) {
   const [prefs, setPref] = usePrefs();
   const [tab, setTab] = useState(initial);
   const [checking, setChecking] = useState(false);
-  const roles = terminals?.roles ?? [];
   // Selo do provider: ativo (terminais em uso) > conectado (login feito) > instalado; vem dos terminais reais e do login que o servidor informa, e muda sozinho a cada atualização.
   const provRows = Array.isArray(terminals?.providers) ? providerSummary(terminals.sessions ?? [], workingIds, withClaudeLogin(terminals.providers, state?.prereqs?.login)) : null;
   const pill = (id) => { if (!provRows) return null; const s = providerStatus(provRows.find((r) => r.id === id)); return <span className={`oc-pill${s.kind === 'ok' ? ' ok' : s.kind === 'bad' ? ' bad' : ''}`}>{s.text}</span>; };
@@ -79,11 +81,6 @@ export default function SettingsDialog({ onClose, initial = 'perfil' }) {
             <Row title="Isolar novos terminais em worktree" hint="Cada terminal trabalha numa branch Git própria, sem pisar nos arquivos dos outros. Exige repositório Git.">
               <Switch checked={prefs.isolate} onChange={(v) => setPref('isolate', v)} label="Isolar novos terminais em worktree" />
             </Row>
-            <Row title="Papel do novo terminal" hint="Papel sugerido ao adicionar um terminal pelo menu da equipe, na barra de terminais.">
-              <select value={prefs.role} onChange={(e) => setPref('role', e.target.value)} aria-label="Papel do novo terminal" disabled={!roles.length}>
-                {roles.length ? roles.map((r) => <option key={r.id} value={r.id}>{r.label}</option>) : <option value={prefs.role}>{prefs.role}</option>}
-              </select>
-            </Row>
           </>}
 
           {tab === 'visualizacao' && <>
@@ -95,6 +92,15 @@ export default function SettingsDialog({ onClose, initial = 'perfil' }) {
                 </div>
               </Row>
             </>}
+          </>}
+
+          {tab === 'equipes' && <TeamsSettings />}
+
+          {tab === 'arquivos' && <>
+            <p className="dim small oc-lead">Os arquivos do FORGE são as pastas de projeto (workspaces). Os terminais dos agentes abrem na pasta do workspace aberto{openWs ? ` (${wsName})` : ''}.</p>
+            <Row title="Workspaces" hint="Abrir, trocar ou adicionar uma pasta de projeto.">
+              <Btn onClick={() => onOpenWorkspaces?.()} disabled={!onOpenWorkspaces}><Icon name="folderOpen" size={14} /> Abrir ou adicionar workspace</Btn>
+            </Row>
           </>}
 
           {tab === 'historico' && (openWs
@@ -129,7 +135,7 @@ export default function SettingsDialog({ onClose, initial = 'perfil' }) {
           </>}
 
           {tab === 'providers' && <>
-            <p className="dim small oc-lead">O provider é o CLI de agente que roda dentro de cada terminal. Escolha o agente dos terminais novos na barra do Cockpit; Claude Code e Codex trocam tarefas pelo mesmo Maestro.</p>
+            <p className="dim small oc-lead">O provider é o CLI de agente que roda dentro de cada terminal. O agente de cada vaga é escolhido em Equipes; Claude Code e Codex trocam tarefas pelo mesmo Maestro.</p>
             <ul className="oc-prov">
               <li className="on"><span className="oc-prov-i logo"><ProviderLogo id="claude" size={24} /></span><span className="oc-prov-t"><b className="oc-prov-name">Claude Code</b><span className="dim small">Agente padrão dos terminais.</span></span>{pill('claude')}</li>
               <li className="on"><span className="oc-prov-i logo"><ProviderLogo id="codex" size={24} /></span><span className="oc-prov-t"><b className="oc-prov-name">Codex CLI</b><span className="dim small">Terminais do Codex ao lado do Claude Code, no mesmo Maestro. Instale com <span className="mono">npm i -g @openai/codex</span> e entre com <span className="mono">codex login</span> no terminal. Contas separadas e retomada de sessão ainda não existem para o Codex.</span></span>{pill('codex')}</li>
