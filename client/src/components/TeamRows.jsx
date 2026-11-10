@@ -1,18 +1,18 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Icon } from './ui.jsx';
-import { ProviderMascot } from './ProviderLogo.jsx';
+import { providerColor } from '../provider-view.js';
 import { squadSummary, squadMissing, describeSquad, slotChoiceLabels } from '../squads.js';
 
 /**
- * Equipes em LINHAS horizontais (Configurações > Equipes): à esquerda o nome, o que a equipe faz, quando usar e as ações; à direita os agentes em fila, cada um com o bonequinho do provider
- * (a cor é a dele), o nome do provider, o papel, o modelo e o esforço. As equipes do FORGE só viram ponto de partida; as suas podem ser editadas, duplicadas e excluídas.
+ * Equipes em LINHAS horizontais (Configurações > Equipes): à esquerda o nome, o que a equipe faz, quando usar e as ações; à direita os agentes em fila, cada um só com TEXTO: o nome do provider (na cor dele), o papel, o modelo e o esforço
+ * (sem bonecos: os bonecos 3D ficam nos cartões de Agentes). As equipes do FORGE só viram ponto de partida; as suas podem ser editadas, duplicadas e excluídas.
  * Só mostra e pede ação: quem edita, duplica e exclui é TeamsSettings. Animações só com CSS (teams.css), desligadas por "Animações reduzidas".
  */
 function Slot({ slot, byRole, labelOf, options }) {
   const role = byRole[slot.role], ch = slotChoiceLabels(slot, options);
   return (
-    <li className="tr-slot" style={{ '--role': role?.color || 'var(--brand)' }}>
-      <ProviderMascot id={slot.provider} size={34} label={labelOf(slot.provider)} />
+    <li className="tr-slot" style={{ '--role': role?.color || 'var(--brand)', '--pm': providerColor(slot.provider) }}>
+      <b className="tr-prov">{labelOf(slot.provider)}</b>
       <span className="tr-role"><i aria-hidden="true" />{role?.label ?? slot.role}</span>
       <span className={`tr-chip${ch.modelSet ? ' set' : ''}`} title="Modelo">{ch.model}</span>
       <span className={`tr-chip${ch.effortSet ? ' set' : ''}`} title="Esforço">{ch.effort}</span>

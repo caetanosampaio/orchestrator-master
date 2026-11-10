@@ -24,7 +24,7 @@ function Agents({ providers, options, login }) {
           const st = providerStatus(p), o = slotOptions(options, p.id);
           return (
             <li key={p.id} className={`tr-agent${p.available ? '' : ' off'}`} style={{ '--pm': providerColor(p.id) }}>
-              <ProviderMascot id={p.id} size={52} label={p.label} />
+              <ProviderMascot id={p.id} size={72} label={p.label} />
               <span className={`oc-pill${st.kind === 'ok' ? ' ok' : st.kind === 'bad' ? ' bad' : ''}`}>{st.text}</span>
               <span className="dim small">{o ? `${o.models.length} ${o.models.length === 1 ? 'modelo' : 'modelos'} · ${o.efforts.length} ${o.efforts.length === 1 ? 'nível' : 'níveis'} de esforço` : 'modelo e esforço padrão'}</span>
             </li>
