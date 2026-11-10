@@ -2,7 +2,7 @@
 // Status line do Claude Code (configurada por `--settings`, ver rate-limits.js): recebe no stdin um JSON com `session_id` e, para assinantes Pro/Max, `rate_limits`
 // ({ five_hour, seven_day }, cada um com `used_percentage` e `resets_at`). Grava SÓ essas duas janelas em <pasta>/<session_id>.json, para o FORGE mostrar o limite real da conta.
 // Regras: a pasta vem do argumento de linha de comando (nunca do stdin); o nome do arquivo é só o UUID validado; escrita atômica (.tmp + rename); NUNCA falha (sempre sai com 0);
-// imprime UMA linha curta (o Claude Code a mostra no rodapé), sem sequências de escape; nada além das duas janelas é lido do JSON nem gravado.
+// imprime UMA linha fixa, `FORGE` (o Claude Code a mostra no rodapé; sem percentuais, que ficavam velhos entre terminais), sem sequências de escape; nada além das duas janelas é lido do JSON nem gravado.
 //
 // Decisões (documentadas porque o contrato deixa margem):
 //   - `resets_at` é epoch em SEGUNDOS. Valor >= 1e11 só pode ser milissegundos (1e11 s seria o ano 5138): é NORMALIZADO para segundos, não recusado. Acima do ano 2100, <= 0, NaN, texto: janela inválida (null).
@@ -87,15 +87,12 @@ export function record(dir, input, now = Date.now) {
   return data;
 }
 
-/** Linha do rodapé: `FORGE · 5h 23% · semana 41%` (só janelas ainda vigentes), ou `FORGE` sem dados. Sempre uma linha, sem escapes. */
-export function lineFor(data, nowMs = Date.now()) {
-  const parts = ['FORGE'];
-  try {
-    for (const [label, w] of [['5h', data?.fiveHour], ['semana', data?.sevenDay]]) {
-      if (w && Number.isFinite(w.usedPct) && Number.isFinite(w.resetsAt) && w.resetsAt * 1000 > nowMs) parts.push(`${label} ${Math.round(w.usedPct)}%`);
-    }
-  } catch { /* só FORGE */ }
-  return parts.join(' · ');
+/**
+ * Linha do rodapé: sempre só `FORGE`. Os percentuais NÃO aparecem aqui: a status line só roda quando o PRÓPRIO pane tem atividade, então o número ficava velho
+ * nos outros terminais da mesma conta. O limite real é mostrado no cockpit (canto superior direito), lido de todas as sessões. Uma linha, sem escapes.
+ */
+export function lineFor() {
+  return 'FORGE';
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) { // executado pelo Claude Code (importado nos testes, só exporta)
