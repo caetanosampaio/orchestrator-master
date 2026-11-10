@@ -74,4 +74,4 @@ Electron (desktop/)  ->  servidor Node + Express (server/, só 127.0.0.1)  ->  C
 
 ## Testes e CI
 
-A suíte completa leva alguns minutos e deve rodar com `ORCH_DATA_DIR` temporário. A CI (`.github/workflows/ci.yml`) roda a suíte no Windows, Linux e macOS (o macOS não bloqueia o resultado) e confere o build do cliente. Testes específicos de um sistema ficam em arquivos próprios (`posix-process.test.mjs` e `win-process.test.mjs`) e aparecem como ignorados nos outros sistemas.
+A suíte completa leva alguns minutos e deve rodar com `ORCH_DATA_DIR` temporário. A CI (`.github/workflows/ci.yml`) roda a suíte no Windows, Linux e macOS (os três bloqueiam o resultado) e confere o build do cliente. Testes específicos de um sistema ficam em arquivos próprios (`posix-process.test.mjs` e `win-process.test.mjs`) e aparecem como ignorados nos outros sistemas.
