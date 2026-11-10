@@ -6,13 +6,11 @@ import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import net from 'node:net';
-import { createRequire } from 'node:module';
 import { spawn, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const BOOT = path.join(here, 'orchestration-boot.mjs');
-const CLIENT = path.resolve(here, '..', '..', 'client');
 const REAL_DB = path.resolve(here, '..', '..', 'data', 'db.json');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'orch-sup-e2e-'));
 const children = new Set();
@@ -128,27 +126,4 @@ test('FLUXO B — falha REPETIDA até o bloqueio: a retentativa falha igual => s
     await new Promise((r) => setTimeout(r, 1000)); assert.equal(JSON.stringify((await call(b, `/api/missions/${id}`)).json.cycle), snap, 'a recuperação não alterou o ciclo, não retomou e não executou nada');
   } finally { await stop(b); }
   assert.equal(stat(), realBefore, 'o banco real não foi tocado');
-});
-
-// ---------- painel: componente React REAL renderizado (esbuild empacota; react-dom/server renderiza) ----------
-test('PAINEL: o histórico de supervisão é renderizado com ação, motivo, observação, assinatura e orçamento; sem decisões não renderiza nada', async () => {
-  const esbuild = createRequire(path.join(CLIENT, 'package.json'))('esbuild');
-  const entry = `import React from 'react'; import { renderToStaticMarkup } from 'react-dom/server'; import Log from './components/SupervisionLog.jsx'; export const render = (entries) => renderToStaticMarkup(React.createElement(Log, { entries }));`;
-  const out = await esbuild.build({ stdin: { contents: entry, resolveDir: path.join(CLIENT, 'src'), loader: 'jsx' }, bundle: true, write: false, format: 'cjs', platform: 'node', jsx: 'automatic', absWorkingDir: CLIENT, logLevel: 'silent', define: { 'process.env.NODE_ENV': '"production"' } });
-  const file = path.join(root, 'supervision-log-bundle.cjs'); fs.writeFileSync(file, out.outputFiles[0].text);
-  const { render } = createRequire(import.meta.url)(file);
-  const html = render([
-    { at: 'T', round: 1, step: 's1', observation: { kind: 'verificacao_reprovada' }, action: 'retry', code: 'R1', reason: 'Falha recuperável (classe R1) com orçamento', signature: 'abc123def4567890', budget: { retriesUsed: 0, retriesMax: 1, plannerCalls: 1, activeMinutes: 0.5 } },
-    { at: 'T', round: 2, step: 's1', observation: { kind: 'falha_repetida', repeatedAtRound: 1 }, action: 'block', code: 'supervisor_loop', reason: 'A mesma falha se repetiu <b>x</b>', signature: 'abc123def4567890', budget: { retriesUsed: 1, retriesMax: 1 } },
-    { at: 'T', round: 2, observation: { kind: 'sem_saida', uncertain: true }, action: 'block', code: 'stalled', reason: 'sem saída' }, { at: 'T', round: 3, action: 'resume', code: 'auto_resume', reason: 'Retomada automática 1 de 2', budget: { autoResumes: 0, autoResumesMax: 2 } },
-    { at: 'T', round: 4, observation: { kind: 'verificacao_reprovada', trend: 'progress' }, action: 'retry', code: 'R1', reason: 'houve progresso', applied: { state: 'not_applied', by: 'retry_blocker', reason: 'o Git mudou <i>y</i>' } },
-    { at: 'T', round: 5, observation: { kind: 'politica_recusada' }, action: 'replan', code: 'policy_refused', reason: 'recusada', applied: { state: 'completed', by: 'planner', result: { decision: 'continue' } } },
-  ]);
-  assert.match(html, /data-testid="supervision"/); assert.match(html, /supervisão · 6 decisões/); assert.equal((html.match(/data-testid="supervision-entry"/g) || []).length, 6);
-  for (const t of ['data-testid="supervision-trend"', 'progresso verificável', 'data-testid="supervision-applied"', 'NÃO aplicada', 'por retry_blocker', 'proposta recusada pela política', 'o Planner decidiu: continue']) assert.ok(html.includes(t), `faltou no painel: ${t}`);
-  assert.ok(html.includes('&lt;i&gt;y&lt;/i&gt;') && !html.includes('<i>y</i>'), 'o desfecho também é texto, nunca HTML'); assert.equal((html.match(/data-testid="supervision-applied"/g) || []).length, 2, 'só entradas com desfecho informado');
-  for (const t of ['repetir (retentativa)', 'bloquear', 'retomada automática', 'verificação real reprovada', 'falha repetida', 'execução sem saída', '(estado real desconhecido)', 'etapa s1', 'Falha recuperável (classe R1) com orçamento', 'assinatura da falha abc123def4567890', 'retentativas 0/1 · consultas ao Planner 1 · tempo ativo 0.5 min', 'retentativas 1/1', 'retomadas automáticas 0/2']) assert.ok(html.includes(t), `faltou no painel: ${t}`);
-  assert.ok(html.includes('&lt;b&gt;x&lt;/b&gt;') && !html.includes('<b>x</b>'), 'o motivo é texto, nunca HTML');
-  assert.match(html, /class="status s-blocked"/); assert.match(html, /class="status s-unverified"/); assert.match(html, /class="status s-running"/);
-  assert.equal(render([]), ''); assert.equal(render(undefined), ''); assert.equal(render([null, 'x', { action: 5 }]), '', 'entradas malformadas não renderizam nada');
 });

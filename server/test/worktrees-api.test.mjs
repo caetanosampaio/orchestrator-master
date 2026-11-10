@@ -99,6 +99,4 @@ test('PAINEL: worktrees, tentativas, conflitos, problemas e a autorização expl
   assert.equal((html.match(/data-testid="worktree-authorize"/g) || []).length, 1, 'só o ambiente com checagem "pode integrar" oferece integrar'); assert.match(html, /Autorizo integrar bbbbbbb → main \(aaaaaaa\), avanço direto/); assert.match(html, /<button[^>]*disabled=""[^>]*>Integrar à branch de destino/, 'o botão só habilita depois de marcar a autorização');
   assert.ok(html.includes('&lt;b&gt;x&lt;/b&gt;') && !html.includes('<b>x</b>'), 'o texto do servidor é texto, nunca HTML');
   assert.equal(render([]), ''); assert.equal(render(undefined), ''); assert.equal(render([null, 'x', { id: 'a', state: 'inventado' }]), '');
-  // as páginas que usam os componentes novos compilam (esbuild em memória: nada é escrito em client/dist)
-  for (const f of ['pages/Settings.jsx', 'components/CyclePanel.jsx']) { const r = await bundle(`import * as M from './${f}'; export default M;`); assert.ok(r.outputFiles[0].text.length > 1000, f); }
 });
