@@ -36,3 +36,7 @@ export function codexAccountState(p) {
   if (s.text === 'não conectado') return { ...s, detail: 'Rode "codex login" num terminal e atualize esta tela. O FORGE não faz o login do Codex.' };
   return { ...s, text: 'login não verificado', detail: 'O Codex CLI está instalado, mas não foi possível confirmar o login. Rode "codex login status" num terminal.' };
 }
+
+/** Cor de identidade de cada provider (o bonequinho e os selos usam esta): laranja do Claude Code e o azul-violeta do Codex CLI; provider desconhecido fica em cinza. */
+export const PROVIDER_COLORS = Object.freeze({ claude: '#d87756', codex: '#8f8cff' });
+export const providerColor = (id) => PROVIDER_COLORS[id] ?? '#9aa3b2';

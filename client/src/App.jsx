@@ -4,7 +4,7 @@ import Topbar from './components/Topbar.jsx';
 import Cockpit from './pages/Cockpit.jsx';
 import Missions from './pages/Missions.jsx';
 import ActivityDrawer from './components/ActivityDrawer.jsx';
-import SettingsDialog from './components/SettingsDialog.jsx';
+import Settings from './pages/Settings.jsx';
 import WorkspaceDialog from './components/WorkspaceDialog.jsx';
 import { useStore } from './store.jsx';
 import { nav } from './api.js';
@@ -29,17 +29,18 @@ function useNarrow() {
 
 export default function App() {
   const [navOpen, setNavOpen] = useState(false);
-  const [dialog, setDialog] = useState(() => (location.hash.startsWith('#/settings') ? 'settings' : null)); // 'settings' | 'workspaces' | null (#/settings: link antigo)
-  const [settingsTab, setSettingsTab] = useState('perfil');
+  const [dialog, setDialog] = useState(null); // 'workspaces' | null (as Configurações são uma página: view 'settings')
+  const [settingsTab, setSettingsTab] = useState('perfil'), [settingsKey, setSettingsKey] = useState(0); // a chave refaz a página para ela abrir na aba pedida
   const [ui, uiActions] = useUi();
   const collapsed = ui.sidebarCollapsed;
   const narrow = useNarrow();
   const menuRef = useRef(null);
   const [prefs] = usePrefs();
   const { error, toast, state, openWorkspaceIds, act } = useStore();
-  const [view, setView] = useState(() => (location.hash.startsWith('#/missions') ? 'missions' : 'cockpit')); // página: 'cockpit' (terminais) | 'missions' (central de missões)
+  const [view, setView] = useState(() => (location.hash.startsWith('#/settings') ? 'settings' : location.hash.startsWith('#/missions') ? 'missions' : 'cockpit')); // página: 'cockpit' (terminais) | 'missions' (central de missões) | 'settings' (Configurações; #/settings: link antigo)
+  const backTo = useRef(view === 'settings' ? 'cockpit' : view); // de onde as Configurações foram abertas: o "Voltar" retorna para lá
   const missionsData = useMissions({ intervalMs: view === 'missions' ? 2500 : 6000 }); // mais devagar fora da página: só alimenta o indicador do botão Missions
-  const goView = useCallback((v) => { setView(v); setNavOpen(false); history.replaceState(null, '', v === 'missions' ? '#/missions' : location.pathname + location.search); }, []);
+  const goView = useCallback((v) => { setView(v); setNavOpen(false); history.replaceState(null, '', v === 'missions' ? '#/missions' : v === 'settings' ? '#/settings' : location.pathname + location.search); }, []);
   /** "Terminais" de uma missão: abre e ativa o workspace dela e volta ao Cockpit. */
   const openCockpit = useCallback(async (workspaceId) => {
     if (workspaceId) await act(async () => { if (!(openWorkspaceIds ?? []).includes(workspaceId)) await nav.openWorkspace(workspaceId); return nav.activateWorkspace(workspaceId); });
@@ -53,9 +54,10 @@ export default function App() {
   useEffect(() => { if (view !== 'cockpit') return undefined; const t = setTimeout(() => window.dispatchEvent(new Event('resize')), 60); return () => clearTimeout(t); }, [view]);
   const closeNav = useCallback(() => { setNavOpen(false); setTimeout(() => menuRef.current?.focus(), 0); }, []);
   const toggleSide = () => uiActions.setSidebarCollapsed(!collapsed);
-  const openSettings = useCallback((tab) => { setNavOpen(false); setSettingsTab(typeof tab === 'string' ? tab : 'perfil'); setDialog('settings'); }, []); // o botão da engrenagem chama com o evento: só texto vale como aba
+  const openSettings = useCallback((tab) => { setNavOpen(false); setSettingsTab(typeof tab === 'string' ? tab : 'perfil'); setSettingsKey((k) => k + 1); if (view !== 'settings') backTo.current = view; goView('settings'); }, [view, goView]); // o botão da engrenagem chama com o evento: só texto vale como aba
   const openWorkspaces = useCallback(() => { setNavOpen(false); setDialog('workspaces'); }, []);
-  const closeDialog = useCallback(() => { setDialog(null); if (location.hash.startsWith('#/settings')) history.replaceState(null, '', location.pathname + location.search); }, []);
+  const closeDialog = useCallback(() => setDialog(null), []);
+  const closeSettings = useCallback(() => goView(backTo.current === 'settings' ? 'cockpit' : backTo.current), [goView]);
 
   const side = { onOpenWorkspaces: openWorkspaces };
   return (
@@ -64,7 +66,7 @@ export default function App() {
       {!narrow && view === 'cockpit' && <Sidebar collapsed={collapsed} onToggle={toggleSide} {...side} />}
       {narrow && navOpen && view === 'cockpit' && <><div className="oc-scrim" onClick={closeNav} aria-hidden="true" /><Sidebar modal onClose={closeNav} {...side} /></>}
       <div className="oc-main">
-        <Topbar narrow={narrow} onMenu={() => setNavOpen(true)} menuRef={menuRef} navOpen={navOpen} onOpenSettings={openSettings} onOpenWorkspaces={openWorkspaces} view={view} onView={goView} missions={missionsData.missions} />
+        <Topbar narrow={narrow} onMenu={() => setNavOpen(true)} menuRef={menuRef} navOpen={navOpen} onOpenSettings={view === 'settings' ? closeSettings : openSettings} onOpenWorkspaces={openWorkspaces} view={view} onView={goView} missions={missionsData.missions} />
         {error && <div className="banner err" role="alert">{error}</div>}
         {(ui.status.state === 'offline' || ui.status.state === 'error') && <div className="banner err" role="status" data-testid="ui-sync-note">{ui.status.message}</div>}
         {state?.persistence && !state.persistence.ok && (
@@ -77,6 +79,7 @@ export default function App() {
               Escondido, o contêiner mede 0 e o terminal não se reajusta (TerminalGrid só ajusta acima de 40px): nenhum redimensionamento vai ao servidor. */}
           <div className="oc-view" hidden={view !== 'cockpit'}><Cockpit onOpenWorkspaces={openWorkspaces} onOpenSettings={openSettings} /><ActivityDrawer /></div>
           {view === 'missions' && <Missions onOpenCockpit={openCockpit} data={missionsData} />}
+          {view === 'settings' && <Settings key={settingsKey} initial={settingsTab} onClose={closeSettings} onOpenWorkspaces={openWorkspaces} />}
         </main>
       </div>
       {toast && (
@@ -85,8 +88,7 @@ export default function App() {
           <span className="toast-text">{toast.text}</span>
         </div>
       )}
-      <PrereqModal suspended={!!dialog} onOpenAccounts={() => openSettings('accounts')} /> {/* se afasta enquanto um diálogo (ex.: Configurações > Contas) está aberto */}
-      {dialog === 'settings' && <SettingsDialog initial={settingsTab} onClose={closeDialog} onOpenWorkspaces={openWorkspaces} />}
+      <PrereqModal suspended={!!dialog || view === 'settings'} onOpenAccounts={() => openSettings('accounts')} /> {/* se afasta enquanto um diálogo (ex.: Configurações > Contas) está aberto */}
       {dialog === 'workspaces' && <WorkspaceDialog onClose={closeDialog} />}
     </div>
   );

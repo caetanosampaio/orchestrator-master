@@ -8,7 +8,7 @@ import { openTabs, closePlan } from '../workspace-nav.js';
 import { missionState } from '../missions-view.js';
 
 /**
- * Barra superior em LINHA ÚNICA: [Cockpit][Missions] | abas dos workspaces abertos (ocupam o meio e rolam na horizontal; somem em Missions) | status global e configurações.
+ * Barra superior em LINHA ÚNICA: [Cockpit][Missions] | abas dos workspaces abertos (ocupam o meio e rolam na horizontal; somem fora do Cockpit) | status global e a engrenagem (abre e fecha a página de Configurações).
  * Em telas estreitas o botão da navegação vem antes de tudo. Tudo vem de /api/state e das sessões reais; nada é simulado.
  */
 export default function Topbar({ narrow, onMenu, menuRef, navOpen, onOpenSettings, onOpenWorkspaces, view = 'cockpit', onView = () => {}, missions = null }) {
@@ -52,7 +52,7 @@ export default function Topbar({ narrow, onMenu, menuRef, navOpen, onOpenSetting
         </div>
         {view !== 'cockpit' && <span className="grow" />}
         <SystemStatus />
-        <button type="button" className="oc-iconbtn tb-gear" onClick={onOpenSettings} aria-label="Configurações" title="Configurações"><Icon name="gear" size={18} /></button>
+        <button type="button" className={`oc-iconbtn tb-gear${view === 'settings' ? ' on' : ''}`} onClick={onOpenSettings} aria-label="Configurações" aria-pressed={view === 'settings'} title={view === 'settings' ? 'Fechar as Configurações' : 'Configurações'}><Icon name="gear" size={18} /></button>
       </div>
     </header>
   );

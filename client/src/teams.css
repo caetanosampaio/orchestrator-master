@@ -1,0 +1,80 @@
+/* Configurações como PÁGINA e Configurações > Equipes (linhas horizontais, bonequinhos dos providers). Linguagem do Overclock: preto, hairlines, sem brilho, movimento mecânico (steps) e só com
+   "Animações reduzidas" desligadas (html[data-motion="reduced"] e prefers-reduced-motion cortam tudo no final). */
+
+/* ---------- página de Configurações ---------- */
+.set-page { overflow: auto; }
+.set-page-head { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: var(--sp-4); padding: var(--sp-3) var(--sp-5); background: var(--surface); border-bottom: 1px solid var(--line); }
+.set-page-head h1 { margin: 0; font: 600 12px var(--mono); letter-spacing: .18em; text-transform: uppercase; color: var(--strong); }
+.set-back { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 0 10px 0 6px; border: 1px solid var(--line-strong); border-radius: 4px; background: transparent; color: var(--dim); font: inherit; font-size: 12px; cursor: pointer; transition: color 140ms ease, border-color 140ms ease; }
+.set-back svg { transform: rotate(180deg); }
+.set-back:hover, .set-back:focus-visible { color: var(--strong); border-color: var(--brand); outline: none; }
+.tb-gear.on { color: var(--strong); box-shadow: inset 0 0 0 1px var(--brand); }
+.set-page-body { flex: 0 0 auto; width: min(1240px, 100%); margin: 0 auto; grid-template-columns: 220px minmax(0, 1fr); align-items: start; }
+.set-page-body .oc-set-nav { position: sticky; top: 53px; align-self: start; padding: var(--sp-4) var(--sp-3); }
+.set-page-body .oc-set-panel { padding: var(--sp-5) var(--sp-6, 28px) var(--sp-7, 48px); gap: var(--sp-5); }
+.set-page-body .oc-row-t { max-width: 62ch; }
+.set-page-body .oc-compose { width: min(900px, 100%); margin: 0; }
+@media (max-width: 700px) { .set-page-body { grid-template-columns: 1fr; } .set-page-body .oc-set-nav { position: static; } .set-page-head { padding-inline: var(--sp-3); } }
+
+/* ---------- bonequinho do provider ---------- */
+.pm { display: inline-flex; align-items: center; gap: 8px; color: var(--pm, var(--dim)); }
+.pm-stack { flex-direction: column; gap: 6px; }
+.pm-body { display: block; flex: none; color: var(--pm); }
+.pm-name { font: 600 11px var(--mono); letter-spacing: .04em; color: var(--strong); text-align: center; }
+.pm-leg { transform-box: fill-box; }
+.tr-slot:hover .pm-leg-a, .tr-agent:hover .pm-leg-a { animation: pm-step .5s steps(2, jump-none) infinite; }
+.tr-slot:hover .pm-leg-b, .tr-agent:hover .pm-leg-b { animation: pm-step .5s steps(2, jump-none) infinite .25s; }
+@keyframes pm-step { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-14%); } }
+
+/* ---------- agentes ---------- */
+.tr-sec { display: flex; flex-direction: column; gap: var(--sp-3); }
+.tr-h { margin: 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; font: 600 11px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--strong); }
+.tr-h .dim { text-transform: none; letter-spacing: 0; font: 400 12px var(--sans); }
+.tr-agents { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--sp-3); }
+.tr-agent { display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 188px; padding: var(--sp-4) var(--sp-5); background: #050505; border: 1px solid var(--line); border-top: 2px solid var(--pm, var(--line)); border-radius: 6px; }
+.tr-agent.off { opacity: .55; }
+
+/* ---------- equipes em linhas horizontais ---------- */
+.tr-list { display: flex; flex-direction: column; gap: var(--sp-3); }
+.tr-row { position: relative; display: grid; grid-template-columns: minmax(230px, 28%) minmax(0, 1fr); gap: var(--sp-5); padding: var(--sp-4) var(--sp-5); background: #050505; border: 1px solid var(--line); border-left: 2px solid var(--line-strong); border-radius: 6px; animation: tr-in .3s steps(6, end) both; animation-delay: calc(var(--i, 0) * 40ms); }
+.tr-row.builtin { border-left-color: var(--brand); }
+.tr-row.off .tr-slots { opacity: .55; }
+.tr-row.fresh { border-color: var(--brand); }
+.tr-row.leaving { animation: tr-out .22s ease forwards; }
+.tr-info { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.tr-head { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
+.tr-head h5 { margin: 0; font-size: 14px; font-weight: 630; color: var(--strong); overflow-wrap: anywhere; }
+.tr-tag { flex: none; padding: 0 6px; font: 600 9.5px var(--mono); letter-spacing: .07em; text-transform: uppercase; color: var(--dim); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.tr-row.builtin .tr-tag { color: var(--brand); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--brand) 55%, transparent); }
+.tr-info p { margin: 0; }
+.tr-tagline { font-size: 12.5px; color: var(--strong); line-height: 1.4; }
+.tr-about { font-size: 12px; color: var(--dim); line-height: 1.5; max-width: 60ch; }
+.tr-sum { font: 11px var(--mono); color: var(--dim); }
+.tr-miss { font-size: 11.5px; color: var(--danger-text); }
+.tr-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; padding-top: 6px; }
+.tr-act { display: inline-flex; align-items: center; gap: 5px; min-height: 26px; padding: 0 9px; border: 1px solid var(--line-strong); border-radius: 4px; background: transparent; color: var(--dim); font: inherit; font-size: 11.5px; cursor: pointer; transition: color 140ms ease, border-color 140ms ease; }
+.tr-act:hover, .tr-act:focus-visible { color: var(--strong); border-color: var(--brand); outline: none; }
+.tr-act.danger:hover, .tr-act.danger:focus-visible { color: var(--danger-text); border-color: rgba(184, 70, 70, .6); }
+.tr-slots { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; align-content: flex-start; gap: var(--sp-2); min-width: 0; }
+.tr-slot { display: flex; flex-direction: column; align-items: center; gap: 6px; flex: 1 1 100px; max-width: 132px; min-width: 96px; padding: 10px 8px 9px; background: #000; border: 1px solid var(--line); border-bottom: 2px solid var(--role); border-radius: 4px; }
+.tr-role { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; color: var(--strong); text-align: center; }
+.tr-role i { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--role); }
+.tr-chip { max-width: 100%; padding: 1px 7px; border-radius: 999px; font: 500 10.5px var(--mono); color: var(--dim); box-shadow: inset 0 0 0 1px var(--line); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tr-chip.set { color: var(--strong); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.tr-ask { position: absolute; inset: 0; z-index: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 8px; padding: 10px; background: rgba(0, 0, 0, .92); border-radius: 6px; }
+.tr-ask p { margin: 0; font-size: 12.5px; color: var(--strong); }
+.tr-ask div { display: flex; gap: 6px; }
+.tr-ask button { padding: 3px 12px; font: inherit; font-size: 12px; color: var(--dim); background: transparent; border: 0; cursor: pointer; box-shadow: inset 0 0 0 1px var(--line-strong); }
+.tr-ask button:hover { color: var(--strong); }
+.tr-ask .tr-yes { color: var(--danger-text); box-shadow: inset 0 0 0 1px rgba(184, 70, 70, .5); }
+.tr-empty { margin: 0; }
+.tr-default { padding: var(--sp-4) var(--sp-5); border: 1px solid var(--line); border-radius: 6px; background: #050505; }
+.tr-default:last-child { border-bottom: 1px solid var(--line); }
+.tr-new { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: var(--sp-3) var(--sp-4); border: 1px dashed var(--line-strong); border-radius: 6px; }
+.tr-new button { padding: 3px 10px; font: inherit; font-size: 11.5px; color: var(--dim); background: transparent; border: 0; cursor: pointer; box-shadow: inset 0 0 0 1px var(--line-strong); display: inline-flex; align-items: center; gap: 4px; }
+.tr-new button:hover, .tr-new button:focus-visible { color: var(--strong); box-shadow: inset 0 0 0 1px var(--brand); outline: none; }
+@keyframes tr-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes tr-out { to { opacity: 0; transform: scale(.97); } }
+@media (max-width: 1000px) { .tr-row { grid-template-columns: 1fr; } }
+html[data-motion="reduced"] .tr-row, html[data-motion="reduced"] .pm-leg { animation: none !important; }
+@media (prefers-reduced-motion: reduce) { .tr-row, .pm-leg { animation: none !important; } }

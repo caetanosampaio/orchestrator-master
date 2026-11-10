@@ -27,6 +27,63 @@ export function presetSquads(provider = 'claude') {
   return PRESETS.map((p) => ({ id: `builtin:preset-${p.id}`, name: p.label, builtin: true, slots: p.roles.map((role) => ({ role, provider })) }));
 }
 
+/**
+ * Equipes do FORGE por OBJETIVO: cada uma diz o que faz e já traz o agente, o modelo e o esforço de cada vaga (ids das listas fechadas do servidor, ver providers/*.js; um teste confere cada vaga contra a
+ * validação estrita da API). Podem usar Claude Code, Codex CLI ou os dois: `squadMissing` diz o que falta instalar. Não são excluíveis; "usar como base" cria uma equipe sua a partir delas.
+ */
+const vaga = (role, provider, model, effort, n = 1) => Array.from({ length: n }, () => Object.freeze({ role, provider, model, effort }));
+const curated = (id, name, tagline, about, slots) => Object.freeze({ id: `builtin:forge-${id}`, name, tagline, about, builtin: true, curated: true, slots: Object.freeze(slots) });
+const CURATED = Object.freeze([
+  curated('code-build', 'Construção de código', 'Divide a funcionalidade em tarefas, constrói em paralelo e revisa antes de entregar.',
+    'Use para implementar algo de ponta a ponta. O Maestro planeja e cobra, dois Construtores trabalham ao mesmo tempo e o Revisor confere o resultado.',
+    [...vaga('maestro', 'claude', 'opus', 'high'), ...vaga('builder', 'claude', 'sonnet', 'medium', 2), ...vaga('reviewer', 'claude', 'opus', 'high')]),
+  curated('quick-fix', 'Correção rápida', 'Dupla enxuta: um corrige, o outro confere.',
+    'Use para bugs pequenos e ajustes pontuais, quando não vale montar uma equipe grande. Esforço baixo para responder depressa.',
+    [...vaga('builder', 'claude', 'sonnet', 'low'), ...vaga('reviewer', 'claude', 'sonnet', 'medium')]),
+  curated('investigate', 'Investigação e diagnóstico', 'Só lê e mapeia: acha a causa, os arquivos e os riscos, sem alterar nada.',
+    'Use antes de mexer em código que você não conhece ou para entender um defeito. Ninguém nesta equipe edita arquivos: o resultado é um relatório.',
+    [...vaga('maestro', 'claude', 'opus', 'medium'), ...vaga('scout', 'claude', 'haiku', 'medium', 2)]),
+  curated('audit', 'Revisão e segurança', 'Dois revisores independentes procuram defeitos, regressões e falhas de segurança.',
+    'Use para auditar uma branch ou um pull request. O Batedor mapeia o que mudou e os Revisores, com esforço máximo, apontam os problemas por gravidade.',
+    [...vaga('maestro', 'claude', 'opus', 'high'), ...vaga('scout', 'claude', 'sonnet', 'high'), ...vaga('reviewer', 'claude', 'opus', 'max', 2)]),
+  curated('big-feature', 'Funcionalidade grande', 'Um batedor mapeia, três construtores executam em paralelo e um revisor fecha.',
+    'Use quando o trabalho se divide em várias partes independentes. Cada Construtor pode ficar numa branch própria; o Maestro junta os resultados.',
+    [...vaga('maestro', 'claude', 'opus', 'high'), ...vaga('scout', 'claude', 'haiku', 'medium'), ...vaga('builder', 'claude', 'sonnet', 'medium', 3), ...vaga('reviewer', 'claude', 'opus', 'high')]),
+  curated('mixed-build', 'Claude lidera, Codex constrói', 'O Claude coordena e revisa; três Codex escrevem o código.',
+    'Use para aproveitar os dois agentes: Claude no planejamento e na revisão, Codex na implementação. Exige Claude Code e Codex CLI instalados.',
+    [...vaga('maestro', 'claude', 'opus', 'high'), ...vaga('builder', 'codex', 'gpt-5-codex', 'medium', 3), ...vaga('reviewer', 'claude', 'opus', 'high')]),
+  curated('codex-build', 'Construção com Codex', 'Equipe completa só com Codex: coordena, constrói e revisa.',
+    'Use quando você trabalha só com o Codex CLI. Funciona como a Construção de código, com o modelo e o esforço do Codex.',
+    [...vaga('maestro', 'codex', 'gpt-5', 'high'), ...vaga('builder', 'codex', 'gpt-5-codex', 'medium', 2), ...vaga('reviewer', 'codex', 'gpt-5', 'high')]),
+]);
+/** As equipes por objetivo (cópias novas: quem recebe pode mexer sem afetar as outras telas). */
+export const curatedSquads = () => CURATED.map((s) => ({ ...s, slots: s.slots.map((v) => ({ ...v })) }));
+/** Agentes que a equipe usa, sem repetir. */
+export const squadProviders = (squad) => [...new Set((Array.isArray(squad?.slots) ? squad.slots : []).map((s) => s.provider))];
+/** Agentes da equipe que NÃO estão instalados (`available` = ids dos instalados): vazio = pode ser aberta. */
+export const squadMissing = (squad, available = []) => squadProviders(squad).filter((id) => !available.includes(id));
+
+const BASIC_ABOUT = {
+  'builtin:preset-duo': ['Um constrói e o outro revisa.', 'A menor equipe com revisão. Bom para tarefas curtas em que um segundo olhar já basta.'],
+  'builtin:preset-squad': ['O Maestro coordena, dois constroem e um revisa.', 'Estrutura padrão de uma equipe: o Maestro divide o trabalho e cobra os resultados.'],
+  'builtin:preset-full': ['Maestro e batedor, três construtores e um revisor.', 'A maior estrutura pronta, para trabalho que se divide em várias partes.'],
+  'builtin:preset-builder': ['Um único construtor, sem coordenação.', 'Um terminal só, para conversar e implementar sozinho.'],
+  'builtin:duo': ['Codex constrói, Claude revisa.', 'Uma dupla mista: o Codex escreve o código e o Claude confere.'],
+  'builtin:squad': ['Claude coordena e revisa, Codex constrói.', 'O Squad com um agente em cada função.'],
+  'builtin:full': ['Claude lidera e investiga, três Codex constroem.', 'O Squad de 6 com o Claude no comando e o Codex na implementação.'],
+};
+/** Texto de cada equipe pronta: o que ela faz (`tagline`) e quando usar (`about`). As equipes por objetivo já trazem os dois; as estruturas básicas vêm desta tabela; as suas só têm o resumo. */
+export function describeSquad(squad) {
+  const fallback = BASIC_ABOUT[squad?.id] ?? [];
+  return { tagline: squad?.tagline ?? fallback[0] ?? null, about: squad?.about ?? fallback[1] ?? null };
+}
+/** Nome do modelo/esforço de uma vaga para exibir: o rótulo da lista do servidor (`options`), o próprio id quando não está na lista, ou "padrão" quando a vaga não define. */
+export function slotChoiceLabels(slot, options) {
+  const o = slotOptions(options, slot?.provider);
+  const find = (list, id) => (id ? (list ?? []).find((x) => x.id === id)?.label ?? id : null);
+  return { model: find(o?.models, slot?.model) ?? 'Modelo padrão', effort: find(o?.efforts, slot?.effort) ?? 'Esforço padrão', modelSet: !!slot?.model, effortSet: !!slot?.effort };
+}
+
 /** Vaga limpa para enviar ao servidor ou editar: `model` e `effort` só existem quando escolhidos ("Padrão" = ausente). */
 export const slotOf = (s) => ({ role: s.role, provider: s.provider, ...(s.model ? { model: s.model } : {}), ...(s.effort ? { effort: s.effort } : {}) });
 export const cleanSlots = (slots) => (Array.isArray(slots) ? slots : []).map(slotOf);

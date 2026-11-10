@@ -2,16 +2,15 @@ import React, { useState } from 'react';
 import { useStore } from '../store.jsx';
 import { usePrefs, useLayoutMode, useLayouts, useAutoRestore } from '../hooks.js';
 import { LAYOUT_MODES, providerSummary } from '../env-view.js';
-import { SessionHistoryBody } from './SessionHistory.jsx';
+import { SessionHistoryBody } from '../components/SessionHistory.jsx';
 import { FONT_RANGE } from '../prefs.js';
-import Dialog from './Dialog.jsx';
-import { Btn, Icon } from './ui.jsx';
-import MaestroControls from './MaestroControls.jsx';
-import AccountsPanel from './AccountsPanel.jsx';
-import ProviderLogo from './ProviderLogo.jsx';
+import { Btn, Icon } from '../components/ui.jsx';
+import MaestroControls from '../components/MaestroControls.jsx';
+import AccountsPanel from '../components/AccountsPanel.jsx';
+import ProviderLogo from '../components/ProviderLogo.jsx';
 import { providerStatus, withClaudeLogin } from '../provider-view.js';
-import WorktreePanel from './WorktreePanel.jsx';
-import TeamsSettings from './TeamsSettings.jsx';
+import WorktreePanel from '../components/WorktreePanel.jsx';
+import TeamsSettings from '../components/TeamsSettings.jsx';
 import { terminalWorktrees } from '../worktree-view.js';
 
 const SECTIONS = [
@@ -34,8 +33,11 @@ const Switch = ({ checked, onChange, label }) => (
   <label className="oc-switch"><input type="checkbox" role="switch" checked={checked} onChange={(e) => onChange(e.target.checked)} /><span className="oc-switch-track" aria-hidden="true"><i /></span><span className="sr">{label}</span></label>
 );
 
-/** Configurações básicas (engrenagem da sidebar). Só opções que existem de verdade: preferências locais da interface e o estado real do Claude Code. */
-export default function SettingsDialog({ onClose, initial = 'perfil', onOpenWorkspaces = null }) {
+/**
+ * Configurações: uma PÁGINA inteira (como Cockpit e Missions), com a lista de seções à esquerda e bastante espaço para o conteúdo. Só opções que existem de verdade: preferências locais da interface
+ * e o estado real dos agentes. `onClose` volta para a página de onde veio.
+ */
+export default function Settings({ onClose, initial = 'perfil', onOpenWorkspaces = null }) {
   const { state, terminals, refresh, workspaces, workingIds } = useStore();
   const [wtScope, setWtScope] = useState('open'); // worktrees: do workspace aberto ou de todos
   const openWs = state?.activeWorkspace ?? null;
@@ -58,8 +60,12 @@ export default function SettingsDialog({ onClose, initial = 'perfil', onOpenWork
   };
 
   return (
-    <Dialog title="Configurações" onClose={onClose} size="lg" id="set-dlg">
-      <div className="oc-set">
+    <div className="oc-view set-page" data-testid="settings-page">
+      <header className="set-page-head">
+        <button type="button" className="set-back" onClick={onClose} data-autofocus=""><Icon name="chevronRight" size={14} /><span>Voltar</span></button>
+        <h1 id="set-t">Configurações</h1>
+      </header>
+      <div className="oc-set set-page-body">
         <div className="oc-set-nav" role="tablist" aria-orientation="vertical" aria-label="Seções" onKeyDown={onKey}>
           {SECTIONS.map(([id, label, icon]) => (
             <button key={id} id={`set-tab-${id}`} type="button" role="tab" aria-selected={tab === id} aria-controls="set-panel" tabIndex={tab === id ? 0 : -1} className="oc-set-tab" onClick={() => setTab(id)}>
@@ -160,6 +166,6 @@ export default function SettingsDialog({ onClose, initial = 'perfil', onOpenWork
           </>}
         </div>
       </div>
-    </Dialog>
+    </div>
   );
 }
