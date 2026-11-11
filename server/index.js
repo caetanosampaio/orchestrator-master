@@ -34,7 +34,8 @@ import { createTerminalManager, setupTerminals } from './terminals.js';
 import { createAccounts, setupAccounts } from './accounts.js';
 import { createLoginManager } from './account-login.js';
 import { setClaudeEnvProvider } from './claude-cli.js';
-import { createUsageReader } from './terminal-usage.js';
+import { createUsageReader, claudeConfigDir } from './terminal-usage.js';
+import { createProviderActivity, parseDaysParam } from './provider-activity.js';
 import { createRateLimits } from './rate-limits.js';
 import { createUsageApi } from './usage-api.js';
 import { codexProvider } from './providers/codex.js';
@@ -434,6 +435,14 @@ setupWorktrees(app, { db, manager: worktrees });
 setupTerminals(app, { manager: terminals });
 // Limite real de uso por conta (5 h e semana), somente leitura, sem caminhos/ids/e-mails; a interface consulta a cada ~15-30 s (memo de 2 s). Mesmo apiGuard (Host/Origin) das demais rotas de /api.
 app.get('/api/limits', (req, res) => { try { res.set('Cache-Control', 'no-store').json(rateLimits.view()); } catch { bad(res, 'Não foi possível ler os limites de uso.', 500); } });
+// Tokens por provider e por dia (Claude Code de TODAS as contas + Codex), lidos dos transcripts/rollouts em disco: só contagens, somente leitura, varredura incremental em segundo plano (provider-activity.js). ?days=30|90|0 (0 = desde o início).
+const providerActivity = createProviderActivity({ claudeDirs: () => [claudeConfigDir(), ...accounts.list().map((a) => accounts.configDirOf(a.id))].filter((d) => typeof d === 'string' && d) });
+if (!inTest) { const warm = setTimeout(() => { try { providerActivity.view({ days: 0 }); } catch { /* aquecimento é opcional */ } }, 2000); warm.unref?.(); } // aquece a 1ª varredura; testes não leem ~/.claude nem ~/.codex
+app.get('/api/provider-activity', (req, res) => {
+  const days = parseDaysParam(req.query.days);
+  if (days === null) return bad(res, 'Parâmetro days inválido (use 30, 90 ou 0).', 400);
+  try { res.set('Cache-Control', 'no-store').json(providerActivity.view({ days })); } catch { bad(res, 'Não foi possível ler a atividade de tokens.', 500); }
+});
 setupAccounts(app, { accounts, logins }); // GET/POST/DELETE /api/accounts[/:id/(default|login...)]: leituras com token de sessão quando configurado
 setupMaestro(app, { maestro });
 setupChat(app, { db, planner, cycle, multiStep: () => orchestration().planMode }); // M5: chat geral; só prepara propostas, executar exige /api/chat/approve
