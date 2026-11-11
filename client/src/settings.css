@@ -68,3 +68,73 @@
   .set-main { overflow: visible; } .set-body { padding: var(--sp-4) var(--sp-3) 32px; }
   .mc-wrap { grid-template-columns: 1fr; } .set-row { flex-direction: column; align-items: flex-start; }
 }
+
+/* ---------- painel de edição ÚNICO (EditPanel, em components/settings/SettingsUi.jsx) ----------
+   Cada ajuste é uma linha: o nome e a dica à esquerda, o controle certo à direita. Preto, caixas quadradas, contornos de 1px, sem brilho. */
+.ep { background: #050505; border: 1px solid var(--line-strong); }
+.ep-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-4); padding: 14px 18px; border-bottom: 1px solid var(--line); }
+.ep-head b { font-size: 13px; font-weight: 600; color: var(--strong); } .ep-head span { display: block; margin-top: 2px; font-size: 11.5px; color: var(--dim); }
+.ep-reset { flex: none; min-height: 26px; padding: 0 10px; border: 1px solid var(--line-strong); background: transparent; color: var(--dim); font: inherit; font-size: 11.5px; cursor: pointer; transition: color 140ms ease, border-color 140ms ease; }
+.ep-reset:hover:not(:disabled), .ep-reset:focus-visible { color: var(--strong); border-color: var(--brand); outline: none; } .ep-reset:disabled { opacity: .45; cursor: default; }
+.ep-body { display: flex; flex-direction: column; }
+.ep-row { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 20px; align-items: start; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+.ep-row:last-child { border-bottom: 0; }
+.ep-label b { display: block; font-size: 12px; font-weight: 600; color: var(--strong); } .ep-label span { display: block; margin-top: 3px; font-size: 11px; line-height: 1.4; color: var(--dim); }
+.ep-ctl { min-width: 0; }
+.ep-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; padding: 12px 18px; border-top: 1px solid var(--line); background: #000; font-size: 11.5px; color: var(--dim); }
+.ep-acts { display: inline-flex; align-items: center; gap: 8px; }
+.ep-foot .btn.primary, .ep-head .btn.primary { background: #ececec; border-color: #ececec; color: #000; font-weight: 600; box-shadow: none; } .ep-foot .btn.primary:hover:not(:disabled) { background: #fff; }
+.ep-sum.bad, .ep-err { color: var(--danger-text); } .ep-err { margin: 6px 0 0; font-size: 11.5px; }
+
+/* escolha de uma opção (botões lado a lado) e o esforço em passos */
+.ep-pills, .ep-steps { display: flex; flex-wrap: wrap; gap: 6px; }
+.ep-pills button, .ep-steps button { display: inline-flex; align-items: center; gap: 8px; min-height: 30px; padding: 0 12px; border: 1px solid var(--line-strong); background: transparent; color: var(--text); font: inherit; font-size: 12px; cursor: pointer; transition: border-color 140ms ease, color 140ms ease, background-color 140ms ease; }
+.ep-pills button:hover:not(:disabled), .ep-steps button:hover:not(:disabled), .ep-pills button:focus-visible, .ep-steps button:focus-visible { border-color: var(--dim); outline: none; }
+.ep-pills button.on, .ep-steps button.on { border-color: var(--brand); background: var(--raise3); color: var(--strong); box-shadow: inset 0 0 0 1px var(--brand); }
+.ep-pills button:disabled, .ep-steps button:disabled { opacity: .5; cursor: default; } .ep-pills button em { font-style: normal; color: var(--dim); }
+.hz-pill-mascot { display: inline-flex; }
+.ep-bars { display: inline-flex; align-items: flex-end; gap: 2px; } .ep-bars i { width: 3px; height: 9px; background: var(--line-strong); } .ep-bars i.on { background: var(--dim); } .ep-steps button.on .ep-bars i.on { background: var(--strong); }
+
+/* menu (lista longa) com a seta do FORGE */
+.ep-select { position: relative; display: inline-flex; align-items: center; width: 100%; max-width: 360px; color: var(--dim); }
+.ep-select select { appearance: none; -webkit-appearance: none; width: 100%; min-height: 32px; padding: 0 30px 0 12px; border: 1px solid var(--line-strong); border-radius: 0; background: #000; color: var(--strong); font: inherit; font-size: 12px; cursor: pointer; }
+.ep-select select:focus-visible { outline: none; border-color: var(--brand); } .ep-select select:disabled { opacity: .5; cursor: default; }
+.ep-select svg { position: absolute; right: 10px; pointer-events: none; }
+
+/* etiquetas marcáveis (skills) */
+.ep-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ep-chips button { display: inline-flex; align-items: center; gap: 8px; min-height: 28px; padding: 0 10px 0 6px; border: 1px solid var(--line-strong); background: transparent; color: var(--dim); font: 500 11px var(--mono); cursor: pointer; transition: border-color 140ms ease, color 140ms ease; }
+.ep-chips button i { display: grid; place-items: center; width: 14px; height: 14px; border: 1px solid var(--line-strong); font-style: normal; font-size: 10px; line-height: 1; color: #000; }
+.ep-chips button:hover:not(:disabled), .ep-chips button:focus-visible { border-color: var(--dim); outline: none; } .ep-chips button:disabled { opacity: .45; cursor: default; }
+.ep-chips button.on { color: var(--strong); border-color: var(--brand); } .ep-chips button.on i { background: var(--strong); border-color: var(--strong); }
+
+/* campos de texto */
+.ep-input { width: 100%; box-sizing: border-box; padding: 8px 12px; border: 1px solid var(--line-strong); border-radius: 0; background: #000; color: var(--strong); font: inherit; font-size: 12.5px; }
+.ep-input:focus { outline: none; border-color: var(--brand); } textarea.ep-input { resize: vertical; line-height: 1.5; } .ep-input::placeholder { color: var(--dim); }
+.ep-inline { display: flex; align-items: flex-start; gap: 10px; } .ep-inline .ep-input { flex: 1; min-width: 0; font: 500 11px var(--mono); }
+
+/* vagas do editor de times: uma por linha, com o cabeçalho das colunas */
+.ep-slots { display: flex; flex-direction: column; gap: 6px; }
+.ep-slots ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.ep-slot-head, .ep-slot { display: grid; grid-template-columns: 10px minmax(0, 1fr) minmax(0, 1.8fr) minmax(0, 1.1fr) minmax(0, .9fr) 28px; align-items: center; gap: 8px; }
+.ep-slot-head { font: 500 10.5px var(--mono); color: var(--dim); }
+.ep-slot { animation: sq-slot-in .25s cubic-bezier(.2, .8, .2, 1) both; }
+.ep-slot-dot { width: 8px; height: 8px; background: var(--c); }
+.ep-slot-ai { display: flex; align-items: center; gap: 6px; min-width: 0; } .ep-slot-ai .pm { flex: none; }
+.ep-slot .ep-select { max-width: none; }
+.ep-x, .ep-add { display: inline-flex; align-items: center; justify-content: center; gap: 5px; border: 1px solid var(--line-strong); background: transparent; color: var(--dim); font: inherit; font-size: 11.5px; cursor: pointer; transition: color 140ms ease, border-color 140ms ease; }
+.ep-x { width: 28px; height: 28px; padding: 0; } .ep-add { align-self: flex-start; min-height: 28px; padding: 0 10px; }
+.ep-x:hover:not(:disabled), .ep-add:hover:not(:disabled), .ep-x:focus-visible, .ep-add:focus-visible { color: var(--strong); border-color: var(--brand); outline: none; } .ep-x:disabled, .ep-add:disabled { opacity: .45; cursor: default; }
+
+/* os controles soltos das Configurações (Perfil, Aparência, Worktrees…) no mesmo desenho */
+.set-body .set-row-c select, .set-body .set-card select { appearance: none; -webkit-appearance: none; min-height: 32px; padding: 0 30px 0 12px; border: 1px solid var(--line-strong); border-radius: 0; background: #000 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238a92a0' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") no-repeat right 10px center; color: var(--strong); font: inherit; font-size: 12px; cursor: pointer; }
+.set-body .set-row-c select:focus-visible, .set-body .set-card select:focus-visible { outline: none; border-color: var(--brand); }
+.set-body .set-row-c input[type="text"], .set-body .set-row-c input:not([type]) { min-height: 32px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 0; background: #000; color: var(--strong); font: inherit; font-size: 12.5px; } .set-body .set-row-c input[type="text"]:focus, .set-body .set-row-c input:not([type]):focus { outline: none; border-color: var(--brand); }
+
+@media (max-width: 820px) { .ep-row { grid-template-columns: 1fr; gap: 8px; } .ep-slot-head { display: none; } .ep-slot { grid-template-columns: 10px 1fr 1fr; } .ep-inline { flex-direction: column; } }
+
+/* qualquer campo solto das Configurações (Contas, login, filtros…) com o mesmo desenho; :where() deixa o desenho do painel (.ep-*) vencer */
+:where(.set-body) :where(select, input[type="text"], input:not([type]), textarea) { appearance: none; -webkit-appearance: none; min-height: 32px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 0; background-color: #000; color: var(--strong); font: inherit; font-size: 12.5px; }
+:where(.set-body) :where(select) { padding-right: 30px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238a92a0' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; cursor: pointer; }
+:where(.set-body) :where(textarea) { padding: 8px 12px; min-height: 0; }
+:where(.set-body) :where(select, input[type="text"], input:not([type]), textarea):focus-visible { outline: none; border-color: var(--brand); }
