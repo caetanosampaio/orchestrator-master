@@ -11,6 +11,7 @@ export const NAV = Object.freeze([
   group('times', 'Missões e times', [
     item('equipes', 'Times prontos', 'layers', 'Times com papéis e agentes prontos para abrir no Cockpit. Instale os opcionais, edite e monte os seus.', ['squad', 'squads', 'equipes', 'times', 'modelo', 'esforço', 'predefinições', 'instalar'], { tag: 'Squads', own: true }), // `own`: a seção desenha o próprio cabeçalho (título, ação e as páginas de ver e editar)
     item('tarefas', 'Quem faz cada tarefa', 'sliders', 'Para cada tipo de tarefa, qual IA faz, com qual modelo, quanto ela pensa e com qual agente.', ['harness', 'roteamento', 'maestro', 'piloto', 'ajudantes', 'modelo', 'esforço', 'skills', 'agentes', 'tabela'], { tag: 'Harness', own: true }),
+    item('skills', 'Skills', 'task', 'As instruções que cada papel do squad carrega ao abrir um terminal.', ['skill', 'papéis', 'loadout', 'instruções', 'mcp', 'protocolo', 'mapear', 'revisar'], { tag: 'Squad', own: true }),
     item('orquestracao', 'Orquestração', 'sliders', 'Como o Maestro envia tarefas aos outros terminais.', ['maestro', 'autônomo', 'aprovação']),
     item('worktrees', 'Workspaces e Worktrees', 'workspace', 'As branches Git dos terminais isolados: estado, snapshot e limpeza.', ['git', 'branch', 'isolado']),
     item('historico', 'Histórico de sessões', 'clock', 'As sessões de terminal do workspace aberto, para retomar.', ['retomar', 'restaurar', 'conversas']),
