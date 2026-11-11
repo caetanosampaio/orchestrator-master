@@ -1,6 +1,8 @@
 // Estado de um provider (CLI de agente) para a interface, só a partir do que o servidor informa em GET /api/terminals (`providers`) e GET /api/accounts (`providers`).
 // PURO (sem React, sem rede). Nada é presumido: sem `auth` o login é desconhecido e o texto diz só o que se sabe ("instalado"). O login do Claude Code é tratado em Configurações > Contas.
 
+import { CATALOG, catalogColor } from './provider-catalog.js';
+
 /**
  * Estado de um provider, do mais forte ao mais fraco: não instalado > não conectado > ATIVO (há terminais dele em uso: `active` > 0) > conectado (login feito, sem terminais) > instalado (login desconhecido).
  * @param {{available?:boolean, active?:number, auth?:{known?:boolean, loggedIn?:boolean|null}}|null|undefined} p provider (linha de providerSummary ou item do servidor)
@@ -37,6 +39,6 @@ export function codexAccountState(p) {
   return { ...s, text: 'login não verificado', detail: 'O Codex CLI está instalado, mas não foi possível confirmar o login. Rode "codex login status" num terminal.' };
 }
 
-/** Cor de identidade de cada provider (o bonequinho e os selos usam esta): laranja do Claude Code e o azul-violeta do Codex CLI; provider desconhecido fica em cinza. */
-export const PROVIDER_COLORS = Object.freeze({ claude: '#d87756', codex: '#8f8cff' });
-export const providerColor = (id) => PROVIDER_COLORS[id] ?? '#9aa3b2';
+/** Cor de identidade de cada IA (o mascote e os selos usam esta): vem do catálogo (provider-catalog.js); IA desconhecida fica em cinza. */
+export const PROVIDER_COLORS = Object.freeze(Object.fromEntries(CATALOG.filter((x) => x.integrated).map((x) => [x.id, x.color])));
+export const providerColor = (id) => catalogColor(id) ?? '#9aa3b2';
