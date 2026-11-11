@@ -160,7 +160,7 @@ function Gutter({ axis, index, tracks, onTracks, gridRef, style, label }) {
 }
 
 
-export default function TerminalGrid({ onOpenWorkspaces, onOpenSettings }) {
+export default function TerminalGrid({ onOpenWorkspaces, onOpenSettings, onOpenSessions }) {
   const { state, notify, terminals, maestro, setMaestro, workingIds, loadTerminals } = useStore();
   const [prefs, setPref] = usePrefs();
   const [busy, setBusy] = useState(false);
@@ -347,7 +347,7 @@ export default function TerminalGrid({ onOpenWorkspaces, onOpenSettings }) {
           <p className="dim">Nenhum terminal ativo. Abra uma equipe com um clique.</p>
           <SquadGallery mine={sq.missing ? [] : sq.squads} mineTitle="Times prontos" mineHint="os que você instalou ou montou em Configurações" byRole={byRole} providers={providers} busy={busy} launchingId={launchingId} room={room} onOpen={openSquad} onManage={() => onOpenSettings?.('equipes')}
             empty={<div className="oc-noteams"><b>{sq.ready ? 'Nenhum time pronto ainda' : 'Carregando os times…'}</b><p className="dim small">Os times que abrem aqui vêm de Configurações. Instale um time pronto ou monte o seu, e escolha qual abrir em cada workspace.</p>{sq.ready && <Btn kind="primary" onClick={() => onOpenSettings?.('equipes')}>Abrir Times prontos</Btn>}</div>} />
-          {restorable > 0 && <div className="oc-empty-act"><Btn kind="quiet" onClick={() => onOpenSettings?.('historico')} title="Abre Configurações > Histórico de sessões para retomá-las, na ordem em que estavam">Restaurar {restorable} {restorable === 1 ? 'sessão' : 'sessões'}</Btn></div>}
+          {restorable > 0 && <div className="oc-empty-act"><Btn kind="quiet" onClick={() => onOpenSessions?.()} title="Abre as Sessões para retomá-las, na ordem em que estavam">Restaurar {restorable} {restorable === 1 ? 'sessão' : 'sessões'}</Btn></div>}
           <p className="dim small oc-foot">Os terminais <b>não passam</b> pelas aprovações do ciclo automático: o que o agente faz ali é decisão sua.</p>
         </div>
       ) : null}

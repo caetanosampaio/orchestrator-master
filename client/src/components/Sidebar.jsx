@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { api, nav } from '../api.js';
 import { useStore } from '../store.jsx';
-import { usePrefs } from '../hooks.js';
 import { environments, wsTone, wsAlert } from '../env-view.js';
 import { Icon } from './ui.jsx';
 import ProviderLogo from './ProviderLogo.jsx';
@@ -73,9 +72,8 @@ function EnvItem({ env, collapsed, editing, onPick, onEdit, onSave, onCancel }) 
 }
 
 /** Ambientes de trabalho: um item por workspace cadastrado, montado a partir dos dados reais. Em telas estreitas vira uma gaveta modal. */
-export default function Sidebar({ modal = false, collapsed = false, onClose, onOpenWorkspaces }) { // sem botão de recolher: a barra tem sempre a largura pequena (`collapsed` fica só como estado de reserva, nunca passado)
+export default function Sidebar({ modal = false, collapsed = false, onClose, onOpenWorkspaces, onOpenSessions = null }) { // sem botão de recolher: a barra tem sempre a largura pequena (`collapsed` fica só como estado de reserva, nunca passado)
   const { workspaces, state, terminals, maestro, workingIds, openWorkspaceIds, act, unseenWs } = useStore();
-  const [prefs] = usePrefs();
   const box = useRef(null);
   const [editId, setEditId] = useState(null);
   const sessions = terminals?.sessions ?? [];
@@ -107,7 +105,6 @@ export default function Sidebar({ modal = false, collapsed = false, onClose, onO
     if (!env.active) await act(async () => { if (!openWorkspaceIds.includes(env.id)) await nav.openWorkspace(env.id); return nav.activateWorkspace(env.id); });
     if (modal) onClose();
   };
-  const initials = (prefs.name || 'Você').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
   const cls = `oc-side${collapsed && !modal ? ' collapsed' : ''}${modal ? ' modal' : ''}`;
 
   return (
@@ -131,11 +128,9 @@ export default function Sidebar({ modal = false, collapsed = false, onClose, onO
       </nav>
 
       <div className="oc-side-foot">
-        {/* "Arquivos": abrir, trocar e adicionar workspace/pasta (o antigo chip do Cockpit) */}
+        {/* "Arquivos" (abrir, trocar e adicionar workspace/pasta) e, logo abaixo, "Sessões" (o histórico de sessões do workspace aberto, para retomar) */}
         <button type="button" className="oc-side-files" onClick={onOpenWorkspaces} aria-label="Arquivos: abrir, trocar ou adicionar workspace" title="Arquivos: abrir, trocar ou adicionar workspace"><Icon name="folderOpen" size={16} /><span className="side-label">Arquivos</span></button>
-        <div className="oc-side-user">
-          <span className="oc-me side-label"><span className="oc-avatar" aria-hidden="true">{initials}</span><span className="oc-me-t"><b>{prefs.name || 'Você'}</b></span></span>
-        </div>
+        <button type="button" className="oc-side-files oc-side-sessions" onClick={onOpenSessions} disabled={!onOpenSessions} aria-label="Sessões: histórico de sessões do workspace aberto" title="Sessões: histórico de sessões, para retomar"><Icon name="clock" size={16} /><span className="side-label">Sessões</span></button>
       </div>
     </aside>
   );

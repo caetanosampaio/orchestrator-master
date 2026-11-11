@@ -3,9 +3,6 @@
 
 /* ---------- barra lateral ---------- */
 
-.oc-app .oc-side-user { padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: #050505; } /* o perfil continua no rodapé; só ganha o visual de cartão */
-.oc-app .oc-side-user .oc-avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--raise3); box-shadow: inset 0 0 0 1px var(--line-strong); font-size: 12px; font-weight: 600; }
-.oc-app .oc-side-user .oc-me-t b { color: var(--strong); font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .oc-app .oc-side-title { text-transform: none; letter-spacing: 0; font: 500 11.5px var(--sans); color: var(--dim); }
 .oc-app .oc-side .oc-env { border-radius: 6px; min-height: 36px; }
 .oc-app .oc-side .oc-env:hover { background: var(--raise2); box-shadow: none; }
@@ -14,8 +11,8 @@
 .oc-app .oc-side-files { border-radius: 6px; min-height: 34px; padding: 0 10px; color: var(--dim); }
 .oc-app .oc-side-files:hover, .oc-app .oc-side-files:focus-visible { background: var(--raise2); color: var(--strong); outline: none; }
 
-/* Caixas QUADRADAS na barra lateral (como no Overclock): itens de workspace, "+", Arquivos e perfil, sem cantos arredondados */
-.oc-app .oc-side .oc-env, .oc-app .oc-side .oc-env:hover, .oc-app .oc-side .oc-env.on, .oc-app .oc-side-user, .oc-app .oc-side-files, .oc-app .oc-side .oc-plus, .oc-app .oc-side .oc-env-pen, .oc-app .oc-side .oc-cnt, .oc-app .oc-side .oc-env-input { border-radius: 0; }
+/* Caixas QUADRADAS na barra lateral (como no Overclock): itens de workspace, "+", Arquivos e Sessões, sem cantos arredondados */
+.oc-app .oc-side .oc-env, .oc-app .oc-side .oc-env:hover, .oc-app .oc-side .oc-env.on, .oc-app .oc-side-files, .oc-app .oc-side .oc-plus, .oc-app .oc-side .oc-env-pen, .oc-app .oc-side .oc-cnt, .oc-app .oc-side .oc-env-input { border-radius: 0; }
 
 /* ---------- topo na largura toda: FORGE no começo e as abas logo ao lado (mesmo lugar em todas as páginas) ---------- */
 .oc-app.oc-app-col { flex-direction: column; }
@@ -46,9 +43,6 @@
 .oc-app .oc-cnt, .oc-app .oc-alert { font-size: 10px; }
 .oc-app .oc-side-files { min-height: 28px; gap: var(--sp-2); font-size: 11px; }
 .oc-app .oc-side-files svg { width: 14px; height: 14px; }
-.oc-app .oc-side-user { padding: 6px 8px; }
-.oc-app .oc-side-user .oc-avatar { width: 22px; height: 22px; font-size: 10px; }
-.oc-app .oc-side-user .oc-me-t b { font-size: 11px; }
 .oc-app .oc-env-empty { font-size: 10.5px; }
 
 .oc-app .tbx { padding-block: 5px; font-size: 10px; }
@@ -107,3 +101,7 @@
 html:not([data-motion="reduced"]) .oc-app .tb-work { animation: tb-work-bob 1.3s ease-in-out infinite; }
 @keyframes tb-work-bob { 0%, 100% { transform: translateY(1px); } 50% { transform: translateY(-2px); } }
 @media (prefers-reduced-motion: reduce) { .oc-app .tb-work { animation: none; } }
+
+/* rodapé da barra lateral: Arquivos e, logo abaixo, Sessões (um em cima do outro) */
+.oc-app .oc-side-foot { display: flex; flex-direction: column; gap: 2px; }
+.oc-app .oc-side-files:disabled { opacity: .5; cursor: default; }

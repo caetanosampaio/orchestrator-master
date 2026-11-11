@@ -14,7 +14,6 @@ export const NAV = Object.freeze([
     item('skills', 'Skills', 'task', 'As instruções que cada papel do squad carrega ao abrir um terminal.', ['skill', 'papéis', 'loadout', 'instruções', 'mcp', 'protocolo', 'mapear', 'revisar'], { tag: 'Squad', own: true }),
     item('orquestracao', 'Orquestração', 'sliders', 'Como o Maestro envia tarefas aos outros terminais.', ['maestro', 'autônomo', 'aprovação']),
     item('worktrees', 'Workspaces e Worktrees', 'workspace', 'As branches Git dos terminais isolados: estado, snapshot e limpeza.', ['git', 'branch', 'isolado']),
-    item('historico', 'Histórico de sessões', 'clock', 'As sessões de terminal do workspace aberto, para retomar.', ['retomar', 'restaurar', 'conversas']),
   ]),
   group('app', 'App e computador', [
     item('perfil', 'Perfil', 'user', 'O nome que aparece na barra lateral. Fica salvo só neste computador.', ['nome', 'conta']),

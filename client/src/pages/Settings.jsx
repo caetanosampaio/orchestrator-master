@@ -6,7 +6,7 @@ import TeamsSettings from '../components/TeamsSettings.jsx';
 import AccountsPanel from '../components/AccountsPanel.jsx';
 import { AisSection } from '../components/settings/AisSection.jsx';
 import { MascotsSection } from '../components/settings/MascotsSection.jsx';
-import { ProfileSection, GeneralSection, LayoutSection, AppearanceSection, FilesSection, HistorySection } from '../components/settings/AppSections.jsx';
+import { ProfileSection, GeneralSection, LayoutSection, AppearanceSection, FilesSection } from '../components/settings/AppSections.jsx';
 import { OrchestrationSection, WorktreesSection } from '../components/settings/TeamSections.jsx';
 import HarnessSection from '../components/harness/HarnessSection.jsx';
 import SkillsSection from '../components/settings/SkillsSection.jsx';
@@ -31,7 +31,7 @@ export default function Settings({ onClose, initial = 'perfil', onOpenWorkspaces
   };
   const body = {
     ias: <AisSection go={setTab} />, accounts: <AccountsPanel />, mascotes: <MascotsSection />,
-    equipes: <TeamsSettings />, tarefas: <HarnessSection />, skills: <SkillsSection go={setTab} />, orquestracao: <OrchestrationSection />, worktrees: <WorktreesSection />, historico: <HistorySection />,
+    equipes: <TeamsSettings />, tarefas: <HarnessSection />, skills: <SkillsSection go={setTab} />, orquestracao: <OrchestrationSection />, worktrees: <WorktreesSection />,
     perfil: <ProfileSection />, geral: <GeneralSection />, visualizacao: <LayoutSection />, aparencia: <AppearanceSection />, arquivos: <FilesSection onOpenWorkspaces={onOpenWorkspaces} />,
   }[cur.id];
 
