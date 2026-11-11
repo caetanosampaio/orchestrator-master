@@ -1,0 +1,75 @@
+/* Configurações > Quem faz cada tarefa (formato da tela de referência, em preto): cartões #050505, contornos de 1px, caixas quadradas, sem brilho. O mascote do FORGE (.fm-*) é arte própria. */
+.hz-head-act { display: inline-flex; align-items: center; gap: var(--sp-3); }
+.hz-saved { display: inline-flex; align-items: center; gap: 6px; font: 500 11px var(--mono); color: var(--dim); } .hz-saved i { width: 6px; height: 6px; background: var(--ok, #5fa377); }
+
+/* ---------- o Forjador (mascote do FORGE) ---------- */
+.fm { display: block; flex: none; overflow: visible; }
+.fm-steel { fill: #8791a4; } .fm-steel-hi { fill: #b9c2d0; } .fm-steel-lo { fill: #5b6578; } .fm-steel-dk { fill: #38404f; }
+.fm-ember { fill: #ff6a2b; } .fm-gold { fill: #ffc24a; } .fm-hot { fill: #fff0b8; }
+.fm-flame { fill: #ff6a2b; } .fm-flame-in { fill: #ffc24a; } .fm-flame-hot { fill: #fff0b8; }
+.fm-wood { fill: #9a6a3c; } .fm-eye { fill: #2b1810; }
+.fm-scene { display: inline-flex; align-items: flex-end; gap: 6px; }
+.fm-spark.a { align-self: flex-end; } .fm-spark.b { align-self: flex-start; margin-top: 8px; }
+html:not([data-motion="reduced"]) .fm-spark.a { animation: fm-bob 1.6s steps(2, jump-none) infinite; }
+html:not([data-motion="reduced"]) .fm-spark.b { animation: fm-bob 1.6s steps(2, jump-none) infinite .8s; }
+@keyframes fm-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
+
+/* ---------- introdução ---------- */
+.hz-intro { display: flex; align-items: center; gap: var(--sp-6, 28px); padding: 18px 24px; background: #050505; border: 1px solid var(--line); }
+.hz-steps { list-style: none; margin: 0; padding: 0; flex: 1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-4); position: relative; }
+.hz-steps li { position: relative; display: flex; flex-direction: column; gap: 4px; padding-top: 16px; font-size: 11px; line-height: 1.45; color: var(--dim); }
+.hz-steps li b { font-size: 12px; font-weight: 600; color: var(--strong); }
+.hz-steps li i { position: absolute; top: 0; left: 0; width: 8px; height: 8px; background: var(--strong); }
+.hz-steps li:not(:last-child)::after { content: ''; position: absolute; top: 3.5px; left: 14px; right: calc(var(--sp-4) * -1 + 4px); height: 1px; background: var(--line-strong); }
+
+/* ---------- o Maestro ---------- */
+.hz-pilot { padding: 0; }
+.hz-pilot-line { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; padding: 14px 18px; font-size: 12px; color: var(--text); }
+.hz-sq { width: 9px; height: 9px; flex: none; }
+.hz-model { font-weight: 600; color: var(--strong); }
+.hz-pilot-skills { display: inline-flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; }
+.hz-pilot-line .tc-btn { margin-left: auto; }
+.hz-pilot-agent { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-5); padding: 14px 18px; border-top: 1px solid var(--line); }
+.hz-pilot-agent p { margin: 4px 0 0; max-width: 62ch; font-size: 11.5px; line-height: 1.5; color: var(--dim); }
+.hz-agent-name { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; } .hz-agent-name b { font-size: 13px; color: var(--strong); }
+.hz-pilot-agent select { flex: none; min-width: 230px; }
+.hz-ai { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.hz-bars { display: inline-flex; gap: 2px; align-items: flex-end; }
+.hz-bars i { width: 4px; height: 10px; background: var(--line-strong); } .hz-bars i.on { background: var(--strong); }
+.hz-eff { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+code { font: 500 10.5px var(--mono); padding: 1px 6px; background: var(--raise3); color: var(--text); }
+
+/* ---------- editores: o painel único (.ep, em settings.css) ---------- */
+.hz-item .ep { margin: 4px 18px 16px; } .hz-pilot .ep { margin: 0 18px 14px; } .hz-form .ep { margin: 14px 18px; }
+
+/* ---------- filtro e tabela ---------- */
+.hz-filter { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.hz-filter > button:not(.tc-btn) { padding: 3px 12px; border: 1px solid var(--line-strong); background: transparent; color: var(--dim); font: inherit; font-size: 11.5px; cursor: pointer; } .hz-filter > button.on { color: var(--strong); border-color: var(--brand); background: var(--raise3); }
+.hz-table-card { padding: 0; }
+.hz-table-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-5); padding: 16px 18px; } .hz-table-head b { font-size: 13px; color: var(--strong); }
+.hz-table-head p { margin: 4px 0 0; max-width: 78ch; font-size: 11.5px; line-height: 1.5; color: var(--dim); }
+.hz-table { display: flex; flex-direction: column; }
+.hz-tr { display: grid; grid-template-columns: minmax(190px, 1.9fr) minmax(120px, 1fr) minmax(90px, .8fr) minmax(130px, 1fr) minmax(160px, 2.2fr); align-items: center; gap: var(--sp-3); padding: 0 18px; }
+.hz-th { min-height: 30px; font: 500 10.5px var(--mono); color: var(--dim); border-bottom: 1px solid var(--line); }
+.hz-gt { padding: 12px 18px 6px; font-size: 11.5px; color: var(--dim); }
+.hz-item { border-top: 1px solid var(--line); }
+.hz-row { width: 100%; min-height: 38px; border: 0; background: transparent; color: var(--text); font: inherit; font-size: 11.5px; text-align: left; cursor: pointer; transition: background-color 140ms ease; }
+.hz-row:hover, .hz-row:focus-visible { background: var(--raise2); outline: none; }
+.hz-item.open .hz-row { background: var(--raise2); }
+.hz-name { display: inline-flex; align-items: center; gap: 8px; color: var(--strong); font-weight: 500; } .hz-name em { font: 500 9.5px var(--mono); font-style: normal; padding: 0 6px; color: var(--brand); box-shadow: inset 0 0 0 1px var(--brand); }
+.hz-caret { width: 6px; height: 6px; border-right: 1px solid var(--dim); border-bottom: 1px solid var(--dim); transform: rotate(-45deg); transition: transform 140ms ease; } .hz-item.open .hz-caret { transform: rotate(45deg); }
+.hz-skill-list { display: inline-flex; flex-wrap: wrap; gap: 4px; min-width: 0; } .hz-skill-list code { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hz-none { margin: 0; padding: 18px; }
+
+/* ---------- agentes ---------- */
+.hz-agents { display: flex; flex-direction: column; gap: 0; border-top: 1px solid var(--line); background: #000; }
+.hz-agent { display: flex; flex-direction: column; gap: 4px; padding: 12px 18px; border-bottom: 1px solid var(--line); } .hz-agent b { font-size: 12.5px; color: var(--strong); }
+.hz-agent p { margin: 0; max-width: 78ch; font-size: 11.5px; line-height: 1.5; color: var(--dim); } .hz-agent-h { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; } .hz-agent-act { margin-left: auto; display: inline-flex; gap: 4px; }
+.hz-agents > .tc-btn { margin: 12px 18px; align-self: flex-start; }
+
+
+@media (max-width: 1000px) {
+  .hz-intro { flex-direction: column; align-items: flex-start; } .hz-steps { grid-template-columns: 1fr; }
+  .hz-th { display: none; } .hz-tr { grid-template-columns: 1fr 1fr; padding-block: 8px; row-gap: 6px; }
+  .hz-pilot-agent, .hz-table-head { flex-direction: column; }
+}

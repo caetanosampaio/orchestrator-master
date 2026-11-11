@@ -20,6 +20,7 @@ import './missions.css'; // página Missões (central de missões)
 import './missions-workflow.css'; // workflow animado da página Missões
 import './teams.css'; // página de Configurações e Configurações > Equipes (linhas de equipe, bonequinhos dos providers)
 import './settings.css'; // página de Configurações (barra lateral agrupada, seções, Suas IAs, Mascotes)
+import './harness.css'; // Configurações > Quem faz cada tarefa e o mascote do FORGE
 import './cockpit-ui.css'; // Cockpit na estrutura das Configurações (barra lateral e topo dos terminais): a última camada
 
 getLayouts().start(); // layout da grade por workspace (db.settings.layouts)
