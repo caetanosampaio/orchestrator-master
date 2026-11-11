@@ -6,19 +6,19 @@ import Dialog from './Dialog.jsx';
 import { Btn, Icon } from './ui.jsx';
 
 /** Abrir um workspace já cadastrado ou cadastrar um novo (caminho de uma pasta). Usa as mesmas rotas de sempre; nada é executado ao cadastrar. */
-export default function WorkspaceDialog({ onClose }) {
+export default function WorkspaceDialog({ onClose, onPicked = null }) { // onPicked: chamado quando o usuário escolhe ou cadastra um workspace (o Início o usa para seguir ao Cockpit, mesmo se for o que já estava ativo)
   const { workspaces, state, act, notify } = useStore();
   const [path, setPath] = useState(''), [name, setName] = useState(''), [check, setCheck] = useState(null), [busy, setBusy] = useState(false);
   const names = friendlyNames(workspaces), activeId = state?.activeWorkspace?.id;
 
-  const open = async (w) => { await act(() => api.post(`/api/workspaces/${w.id}/activate`)); onClose(); };
+  const open = async (w) => { await act(() => api.post(`/api/workspaces/${w.id}/activate`)); onClose(); onPicked?.(); };
   const validate = async () => { try { setCheck(await api.post('/api/workspaces/validate', { path })); } catch (e) { setCheck({ ok: false, error: e.message }); } };
   const add = async (e) => {
     e.preventDefault(); setBusy(true);
     try {
       const ws = await api.post('/api/workspaces', { path, name });
       await api.post(`/api/workspaces/${ws.id}/activate`); // um workspace recém-cadastrado já abre o ambiente dele
-      notify(`Ambiente "${ws.name}" aberto.`); onClose();
+      notify(`Ambiente "${ws.name}" aberto.`); onClose(); onPicked?.();
     } catch (err) { notify(err.message, 'error'); setCheck({ ok: false, error: err.message }); } finally { setBusy(false); }
     await act(async () => null);
   };

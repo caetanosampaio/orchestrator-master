@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Sidebar from './components/Sidebar.jsx';
 import Topbar from './components/Topbar.jsx';
 import DesktopTitleBar from './components/DesktopTitleBar.jsx';
+import Home from './pages/Home.jsx';
 import Cockpit from './pages/Cockpit.jsx';
 import Missions from './pages/Missions.jsx';
 import Settings from './pages/Settings.jsx';
@@ -37,10 +38,10 @@ export default function App() {
   const menuRef = useRef(null);
   const [prefs] = usePrefs();
   const { error, toast, state, openWorkspaceIds, act } = useStore();
-  const [view, setView] = useState(() => (location.hash.startsWith('#/settings') ? 'settings' : location.hash.startsWith('#/missions') ? 'missions' : 'cockpit')); // página: 'cockpit' (terminais) | 'missions' (central de missões) | 'settings' (Configurações; #/settings: link antigo)
-  const backTo = useRef(view === 'settings' ? 'cockpit' : view); // de onde as Configurações foram abertas: o "Voltar" retorna para lá
+  const [view, setView] = useState(() => (location.hash.startsWith('#/settings') ? 'settings' : location.hash.startsWith('#/missions') ? 'missions' : location.hash.startsWith('#/cockpit') ? 'cockpit' : 'home')); // página: 'home' (Início, a de abertura: #/ ou #/home) | 'cockpit' (terminais) | 'missions' (central de missões) | 'settings' (Configurações; #/settings: link antigo)
+  const backTo = useRef(view === 'settings' ? 'home' : view); // de onde as Configurações foram abertas: o "Voltar" retorna para lá
   const missionsData = useMissions({ intervalMs: view === 'missions' ? 2500 : 6000 }); // mais devagar fora da página: só alimenta o indicador do botão Missions
-  const goView = useCallback((v) => { setView(v); setNavOpen(false); history.replaceState(null, '', v === 'missions' ? '#/missions' : v === 'settings' ? '#/settings' : location.pathname + location.search); }, []);
+  const goView = useCallback((v) => { setView(v); setNavOpen(false); history.replaceState(null, '', v === 'missions' ? '#/missions' : v === 'settings' ? '#/settings' : v === 'cockpit' ? '#/cockpit' : location.pathname + location.search); }, []); // Início = sem hash (é o padrão)
   /** "Terminais" de uma missão: abre e ativa o workspace dela e volta ao Cockpit. */
   const openCockpit = useCallback(async (workspaceId) => {
     if (workspaceId) await act(async () => { if (!(openWorkspaceIds ?? []).includes(workspaceId)) await nav.openWorkspace(workspaceId); return nav.activateWorkspace(workspaceId); });
@@ -77,9 +78,10 @@ export default function App() {
           </div>
         )}
         <main id="main" tabIndex={-1} className="oc-content">
-          {/* O Cockpit fica SEMPRE montado (só escondido em Missions): os terminais não são recriados ao voltar, então rolagem e texto digitado se mantêm.
+          {/* O Cockpit fica SEMPRE montado (só escondido nas outras páginas): os terminais não são recriados ao voltar, então rolagem e texto digitado se mantêm.
               Escondido, o contêiner mede 0 e o terminal não se reajusta (TerminalGrid só ajusta acima de 40px): nenhum redimensionamento vai ao servidor. */}
           <div className="oc-view" hidden={view !== 'cockpit'}><Cockpit onOpenWorkspaces={openWorkspaces} onOpenSettings={openSettings} onOpenSessions={openSessions} /></div>
+          {view === 'home' && <Home onOpenWorkspaces={openWorkspaces} onOpenWorkspace={openCockpit} missions={missionsData.missions} />}
           {view === 'missions' && <Missions onOpenCockpit={openCockpit} data={missionsData} />}
           {view === 'settings' && <Settings key={settingsKey} initial={settingsTab} onClose={closeSettings} onOpenWorkspaces={openWorkspaces} />}
         </main>
@@ -92,7 +94,7 @@ export default function App() {
         </div>
       )}
       <PrereqModal suspended={!!dialog || view === 'settings'} onOpenAccounts={() => openSettings('accounts')} /> {/* se afasta enquanto um diálogo (ex.: Configurações > Contas) está aberto */}
-      {dialog === 'workspaces' && <WorkspaceDialog onClose={closeDialog} />}
+      {dialog === 'workspaces' && <WorkspaceDialog onClose={closeDialog} onPicked={view === 'home' ? () => goView('cockpit') : undefined} />} {/* aberto no Início: escolher ou criar um workspace segue para o Cockpit */}
       {dialog === 'sessions' && <SessionsDialog onClose={closeDialog} />}
     </div>
   );
