@@ -17,14 +17,14 @@
   /* texto: --strong títulos e valores; --text corpo; --dim apoio; --faint só placeholder e metadado (todos ≥ 4,5:1 sobre --raise2) */
   --strong: #ffffff; --text: #f4f4f5; --dim: #b6b7c0; --faint: #9ca3af;
   /* ação primária e foco: bone. É a identidade: nenhuma cor de marca. */
-  --bone: #b42222; --bone-hover: #cf2d2d; --ink: #ffffff; --focus: #c43030; /* vermelho da marca, chapado: ação primária, aba ativa e foco (texto branco sobre #b42222 = 6,6:1) */
+  --bone: #7a1d23; --bone-hover: #942a31; --ink: #ffffff; --focus: #a8353d; /* vermelho da marca, chapado: ação primária, aba ativa e foco (texto branco sobre #7a1d23 = 11:1) */
 
   /* estados (cor + glifo + texto, nunca só a cor), com o MESMO significado em todo o produto, dessaturados para não competir com o conteúdo:
      --muted cinza = ocioso, na fila, desconectado | --run laranja = executando (--run-text é o mesmo laranja mais claro, só para texto: ≥ 4,5:1 sobre o preto) | --ok verde = concluído | --warn âmbar = aguardando decisão humana | --interrupted cinza-azulado = interrompido | --err vermelho suave = erro */
   --run: #22c55e; --run-text: #4ade80; --ok: #16a34a; --warn: #f59e0b; --err: #e14040; --muted: #9ca3af; /* --run, --warn e --err servem de TEXTO (AA ≥ 4,5:1, teste agent-status): os tons escuros da paleta (#477D58, #92713E, #B84646) ficam nos LEDs e preenchimentos */ --interrupted: #a78bfa;
   /* agentes (Planner e Executor): inativo = cinza, executando = âmbar com pulsação suave, erro = vermelho. O verde é só de tarefas concluídas. */
   --ag-idle: var(--muted); --ag-run: var(--warn); --ag-err: var(--err);
-  --ok-bg: rgba(34, 197, 94, .10); --warn-bg: rgba(245, 158, 11, .12); --err-bg: rgba(196, 48, 48, .12);
+  --ok-bg: rgba(34, 197, 94, .10); --warn-bg: rgba(245, 158, 11, .12); --err-bg: rgba(140, 36, 42, .16);
   --ok-text: #4ade80; --warn-text: #fbbf24; --danger-text: #ee5a5a;
 
   /* tipografia: fontes do sistema (nada externo; o produto roda offline). Mono só para hora, caminho e comando. */
@@ -52,10 +52,10 @@
   --shadow-pop: 0 24px 60px -10px rgba(0, 0, 0, .75), 0 0 0 1px var(--line-strong);
 
   /* marca e brilho (o laranja é a identidade e também a cor de "executando"; o vermelho é de falha e de alerta) */
-  --brand: #c43030; --brand-bg: rgba(196, 48, 48, .10); --brand-line: rgba(196, 48, 48, .5);
-  --glow-sm: 0 0 0 1px rgba(196, 48, 48, .55); --glow-md: 0 0 0 1px rgba(196, 48, 48, .7); /* foco: contorno de 1px, sem brilho */
+  --brand: #8c242a; --brand-soft: #b03a42; --brand-bg: rgba(140, 36, 42, .12); --brand-line: rgba(140, 36, 42, .55); /* vinho / sangue: --brand para fundos e linhas, --brand-soft para ícones e texto (um pouco mais claro, para continuar legível) */
+  --glow-sm: 0 0 0 1px rgba(140, 36, 42, .6); --glow-md: 0 0 0 1px rgba(140, 36, 42, .75); /* foco: contorno de 1px, sem brilho */
   /* LEDs de status: único lugar com luz. Cor viva do ponto + halo curto */
-  --led-run: #22c55e; --led-ok: #22c55e; --led-warn: #f59e0b; --led-err: #c43030; --led-idle: #4b5563; /* núcleo dos LEDs um pouco mais claro; o halo (box-shadow) está em retro.css */
+  --led-run: #22c55e; --led-ok: #22c55e; --led-warn: #f59e0b; --led-err: #a8353d; --led-idle: #4b5563; /* núcleo dos LEDs um pouco mais claro; o halo (box-shadow) está em retro.css */
   /* rótulos de console: mono, caixa alta, espaçamento largo */
   --caps-track: .16em; --caps-size: 11px;
   /* cor por agente (identificação, nunca estado): construtor, piloto, revisor, batedor, torre */

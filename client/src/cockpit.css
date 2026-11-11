@@ -218,7 +218,7 @@
 .oc-caret { flex: none; display: inline-grid; place-items: center; color: var(--faint); transition: transform var(--dur-ui) var(--ease), opacity var(--dur-ui) ease; } .oc-caret.open { transform: rotate(90deg); }
 .oc-envrow-head:hover .oc-caret, .oc-envrow-head:focus-within .oc-caret { opacity: 0; }
 .oc-envs ul.tp-in { margin: 2px 0 4px 18px; padding: 0 0 0 var(--sp-2); border-left: 1px solid var(--coal-line); }
-.tp-add { color: var(--faint); } .tp-add:hover { color: var(--brand); }
+.tp-add { color: var(--faint); } .tp-add:hover { color: var(--brand-soft); }
 .tp-row:has(.tp-edit) { flex-wrap: wrap; } .tp-hint { flex-basis: 100%; margin: 4px 2px 0; font-size: 11px; line-height: 1.35; color: var(--faint); }
 @media (hover: none) { .oc-envrow.oc-envgroup { display: block; } .oc-envrow-head { display: flex; align-items: center; } }
 .tp-list { list-style: none; margin: 0; padding: 0; min-height: 0; overflow: hidden auto; display: flex; flex-direction: column; gap: 2px; }
@@ -234,7 +234,7 @@
 .tp-badges { flex: none; display: inline-flex; align-items: center; gap: 4px; transition: opacity var(--dur-ui) ease; }
 .tp-tools { position: absolute; right: 4px; top: 50%; display: inline-flex; gap: 2px; margin-top: -12px; opacity: 0; pointer-events: none; transition: opacity var(--dur-ui) ease; }
 .tp-tools .oc-iconbtn { width: 24px; height: 24px; background: var(--coal-3); }
-.tp-tools .oc-iconbtn:hover { color: var(--brand); }
+.tp-tools .oc-iconbtn:hover { color: var(--brand-soft); }
 .tp-row:hover .tp-tools, .tp-row:focus-within .tp-tools { opacity: 1; pointer-events: auto; }
 .tp-row:hover .tp-badges, .tp-row:focus-within .tp-badges { opacity: 0; }
 .tp-edit { cursor: text; padding: 0; }

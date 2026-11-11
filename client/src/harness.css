@@ -56,7 +56,7 @@ code { font: 500 10.5px var(--mono); padding: 1px 6px; background: var(--raise3)
 .hz-row { width: 100%; min-height: 38px; border: 0; background: transparent; color: var(--text); font: inherit; font-size: 11.5px; text-align: left; cursor: pointer; transition: background-color 140ms ease; }
 .hz-row:hover, .hz-row:focus-visible { background: var(--raise2); outline: none; }
 .hz-item.open .hz-row { background: var(--raise2); }
-.hz-name { display: inline-flex; align-items: center; gap: 8px; color: var(--strong); font-weight: 500; } .hz-name em { font: 500 9.5px var(--mono); font-style: normal; padding: 0 6px; color: var(--brand); box-shadow: inset 0 0 0 1px var(--brand); }
+.hz-name { display: inline-flex; align-items: center; gap: 8px; color: var(--strong); font-weight: 500; } .hz-name em { font: 500 9.5px var(--mono); font-style: normal; padding: 0 6px; color: var(--brand-soft); box-shadow: inset 0 0 0 1px var(--brand); }
 .hz-caret { width: 6px; height: 6px; border-right: 1px solid var(--dim); border-bottom: 1px solid var(--dim); transform: rotate(-45deg); transition: transform 140ms ease; } .hz-item.open .hz-caret { transform: rotate(45deg); }
 .hz-skill-list { display: inline-flex; flex-wrap: wrap; gap: 4px; min-width: 0; } .hz-skill-list code { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hz-none { margin: 0; padding: 18px; }
