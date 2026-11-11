@@ -1,7 +1,7 @@
 import React from 'react';
 import claudeStarUrl from '../assets/claude-star.webp';
 import { providerColor } from '../provider-view.js';
-import Mascot3D from './Mascot3D.jsx';
+import PixelMascot from './PixelMascot.jsx';
 
 // Marcas dos agentes (providers).
 //  - Claude Code: a logo oficial (estrela, imagem em assets/claude-star.webp) na sidebar, no botão de "trabalhando" do terminal e nas Configurações;
@@ -76,13 +76,13 @@ export default function ProviderLogo({ id, size = 20, title, className = '', var
 }
 
 /**
- * Bonequinho do provider, em 3D (Mascot3D): o MESMO corpo para todos (o mascote do Claude Code feito de blocos que giram no espaço e podem ser arrastados), mudando só a cor, que é a do provider
- * (provider-view.js). Com `label`, o nome do provider vem junto: embaixo (`layout="stack"`, padrão) ou ao lado (`layout="inline"`).
+ * Bonequinho da IA, em pixel art (PixelMascot), reproduzido das telas de referência: o MESMO corpo para todas e só a cor muda, que é a da IA (provider-catalog.js). Com `label`, o nome vem junto:
+ * embaixo (`layout="stack"`, padrão) ou ao lado (`layout="inline"`). `hat` = o chapéu de quem coordena; `crest` = a chama com cara brava (o mascote do FORGE).
  */
-export function ProviderMascot({ id, size = 40, label = null, layout = 'stack', className = '' }) {
+export function ProviderMascot({ id, size = 40, label = null, layout = 'stack', className = '', crest = false, hat = false }) {
   return (
     <span className={`pm pm-${layout}${className ? ` ${className}` : ''}`} style={{ '--pm': providerColor(id) }} data-provider={id}>
-      <Mascot3D size={size} label={label ? null : `Provider ${id}`} />
+      <PixelMascot size={size} crest={crest} hat={hat} label={label ? null : `Provider ${id}`} />
       {label && <span className="pm-name">{label}</span>}
     </span>
   );
