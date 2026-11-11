@@ -1,31 +1,9 @@
-// Squads: equipes nomeadas e reutilizáveis (papel + agente de cada vaga). PURO (sem React, sem rede): modelos embutidos, rascunho do editor e validações. Os salvos vêm de /api/team-templates.
-import { presetById, mixAgents, LEAD_ROLES, inferTeam, mixSummary, PRESETS } from './team-view.js';
+// Squads: equipes nomeadas e reutilizáveis (papel + agente de cada vaga). PURO (sem React, sem rede): os times prontos do FORGE, o rascunho do editor e validações. Times novos entram só por Configurações > Times prontos (nada vem fixo no Cockpit). Os salvos vêm de /api/team-templates.
+import { presetById, mixAgents, LEAD_ROLES, inferTeam, mixSummary } from './team-view.js';
 
 export const MAX_SLOTS = 12, MAX_NAME = 40, MAX_SQUADS = 24;
 const norm = (s) => String(s ?? '').toLocaleLowerCase('pt-BR');
 const cleanName = (s) => String(s ?? '').replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, ' ').replace(/ {2,}/g, ' ').trim();
-
-/**
- * Squads do FORGE: sugestões prontas que misturam Claude Code e Codex (só quando os dois estão instalados; com um só, os presets simples já bastam).
- * O Claude coordena e revisa (Maestro, Batedor, Revisor) e o Codex constrói. Não podem ser excluídos; dá para usá-los como ponto de partida de um squad seu.
- */
-export function builtinSquads(available = []) {
-  if (!(available.includes('claude') && available.includes('codex'))) return [];
-  const mk = (id, name, tagline, roles) => ({ id: `builtin:${id}`, name, tagline, builtin: true, slots: roles.map((role) => ({ role, provider: LEAD_ROLES.includes(role) ? 'claude' : 'codex' })) });
-  return [
-    mk('duo', 'Dupla mista', 'Codex constrói, Claude revisa', presetById('duo').roles),
-    mk('squad', 'Squad misto', 'Claude coordena e revisa, Codex constrói', presetById('squad').roles),
-    mk('full', 'Squad de 6 misto', 'Claude lidera e investiga, três Codex constroem', presetById('full').roles),
-  ];
-}
-
-/**
- * Predefinições embutidas simples: os presets de equipe (Dupla, Squad, Squad de 6, Construtor) com UM agente só (`provider`, o padrão do usuário).
- * Aparecem no estado vazio do Cockpit ao lado das mistas e dos squads salvos; não são excluíveis nem editáveis (só "usar como base").
- */
-export function presetSquads(provider = 'claude') {
-  return PRESETS.map((p) => ({ id: `builtin:preset-${p.id}`, name: p.label, builtin: true, slots: p.roles.map((role) => ({ role, provider })) }));
-}
 
 /**
  * Times prontos do FORGE (opcionais, para instalar): HOJE SÃO DOIS, os dois mistos (Claude Code e Codex CLI) e com funções diferentes. Cada um diz o que faz e já traz o agente, o modelo e o esforço de cada vaga (ids das listas fechadas do servidor, ver providers/*.js; um teste confere cada vaga contra a
@@ -48,19 +26,9 @@ export const squadProviders = (squad) => [...new Set((Array.isArray(squad?.slots
 /** Agentes da equipe que NÃO estão instalados (`available` = ids dos instalados): vazio = pode ser aberta. */
 export const squadMissing = (squad, available = []) => squadProviders(squad).filter((id) => !available.includes(id));
 
-const BASIC_ABOUT = {
-  'builtin:preset-duo': ['Um constrói e o outro revisa.', 'A menor equipe com revisão. Bom para tarefas curtas em que um segundo olhar já basta.'],
-  'builtin:preset-squad': ['O Maestro coordena, dois constroem e um revisa.', 'Estrutura padrão de uma equipe: o Maestro divide o trabalho e cobra os resultados.'],
-  'builtin:preset-full': ['Maestro e batedor, três construtores e um revisor.', 'A maior estrutura pronta, para trabalho que se divide em várias partes.'],
-  'builtin:preset-builder': ['Um único construtor, sem coordenação.', 'Um terminal só, para conversar e implementar sozinho.'],
-  'builtin:duo': ['Codex constrói, Claude revisa.', 'Uma dupla mista: o Codex escreve o código e o Claude confere.'],
-  'builtin:squad': ['Claude coordena e revisa, Codex constrói.', 'O Squad com um agente em cada função.'],
-  'builtin:full': ['Claude lidera e investiga, três Codex constroem.', 'O Squad de 6 com o Claude no comando e o Codex na implementação.'],
-};
-/** Texto de cada equipe pronta: o que ela faz (`tagline`) e quando usar (`about`). As equipes por objetivo já trazem os dois; as estruturas básicas vêm desta tabela; as suas só têm o resumo. */
+/** Texto de um time: o que ele faz (`tagline`) e quando usar (`about`). Os times prontos já trazem os dois; os seus só têm o que você escreveu (nada). */
 export function describeSquad(squad) {
-  const fallback = BASIC_ABOUT[squad?.id] ?? [];
-  return { tagline: squad?.tagline ?? fallback[0] ?? null, about: squad?.about ?? fallback[1] ?? null };
+  return { tagline: squad?.tagline ?? null, about: squad?.about ?? null };
 }
 /** Nome do modelo/esforço de uma vaga para exibir: o rótulo da lista do servidor (`options`), o próprio id quando não está na lista, ou "padrão" quando a vaga não define. */
 export function slotChoiceLabels(slot, options) {

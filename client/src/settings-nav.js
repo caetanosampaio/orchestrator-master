@@ -9,7 +9,7 @@ export const NAV = Object.freeze([
     item('mascotes', 'Mascotes', 'agents', 'Cada IA tem o seu mascote: o corpo é o mesmo e a cor muda.', ['bonecos', 'cor', 'pixel', 'cara']),
   ]),
   group('times', 'Missões e times', [
-    item('equipes', 'Times prontos', 'layers', 'Times com papéis e agentes prontos para abrir no Cockpit. Instale os opcionais, edite e monte os seus.', ['squad', 'squads', 'equipes', 'times', 'modelo', 'esforço', 'predefinições', 'instalar'], { tag: 'Squads', own: true }), // `own`: a seção desenha o próprio cabeçalho (título, ação e as páginas de ver e editar)
+    item('equipes', 'Times prontos', 'layers', 'Os times que aparecem no Cockpit vêm daqui: instale os prontos, edite e monte os seus.', ['squad', 'squads', 'equipes', 'times', 'modelo', 'esforço', 'predefinições', 'instalar'], { tag: 'Squads', own: true }), // `own`: a seção desenha o próprio cabeçalho (título, ação e as páginas de ver e editar)
     item('tarefas', 'Quem faz cada tarefa', 'sliders', 'Para cada tipo de tarefa, qual IA faz, com qual modelo, quanto ela pensa e com qual agente.', ['harness', 'roteamento', 'maestro', 'piloto', 'ajudantes', 'modelo', 'esforço', 'skills', 'agentes', 'tabela'], { tag: 'Harness', own: true }),
     item('skills', 'Skills', 'task', 'As instruções que cada papel do squad carrega ao abrir um terminal.', ['skill', 'papéis', 'loadout', 'instruções', 'mcp', 'protocolo', 'mapear', 'revisar'], { tag: 'Squad', own: true }),
     item('orquestracao', 'Orquestração', 'sliders', 'Como o Maestro envia tarefas aos outros terminais.', ['maestro', 'autônomo', 'aprovação']),

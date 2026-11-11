@@ -1,29 +1,29 @@
 // Squads no cliente (client/src/squads.js): modelos do FORGE, plano de abertura, rascunho do editor e validações. Lógica pura, sem rede.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { builtinSquads, launchPlan, squadSummary, draftFromPreset, draftFromSquad, withSlot, removeSlot, addSlot, applyMix, draftOpenProblem, draftSaveProblem, MAX_SLOTS, MAX_NAME, MAX_SQUADS } from '../../client/src/squads.js';
+import { curatedSquads, launchPlan, squadSummary, draftFromPreset, draftFromSquad, withSlot, removeSlot, addSlot, applyMix, draftOpenProblem, draftSaveProblem, MAX_SLOTS, MAX_NAME, MAX_SQUADS } from '../../client/src/squads.js';
 
 const BOTH = ['claude', 'codex'];
 const label = { claude: 'Claude Code', codex: 'Codex CLI' };
 
-test('builtinSquads: só com Claude e Codex; o Claude coordena/revisa/investiga e o Codex constrói', () => {
-  assert.deepEqual(builtinSquads(['claude']), []); assert.deepEqual(builtinSquads(['codex']), []); assert.deepEqual(builtinSquads([]), []);
-  const b = builtinSquads(BOTH);
-  assert.deepEqual(b.map((s) => s.name), ['Dupla mista', 'Squad misto', 'Squad de 6 misto']);
-  assert.ok(b.every((s) => s.builtin === true && s.id.startsWith('builtin:') && s.tagline));
-  assert.deepEqual(b[1].slots, [{ role: 'maestro', provider: 'claude' }, { role: 'builder', provider: 'codex' }, { role: 'builder', provider: 'codex' }, { role: 'reviewer', provider: 'claude' }]);
-  assert.deepEqual(b[2].slots.map((s) => `${s.role}:${s.provider}`), ['maestro:claude', 'scout:claude', 'builder:codex', 'builder:codex', 'builder:codex', 'reviewer:claude']);
+// um time misto de exemplo (como o que vem de Configurações > Times prontos): o Claude coordena e revisa, o Codex constrói
+const MIXED = { id: 'tpl_aaaaaaaa', name: 'Misto', slots: [{ role: 'maestro', provider: 'claude' }, { role: 'builder', provider: 'codex' }, { role: 'builder', provider: 'codex' }, { role: 'reviewer', provider: 'claude' }] };
+
+test('o Cockpit não traz mais times fixos: não há builtinSquads nem presetSquads; os times prontos vêm de Configurações (curatedSquads) e dos salvos', async () => {
+  const m = await import('../../client/src/squads.js');
+  assert.equal(Object.hasOwn(m, 'builtinSquads'), false); assert.equal(Object.hasOwn(m, 'presetSquads'), false);
+  assert.equal(curatedSquads().length, 2); assert.ok(curatedSquads().every((t) => t.builtin === true && t.curated === true));
 });
 
 test('launchPlan: papéis e agentes na ordem; o preset só é gravado quando bate exatamente', () => {
-  const p = launchPlan(builtinSquads(BOTH)[1]);
+  const p = launchPlan(MIXED);
   assert.deepEqual(p.roles, ['maestro', 'builder', 'builder', 'reviewer']); assert.deepEqual(p.providers, ['claude', 'codex', 'codex', 'claude']); assert.equal(p.teamId, 'squad');
   assert.equal(launchPlan({ slots: [{ role: 'maestro', provider: 'claude' }, { role: 'scout', provider: 'codex' }] }).teamId, null, 'composição própria: sem preset');
   assert.deepEqual(launchPlan(null), { roles: [], providers: [], teamId: null });
 });
 
 test('squadSummary: contagem de terminais e de agentes', () => {
-  assert.equal(squadSummary(builtinSquads(BOTH)[1].slots, (id) => label[id]), '4 terminais · 2 Claude Code, 2 Codex CLI');
+  assert.equal(squadSummary(MIXED.slots, (id) => label[id]), '4 terminais · 2 Claude Code, 2 Codex CLI');
   assert.equal(squadSummary([{ role: 'builder', provider: 'codex' }], (id) => label[id]), '1 terminal · 1 Codex CLI');
 });
 
@@ -33,7 +33,7 @@ test('rascunho: de preset (com atalho), vazio, de um squad salvo e de um embutid
   assert.deepEqual(draftFromPreset('empty', 'all-claude', BOTH).slots, []);
   const saved = draftFromSquad({ id: 'tpl_aaaaaaaa', name: 'Meu', slots: [{ role: 'builder', provider: 'codex' }] });
   assert.equal(saved.id, 'tpl_aaaaaaaa'); assert.equal(saved.name, 'Meu'); assert.equal(saved.mix, 'custom');
-  const fromBuiltin = draftFromSquad(builtinSquads(BOTH)[0]);
+  const fromBuiltin = draftFromSquad({ ...MIXED, id: 'builtin:x', builtin: true });
   assert.equal(fromBuiltin.id, null, 'embutido vira um squad NOVO'); assert.equal(fromBuiltin.name, '');
 });
 

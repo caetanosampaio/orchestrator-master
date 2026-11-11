@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { launchPlan, slotOf, cleanSlots, slotOptions, presetSquads, builtinSquads, draftFromSquad, draftFromCopy, draftFromPreset, withProvider, applyMix, withSlot } from '../../client/src/squads.js';
+import { launchPlan, slotOf, cleanSlots, slotOptions, draftFromSquad, draftFromCopy, draftFromPreset, withProvider, applyMix, withSlot } from '../../client/src/squads.js';
 
 const src = (f) => fs.readFileSync(new URL(`../../client/src/${f}`, import.meta.url), 'utf8');
 
@@ -40,13 +40,6 @@ test('rascunho: editar mantém model/effort; duplicar zera o id e põe "(cópia)
   assert.deepEqual(draftFromPreset('squad', 'all-codex', ['claude', 'codex']).slots.map((s) => s.provider), ['codex', 'codex', 'codex', 'codex']);
 });
 
-test('equipes embutidas do estado vazio: presets simples com o agente padrão + mistas só com os dois agentes', () => {
-  const p = presetSquads('codex');
-  assert.deepEqual(p.map((x) => x.name), ['Dupla', 'Squad', 'Squad de 6', 'Construtor']);
-  assert.ok(p.every((x) => x.builtin && x.id.startsWith('builtin:preset-') && x.slots.every((s) => s.provider === 'codex')));
-  assert.equal(launchPlan(p[0]).teamId, 'duo');
-  assert.equal(builtinSquads(['claude']).length, 0); assert.equal(builtinSquads(['claude', 'codex']).length, 3);
-});
 
 test('interface: Configurações > Times prontos e Arquivos, e o chip do Cockpit virou "Arquivos" na sidebar', () => {
   const st = ['pages/Settings.jsx', 'settings-nav.js', 'components/settings/SettingsUi.jsx', 'components/settings/AppSections.jsx', 'components/settings/TeamSections.jsx', 'components/settings/AisSection.jsx', 'components/settings/MascotsSection.jsx'].map(src).join('\n');

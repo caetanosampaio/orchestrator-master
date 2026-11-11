@@ -5,7 +5,7 @@ import { squadSummary } from '../squads.js';
 
 /**
  * Galeria de equipes (tela sem terminais): cartões com as vagas da equipe (um selo por vaga: a cor é a do papel e o logo é o do agente), abrem tudo com um clique.
- * Equipes do FORGE (prontas, simples e mistas) e Minhas equipes (salvas). A gestão (editar, excluir, criar) mora em Configurações > Equipes: sem `onEdit`/`onDuplicate`/`onDelete`/`onNew` os cartões
+ * No Cockpit só aparecem os times de Configurações > Times prontos (os instalados e os seus); `empty` é o que mostrar quando não há nenhum. A gestão (editar, excluir, criar) mora em Configurações > Equipes: sem `onEdit`/`onDuplicate`/`onDelete`/`onNew` os cartões
  * só abrem, e `onManage` mostra o link "Gerenciar equipes". Animações só com CSS (retro.css, .sq-*), desligadas pelas regras globais de "Animações reduzidas". Nada aqui abre terminal: quem abre é o cockpit (onOpen).
  */
 function Pips({ slots, byRole, labelOf }) {
@@ -51,14 +51,14 @@ function Card({ squad, i, byRole, labelOf, busy, launching, fresh, tooBig, openL
   );
 }
 
-export default function SquadGallery({ builtins = [], mine = [], byRole = {}, providers = [], busy = false, launchingId = null, freshId = null, room = Infinity, openLabel = 'Abrir a equipe', onOpen, onEdit, onDuplicate, onDelete, onNew, onManage }) {
+export default function SquadGallery({ builtins = [], mine = [], byRole = {}, providers = [], busy = false, launchingId = null, freshId = null, room = Infinity, openLabel = 'Abrir a equipe', mineTitle = 'Minhas equipes', mineHint = null, empty = null, onOpen, onEdit, onDuplicate, onDelete, onNew, onManage }) {
   const labelOf = (id) => providers.find((p) => p.id === id)?.label ?? id;
   let n = 0;
   const card = (s) => <Card key={s.id} squad={s} i={n++} byRole={byRole} labelOf={labelOf} busy={busy || (launchingId !== null && launchingId !== s.id)} launching={launchingId === s.id} fresh={freshId === s.id} tooBig={s.slots.length > room} openLabel={openLabel} onOpen={onOpen} onEdit={onEdit} onDuplicate={onDuplicate} onDelete={onDelete} />;
   return (
     <section className="sq-gallery" aria-label="Equipes">
       {builtins.length > 0 && <><h4 className="sq-h">Equipes do FORGE <span className="dim">abrem todos os terminais de uma vez</span></h4><div className="sq-grid">{builtins.map(card)}</div></>}
-      {(mine.length > 0 || onNew) && <h4 className="sq-h">Minhas equipes {mine.length === 0 && <span className="dim">monte a sua e abra a equipe toda com um clique</span>}</h4>}
+      {(mine.length > 0 || onNew) && <h4 className="sq-h">{mineTitle} {mineHint ? <span className="dim">{mineHint}</span> : mine.length === 0 && <span className="dim">monte a sua e abra a equipe toda com um clique</span>}</h4>}
       {(mine.length > 0 || onNew) && <div className="sq-grid">
         {mine.map(card)}
         {onNew && <button type="button" className="sq-card sq-new" style={{ '--i': n }} disabled={busy} onClick={onNew} aria-label="Montar uma equipe nova">
@@ -67,7 +67,8 @@ export default function SquadGallery({ builtins = [], mine = [], byRole = {}, pr
           <span className="sq-sub dim">escolha o papel e o agente de cada vaga</span>
         </button>}
       </div>}
-      {onManage && <p className="sq-manage small"><button type="button" className="oc-link" onClick={onManage}>Gerenciar equipes</button></p>}
+      {mine.length === 0 && !onNew && empty}
+      {onManage && mine.length > 0 && <p className="sq-manage small"><button type="button" className="oc-link" onClick={onManage}>Gerenciar times</button></p>}
     </section>
   );
 }

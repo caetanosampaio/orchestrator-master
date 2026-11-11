@@ -16,7 +16,7 @@ import { paneState, pendingByPane, paneName, shapeFor, focusPlacement, evenTrack
 import MaestroPopover from './MaestroPopover.jsx';
 import SquadGallery from './SquadGallery.jsx';
 import { useSquads } from '../use-squads.js';
-import { builtinSquads, presetSquads, launchPlan } from '../squads.js';
+import { launchPlan } from '../squads.js';
 import { PRESETS } from '../team-view.js';
 
 // Presets de equipe (team-view.js): o mesmo fluxo abre 2, 4 ou 6 terminais do Claude Code em paralelo, cada um com o seu papel. Os ids gravados continuam duo/squad/full; só o rótulo do squad de quatro virou "Squad".
@@ -179,10 +179,8 @@ export default function TerminalGrid({ onOpenWorkspaces, onOpenSettings }) {
 
   const roles = terminals?.roles ?? [], byRole = Object.fromEntries(roles.map((r) => [r.id, r]));
   const isolate = prefs.isolate;
-  // Agente (provider) das equipes prontas: Claude Code ou Codex. A escolha é uma preferência do usuário (Configurações > Equipes, guardada no servidor); a lista e a disponibilidade vêm dele.
   const providers = terminals?.providers ?? [];
-  const provider = providers.find((p) => p.id === prefs.provider && p.available) ? prefs.provider : 'claude';
-  const agentLabel = providers.find((p) => p.id === provider)?.label ?? 'Claude Code';
+  const provider = providers.find((p) => p.id === prefs.provider && p.available) ? prefs.provider : 'claude'; // agente padrão ao abrir um terminal sem escolha da vaga (os times de Configurações trazem o agente de cada vaga)
   const sessions = terminals?.sessions ?? [];
   // Sessões do workspace + tópico ativos. As demais seguem rodando e MONTADAS (ocultas): trocar de aba ou de tópico nunca encerra nem remonta terminal.
   const topicId = null; // a interface não usa mais tópicos: o workspace mostra todos os terminais dele e os novos nascem sem tópico
@@ -291,7 +289,6 @@ export default function TerminalGrid({ onOpenWorkspaces, onOpenSettings }) {
     return true;
   };
   // ---- equipes ----
-  const availableIds = providers.filter((p) => p.available).map((p) => p.id);
   /** Abre um plano { roles, providers, models?, efforts?, teamId }: todos os terminais de uma vez, cada um com o agente, o modelo e o esforço da sua vaga; o preset só é gravado como equipe do workspace quando bate exatamente. */
   const openPlan = async (plan) => { const ran = await open(plan.roles, { squad: plan.roles.length > 1, providers: plan.providers, models: plan.models, efforts: plan.efforts }); if (ran !== false && ws && plan.teamId) layoutActions.setTeam(ws.id, plan.teamId); return ran; };
   const openSquad = async (s) => { setLaunchingId(s.id); try { await openPlan(launchPlan(s)); } finally { setLaunchingId(null); } };
@@ -348,9 +345,9 @@ export default function TerminalGrid({ onOpenWorkspaces, onOpenSettings }) {
           <Icon name="terminal" size={18} />
           <h3>{where}</h3>
           <p className="dim">Nenhum terminal ativo. Abra uma equipe com um clique.</p>
-          <SquadGallery builtins={[...builtinSquads(availableIds), ...presetSquads(provider)]} mine={sq.missing ? [] : sq.squads} byRole={byRole} providers={providers} busy={busy} launchingId={launchingId} room={room} onOpen={openSquad} onManage={() => onOpenSettings?.('equipes')} />
+          <SquadGallery mine={sq.missing ? [] : sq.squads} mineTitle="Times prontos" mineHint="os que você instalou ou montou em Configurações" byRole={byRole} providers={providers} busy={busy} launchingId={launchingId} room={room} onOpen={openSquad} onManage={() => onOpenSettings?.('equipes')}
+            empty={<div className="oc-noteams"><b>{sq.ready ? 'Nenhum time pronto ainda' : 'Carregando os times…'}</b><p className="dim small">Os times que abrem aqui vêm de Configurações. Instale um time pronto ou monte o seu, e escolha qual abrir em cada workspace.</p>{sq.ready && <Btn kind="primary" onClick={() => onOpenSettings?.('equipes')}>Abrir Times prontos</Btn>}</div>} />
           {restorable > 0 && <div className="oc-empty-act"><Btn kind="quiet" onClick={() => onOpenSettings?.('historico')} title="Abre Configurações > Histórico de sessões para retomá-las, na ordem em que estavam">Restaurar {restorable} {restorable === 1 ? 'sessão' : 'sessões'}</Btn></div>}
-          <p className="dim small oc-agent">Equipes prontas com <ProviderLogo id={provider} size={12} /> <b>{agentLabel}</b> · mude o agente padrão em <b>Configurações &gt; Equipes</b>.</p>
           <p className="dim small oc-foot">Os terminais <b>não passam</b> pelas aprovações do ciclo automático: o que o agente faz ali é decisão sua.</p>
         </div>
       ) : null}
