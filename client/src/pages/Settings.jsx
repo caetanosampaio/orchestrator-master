@@ -9,6 +9,7 @@ import { MascotsSection } from '../components/settings/MascotsSection.jsx';
 import { ProfileSection, GeneralSection, LayoutSection, AppearanceSection, FilesSection, HistorySection } from '../components/settings/AppSections.jsx';
 import { OrchestrationSection, WorktreesSection } from '../components/settings/TeamSections.jsx';
 import HarnessSection from '../components/harness/HarnessSection.jsx';
+import SkillsSection from '../components/settings/SkillsSection.jsx';
 
 /**
  * Configurações: uma PÁGINA inteira (como Cockpit e Missions). À esquerda a barra lateral: voltar, busca, cartão de perfil e as seções em grupos (IAs e contas, Missões e times, App e computador); à direita o título
@@ -30,7 +31,7 @@ export default function Settings({ onClose, initial = 'perfil', onOpenWorkspaces
   };
   const body = {
     ias: <AisSection go={setTab} />, accounts: <AccountsPanel />, mascotes: <MascotsSection />,
-    equipes: <TeamsSettings />, tarefas: <HarnessSection />, orquestracao: <OrchestrationSection />, worktrees: <WorktreesSection />, historico: <HistorySection />,
+    equipes: <TeamsSettings />, tarefas: <HarnessSection />, skills: <SkillsSection go={setTab} />, orquestracao: <OrchestrationSection />, worktrees: <WorktreesSection />, historico: <HistorySection />,
     perfil: <ProfileSection />, geral: <GeneralSection />, visualizacao: <LayoutSection />, aparencia: <AppearanceSection />, arquivos: <FilesSection onOpenWorkspaces={onOpenWorkspaces} />,
   }[cur.id];
 

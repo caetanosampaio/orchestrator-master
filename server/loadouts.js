@@ -198,12 +198,12 @@ export function loadoutView(settings) {
   const roles = {};
   for (const role of LOADOUT_ROLES) {
     const skills = skillsFor(role, settings);
-    roles[role] = { skills, mcp: Object.keys(MCP_CATALOG), customized: isObj(settings?.loadouts?.[role]) && Array.isArray(settings.loadouts[role].skills) };
+    roles[role] = { skills, defaults: [...ROLE_DEFAULTS[role]], mcp: Object.keys(MCP_CATALOG), customized: isObj(settings?.loadouts?.[role]) && Array.isArray(settings.loadouts[role].skills) };
   }
   return {
     roles,
     catalog: {
-      skills: Object.values(SKILLS).map((s) => ({ id: s.name, description: s.description })),
+      skills: Object.values(SKILLS).map((s) => ({ id: s.name, description: s.description, body: s.body })), // `body`: o texto fixo da skill (escrito aqui), para a tela mostrar o que o agente recebe
       mcp: Object.values(MCP_CATALOG),
     },
     limits: { maxSkillsPerRole: MAX_SKILLS_PER_ROLE },

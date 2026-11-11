@@ -113,6 +113,8 @@ test('GET /api/loadouts: catálogo e o que cada papel recebe, com o MCP forge', 
   assert.deepEqual(j.roles.maestro.skills, [...L.ROLE_DEFAULTS.maestro]); assert.equal(j.roles.maestro.customized, false); assert.deepEqual(j.roles.maestro.mcp, ['forge']);
   assert.deepEqual(j.catalog.skills.map((s) => s.id).sort(), Object.keys(L.SKILLS).sort()); assert.equal(j.catalog.mcp[0].id, 'forge'); assert.equal(j.catalog.mcp[0].builtin, true);
   assert.equal(j.limits.maxSkillsPerRole, L.MAX_SKILLS_PER_ROLE);
+  for (const role of L.LOADOUT_ROLES) assert.deepEqual(j.roles[role].defaults, [...L.ROLE_DEFAULTS[role]], 'o padrão de cada papel vem junto (a tela marca o que mudou)');
+  for (const s of j.catalog.skills) { assert.equal(s.body, L.SKILLS[s.id].body); assert.ok(s.body.length > 40 && s.description.length > 20, `${s.id}: texto e descrição`); }
 });
 
 test('PUT /api/loadouts: grava a escolha do papel, devolve a visão nova, sobrevive ao disco e reset volta ao padrão', async () => {
