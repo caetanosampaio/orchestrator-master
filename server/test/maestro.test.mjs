@@ -59,7 +59,7 @@ test('protocolo: initialize ecoa a versão conhecida, notificação não respond
   assert.equal(w.m.rpc(ma, { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '1999' } }).result.protocolVersion, '2025-06-18');
   assert.equal(w.m.rpc(ma, { jsonrpc: '2.0', method: 'notifications/initialized' }), null);
   const names = (c) => w.m.rpc(c, { jsonrpc: '2.0', id: 2, method: 'tools/list' }).result.tools.map((t) => t.name);
-  assert.deepEqual(names(ma), ['list_panes', 'send_task', 'list_routes', 'read_pane_output', 'list_tasks', 'report_done']); assert.deepEqual(names(b), ['list_panes', 'list_tasks', 'report_done']);
+  assert.deepEqual(names(ma), ['list_panes', 'send_task', 'list_routes', 'read_pane_output', 'list_tasks', 'report_done', 'get_briefing']); assert.deepEqual(names(b), ['list_panes', 'list_tasks', 'report_done']);
   assert.equal(w.m.rpc(ma, { jsonrpc: '2.0', id: 3, method: 'resources/list' }).error.code, -32601);
   assert.equal(w.m.rpc(ma, { jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'toString' } }).error.code, -32602, 'nome herdado do protótipo não é ferramenta');
   for (const bad of [null, [], 'x', { id: 1, method: 'ping' }, { jsonrpc: '2.0', id: 1 }]) assert.equal(w.m.rpc(ma, bad).error.code, -32600);
@@ -249,7 +249,7 @@ test('terminais: o limite vale para criações simultâneas (isolate); wrapper c
   const spawned = []; const lib2 = { spawn(f, a) { spawned.push(a); return { pid: 1_900_400_000 + spawned.length, onData() {}, onExit() {}, write() {}, resize() {} }; } };
   const sh = createTerminalManager({ db, ptyLib: lib2, resolveCommand: () => ({ file: 'cmd.exe', args: ['/d', '/s', '/c', 'claude.cmd'], viaShell: true }), killTree() {}, waitFor: () => true, mcp });
   const r = await sh.create({}); assert.equal(r.ok, true); assert.ok(!spawned[0].includes('--mcp-config'), 'sem coordenação via cmd.exe com caminho perigoso'); assert.equal(revoked.length, 1);
-  assert.deepEqual(Object.keys(sh.peek(r.session.id)).sort(), ['agent', 'id', 'lastOutputAt', 'provider', 'role', 'status', 'title']); assert.equal(sh.peek('term_00000000'), null);
+  assert.deepEqual(Object.keys(sh.peek(r.session.id)).sort(), ['agent', 'id', 'lastOutputAt', 'provider', 'role', 'skills', 'status', 'title']); assert.equal(sh.peek('term_00000000'), null); // skills: as que o pane recebeu (o hint do send_task só cita essas)
 });
 
 test('entrega: pane aguardando permissão NÃO recebe a tarefa (o Enter responderia ao pedido); a tarefa fica pendente e entrega depois de liberado', () => {
