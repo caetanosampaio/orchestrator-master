@@ -28,6 +28,8 @@ export default function Topbar({ narrow, onMenu, menuRef, navOpen, onOpenSetting
   return (
     <header className="tb" aria-label="Barra superior">
       <div className="tb-row">
+        {/* O nome FORGE fica no começo da barra em todas as páginas e as abas Cockpit e Missions logo ao lado: elas nunca mudam de lugar, com ou sem a barra lateral. */}
+        {!narrow && <div className="tb-brand"><span className="oc-brand-name">FORGE</span></div>}
         {narrow && view === 'cockpit' && <button type="button" ref={menuRef} className="oc-iconbtn nav-toggle" onClick={onMenu} aria-label="Abrir a lista de ambientes" aria-haspopup="dialog" aria-expanded={!!navOpen} aria-controls="nav-drawer"><Icon name="menu" size={18} /></button>}
         {/* Páginas: células de texto (como as abas do Overclock). O ponto e o número só aparecem quando há algo vivo: laranja = trabalhando, âmbar = aprovação pendente. */}
         <nav className="tb-views" aria-label="Páginas">

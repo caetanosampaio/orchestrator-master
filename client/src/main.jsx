@@ -19,6 +19,8 @@ import './overclock.css'; // linguagem do Overclock por cima de tudo: preto tota
 import './missions.css'; // página Missões (central de missões)
 import './missions-workflow.css'; // workflow animado da página Missões
 import './teams.css'; // página de Configurações e Configurações > Equipes (linhas de equipe, bonequinhos dos providers)
+import './settings.css'; // página de Configurações (barra lateral agrupada, seções, Suas IAs, Mascotes)
+import './cockpit-ui.css'; // Cockpit na estrutura das Configurações (barra lateral e topo dos terminais): a última camada
 
 getLayouts().start(); // layout da grade por workspace (db.settings.layouts)
 getUi().start(); // preferências: cache local já aplicado; o servidor (db.settings.ui) é lido e vence o cache

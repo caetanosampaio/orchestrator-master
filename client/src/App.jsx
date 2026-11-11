@@ -30,9 +30,8 @@ function useNarrow() {
 export default function App() {
   const [navOpen, setNavOpen] = useState(false);
   const [dialog, setDialog] = useState(null); // 'workspaces' | null (as Configurações são uma página: view 'settings')
-  const [settingsTab, setSettingsTab] = useState('perfil'), [settingsKey, setSettingsKey] = useState(0); // a chave refaz a página para ela abrir na aba pedida
-  const [ui, uiActions] = useUi();
-  const collapsed = ui.sidebarCollapsed;
+  const [settingsTab, setSettingsTab] = useState(() => /^#\/settings\/([a-z-]+)/.exec(location.hash)?.[1] ?? 'perfil'), [settingsKey, setSettingsKey] = useState(0); // #/settings/<seção> abre direto na seção (ex.: #/settings/mascotes) // a chave refaz a página para ela abrir na aba pedida
+  const [ui] = useUi();
   const narrow = useNarrow();
   const menuRef = useRef(null);
   const [prefs] = usePrefs();
@@ -53,7 +52,6 @@ export default function App() {
   // de volta ao Cockpit: o layout reaparece, então os terminais se reajustam ao espaço (o mesmo evento que usam ao maximizar)
   useEffect(() => { if (view !== 'cockpit') return undefined; const t = setTimeout(() => window.dispatchEvent(new Event('resize')), 60); return () => clearTimeout(t); }, [view]);
   const closeNav = useCallback(() => { setNavOpen(false); setTimeout(() => menuRef.current?.focus(), 0); }, []);
-  const toggleSide = () => uiActions.setSidebarCollapsed(!collapsed);
   const openSettings = useCallback((tab) => { setNavOpen(false); setSettingsTab(typeof tab === 'string' ? tab : 'perfil'); setSettingsKey((k) => k + 1); if (view !== 'settings') backTo.current = view; goView('settings'); }, [view, goView]); // o botão da engrenagem chama com o evento: só texto vale como aba
   const openWorkspaces = useCallback(() => { setNavOpen(false); setDialog('workspaces'); }, []);
   const closeDialog = useCallback(() => setDialog(null), []);
@@ -61,12 +59,13 @@ export default function App() {
 
   const side = { onOpenWorkspaces: openWorkspaces };
   return (
-    <div className="oc-app">
+    <div className="oc-app oc-app-col">
       <button type="button" className="skip" onClick={() => document.getElementById('main')?.focus()}>Pular para o conteúdo</button>
-      {!narrow && view === 'cockpit' && <Sidebar collapsed={collapsed} onToggle={toggleSide} {...side} />}
-      {narrow && navOpen && view === 'cockpit' && <><div className="oc-scrim" onClick={closeNav} aria-hidden="true" /><Sidebar modal onClose={closeNav} {...side} /></>}
+      <Topbar narrow={narrow} onMenu={() => setNavOpen(true)} menuRef={menuRef} navOpen={navOpen} onOpenSettings={view === 'settings' ? closeSettings : openSettings} onOpenWorkspaces={openWorkspaces} view={view} onView={goView} missions={missionsData.missions} />
+      <div className="oc-body">
+        {!narrow && view === 'cockpit' && <Sidebar {...side} />}
+        {narrow && navOpen && view === 'cockpit' && <><div className="oc-scrim" onClick={closeNav} aria-hidden="true" /><Sidebar modal onClose={closeNav} {...side} /></>}
       <div className="oc-main">
-        <Topbar narrow={narrow} onMenu={() => setNavOpen(true)} menuRef={menuRef} navOpen={navOpen} onOpenSettings={view === 'settings' ? closeSettings : openSettings} onOpenWorkspaces={openWorkspaces} view={view} onView={goView} missions={missionsData.missions} />
         {error && <div className="banner err" role="alert">{error}</div>}
         {(ui.status.state === 'offline' || ui.status.state === 'error') && <div className="banner err" role="status" data-testid="ui-sync-note">{ui.status.message}</div>}
         {state?.persistence && !state.persistence.ok && (
@@ -81,6 +80,7 @@ export default function App() {
           {view === 'missions' && <Missions onOpenCockpit={openCockpit} data={missionsData} />}
           {view === 'settings' && <Settings key={settingsKey} initial={settingsTab} onClose={closeSettings} onOpenWorkspaces={openWorkspaces} />}
         </main>
+      </div>
       </div>
       {toast && (
         <div className={`toast ${toast.kind}`} role="status">
