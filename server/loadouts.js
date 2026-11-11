@@ -18,7 +18,7 @@ import * as store from './store.js';
 export const PLUGIN_NAME = 'squad'; // prefixo das skills no Claude Code: /squad:<id>
 export const SKILL_ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const MAX_SKILLS_PER_ROLE = 12;
-export const MAESTRO_BRIEFING_SKILL = 'orquestrar-briefing'; // roteiro do Maestro para o briefing (server/library); sempre entregue ao papel maestro
+export const MAESTRO_BRIEFING_SKILL = 'orquestrar-briefing'; // roteiro do Maestro: tudo que o usuário escreve no terminal dele é um briefing (server/library); sempre entregue ao papel maestro
 export const SKILL_GROUPS = Object.freeze(['processo', 'dominio']);
 
 // Skills de PROCESSO escritas aqui (texto no JS). As de DOMÍNIO (e algumas de processo) vêm da biblioteca server/library/skills (ver readLibrary).
@@ -272,7 +272,7 @@ export const LOADOUT_ROLES = Object.freeze(Object.keys(ROLE_DEFAULTS));
 export const MCP_CATALOG = Object.freeze({
   forge: Object.freeze({
     id: 'forge', label: 'FORGE (Maestro)', builtin: true,
-    description: 'Coordenação entre terminais. Todos veem list_panes e list_tasks e o report_done da própria tarefa; send_task, read_pane_output, list_routes e get_briefing são só do maestro (e a tarefa enviada espera a sua aprovação, salvo no modo autônomo).',
+    description: 'Coordenação entre terminais. Todos veem list_panes e list_tasks e o report_done da própria tarefa; send_task, read_pane_output e list_routes são só do maestro (e a tarefa enviada espera a sua aprovação, salvo no modo autônomo).',
   }),
 });
 
@@ -299,7 +299,7 @@ export function skillsFor(role, settings) {
 export function effectiveSkills(role, settings, extra = []) {
   if (!isLoadoutRole(role)) return [];
   const out = skillsFor(role, settings);
-  // o prompt do Maestro e a linha do briefing mandam seguir orquestrar-briefing: ela entra mesmo quando o usuário personalizou as skills do papel sem ela
+  // o prompt do Maestro manda seguir orquestrar-briefing: ela entra mesmo quando o usuário personalizou as skills do papel sem ela
   if (role === 'maestro' && isSkillId(MAESTRO_BRIEFING_SKILL) && !out.includes(MAESTRO_BRIEFING_SKILL)) out.unshift(MAESTRO_BRIEFING_SKILL);
   const seen = new Set(out);
   for (const id of Array.isArray(extra) ? extra : []) if (isSkillId(id) && !seen.has(id)) { seen.add(id); out.push(id); }
