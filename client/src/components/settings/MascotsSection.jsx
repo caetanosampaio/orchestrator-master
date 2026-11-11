@@ -3,6 +3,7 @@ import { useStore } from '../../store.jsx';
 import { CATALOG, FORGE_MASCOT, catalogById, aiName } from '../../provider-catalog.js';
 import { providerStatus, providerById } from '../../provider-view.js';
 import { ProviderMascot } from '../ProviderLogo.jsx';
+import { ForgeMascot } from '../ForgeMascot.jsx';
 import { Block } from './SettingsUi.jsx';
 
 /**
@@ -15,19 +16,19 @@ export function MascotsSection() {
   const { terminals } = useStore();
   const [sel, setSel] = useState('forge');
   const a = catalogById(sel) ?? FORGE_MASCOT, live = providerById(terminals?.providers, a.id), st = live ? providerStatus(live) : null;
-  const sub = a.brand ? 'O mascote do FORGE' : !a.integrated ? 'Ainda não integrado ao FORGE' : st ? `Integrado · ${st.text}` : 'Integrado ao FORGE';
+  const sub = a.brand ? 'O Forjador, o mascote do FORGE' : !a.integrated ? 'Ainda não integrado ao FORGE' : st ? `Integrado · ${st.text}` : 'Integrado ao FORGE';
   return (
     <Block title="Cara" hint="O corpo é o mesmo para todos; só a cor muda." id="mascots">
       <div className="mc-wrap">
         <div className="mc-preview" style={{ '--pm': a.color }}>
-          <ProviderMascot id={a.id} size={92} crest={!!a.crest} />
+          {a.brand ? <ForgeMascot size={120} label="O Forjador, mascote do FORGE" /> : <ProviderMascot id={a.id} size={92} />}
           <b className="mc-name">{a.brand ? 'FORGE' : aiName(a.id, live?.label)}</b>
           <span className="dim small">{sub}</span>
         </div>
         <div className="mc-grid" role="radiogroup" aria-label="Mascotes">
           {TILES.map((t) => (
             <button key={t.id} type="button" role="radio" aria-checked={sel === t.id} className={`mc-tile${sel === t.id ? ' on' : ''}`} style={{ '--pm': t.color }} onClick={() => setSel(t.id)}>
-              <ProviderMascot id={t.id} size={38} crest={!!t.crest} />
+              {t.brand ? <ForgeMascot size={44} /> : <ProviderMascot id={t.id} size={38} />}
               <span className="mc-tile-n">{t.label}</span>
             </button>
           ))}
