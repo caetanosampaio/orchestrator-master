@@ -8,30 +8,17 @@ import TeamComposer from './TeamComposer.jsx';
 import { TeamRow, TeamSection, TcBtn, labelFor } from './TeamCards.jsx';
 import { ProviderMascot } from './ProviderLogo.jsx';
 import { Icon } from './ui.jsx';
-import { Block } from './settings/SettingsUi.jsx';
+import { Block, Head as PageHead } from './settings/SettingsUi.jsx';
 
 const QUICK = { 'all-claude': 'Todos Claude Code', 'all-codex': 'Todos Codex', 'claude-leads': 'Misto' };
 const EMPTY_STATE = ['claude', 'codex', 'claude']; // os três mascotes da ilustração de "Seus" vazio
-
-/** Cabeçalho de uma página de Times prontos: voltar (nas páginas de dentro), título com etiqueta, frase de apoio e a ação à direita. */
-function Head({ title, tag = null, sub, back = null, action = null }) {
-  return (
-    <>
-      {back && <button type="button" className="set-crumb" onClick={back}><Icon name="chevronRight" size={12} /><span>Times prontos</span></button>}
-      <div className="set-head">
-        <div><h1 className="set-title">{title}{tag && <span className="set-title-tag">{tag}</span>}</h1>{sub && <p className="set-sub">{sub}</p>}</div>
-        {action}
-      </div>
-    </>
-  );
-}
 
 /** "Ver por dentro": quem faz o quê, com o provider, o modelo e o esforço de cada vaga, e as ações do time. Uma página dentro das Configurações (a barra lateral continua). */
 function Detail({ squad, kind, byRole, labelOf, options, available, known, onBack, onEdit, onInstall }) {
   const { tagline, about } = describeSquad(squad), missing = known ? squadMissing(squad, available) : [];
   return (
     <>
-      <Head title={squad.name} tag={squad.tag ?? (kind === 'mine' ? 'meu' : 'FORGE')} sub={tagline} back={onBack} />
+      <PageHead title={squad.name} tag={squad.tag ?? (kind === 'mine' ? 'meu' : 'FORGE')} sub={tagline} back={onBack} backLabel="Times prontos" />
       {about && <p className="tc-about">{about}</p>}
       {missing.length > 0 && <p className="oc-note err" role="status">Este time usa {missing.map(labelOf).join(' e ')}, que não está instalado. Ao instalar você pode trocar o agente de cada vaga.</p>}
       <Block title="Quem faz cada coisa" hint={`${squad.slots.length} ${squad.slots.length === 1 ? 'vaga' : 'vagas'}`} id="td">
@@ -96,7 +83,7 @@ export default function TeamsSettings() {
       : draft.id ? { title: 'Editar time', sub: 'Mude as vagas e salve. O Cockpit usa a versão salva.' } : { title: 'Novo time', sub: 'Escolha o papel e o agente de cada vaga e dê um nome para salvar.' };
     return (
       <>
-        <Head title={head.title} sub={head.sub} back={() => setView(view.from ?? { name: 'list' })} />
+        <PageHead title={head.title} sub={head.sub} back={() => setView(view.from ?? { name: 'list' })} backLabel="Times prontos" />
         <TeamComposer title={null} draft={draft} onChange={(d) => setView({ ...view, draft: d })} onSave={save} onCancel={() => setView(view.from ?? { name: 'list' })} providers={providers} roles={roles} squads={sq.squads} busy={saving} options={sq.options} saveLabel={mode === 'install' ? 'Instalar time' : null} />
       </>
     );
@@ -110,7 +97,7 @@ export default function TeamsSettings() {
   const see = (squad, kind) => setView({ name: 'detail', squad, kind });
   return (
     <>
-      <Head title="Times prontos" tag="Squads" sub="Times com papéis e agentes prontos para abrir no Cockpit. Instale os opcionais, edite e monte os seus."
+      <PageHead title="Times prontos" tag="Squads" sub="Times com papéis e agentes prontos para abrir no Cockpit. Instale os opcionais, edite e monte os seus."
         action={<TcBtn icon="plus" onClick={newTeam}>Novo time</TcBtn>} />
       <TeamSection id="install" title="Para instalar" hint="Opcionais, com Claude e Codex juntos. Instalar é grátis e você edita antes.">
         {curatedSquads().map((s, i) => (
