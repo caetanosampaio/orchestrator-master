@@ -13,7 +13,7 @@ test('navegação: três grupos, ids únicos, cada seção com rótulo, ícone e
   const items = flatItems(); assert.equal(new Set(items.map((i) => i.id)).size, items.length);
   for (const i of items) assert.ok(i.label && i.icon && i.hint, i.id);
   assert.equal(itemById('equipes').label, 'Times prontos'); assert.equal(itemById('equipes').tag, 'Squads');
-  for (const id of ['historico', 'orquestracao', 'accounts', 'equipes', 'ias', 'mascotes', 'perfil']) assert.ok(itemById(id), id); // abertas por TerminalGrid, MaestroPopover, PrereqModal e pelos links
+  for (const id of ['orquestracao', 'accounts', 'equipes', 'ias', 'mascotes', 'perfil']) assert.ok(itemById(id), id); // abertas por TerminalGrid, MaestroPopover, PrereqModal e pelos links
   assert.equal(DEFAULT_TAB, 'perfil');
 });
 
@@ -50,14 +50,14 @@ test('página: cada seção da navegação tem um componente, a busca e o cartã
   assert.match(src('components/settings/MascotsSection.jsx'), /Ainda não integrado ao FORGE/);
 });
 
-test('Cockpit na estrutura das Configurações: sem busca na barra lateral, o nome FORGE no topo com as abas logo ao lado (mesmo lugar em todas as páginas), perfil e Arquivos no rodapé como antes e os ícones do cabeçalho dos terminais intactos', () => {
+test('Cockpit na estrutura das Configurações: sem busca na barra lateral, o nome FORGE no topo com as abas logo ao lado (mesmo lugar em todas as páginas), Arquivos e Sessões no rodapé, um em cima do outro, sem o cartão de nome e perfil e os ícones do cabeçalho dos terminais intactos', () => {
   const sb = src('components/Sidebar.jsx'), grid = src('components/TerminalGrid.jsx'), css = src('cockpit-ui.css'), tb = src('components/Topbar.jsx'), app = src('App.jsx');
   assert.ok(!/oc-side-search|Buscar workspaces|shownEnvs/.test(sb), 'a busca saiu da barra lateral'); assert.match(sb, /onPick=\{pick\}/, 'abrir workspace continua como antes');
   assert.ok(!/MascotLogo/.test(sb), 'o elmo saiu da barra lateral'); assert.ok(!/oc-brand-name/.test(sb.slice(0, sb.indexOf('{modal && ('))), 'a marca não fica mais na barra lateral aberta');
   assert.ok(!/oc-brand-name|tb-brand|>FORGE</.test(tb), 'o nome FORGE não fica mais na barra superior');
   assert.ok(app.indexOf('<Topbar ') < app.indexOf('<div className="oc-body">'), 'o topo ocupa a largura toda, acima da barra lateral'); assert.match(app, /oc-app oc-app-col/);
-  assert.ok(sb.indexOf('oc-side-files') < sb.indexOf('className="oc-side-user"'), 'o perfil continua no rodapé, abaixo de Arquivos'); assert.ok(sb.indexOf('className="oc-side-user"') > sb.indexOf('<nav className="oc-envs"'), 'o perfil não subiu para o topo');
-  assert.ok(!/onOpenSettings/.test(sb), 'a barra lateral não ganhou ação nova');
+  assert.ok(!/oc-side-user|oc-avatar|prefs\.name/.test(sb), 'o cartão de nome e perfil saiu da barra lateral'); assert.ok(sb.indexOf('<Icon name="folderOpen"') < sb.indexOf('<Icon name="clock"'), 'Arquivos em cima e Sessões logo abaixo'); assert.match(sb, /oc-side-sessions" onClick=\{onOpenSessions\}/); assert.ok(sb.indexOf('oc-side-sessions') > sb.indexOf('<nav className="oc-envs"'), 'no rodapé');
+  assert.ok(!/onOpenSettings/.test(sb), 'a barra lateral não abre Configurações');
   assert.match(grid, /<ProviderLogo id=\{session\.provider \|\| 'claude'\} size=\{20\} variant="mascot" \/>/, 'o ícone do cabeçalho do terminal é o de sempre');
   assert.ok(!/ProviderMascot/.test(grid)); assert.ok(!/\.px-|oc-pmark/.test(css), 'sem regras do mascote novo nem do ícone do cabeçalho');
   assert.match(src('main.jsx'), /import '\.\/cockpit-ui\.css'/);

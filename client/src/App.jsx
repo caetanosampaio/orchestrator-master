@@ -6,6 +6,7 @@ import Cockpit from './pages/Cockpit.jsx';
 import Missions from './pages/Missions.jsx';
 import Settings from './pages/Settings.jsx';
 import WorkspaceDialog from './components/WorkspaceDialog.jsx';
+import SessionsDialog from './components/SessionsDialog.jsx';
 import { useStore } from './store.jsx';
 import { nav } from './api.js';
 import { useMissions } from './use-missions.js';
@@ -29,7 +30,7 @@ function useNarrow() {
 
 export default function App() {
   const [navOpen, setNavOpen] = useState(false);
-  const [dialog, setDialog] = useState(null); // 'workspaces' | null (as Configurações são uma página: view 'settings')
+  const [dialog, setDialog] = useState(null); // 'workspaces' | 'sessions' | null (as Configurações são uma página: view 'settings')
   const [settingsTab, setSettingsTab] = useState(() => /^#\/settings\/([a-z-]+)/.exec(location.hash)?.[1] ?? 'perfil'), [settingsKey, setSettingsKey] = useState(0); // #/settings/<seção> abre direto na seção (ex.: #/settings/mascotes) // a chave refaz a página para ela abrir na aba pedida
   const [ui] = useUi();
   const narrow = useNarrow();
@@ -57,7 +58,8 @@ export default function App() {
   const closeDialog = useCallback(() => setDialog(null), []);
   const closeSettings = useCallback(() => goView(backTo.current === 'settings' ? 'cockpit' : backTo.current), [goView]);
 
-  const side = { onOpenWorkspaces: openWorkspaces };
+  const openSessions = useCallback(() => { setNavOpen(false); setDialog('sessions'); }, []);
+  const side = { onOpenWorkspaces: openWorkspaces, onOpenSessions: openSessions };
   return (
     <div className="oc-app oc-app-col">
       <button type="button" className="skip" onClick={() => document.getElementById('main')?.focus()}>Pular para o conteúdo</button>
@@ -77,7 +79,7 @@ export default function App() {
         <main id="main" tabIndex={-1} className="oc-content">
           {/* O Cockpit fica SEMPRE montado (só escondido em Missions): os terminais não são recriados ao voltar, então rolagem e texto digitado se mantêm.
               Escondido, o contêiner mede 0 e o terminal não se reajusta (TerminalGrid só ajusta acima de 40px): nenhum redimensionamento vai ao servidor. */}
-          <div className="oc-view" hidden={view !== 'cockpit'}><Cockpit onOpenWorkspaces={openWorkspaces} onOpenSettings={openSettings} /></div>
+          <div className="oc-view" hidden={view !== 'cockpit'}><Cockpit onOpenWorkspaces={openWorkspaces} onOpenSettings={openSettings} onOpenSessions={openSessions} /></div>
           {view === 'missions' && <Missions onOpenCockpit={openCockpit} data={missionsData} />}
           {view === 'settings' && <Settings key={settingsKey} initial={settingsTab} onClose={closeSettings} onOpenWorkspaces={openWorkspaces} />}
         </main>
@@ -91,6 +93,7 @@ export default function App() {
       )}
       <PrereqModal suspended={!!dialog || view === 'settings'} onOpenAccounts={() => openSettings('accounts')} /> {/* se afasta enquanto um diálogo (ex.: Configurações > Contas) está aberto */}
       {dialog === 'workspaces' && <WorkspaceDialog onClose={closeDialog} />}
+      {dialog === 'sessions' && <SessionsDialog onClose={closeDialog} />}
     </div>
   );
 }

@@ -1,13 +1,12 @@
 import React from 'react';
 import { useStore } from '../../store.jsx';
-import { usePrefs, useLayoutMode, useLayouts, useAutoRestore } from '../../hooks.js';
+import { usePrefs, useLayoutMode } from '../../hooks.js';
 import { LAYOUT_MODES } from '../../env-view.js';
 import { FONT_RANGE } from '../../prefs.js';
-import { SessionHistoryBody } from '../SessionHistory.jsx';
 import { Btn, Icon } from '../ui.jsx';
 import { Row, Switch, Card, Segmented } from './SettingsUi.jsx';
 
-// Seções do grupo "App e computador" e o histórico: preferências locais da interface. Só opções que existem de verdade.
+// Seções do grupo "App e computador" (o histórico de sessões saiu daqui: abre pelo botão Sessões, na barra lateral do Cockpit): preferências locais da interface. Só opções que existem de verdade.
 
 export function ProfileSection() {
   const [prefs, setPref] = usePrefs();
@@ -79,13 +78,4 @@ export function FilesSection({ onOpenWorkspaces }) {
       </Card>
     </>
   );
-}
-
-export function HistorySection() {
-  const { state } = useStore();
-  const [layouts] = useLayouts(), [autoRestore, setAutoRestore] = useAutoRestore();
-  const openWs = state?.activeWorkspace ?? null, wsName = openWs ? (openWs.displayName || openWs.name) : '';
-  return openWs
-    ? <SessionHistoryBody ws={openWs} topicId={null} where={wsName} order={layouts[openWs.id]?.order ?? []} autoRestore={autoRestore} onAutoRestore={setAutoRestore} />
-    : <p className="dim small">Abra um workspace para ver o histórico de sessões dele.</p>;
 }
