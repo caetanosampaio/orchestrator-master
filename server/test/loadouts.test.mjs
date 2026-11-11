@@ -221,7 +221,7 @@ test('wrapper .cmd (Windows) com caminho de plugin que quebraria a linha de coma
   assert.equal(pluginArg(w.spawned.at(-1).args), null);
 });
 
-test('o Maestro sempre recebe orquestrar-briefing, mesmo com as skills do papel personalizadas sem ela (o prompt e a linha do briefing mandam segui-la)', () => {
+test('o Maestro sempre recebe orquestrar-briefing, mesmo com as skills do papel personalizadas sem ela (o prompt do Maestro manda segui-la)', () => {
   assert.ok(L.effectiveSkills('maestro', {}).includes(L.MAESTRO_BRIEFING_SKILL));
   const custom = { loadouts: { maestro: { skills: ['protocolo-do-squad'] } } };
   assert.deepEqual(L.effectiveSkills('maestro', custom), [L.MAESTRO_BRIEFING_SKILL, 'protocolo-do-squad']);

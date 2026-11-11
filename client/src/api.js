@@ -6,8 +6,7 @@ async function req(method, url, body) {
   });
   if (res.status === 204) return null;
   const data = await res.json().catch(() => ({}));
-  // `panes`: opções que o servidor oferece junto do erro (ex.: 409 many_maestros, para escolher o Maestro do briefing)
-  if (!res.ok) throw Object.assign(new Error(data.error || `Erro ${res.status}`), { status: res.status, ...(data.code ? { code: data.code } : {}), ...(Array.isArray(data.panes) ? { panes: data.panes } : {}) });
+  if (!res.ok) throw Object.assign(new Error(data.error || `Erro ${res.status}`), { status: res.status, ...(data.code ? { code: data.code } : {}) });
   return data;
 }
 export const api = {

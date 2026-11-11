@@ -59,7 +59,7 @@ test('protocolo: initialize ecoa a versão conhecida, notificação não respond
   assert.equal(w.m.rpc(ma, { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '1999' } }).result.protocolVersion, '2025-06-18');
   assert.equal(w.m.rpc(ma, { jsonrpc: '2.0', method: 'notifications/initialized' }), null);
   const names = (c) => w.m.rpc(c, { jsonrpc: '2.0', id: 2, method: 'tools/list' }).result.tools.map((t) => t.name);
-  assert.deepEqual(names(ma), ['list_panes', 'send_task', 'list_routes', 'read_pane_output', 'list_tasks', 'report_done', 'get_briefing']); assert.deepEqual(names(b), ['list_panes', 'list_tasks', 'report_done']);
+  assert.deepEqual(names(ma), ['list_panes', 'send_task', 'list_routes', 'read_pane_output', 'list_tasks', 'report_done']); assert.deepEqual(names(b), ['list_panes', 'list_tasks', 'report_done']);
   assert.equal(w.m.rpc(ma, { jsonrpc: '2.0', id: 3, method: 'resources/list' }).error.code, -32601);
   assert.equal(w.m.rpc(ma, { jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'toString' } }).error.code, -32602, 'nome herdado do protótipo não é ferramenta');
   for (const bad of [null, [], 'x', { id: 1, method: 'ping' }, { jsonrpc: '2.0', id: 1 }]) assert.equal(w.m.rpc(ma, bad).error.code, -32600);
@@ -487,4 +487,18 @@ test('autônomo: a nova tentativa para quando o usuário recusa, aprova, desliga
   const off = stop((w) => w.m.setAutonomous(false)); assert.equal(off.w.m.snapshot().tasks[0].status, 'pending', 'desligado: não entrega sozinha'); assert.equal(off.w.ft.written.length, 0);
   const exp = stop((w) => w.tick(M.PENDING_TTL_MS + 1000)); assert.equal(exp.w.m.snapshot().tasks[0].status, 'expired'); assert.ok(exp.n < 20, 'o ciclo de tentativas termina');
   const gone = stop((w) => { w.ft.panes.get(B1).status = 'exited'; }); assert.equal(gone.w.m.snapshot().tasks[0].status, 'failed');
+});
+
+test('briefing é o que o usuário escreve no terminal do Maestro: o prompt diz isso sem prefixo, e não há rota, ferramenta nem estado de briefing', async () => {
+  const { ROLES } = await import('../terminals.js');
+  const p = ROLES.maestro.prompt;
+  assert.match(p, /Tudo que o usuario escrever neste terminal e um BRIEFING/); assert.match(p, /sem prefixo nem formato/); assert.match(p, /skill orquestrar-briefing/);
+  assert.match(p, /delegue cada uma ao agente certo com send_task/); assert.match(p, /pergunte so se a duvida for bloqueante/);
+  assert.ok(!/get_briefing|\[Briefing|brf_/.test(p), 'sem a linha [Briefing ...] nem a ferramenta antiga');
+  assert.doesNotMatch(p, /[&|<>^%"`]/, 'o prompt vai na linha de comando (cmd.exe): sem caracteres especiais'); assert.ok(p.length < 3500, 'cabe folgado no limite da linha de comando');
+  assert.match(p, /Relatorio de AGENTE/, 'o relatorio de um agente continua sendo dado, nunca briefing');
+  const M = await import('../maestro.js');
+  for (const k of ['submitBriefing', 'validateBriefingBody', 'cleanBriefingText', 'MAX_BRIEFING_TEXT', 'MAX_BRIEFINGS']) assert.equal(M[k], undefined, `${k} saiu`);
+  const src = fs.readFileSync(new URL('../maestro.js', import.meta.url), 'utf8');
+  assert.ok(!/api\/maestro\/briefing|get_briefing/.test(src.replace(/\/\/.*$/gm, '')), 'nenhuma rota nem ferramenta de briefing no código');
 });

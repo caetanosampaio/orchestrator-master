@@ -109,7 +109,7 @@ test('Times prontos: seções Para instalar (do servidor) e Seus, ver por dentro
   assert.match(src('use-squads.js'), /setPresets\(Array\.isArray\(d\?\.presets\) \? d\.presets : \[\]\)/, 'presets ausente = lista vazia (servidor antigo)');
   assert.match(t, /\{squad\.instruction && <Block title="Instrução do time"/, '"Ver por dentro" mostra a instrução'); assert.match(t, /aria-label=\{`Skills da vaga \$\{k \+ 1\}`\}/, 'e as skills de cada vaga');
   assert.match(cards, /slotSkills\(s\)/, 'o cartão mostra as skills de cada vaga');
-  for (const id of Object.keys(SKILLS)) for (const f of ['components/TeamsSettings.jsx', 'components/TeamComposer.jsx', 'components/TeamCards.jsx', 'components/BriefingBox.jsx']) assert.ok(!src(f).includes(`'${id}'`), `${f}: a skill ${id} não é escrita à mão na tela`);
+  for (const id of Object.keys(SKILLS)) for (const f of ['components/TeamsSettings.jsx', 'components/TeamComposer.jsx', 'components/TeamCards.jsx']) assert.ok(!src(f).includes(`'${id}'`), `${f}: a skill ${id} não é escrita à mão na tela`);
   assert.ok(!/onClose/.test(t), 'as páginas de dentro não escondem nem fecham a barra lateral das Configurações');
   assert.match(nav, /own: true/); assert.match(page, /!cur\.own &&/, 'a seção desenha o próprio título; a barra lateral é sempre a da página');
   assert.match(cards, /<ProviderMascot id=\{s\.provider\} size=\{size\} hat=\{s\.role === 'maestro'\} \/>/, 'cada vaga é um mascote na cor da IA, e o Maestro usa o chapéu'); assert.match(cards, /tc-m-l/, 'com o papel embaixo');

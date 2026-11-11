@@ -18,8 +18,6 @@ import SquadGallery from './SquadGallery.jsx';
 import { useSquads } from '../use-squads.js';
 import { launchPlan } from '../squads.js';
 import { PRESETS } from '../team-view.js';
-import BriefingBox from './BriefingBox.jsx';
-import { runningMaestros } from '../briefing-view.js';
 
 // Presets de equipe (team-view.js): o mesmo fluxo abre 2, 4 ou 6 terminais do Claude Code em paralelo, cada um com o seu papel. Os ids gravados continuam duo/squad/full; só o rótulo do squad de quatro virou "Squad".
 export const SQUADS = PRESETS.filter((p) => p.id !== 'builder');
@@ -194,7 +192,6 @@ export default function TerminalGrid({ onOpenWorkspaces, onOpenSettings, onOpenS
   const liveMine = mine.filter((s) => s.status === 'running').length;
   const room = (terminals?.maxSessions ?? 8) - live;
   const total = squadUsage(mine);
-  const maestroPanes = ws ? runningMaestros(mine, ws.id) : []; // com um Maestro rodando aparece o briefing
   const [mode] = useLayoutMode(ws?.id); // escolhido em Configurações > Visualização
   const maxId = L.maximized ? (mine.find((s) => s.recordId === L.maximized)?.id ?? null) : null;
 
@@ -337,7 +334,6 @@ export default function TerminalGrid({ onOpenWorkspaces, onOpenSettings, onOpenS
             {maestro && (maestro.autonomous || maestro.tasks.length > 0 || mine.some((x) => x.role === 'maestro' && x.status === 'running')) && <MaestroPopover onOpenSettings={onOpenSettings} />}
         </div>
       </div>}
-      {ws && maestroPanes.length > 0 && <BriefingBox workspaceId={ws.id} maestros={maestroPanes} briefings={maestro?.briefings} />}
 
       {!ws ? (
         <div className="oc-empty">
