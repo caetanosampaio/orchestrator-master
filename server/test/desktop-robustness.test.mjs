@@ -93,5 +93,5 @@ test('diagnóstico: sem token, ambiente nem workspaces', () => {
 
 test('módulos novos estão em electron-builder.json files', () => {
   const files = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '../../desktop/electron-builder.json'), 'utf8')).files;
-  for (const f of ['lock-cleanup.cjs', 'log-rotate.cjs', 'restart-policy.cjs', 'menu.cjs', 'mac-env.cjs']) assert.ok(files.includes(f), f);
+  for (const f of ['lock-cleanup.cjs', 'log-rotate.cjs', 'restart-policy.cjs', 'menu.cjs', 'mac-env.cjs', 'preload.cjs']) assert.ok(files.includes(f), f);
 });

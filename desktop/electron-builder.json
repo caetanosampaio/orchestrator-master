@@ -8,6 +8,7 @@
   },
   "files": [
     "main.cjs",
+    "preload.cjs",
     "mac-env.cjs",
     "migrate-userdata.cjs",
     "lock-cleanup.cjs",
