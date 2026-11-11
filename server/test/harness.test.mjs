@@ -148,7 +148,7 @@ test('o que a tabela FAZ nos terminais: Maestro novo abre com o modelo/esforço 
 // ---- Maestro: list_routes e task_type ----
 const MA = 'term_aaaaaaaa', B1 = 'term_bbbbbbbb';
 function maestroWorld(dbm) {
-  const panes = new Map([[MA, { id: MA, role: 'maestro', title: 'Maestro', status: 'running', provider: 'claude' }], [B1, { id: B1, role: 'builder', title: 'Construtor', status: 'running', provider: 'claude', agent: { state: 'idle', at: '2020-01-01T00:00:00Z' } }]]);
+  const panes = new Map([[MA, { id: MA, role: 'maestro', title: 'Maestro', status: 'running', provider: 'claude' }], [B1, { id: B1, role: 'builder', title: 'Construtor', status: 'running', provider: 'claude', skills: ['protocolo-do-squad', 'implementar-em-passos-pequenos', 'relato-de-conclusao'], agent: { state: 'idle', at: '2020-01-01T00:00:00Z' } }]]); // `skills`: as que o pane tem de fato (o hint só cita essas)
   const written = [], timers = [];
   const terms = { get: (id) => panes.get(id) ?? null, peek: (id) => panes.get(id) ?? null, list: () => [...panes.values()], write: (id, d) => { written.push([id, d]); return { ok: true }; }, readOutput: () => '' };
   const m = M.createMaestro({ getTerminals: () => terms, harness: { routes: () => H.routesForMaestro(dbm), route: (t) => H.routeFor(dbm, t), hint: H.taskHint }, setTimer: (fn) => { timers.push(fn); return { unref() {} }; } });
@@ -186,4 +186,34 @@ test('prompt do Maestro cita list_routes e task_type; o servidor liga o harness 
   assert.match(ROLES.maestro.prompt, /list_routes/); assert.match(ROLES.maestro.prompt, /task_type/);
   const idx = fs.readFileSync(new URL('../index.js', import.meta.url), 'utf8');
   assert.match(idx, /setupHarness\(app, \{ db \}\)/); assert.match(idx, /defaults: \(role, providerId\) => terminalDefaults\(db, role, providerId\)/); assert.match(idx, /harness: \{ routes: \(\) => routesForMaestro\(db\)/);
+});
+
+// ---- hint da tarefa (Fase 1): só as skills que o pane de destino tem; Codex sem /squad:; a instrução do agente nunca é cortada ----
+test('taskHint: cita /squad: só das skills que o pane tem; Codex e pane sem a lista não recebem /squad:; tipo e agente continuam', () => {
+  const route = { label: 'Consertar um defeito', skills: ['implementar-em-passos-pequenos', 'relato-de-conclusao'], agent: { name: 'Mestre', instruction: 'Mude pouco.' } };
+  assert.equal(H.taskHint(route, { provider: 'claude', skills: ['protocolo-do-squad', 'relato-de-conclusao'] }), ' [tipo: Consertar um defeito · skills: /squad:relato-de-conclusao · agente Mestre: Mude pouco.]', 'só a interseção');
+  for (const target of [{ provider: 'codex', skills: ['relato-de-conclusao'] }, { provider: 'claude', skills: [] }, { provider: 'claude' }, null, { provider: 'xx', skills: ['relato-de-conclusao'] }]) {
+    const h = H.taskHint(route, target); assert.ok(!/\/squad:|skills:/.test(h), `${JSON.stringify(target)}: ${h}`); assert.match(h, /tipo: Consertar um defeito · agente Mestre: Mude pouco\./);
+  }
+  assert.equal(H.taskHint(null, { provider: 'claude' }), '');
+});
+
+test('taskHint: instrução de agente com 1500 caracteres chega INTEIRA, com o tipo e 6 skills, e sem caracteres especiais', () => {
+  const instruction = `${'a'.repeat(700)} & | < > ^ % " ${'b'.repeat(791)}`; // com os caracteres especiais limpos, cabe no limite de MAX_INSTRUCTION
+  const clean = H.cleanLine(instruction, H.MAX_INSTRUCTION + 1); assert.ok(clean.length <= H.MAX_INSTRUCTION, String(clean.length));
+  const longLabel = [...H.TASK_TYPES].sort((a, b) => b.label.length - a.label.length)[0].label;
+  const skills = Object.keys(SKILLS).sort((a, b) => b.length - a.length).slice(0, H.MAX_ROW_SKILLS);
+  const h = H.taskHint({ label: longLabel, skills, agent: { name: 'n'.repeat(H.MAX_NAME), instruction: 'x'.repeat(H.MAX_INSTRUCTION) } }, { provider: 'claude', skills });
+  assert.ok(h.includes(`${'n'.repeat(H.MAX_NAME)}: ${'x'.repeat(H.MAX_INSTRUCTION)}]`), 'a instrução inteira e o fecho do colchete');
+  for (const s of skills) assert.ok(h.includes(`/squad:${s}`), s);
+  assert.ok(h.length <= H.TASK_HINT_MAX + 3);
+  const dirty = H.taskHint({ label: 'x', skills: [], agent: { name: 'A', instruction } }, { provider: 'claude', skills: [] });
+  assert.ok(!/[&|<>^%"`\u0000-\u001f]/.test(dirty), dirty.slice(0, 80)); assert.ok(dirty.endsWith(`${'b'.repeat(791)}]`), 'nada cortado no fim');
+});
+
+test('send_task: pane Codex de destino recebe o tipo e o agente, mas nenhuma menção a /squad:', () => {
+  const dbm = { settings: {}, harness: { pilot: {}, rows: {}, agents: [] } };
+  const w = maestroWorld(dbm); w.panes.get(B1).provider = 'codex'; w.panes.get(B1).skills = []; w.m.setAutonomous(true);
+  assert.ok(!w.call(w.maestro, 'send_task', { pane_id: B1, task_type: 'fix-bug', task: 'corrija' }).isError);
+  const line = w.written.find((x) => x[0] === B1)[1]; assert.match(line, /\[tipo: Consertar um defeito\]/); assert.ok(!/\/squad:/.test(line), line);
 });
