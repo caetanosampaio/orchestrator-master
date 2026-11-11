@@ -8,7 +8,7 @@ const src = (f) => fs.readFileSync(new URL(`../../client/src/${f}`, import.meta.
 
 test('launchPlan: model/effort por vaga só entram quando alguma vaga os define (compatível com squads antigos)', () => {
   const old = launchPlan({ slots: [{ role: 'builder', provider: 'claude' }, { role: 'reviewer', provider: 'claude' }] });
-  assert.deepEqual(old, { roles: ['builder', 'reviewer'], providers: ['claude', 'claude'], teamId: 'duo' });
+  assert.deepEqual(old, { roles: ['builder', 'reviewer'], providers: ['claude', 'claude'], teamId: 'duo', templateId: null, slotIndexes: [0, 1] }, 'sem id de time: templateId nulo (o terminal abre só com o papel)');
   const plan = launchPlan({ slots: [{ role: 'builder', provider: 'codex', model: 'm1' }, { role: 'reviewer', provider: 'claude', effort: 'high' }] });
   assert.deepEqual(plan.models, ['m1', null]); assert.deepEqual(plan.efforts, [null, 'high']);
 });
@@ -33,6 +33,7 @@ test('rascunho: editar mantém model/effort; duplicar zera o id e põe "(cópia)
   assert.equal(c.id, null); assert.equal(c.name, 'Minha (cópia)'); assert.deepEqual(c.slots, saved.slots);
   assert.ok(draftFromCopy({ name: 'x'.repeat(60), slots: [] }).name.length <= 40);
   const w = withProvider(d, 0, 'codex'); assert.deepEqual(w.slots[0], { role: 'builder', provider: 'codex' });
+  assert.deepEqual(withProvider({ ...d, slots: [{ ...saved.slots[0], skills: ['a'] }] }, 0, 'codex').slots[0], { role: 'builder', provider: 'codex' }, 'para o Codex as skills também saem');
   assert.equal(withProvider(d, 0, 'claude').slots[0].model, 'opus', 'mesmo agente: nada muda');
   assert.equal(withSlot(d, 0, { model: undefined }).slots[0].model, undefined);
   const mixed = applyMix({ ...d, slots: [{ role: 'builder', provider: 'claude', model: 'opus' }, { role: 'reviewer', provider: 'claude', effort: 'high' }] }, 'claude-leads', ['claude', 'codex']);
@@ -45,7 +46,16 @@ test('interface: Configurações > Times prontos e Arquivos, e o chip do Cockpit
   const st = ['pages/Settings.jsx', 'settings-nav.js', 'components/settings/SettingsUi.jsx', 'components/settings/AppSections.jsx', 'components/settings/TeamSections.jsx', 'components/settings/AisSection.jsx', 'components/settings/MascotsSection.jsx'].map(src).join('\n');
   assert.match(st, /item\('equipes', 'Times prontos'/); assert.match(st, /item\('arquivos', 'Arquivos'/); assert.match(st, /<TeamsSettings \/>/); assert.match(st, /onOpenWorkspaces/);
   const t = src('components/TeamsSettings.jsx');
-  assert.match(t, /useSquads\(\)/); assert.match(t, /options: sq\.options/, 'modelo e esforço vêm do `options` do servidor'); assert.match(t, /draftFromCopy\(s\)/); assert.match(t, /cleanSlots\(draft\.slots\)/);
+  assert.match(t, /useSquads\(\)/); assert.match(t, /options: sq\.options/, 'modelo e esforço vêm do `options` do servidor'); assert.match(t, /draftFromCopy\(s\)/);
+  assert.match(t, /templateBody\(draft, \{ previous: /, 'o corpo salvo sai do rascunho limpo (vagas com skills e a instrução)'); assert.match(src('squads.js'), /cleanSlots\(draft\?\.slots\)/, 'templateBody usa as vagas limpas');
+  assert.match(t, /useSkillCatalog\(\)/); assert.match(t, /catalog=\{cat\.skills\}/, 'o editor recebe o catálogo de skills do servidor');
+  const cmp = src('components/TeamComposer.jsx');
+  assert.match(cmp, /label="Instrução do time"/); assert.match(cmp, /maxLength=\{MAX_INSTRUCTION\}/); assert.match(cmp, /\{instrLen\}\/\{MAX_INSTRUCTION\}/, 'contador até 1500'); assert.match(cmp, /todos os terminais do time/);
+  assert.match(cmp, /groupSkills\(catalog\)/, 'skills agrupadas por grupo'); assert.match(cmp, /O Codex CLI ainda não recebe skills/); assert.match(cmp, /disabled=\{busy \|\| !can\}/, 'vaga Codex mostra as skills desabilitadas');
+  assert.match(cmp, /aria-expanded=\{isOpen\}/); assert.match(cmp, /max=\{MAX_SLOT_SKILLS\}/);
+  const grid = src('components/TerminalGrid.jsx');
+  assert.match(grid, /templateId && Number\.isInteger\(slotIndexes\?\.\[i\]\) \? \{ templateId, slotIndex: slotIndexes\[i\] \} : \{\}/, 'cada POST /api/terminals leva templateId e slotIndex juntos (ou nenhum)');
+  assert.match(grid, /templateId: plan\.templateId, slotIndexes: plan\.slotIndexes/);
   const sb = src('components/Sidebar.jsx');
   assert.match(sb, /className="oc-side-files"[^>]*onClick=\{onOpenWorkspaces\}/); assert.match(sb, /<Icon name="folderOpen"[^>]*\/><span className="side-label">Arquivos<\/span>/);
   assert.ok(sb.indexOf('oc-side-files') < sb.indexOf('oc-side-sessions'), 'Arquivos fica acima de Sessões');

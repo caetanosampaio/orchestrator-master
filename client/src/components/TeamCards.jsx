@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Icon } from './ui.jsx';
 import { ProviderMascot } from './ProviderLogo.jsx';
-import { squadSummary, squadMissing, describeSquad, slotChoiceLabels } from '../squads.js';
+import { squadSummary, squadMissing, describeSquad, slotChoiceLabels, slotSkills } from '../squads.js';
 import { aiName } from '../provider-catalog.js';
 
 /**
@@ -10,16 +10,17 @@ import { aiName } from '../provider-catalog.js';
  */
 export const labelFor = (providers) => (id) => aiName(id, providers.find((p) => p.id === id)?.label);
 
-/** A fila de mascotes de um time: um por vaga, com a bolinha na cor do papel e o nome do papel embaixo. O texto do modelo e do esforço vai no `title` (e aparece completo em "Ver por dentro"). */
+/** A fila de mascotes de um time: um por vaga, com a bolinha na cor do papel e o nome do papel embaixo, e quantas skills a vaga leva. O modelo, o esforço e as skills vão no `title` (e aparecem completos em "Ver por dentro"). */
 export function Strip({ slots, byRole, labelOf, options, size = 30, big = false }) {
   return (
     <ul className={`tc-strip${big ? ' big' : ''}`} aria-label="Quem faz parte do time">
       {slots.map((s, k) => {
-        const role = byRole[s.role], ch = slotChoiceLabels(s, options);
+        const role = byRole[s.role], ch = slotChoiceLabels(s, options), sk = slotSkills(s);
         return (
-          <li key={k} className="tc-m" style={{ '--role': role?.color || 'var(--brand)' }} title={`${role?.label ?? s.role} · ${labelOf(s.provider)} · ${ch.model} · ${ch.effort}`}>
+          <li key={k} className="tc-m" style={{ '--role': role?.color || 'var(--brand)' }} title={`${role?.label ?? s.role} · ${labelOf(s.provider)} · ${ch.model} · ${ch.effort}${sk.length ? ` · skills: ${sk.join(', ')}` : ''}`}>
             <ProviderMascot id={s.provider} size={size} hat={s.role === 'maestro'} />
             <span className="tc-m-l"><i aria-hidden="true" />{role?.label ?? s.role}</span>
+            {sk.length > 0 && <span className="tc-m-sk">{sk.length} {sk.length === 1 ? 'skill' : 'skills'}<span className="sr">: {sk.join(', ')}</span></span>}
           </li>
         );
       })}

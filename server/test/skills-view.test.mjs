@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { callName, rolesLoading, tasksUsing, toggleSkill, diffFromDefault, firstSentence, filterByRole, summary, ROLE_ORDER } from '../../client/src/skills-view.js';
+import { callName, rolesLoading, tasksUsing, toggleSkill, diffFromDefault, firstSentence, filterByRole, summary, ROLE_ORDER, skillGroup, groupLabel, skillSource, catalogSkills, groupSkills } from '../../client/src/skills-view.js';
 import { itemById, filterNav } from '../../client/src/settings-nav.js';
 import { SKILLS, ROLE_DEFAULTS } from '../../server/loadouts.js';
 
@@ -33,9 +33,30 @@ test('diferença do padrão, primeira frase, filtro por papel e o resumo do topo
 });
 
 test('o que a tela mostra existe de verdade: os papéis e as skills do catálogo do servidor, nada inventado', () => {
-  assert.deepEqual(ROLE_ORDER, Object.keys(ROLE_DEFAULTS)); assert.equal(Object.keys(SKILLS).length, 7);
+  assert.deepEqual(ROLE_ORDER, Object.keys(ROLE_DEFAULTS)); assert.equal(Object.keys(SKILLS).length, 16, 'catálogo da Fase 1: 8 de processo + 8 da biblioteca');
   const sec = src('components/settings/SkillsSection.jsx'); for (const id of Object.keys(SKILLS)) assert.ok(!sec.includes(`'${id}'`), `${id} não deve estar escrita na tela: ela vem do servidor`);
   for (const t of ['list_panes', 'list_tasks', 'report_done', 'send_task', 'read_pane_output', 'list_routes']) assert.ok(sec.includes(t), `o servidor MCP cita ${t}`);
+});
+
+test('grupo e origem: Processo/Domínio (sem o campo = Processo), vendorizadas com origem e licença, catálogo enxuto para os seletores e grupos na ordem', () => {
+  assert.equal(skillGroup({ group: 'dominio' }), 'dominio'); assert.equal(skillGroup({ group: 'processo' }), 'processo'); assert.equal(skillGroup({}), 'processo', 'servidor antigo'); assert.equal(skillGroup({ group: 'outro' }), 'processo'); assert.equal(skillGroup(null), 'processo');
+  assert.equal(groupLabel('dominio'), 'Domínio'); assert.equal(groupLabel('processo'), 'Processo'); assert.equal(groupLabel('x'), 'Processo');
+  assert.deepEqual(skillSource({ source: 'vendored', origin: ' anthropics/x\nfrontend-design 1.1.1 ', license: 'Apache-2.0' }), { vendored: true, origin: 'anthropics/x frontend-design 1.1.1', license: 'Apache-2.0' });
+  assert.deepEqual(skillSource({ source: 'vendored' }), { vendored: true, origin: null, license: null });
+  assert.deepEqual(skillSource({ source: 'forge', origin: 'ignorado', license: 'MIT' }), { vendored: false, origin: null, license: null }, 'as do FORGE não mostram origem');
+  const cat = catalogSkills({ catalog: { skills: [{ id: 'b', description: 'B.', body: 'longo', group: 'dominio' }, { id: 'a' }, null, { id: '' }, { description: 'sem id' }] } });
+  assert.deepEqual(cat.map((s) => [s.id, s.group]), [['b', 'dominio'], ['a', 'processo']]); assert.equal(Object.hasOwn(cat[0], 'body'), false, 'o seletor não carrega o texto longo'); assert.equal(cat[1].description, '');
+  assert.deepEqual(catalogSkills(null), []);
+  assert.deepEqual(groupSkills(cat).map((g) => [g.id, g.label, g.skills.map((s) => s.id)]), [['processo', 'Processo', ['a']], ['dominio', 'Domínio', ['b']]]);
+  assert.deepEqual(groupSkills([{ id: 'x' }]).map((g) => g.id), ['processo'], 'grupo vazio não aparece'); assert.deepEqual(groupSkills(null), []);
+});
+
+test('catálogo do servidor: cada skill tem grupo e as vendorizadas trazem origem e licença (contrato da Fase 1)', async () => {
+  const { loadoutView } = await import('../../server/loadouts.js');
+  const list = loadoutView({}).catalog.skills;
+  assert.equal(list.length, 16);
+  for (const s of list) { assert.ok(['processo', 'dominio'].includes(s.group), `${s.id}: grupo`); if (s.source === 'vendored') assert.ok(skillSource(s).origin && skillSource(s).license, `${s.id}: origem e licença`); }
+  assert.ok(groupSkills(catalogSkills({ catalog: { skills: list } })).length === 2, 'os dois grupos aparecem');
 });
 
 test('página Skills: na navegação (com o próprio cabeçalho), hook ligado a /api/loadouts e /api/harness, resumo, por papel, catálogo com o texto e o servidor MCP', () => {
@@ -45,6 +66,9 @@ test('página Skills: na navegação (com o próprio cabeçalho), hook ligado a 
   const sec = src('components/settings/SkillsSection.jsx');
   for (const t of ['Por papel', 'Catálogo', 'Servidor MCP do FORGE', 'O que cada papel recebe', 'Ver o texto que o agente recebe', 'Restaurar o padrão de', 'citadas na tabela']) assert.ok(sec.includes(t), `falta "${t}"`);
   assert.match(sec, /<EditPanel title="O que cada papel recebe"/); assert.match(sec, /<CheckChips label=\{`Skills de \$\{role\.label\}`\}/); assert.match(sec, /go\?\.\('tarefas'\)/, 'a skill leva à tabela Quem faz cada tarefa');
+  assert.match(sec, /groupLabel\(skillGroup\(skill\)\)/, 'cada cartão mostra o grupo'); assert.match(sec, /groupSkills\(list\)/, 'o catálogo vem separado por Processo e Domínio');
+  assert.match(sec, /src\.vendored && <div><dt>Origem<\/dt>/); assert.match(sec, /src\.vendored && <div><dt>Licença<\/dt>/, 'as de terceiros mostram origem e licença');
+  assert.match(src('use-skills.js'), /export function useSkillCatalog\(\)/); assert.match(src('use-skills.js'), /setSkills\(catalogSkills\(l\)\)/, 'o editor de times usa o mesmo catálogo');
   assert.match(sec, /<pre>\{skill\.body\}<\/pre>/); assert.ok(!/dangerouslySetInnerHTML/.test(sec), 'o texto da skill nunca vira HTML');
   const css = src('skills.css'); for (const k of ['sk-stats', 'sk-card', 'sk-role', 'sk-body', 'sk-mcp', 'sk-toggle']) assert.match(css, new RegExp(`\\.${k}\\b`), `falta .${k}`);
 });

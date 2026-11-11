@@ -102,6 +102,28 @@ html:not([data-motion="reduced"]) .oc-app .tb-work { animation: tb-work-bob 1.3s
 @keyframes tb-work-bob { 0%, 100% { transform: translateY(1px); } 50% { transform: translateY(-2px); } }
 @media (prefers-reduced-motion: reduce) { .oc-app .tb-work { animation: none; } }
 
+/* ---------- briefing para o Maestro: faixa compacta entre a barra de controles e a grade (só com um Maestro rodando); some com um terminal ampliado, como a barra ---------- */
+.oc-app .oc-brief { flex: none; display: flex; flex-direction: column; gap: 6px; padding: 6px 10px 8px; border-bottom: 1px solid var(--line); background: #000; font-size: 10.5px; }
+.oc-app .tg.tg-full > .oc-brief { display: none; }
+.oc-app .oc-brief-h { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; min-width: 0; }
+.oc-app .oc-brief-t { display: inline-flex; align-items: center; gap: 8px; min-height: 24px; padding: 0; border: 0; background: transparent; color: var(--strong); font: 600 11px var(--mono); cursor: pointer; }
+.oc-app .oc-brief-t:focus-visible { outline: 1px solid var(--focus); outline-offset: 2px; }
+.oc-app .oc-brief-t .hz-caret { transform: rotate(-45deg); } .oc-app .oc-brief-t[aria-expanded="true"] .hz-caret { transform: rotate(45deg); }
+.oc-app .oc-brief-st { min-width: 0; color: var(--dim); font: 400 10.5px var(--mono); overflow-wrap: anywhere; }
+.oc-app .oc-brief-st b { font-weight: 600; color: var(--text); }
+.oc-app .oc-brief-st.t-ok b { color: var(--ok-text); } .oc-app .oc-brief-st.t-wait b { color: var(--warn-text); } .oc-app .oc-brief-st.t-err b, .oc-app .oc-brief-st.t-err .oc-brief-note { color: var(--danger-text); }
+.oc-app .oc-brief-b { display: flex; flex-direction: column; gap: 6px; }
+.oc-app .oc-brief-in { width: 100%; box-sizing: border-box; min-height: 52px; max-height: 30vh; padding: 6px 10px; border: 1px solid var(--line-strong); border-radius: 0; background: #050505; color: var(--strong); font: 400 11.5px/1.5 var(--mono); resize: vertical; box-shadow: none; }
+.oc-app .oc-brief-in:focus { outline: none; border-color: var(--brand-soft); }
+.oc-app .oc-brief-in::placeholder { color: var(--faint); }
+.oc-app .oc-brief-f { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; min-width: 0; }
+.oc-app .oc-brief-n { font: 400 10px var(--mono); color: var(--dim); font-variant-numeric: tabular-nums; }
+.oc-app .oc-brief-p { display: inline-flex; align-items: center; gap: 6px; font: 400 10.5px var(--mono); color: var(--dim); }
+.oc-app .oc-brief-p select { width: auto; max-width: 220px; min-height: 24px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: 0; background: #000; color: var(--strong); font: inherit; }
+.oc-app .oc-brief-g { flex: 1; }
+.oc-app .oc-brief-err { font: 400 10.5px var(--mono); color: var(--danger-text); overflow-wrap: anywhere; }
+.oc-app .oc-brief .btn { min-height: 26px; padding: 0 12px; font-size: 11px; border-radius: 0; }
+
 /* rodapé da barra lateral: Arquivos e, logo abaixo, Sessões (um em cima do outro) */
 .oc-app .oc-side-foot { display: flex; flex-direction: column; gap: 2px; }
 .oc-app .oc-side-files:disabled { opacity: .5; cursor: default; }

@@ -9,6 +9,10 @@
 .ep-ctl > .tc-btn { margin-top: 8px; }
 
 .sk-list { display: flex; flex-direction: column; gap: var(--sp-3); }
+/* grupos do catálogo (Processo / Domínio): um subtítulo pequeno, como o dos blocos, e os cartões logo abaixo */
+.sk-group-sec { display: flex; flex-direction: column; gap: var(--sp-2); } .sk-group-sec + .sk-group-sec { margin-top: var(--sp-4); }
+.sk-group-h { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin: 0; font: 600 11.5px var(--mono); color: var(--strong); } .sk-group-h .dim { font-weight: 400; font-size: 11px; }
+.sk-origin { overflow-wrap: anywhere; color: var(--text); }
 .sk-card { background: #050505; border: 1px solid var(--line); animation: tc-in .3s steps(6, end) both; }
 .sk-card.open { border-color: var(--line-strong); }
 .sk-main { display: flex; flex-direction: column; gap: 8px; padding: 14px 18px 12px; }
