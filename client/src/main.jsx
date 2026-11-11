@@ -22,6 +22,7 @@ import './teams.css'; // página de Configurações e Configurações > Equipes 
 import './settings.css'; // página de Configurações (barra lateral agrupada, seções, Suas IAs, Mascotes)
 import './harness.css'; // Configurações > Quem faz cada tarefa e o mascote do FORGE
 import './skills.css'; // Configurações > Skills
+import './home.css'; // página Início (atividade de tokens, workspaces recentes)
 import './cockpit-ui.css'; // Cockpit na estrutura das Configurações (barra lateral e topo dos terminais): a última camada
 
 getLayouts().start(); // layout da grade por workspace (db.settings.layouts)
