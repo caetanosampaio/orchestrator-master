@@ -128,8 +128,12 @@ async function waitReady() {
 
 function createWindow() {
   const origin = `http://127.0.0.1:${port}`;
-  win = new BrowserWindow({ width: 1440, height: 900, minWidth: 900, minHeight: 600, backgroundColor: '#000000', title: 'FORGE', autoHideMenuBar: true, show: false,
-    webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false, devTools: !app.isPackaged } });
+  // Título da janela: "FORGE <versão>". No macOS a faixa da janela é desenhada pela própria interface (titleBarStyle hidden): os botões de fechar, minimizar e ampliar ficam à esquerda e o texto da faixa vem logo depois deles.
+  const title = `FORGE ${app.getVersion()}`;
+  win = new BrowserWindow({ width: 1440, height: 900, minWidth: 900, minHeight: 600, backgroundColor: '#000000', title, autoHideMenuBar: true, show: false,
+    ...(process.platform === 'darwin' ? { titleBarStyle: 'hidden', trafficLightPosition: { x: 14, y: 9 } } : {}),
+    webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false, devTools: !app.isPackaged, preload: path.join(__dirname, 'preload.cjs'), additionalArguments: [`--forge-version=${app.getVersion()}`] } });
+  win.on('page-title-updated', (e) => e.preventDefault()); // o título da página ("FORGE") não substitui o da janela, que leva a versão
   session.defaultSession.webRequest.onBeforeSendHeaders({ urls: [`${origin}/*`] }, (details, cb) => { details.requestHeaders['x-orch-token'] = API_TOKEN; cb({ requestHeaders: details.requestHeaders }); });
   win.once('ready-to-show', () => win.show());
   // a janela só navega dentro do próprio servidor local; qualquer link externo abre no navegador padrão
