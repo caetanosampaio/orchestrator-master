@@ -57,6 +57,14 @@ test('cada papel recebe a skill do seu papel e o protocolo do squad; o maestro d
   assert.match(L.SKILLS['mapear-codigo'].body, /Somente leitura/);
 });
 
+test('todo construtor recebe a skill de design de interface, e só o construtor', () => {
+  assert.ok(L.ROLE_DEFAULTS.builder.includes('design-de-interface'));
+  for (const role of ['maestro', 'reviewer', 'scout']) assert.ok(!L.ROLE_DEFAULTS[role].includes('design-de-interface'), role);
+  const s = L.SKILLS['design-de-interface'];
+  assert.match(s.body, /Sistema existente primeiro/); assert.match(s.body, /Todos os estados/); assert.match(s.body, /Acessibilidade/); assert.match(s.body, /não verificado visualmente/);
+  assert.ok(L.pluginFiles('builder', L.skillsFor('builder', {}))['skills/design-de-interface/SKILL.md'].includes(s.body), 'a skill vai no plugin do construtor');
+});
+
 // ---------- seleção ----------
 test('skillsFor: padrão sem configuração; a escolha do usuário vale; id inválido, repetido e papel desconhecido são tolerados', () => {
   assert.deepEqual(L.skillsFor('builder', {}), [...L.ROLE_DEFAULTS.builder]);
@@ -211,4 +219,27 @@ test('wrapper .cmd (Windows) com caminho de plugin que quebraria a linha de coma
     usage: { read: () => null, has: () => true, forget() {} }, persist: () => {} });
   const r = await wm.create({ role: 'builder' }); assert.equal(r.ok, true, r.error);
   assert.equal(pluginArg(w.spawned.at(-1).args), null);
+});
+
+test('o Maestro sempre recebe orquestrar-briefing, mesmo com as skills do papel personalizadas sem ela (o prompt e a linha do briefing mandam segui-la)', () => {
+  assert.ok(L.effectiveSkills('maestro', {}).includes(L.MAESTRO_BRIEFING_SKILL));
+  const custom = { loadouts: { maestro: { skills: ['protocolo-do-squad'] } } };
+  assert.deepEqual(L.effectiveSkills('maestro', custom), [L.MAESTRO_BRIEFING_SKILL, 'protocolo-do-squad']);
+  assert.ok(!L.effectiveSkills('builder', {}).includes(L.MAESTRO_BRIEFING_SKILL), 'só o maestro');
+});
+
+test('skill vendorizada no plugin: o frontmatter regerado avisa da modificação e aponta a licença; as autorais não ganham a linha', () => {
+  const files = L.pluginFiles('builder', ['frontend-design', 'backend-api']);
+  const fe = files['skills/frontend-design/SKILL.md'];
+  assert.match(fe, /^---\nname: frontend-design\ndescription: .+\nlicense: ".*Apache-2\.0.*LICENSE\.txt.*regerado pelo FORGE; corpo sem alteração\."\n---\n/);
+  assert.ok(fe.includes(L.SKILLS['frontend-design'].body), 'o corpo vai sem alteração');
+  assert.ok(files['skills/frontend-design/LICENSE.txt']);
+  assert.ok(!/\nlicense:/.test(files['skills/backend-api/SKILL.md']));
+});
+
+test('regras coerentes entre as skills: pesquisa pedida libera a rede; quem é só leitura não roda bisect; o sistema visual do projeto prevalece', () => {
+  assert.match(L.SKILLS['mapear-codigo'].body, /Somente leitura/); assert.match(L.SKILLS['mapear-codigo'].body, /pesquisa-web-segura/);
+  assert.match(L.SKILLS['implementar-em-passos-pequenos'].body, /pesquisa-web-segura/);
+  assert.match(L.SKILLS['depuracao-metodica'].body, /Se o seu papel é somente leitura/); assert.match(L.SKILLS['depuracao-metodica'].body, /não rode `git bisect`/);
+  assert.match(L.SKILLS['design-de-interface'].body, /prevalece sobre a skill frontend-design/);
 });
