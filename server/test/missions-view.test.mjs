@@ -1,7 +1,7 @@
 // Visão da página Missões (client/src/missions-view.js): estados, progresso, custo, equipe, agrupamento e o grafo do workflow, só a partir de dados do servidor.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { missionState, STATE_META, MISSION_STATES, missionProgress, missionDuration, fmtDuration, missionUsage, missionTeam, groupMissions, buildWorkflow, roundStages, nodeDetail, controlItems, cycleActions, parallelInfo, missionFeed, attentionReason, roundStepStatus, nodeIdForTask } from '../../client/src/missions-view.js';
+import { missionState, STATE_META, MISSION_STATES, missionProgress, missionDuration, fmtDuration, missionUsage, missionTeam, groupMissions, buildWorkflow, roundStages, nodeDetail, controlItems, cycleActions, parallelInfo, missionFeed, attentionReason, roundStepStatus, nodeIdForTask, TASK_STATUS_LABEL } from '../../client/src/missions-view.js';
 
 const step = (id, o = {}) => ({ id, title: `Etapa ${id}`, dependsOn: [], status: 'queued', round: null, taskId: null, ...o });
 const mission = (o = {}) => ({ id: 'mis_1', title: 'Missão', objective: 'Fazer X', workspaceId: 'ws_1', createdAt: '2026-11-10T10:00:00Z', status: 'running', tasks: [], ...o });
@@ -142,7 +142,7 @@ test('roundStages: execução e verificação são camadas separadas', () => {
 test('nodeDetail: agente, atividade, evidências, arquivos e aprovação, só do que está gravado', () => {
   const m = mission({ cycle: planWithParallel(), tasks: [{ id: 'task_1', log: Array.from({ length: 20 }, (_, i) => `l${i}`), error: null }] });
   const d = nodeDetail(m, 'step:s1', { sessions: [], activity: [] });
-  assert.equal(d.agent.id, 'executor'); assert.equal(d.activity.length, 12); assert.equal(d.activity.at(-1), 'l19');
+  assert.equal(d.agent.name, 'Executor'); assert.equal(d.activity.length, 12); assert.equal(d.activity.at(-1), 'l19');
   assert.equal(d.evidence.level, 'verified'); assert.deepEqual(d.evidence.verifications, [{ id: 'test', status: 'pass', command: 'npm test' }]);
   assert.deepEqual(d.files, ['a.js', 'b.js']); assert.equal(d.evidence.summary, 'feito');
   assert.equal(nodeDetail(m, 'planner').facts[0][1], '2');
@@ -189,4 +189,165 @@ test('ciclo bloqueado em approval_required: pendente decide; decidida, só retom
   const items = controlItems(decided); assert.deepEqual(items.map((i) => i.kind), ['resume']); assert.match(items[0].detail, /NÃO foi executada/); assert.match(items[0].detail, /aprovada/);
   assert.match(controlItems(blocked([{ id: 'a1', status: 'rejected', decidedAt: '2026-11-10T10:05:00Z' }]))[0].detail, /rejeitada/);
   assert.equal(cycleActions(mission({ cycle: cycle({ status: 'limit_reached' }) })).start, true);
+});
+
+// ---------- workflow do squad: tarefas do Maestro (PARTE A do Mission Control) ----------
+const sess = (id, o = {}) => ({ id, workspaceId: 'ws_1', status: 'running', provider: 'claude', providerLabel: 'Claude Code', role: 'builder', roleLabel: 'Construtor', title: `Pane ${id}`, model: 'claude-sonnet-5-5', effort: 'high', ...o });
+const mt = (id, to, createdAt, o = {}) => ({ id, to, toRole: 'builder', toTitle: `Pane ${to}`, status: 'delivered', text: `Fazer ${id}\nsegunda linha`, taskType: null, summary: null, note: null, createdAt, doneAt: null, ...o });
+const T0 = '2026-11-11T10:00:00.000Z', at = (s) => new Date(Date.parse(T0) + s * 1000).toISOString();
+const sessions = [sess('p1'), sess('p2', { provider: 'codex', providerLabel: 'Codex CLI', model: null, effort: null, roleLabel: 'Revisor', role: 'reviewer' }), sess('pm', { role: 'maestro', roleLabel: 'Maestro', title: 'Maestro' }), sess('px', { workspaceId: 'ws_outro' })];
+const squadWf = (tasks, o = {}) => buildWorkflow(mission(o.mission), { sessions: o.sessions ?? sessions, maestro: { autonomous: false, tasks } });
+const taskNodes = (wf) => wf.nodes.filter((n) => n.kind === 'task');
+
+test('squad: N tarefas paralelas = N ramos saindo do Maestro e chegando na Entrega', () => {
+  const wf = squadWf([mt('a', 'p1', at(0)), mt('b', 'p2', at(5)), mt('c', 'p1', at(9))]);
+  assert.deepEqual(wf.nodes.map((n) => n.id), ['mission', 'maestro', 'task:a', 'task:b', 'task:c', 'delivery']);
+  assert.deepEqual(taskNodes(wf).map((n) => n.col), [2, 2, 2], 'mesma fase');
+  assert.equal(new Set(taskNodes(wf).map((n) => n.row)).size, 3, 'linhas distintas');
+  assert.deepEqual(wf.edges.filter((e) => e.from === 'maestro').map((e) => e.to), ['task:a', 'task:b', 'task:c']);
+  assert.deepEqual(wf.edges.filter((e) => e.to === 'delivery').map((e) => e.from), ['task:a', 'task:b', 'task:c']);
+  assert.equal(wf.edges.some((e) => e.from.startsWith('task:') && e.to.startsWith('task:')), false, 'sem dependência entre elas');
+  assert.deepEqual(parallelInfo(wf), { running: 3, queued: 0, maxLane: 3, steps: 3, phases: 1 });
+  assert.ok(wf.nodes.every((n) => n.source === 'squad'));
+});
+
+test('squad: sequência (uma concluída antes da próxima nascer) = linha reta, sem aresta redundante', () => {
+  const wf = squadWf([mt('a', 'p1', at(0), { status: 'done', doneAt: at(10), summary: 'ok' }), mt('b', 'p2', at(20), { status: 'done', doneAt: at(30) }), mt('c', 'p1', at(40))]);
+  assert.deepEqual(taskNodes(wf).map((n) => n.col), [2, 3, 4], 'fases em sequência');
+  assert.equal(new Set(wf.nodes.map((n) => n.row)).size, 1, 'tudo na mesma linha');
+  assert.deepEqual(wf.edges.map((e) => e.id), ['mission>maestro', 'maestro>task:a', 'task:a>task:b', 'task:b>task:c', 'task:c>delivery'], 'A->C não é desenhada: já passa por B');
+  assert.equal(wf.nodes.find((n) => n.id === 'delivery').col, 5);
+});
+
+test('squad: ramos que se juntam (join) e dependência só por doneAt <= createdAt', () => {
+  const wf = squadWf([mt('a', 'p1', at(0), { status: 'done', doneAt: at(10) }), mt('b', 'p2', at(2), { status: 'done', doneAt: at(12) }), mt('c', 'p1', at(20)), mt('d', 'p2', at(5))]);
+  const col = Object.fromEntries(taskNodes(wf).map((n) => [n.taskId, n.col]));
+  assert.deepEqual(col, { a: 2, b: 2, d: 2, c: 3 }, 'd nasceu antes de a/b terminarem: não depende deles');
+  assert.deepEqual(wf.edges.filter((e) => e.to === 'task:c').map((e) => e.from).sort(), ['task:a', 'task:b']);
+  const eq = squadWf([mt('a', 'p1', at(0), { status: 'done', doneAt: at(10) }), mt('b', 'p2', at(10))]);
+  assert.ok(eq.edges.some((e) => e.id === 'task:a>task:b'), 'doneAt igual a createdAt conta como antes');
+  const same = squadWf([mt('a', 'p1', at(0), { status: 'done', doneAt: at(0) }), mt('b', 'p2', at(0), { status: 'done', doneAt: at(0) })]);
+  assert.equal(same.nodes.length, 5, 'timestamps iguais não fazem ciclo nem travam');
+});
+
+test('squad: status do Maestro -> estado do nó (pending=aprovação, entregue=trabalhando, done=concluída, recusada/expirada/falha=atenção)', () => {
+  const wf = squadWf([mt('a', 'p1', at(0), { status: 'pending' }), mt('b', 'p1', at(1), { status: 'delivered' }), mt('c', 'p1', at(2), { status: 'done', doneAt: at(3) }), mt('d', 'p1', at(1), { status: 'rejected' }), mt('e', 'p1', at(1), { status: 'expired' }), mt('f', 'p1', at(1), { status: 'failed' }), mt('g', 'p1', at(1), { status: 'estranho' })]);
+  const st = Object.fromEntries(taskNodes(wf).map((n) => [n.taskId, n.state]));
+  assert.deepEqual(st, { a: 'approval', b: 'working', c: 'completed', d: 'attention', e: 'attention', f: 'attention', g: 'idle' });
+  assert.deepEqual(Object.keys(TASK_STATUS_LABEL).sort(), ['delivered', 'done', 'expired', 'failed', 'pending', 'rejected']);
+  const e = Object.fromEntries(wf.edges.map((x) => [x.id, x.state]));
+  assert.equal(e['maestro>task:b'], 'active'); assert.equal(e['maestro>task:a'], 'wait'); assert.equal(e['maestro>task:d'], 'err');
+  assert.equal(wf.nodes.find((n) => n.id === 'maestro').state, 'working', 'há tarefas em andamento');
+  assert.equal(squadWf([mt('a', 'p1', at(0), { status: 'done', doneAt: at(1) })]).nodes.find((n) => n.id === 'delivery').state, 'completed');
+  assert.equal(squadWf([mt('a', 'p1', at(0), { status: 'done', doneAt: at(1) })], { mission: { status: 'cancelled' } }).nodes.find((n) => n.id === 'delivery').state, 'cancelled');
+});
+
+test('squad: agent, currentTask e terminalId; ausente vira null (nada inventado)', () => {
+  const wf = squadWf([mt('a', 'p1', at(0)), mt('b', 'p2', at(1), { status: 'done', doneAt: at(2), text: 'x'.repeat(300) }), mt('c', 'p1', at(40), { status: 'pending' })]);
+  const a = wf.nodes.find((n) => n.id === 'task:a'), b = wf.nodes.find((n) => n.id === 'task:b'), c = wf.nodes.find((n) => n.id === 'task:c');
+  assert.deepEqual(a.agent, { name: 'Pane p1', role: 'Construtor', provider: 'claude', providerLabel: 'Claude Code', model: 'claude-sonnet-5-5', effort: 'high' });
+  assert.equal(a.terminalId, 'p1'); assert.equal(a.currentTask, 'Fazer a', 'primeira linha do texto, só quando trabalhando');
+  assert.equal(b.agent.provider, 'codex'); assert.equal(b.agent.model, null); assert.equal(b.agent.effort, null, 'a sessão não informou: null');
+  assert.equal(b.currentTask, null, 'concluída não tem tarefa atual'); assert.equal(c.currentTask, null, 'pendente também não');
+  const long = squadWf([mt('z', 'p1', at(0), { text: 'y'.repeat(300) })]).nodes.find((n) => n.id === 'task:z');
+  assert.equal(long.currentTask.length, 120);
+  const maestro = wf.nodes.find((n) => n.id === 'maestro');
+  assert.equal(maestro.agent.name, 'Maestro'); assert.equal(maestro.terminalId, 'pm'); assert.equal(maestro.kind, 'maestro');
+  const gone = squadWf([mt('a', 'p1', at(0))], { sessions: [sess('p1', { status: 'exited' })] });
+  assert.equal(gone.nodes.find((n) => n.id === 'task:a').terminalId, null, 'terminal encerrado não é aberto'); assert.equal(gone.nodes.find((n) => n.id === 'maestro').agent, null);
+  const noUsage = squadWf([mt('a', 'p1', at(0))], { sessions: [sess('p1', { model: null, usage: { model: 'claude-x' } })] });
+  assert.equal(noUsage.nodes.find((n) => n.id === 'task:a').agent.model, 'claude-x', 'sem model na sessão, usa o que o terminal reportou');
+});
+
+test('squad: só tarefas de panes do workspace da missão; sem nenhuma, cai no grafo do ciclo', () => {
+  const wf = squadWf([mt('a', 'p1', at(0)), mt('outra', 'px', at(1)), mt('fantasma', 'nao-existe', at(2))]);
+  assert.deepEqual(taskNodes(wf).map((n) => n.taskId), ['a']);
+  for (const maestro of [null, { tasks: [] }, { tasks: [mt('so-outro', 'px', at(0))] }, { tasks: 'lixo' }]) {
+    const f = buildWorkflow(mission({ cycle: planWithParallel() }), { sessions, maestro });
+    assert.ok(f.nodes.some((n) => n.id === 'planner') && !f.nodes.some((n) => n.kind === 'maestro'), 'ciclo');
+  }
+  assert.doesNotThrow(() => buildWorkflow(mission(), { sessions: null, maestro: { tasks: [{ id: null }, null, 5] } }));
+  assert.deepEqual(buildWorkflow(mission()).nodes.map((n) => n.id), ['mission', 'planner', 'delivery'], 'sem ctx: igual a antes');
+});
+
+test('ciclo (fallback): agent, currentTask, terminalId e source; modelo e esforço do Planner/Executor são null', () => {
+  const wf = buildWorkflow(mission({ cycle: planWithParallel() }), { sessions, maestro: null });
+  assert.ok(wf.nodes.every((n) => n.source === 'ciclo' && n.terminalId === null && 'agent' in n && 'currentTask' in n));
+  const planner = wf.nodes.find((n) => n.id === 'planner'), s2 = wf.nodes.find((n) => n.id === 'step:s2'), s1 = wf.nodes.find((n) => n.id === 'step:s1');
+  assert.deepEqual(planner.agent, { name: 'Planner', role: 'Decide a próxima etapa', provider: 'claude', providerLabel: 'Claude Code', model: null, effort: null });
+  assert.equal(s2.agent.name, 'Executor'); assert.equal(s2.agent.model, null, 'o modelo do terminal não é o do ciclo'); assert.equal(s2.agent.effort, null);
+  assert.equal(s2.currentTask, 'Etapa s2'); assert.equal(s1.currentTask, null, 'concluída não tem tarefa atual');
+  assert.equal(wf.nodes.find((n) => n.id === 'mission').agent, null); assert.equal(wf.nodes.find((n) => n.id === 'delivery').agent, null);
+  assert.equal(buildWorkflow(mission({ cycle: cycle({ status: 'planning' }) })).nodes.find((n) => n.id === 'planner').currentTask, 'Planejando a próxima etapa');
+});
+
+test('nodeDetail com ctx do Maestro: agent, terminalId, context e errors da tarefa; ciclo mantém campos e ganha os novos', () => {
+  const tasks = [mt('a', 'p1', at(0), { status: 'done', doneAt: at(5), summary: 'Feito. Arquivos: a.js', taskType: 'new-feature' }), mt('b', 'p2', at(10), { status: 'failed', note: 'O terminal acabou antes de concluir a tarefa.' }), mt('c', 'p1', at(11), { status: 'rejected' })];
+  const ctx = { sessions, maestro: { tasks }, activity: [] }, m = mission();
+  const a = nodeDetail(m, 'task:a', ctx);
+  assert.equal(a.agent.name, 'Pane p1'); assert.equal(a.terminalId, 'p1'); assert.match(a.context, /^Fazer a/); assert.deepEqual(a.errors, []);
+  assert.ok(a.facts.some(([k, v]) => k === 'Estado' && v === 'concluída') && a.facts.some(([k]) => k === 'Resumo do agente'));
+  assert.deepEqual(nodeDetail(m, 'task:b', ctx).errors, ['O terminal acabou antes de concluir a tarefa.']);
+  assert.deepEqual(nodeDetail(m, 'task:c', ctx).errors, ['Recusada pelo usuário.']);
+  assert.equal(nodeDetail(m, 'maestro', ctx).agent.name, 'Maestro'); assert.equal(nodeDetail(m, 'maestro', ctx).terminalId, 'pm');
+  assert.equal(nodeDetail(m, 'task:zzz', ctx), null);
+  assert.equal(nodeDetail(m, 'task:a', { sessions, activity: [] }), null, 'sem o ctx do Maestro, o nó da tarefa não existe');
+  const cyc = mission({ cycle: planWithParallel(), tasks: [{ id: 'task_2', log: ['l'] }] }), d = nodeDetail(cyc, 'step:s2', { sessions, maestro: null });
+  assert.equal(d.agent.name, 'Executor'); assert.equal(d.terminalId, null); assert.equal(d.context, d.instructions); assert.deepEqual(d.errors, []);
+  assert.equal(nodeDetail(cyc, 'planner').agent.model, null); assert.equal(nodeDetail(cyc, 'mission').agent, null);
+  assert.equal(nodeIdForTask(squadWf(tasks), 'a'), 'task:a');
+});
+
+// ---------- correções pós-revisão: filtro por tempo, payload real do /api/maestro e pane que sumiu ----------
+test('squad: tarefa antiga (criada antes do início da missão) não vira nó; data ausente ou inválida não descarta', () => {
+  const old = mt('velha', 'p1', '2026-11-09T09:00:00.000Z', { status: 'done', doneAt: '2026-11-09T09:30:00.000Z' }), now = mt('nova', 'p1', at(0));
+  assert.deepEqual(taskNodes(squadWf([old, now])).map((n) => n.taskId), ['nova'], 'sem ciclo: corta pelo createdAt da missão (2026-11-10T10:00)');
+  // com ciclo: vale cycle.startedAt (mais tarde que a criação da missão)
+  const cyc = { mission: { cycle: cycle({ startedAt: at(100) }) } };
+  assert.deepEqual(taskNodes(squadWf([mt('antes', 'p1', at(50)), mt('depois', 'p1', at(150))], cyc)).map((n) => n.taskId), ['depois']);
+  assert.deepEqual(taskNodes(squadWf([mt('igual', 'p1', at(100))], cyc)).map((n) => n.taskId), ['igual'], 'criada no instante do início conta');
+  // só tarefas antigas: o squad some e volta o grafo do ciclo
+  const onlyOld = buildWorkflow(mission({ cycle: planWithParallel() }), { sessions, maestro: { tasks: [old] } });
+  assert.ok(onlyOld.nodes.some((n) => n.id === 'planner') && !onlyOld.nodes.some((n) => n.kind === 'maestro'));
+  // datas ausentes/inválidas
+  assert.deepEqual(taskNodes(squadWf([mt('semdata', 'p1', null), mt('lixo', 'p1', 'nao-e-data')])).map((n) => n.taskId).sort(), ['lixo', 'semdata'], 'tarefa sem data válida não é descartada');
+  assert.deepEqual(taskNodes(squadWf([old, now], { mission: { createdAt: undefined } })).map((n) => n.taskId).sort(), ['nova', 'velha'], 'missão sem data: nada é cortado');
+  assert.deepEqual(taskNodes(squadWf([old], { mission: { createdAt: 'lixo' } })).map((n) => n.taskId), ['velha']);
+});
+
+test('squad: payload no formato REAL do snapshot de /api/maestro (JSON cru do store) — sequência vira linha reta', () => {
+  const snapshot = JSON.parse(JSON.stringify({
+    autonomous: true, autoPerMinute: 6,
+    tasks: [ // server/maestro.js: snapshot() = tasks.slice(-50).reverse(): a MAIS RECENTE primeiro
+      { id: 'task_c3', to: 'p1', toRole: 'builder', toTitle: 'Pane p1', status: 'delivered', text: 'Terceira: integrar', taskType: 'new-feature', summary: null, note: null, createdAt: at(300), from: 'pm', decidedBy: 'auto', decidedAt: at(301), doneAt: null },
+      { id: 'task_b2', to: 'p2', toRole: 'reviewer', toTitle: 'Pane p2', status: 'done', text: 'Segunda: revisar', taskType: null, summary: 'Revisado, sem bloqueios.', note: null, createdAt: at(120), from: 'pm', decidedBy: 'user', decidedAt: at(125), doneAt: at(200) },
+      { id: 'task_a1', to: 'p1', toRole: 'builder', toTitle: 'Pane p1', status: 'done', text: 'Primeira: implementar', taskType: 'new-feature', summary: 'Feito.', note: null, createdAt: at(0), from: 'pm', decidedBy: 'user', decidedAt: at(5), doneAt: at(100) },
+    ],
+  }));
+  const wf = buildWorkflow(mission(), { sessions, maestro: snapshot });
+  assert.deepEqual(taskNodes(wf).map((n) => [n.taskId, n.col, n.state]), [['task_a1', 2, 'completed'], ['task_b2', 3, 'completed'], ['task_c3', 4, 'working']], 'ordem de criação, não a do payload');
+  assert.equal(new Set(wf.nodes.map((n) => n.row)).size, 1, 'linha reta');
+  assert.deepEqual(wf.edges.map((e) => e.id), ['mission>maestro', 'maestro>task:task_a1', 'task:task_a1>task:task_b2', 'task:task_b2>task:task_c3', 'task:task_c3>delivery']);
+  assert.equal(wf.edges.find((e) => e.id === 'task:task_b2>task:task_c3').state, 'active');
+  assert.equal(nodeDetail(mission(), 'task:task_b2', { sessions, maestro: snapshot }).facts.find(([k]) => k === 'Resumo do agente')[1], 'Revisado, sem bloqueios.');
+});
+
+test('squad: pane que sumiu da lista — a tarefa fica se o remetente ou outra tarefa ligada a vincula ao workspace; sem pista, é descartada', () => {
+  const gone = [sess('pm', { role: 'maestro', roleLabel: 'Maestro', title: 'Maestro' })]; // p1 foi fechado: não está mais em /api/terminals
+  // (a) pane ainda na lista, mesmo encerrado (exited): fica, sem terminal para abrir
+  const exited = squadWf([mt('a', 'p1', at(0), { from: 'pm' })], { sessions: [...gone, sess('p1', { status: 'exited' })] }).nodes.find((n) => n.id === 'task:a');
+  assert.ok(exited); assert.equal(exited.terminalId, null); assert.equal(exited.agent.name, 'Pane p1');
+  // (b) pane fechado, mas o remetente (Maestro do workspace) está na lista: a tarefa fica, sem agente nem terminal (null), com o destino gravado
+  const wf = squadWf([mt('b', 'p1', at(0), { from: 'pm', status: 'done', doneAt: at(10) })], { sessions: gone });
+  const b = wf.nodes.find((n) => n.id === 'task:b');
+  assert.ok(b, 'tarefa de pane fechado mantida'); assert.equal(b.agent, null); assert.equal(b.terminalId, null); assert.equal(b.subtitle, 'Pane p1'); assert.equal(b.state, 'completed');
+  assert.equal(nodeDetail(mission(), 'task:b', { sessions: gone, maestro: { tasks: [mt('b', 'p1', at(0), { from: 'pm' })] } }).agent, null);
+  // (c) o MESMO `to` em outra tarefa já ligada (remetente que também fechou): fica
+  const c = squadWf([mt('c1', 'p1', at(0), { from: 'pm', status: 'done', doneAt: at(5) }), mt('c2', 'p1', at(10), { from: 'pm-fechado' })], { sessions: gone });
+  assert.deepEqual(taskNodes(c).map((n) => n.taskId), ['c1', 'c2']);
+  // (d) sem pista nenhuma (pane e remetente desconhecidos): descartada, e o grafo volta a ser o do ciclo
+  assert.deepEqual(taskNodes(squadWf([mt('d', 'p-desconhecido', at(0), { from: 'quem-sabe' })], { sessions: gone })), []);
+  assert.ok(buildWorkflow(mission({ cycle: planWithParallel() }), { sessions: gone, maestro: { tasks: [mt('d', 'p-desconhecido', at(0))] } }).nodes.some((n) => n.id === 'planner'));
+  // (e) pane de OUTRO workspace nunca é puxado, nem que o remetente seja do workspace
+  assert.deepEqual(taskNodes(squadWf([mt('e', 'px', at(0), { from: 'pm' })], { sessions: [...gone, sess('px', { workspaceId: 'ws_outro' })] })), []);
 });
