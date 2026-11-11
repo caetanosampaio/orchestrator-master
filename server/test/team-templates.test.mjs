@@ -32,7 +32,7 @@ after(async () => { await new Promise((r) => server.close(r)); fs.rmSync(root, {
 
 test('começa vazio e informa os limites', async () => {
   const r = await jr(await call('/api/team-templates'));
-  assert.equal(r.status, 200); assert.deepEqual(r.j.templates, []); assert.deepEqual(r.j.limits, { maxTemplates: T.MAX_TEMPLATES, maxSlots: T.MAX_SLOTS, maxName: T.MAX_NAME });
+  assert.equal(r.status, 200); assert.deepEqual(r.j.templates, []); assert.deepEqual(r.j.limits, { maxTemplates: T.MAX_TEMPLATES, maxSlots: T.MAX_SLOTS, maxName: T.MAX_NAME, maxInstruction: 1500, maxSlotSkills: 8 });
 });
 
 test('criar: grava, devolve id tpl_xxxxxxxx e persiste no disco', async () => {

@@ -12,7 +12,7 @@
 // Tudo que chega pela API é validado de forma ESTRITA (listas fechadas de IA/modelo/esforço/skills); leitura do banco é tolerante; falha ao gravar desfaz o estado parcial e responde 500.
 import * as store from './store.js';
 import { now, uid } from './store.js';
-import { providerIds, providerOptions, validateChoice, isProvider } from './providers/index.js';
+import { providerIds, providerOptions, validateChoice, isProvider, getProvider } from './providers/index.js';
 import { SKILLS, isSkillId, ROLE_DEFAULTS, skillsFor } from './loadouts.js';
 
 export const MAX_AGENTS = 20, MAX_NAME = 40, MAX_INSTRUCTION = 1500, MAX_ROW_SKILLS = 6, MAX_CODE = 96 * 1024;
@@ -49,8 +49,9 @@ const isObj = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 const typeOf = (id) => TASK_TYPES.find((t) => t.id === id) ?? null;
 const norm = (s) => s.toLocaleLowerCase('pt-BR');
 // Texto do usuário que vai para a linha de comando ou para outro terminal: sem controles, sem ESC e sem & | < > ^ % " (a linha de comando do Windows os trata como especiais).
+// Exportada: a instrução do time (team-templates.js) usa a MESMA regra, porque também vai para a linha de comando.
 // eslint-disable-next-line no-control-regex
-const cleanLine = (v, max) => String(v ?? '').replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}&|<>^%"`]+/gu, ' ').replace(/ {2,}/g, ' ').trim().slice(0, max);
+export const cleanLine = (v, max) => String(v ?? '').replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}&|<>^%"`]+/gu, ' ').replace(/ {2,}/g, ' ').trim().slice(0, max);
 const optionIds = (providerId, kind) => (providerOptions()[providerId]?.[kind] ?? []).map((x) => x.id);
 
 // ---------- leitura tolerante do banco ----------
@@ -220,13 +221,21 @@ export function routeFor(db, taskType) {
   const h = readHarness(db), eff = effectiveRow(t, h), a = h.agents.find((x) => x.id === eff.agentId) ?? null;
   return { id: t.id, label: t.label, role: t.role, provider: eff.provider, model: eff.model, effort: eff.effort, skills: eff.skills, agent: a ? { name: a.name, instruction: a.instruction } : null };
 }
-/** Texto que o servidor acrescenta à tarefa entregue: o tipo, as skills (/squad:<id>) e o agente. Curto (até 700 caracteres) e sem caracteres de controle. */
-export function taskHint(route) {
+// Teto do hint: cabe a instrução inteira do agente (MAX_INSTRUCTION) mais o nome dele, o tipo e até MAX_ROW_SKILLS skills; a instrução nunca é cortada.
+export const TASK_HINT_MAX = 1900;
+/**
+ * Texto que o servidor acrescenta à tarefa entregue: o tipo, as skills e o agente, sem caracteres de controle. `target` = o pane de destino (peek de terminals.js):
+ * só entram como /squad:<id> as skills da linha que ESSE pane realmente tem (`target.skills`); pane sem plugins (Codex) ou sem a lista não recebe menção a /squad:.
+ */
+export function taskHint(route, target = null) {
   if (!route) return '';
   const parts = [`tipo: ${route.label}`];
-  if (route.skills?.length) parts.push(`skills: ${route.skills.map((s) => `/squad:${s}`).join(' ')}`);
+  const plugins = isProvider(target?.provider) && getProvider(target.provider).capabilities?.plugins === true;
+  const has = plugins && Array.isArray(target?.skills) ? target.skills : [];
+  const skills = (route.skills ?? []).filter((s) => has.includes(s));
+  if (skills.length) parts.push(`skills: ${skills.map((s) => `/squad:${s}`).join(' ')}`);
   if (route.agent) parts.push(`agente ${route.agent.name}: ${route.agent.instruction}`);
-  return ` [${cleanLine(parts.join(' · '), 700)}]`;
+  return ` [${cleanLine(parts.join(' · '), TASK_HINT_MAX)}]`;
 }
 
 export function setupHarness(app, { db }) {

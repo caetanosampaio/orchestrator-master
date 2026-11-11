@@ -16,7 +16,7 @@ import { setupUiSettings } from './ui-settings.js';
 import { createLoadouts, setupLoadouts } from './loadouts.js';
 import { createAgentStatus, hooksJson } from './agent-status.js';
 import { setupLayouts } from './layouts.js';
-import { setupTeamTemplates } from './team-templates.js';
+import { setupTeamTemplates, findTeam } from './team-templates.js';
 import { setupHarness, terminalDefaults, routesForMaestro, routeFor, taskHint } from './harness.js';
 import { createConversationStore, setupConversations, startConversationCapture } from './conversations.js';
 import { setupExecution, blockedReason } from './execution.js';
@@ -120,7 +120,7 @@ const trustOptions = inTest ? {} : {
   ...(process.env.ORCH_NO_TRUST === '1' ? {} : { trustFolders: ({ provider, cwd, configDir }) => { if (provider === 'claude') trustClaudeFolder(cwd, { configDir }); } }),
   ...(strictProjectConfig() ? {} : { inspectConfig: async () => [] }),
 };
-const terminals = createTerminalManager({ ...trustOptions, db, defaults: (role, providerId) => terminalDefaults(db, role, providerId), accounts, loadouts, agentStatus, statusLine: rateLimits, onEnd: (rec) => { if ((rec.provider ?? 'claude') === 'claude' && db.workspaces.some((w) => w.id === rec.workspaceId)) conversations.sync(rec); }, track: childRegistry.track, worktrees, mcp: maestro, persist: store.saveOrThrow, isChildAlive: (terminalId) => childRegistry.pending().some((r) => r && r.kind === 'terminal' && r.terminalId === terminalId && pidAlive(r.pid)), usage: createUsageReader({ pricesFile: path.join(store.dataDir, 'pricing.json') }) }); // terminais interativos (PTY) do Claude Code: um processo por pane, em paralelo
+const terminals = createTerminalManager({ ...trustOptions, db, defaults: (role, providerId) => terminalDefaults(db, role, providerId), findTemplate: (id) => findTeam(db, id), accounts, loadouts, agentStatus, statusLine: rateLimits, onEnd: (rec) => { if ((rec.provider ?? 'claude') === 'claude' && db.workspaces.some((w) => w.id === rec.workspaceId)) conversations.sync(rec); }, track: childRegistry.track, worktrees, mcp: maestro, persist: store.saveOrThrow, isChildAlive: (terminalId) => childRegistry.pending().some((r) => r && r.kind === 'terminal' && r.terminalId === terminalId && pidAlive(r.pid)), usage: createUsageReader({ pricesFile: path.join(store.dataDir, 'pricing.json') }) }); // terminais interativos (PTY) do Claude Code: um processo por pane, em paralelo
 let worktreeRecovery = { settled: [], inconsistent: [], unregistered: [], unverified: [] }; // E3: preenchido logo DEPOIS do reclaim dos processos filhos (abaixo)
 const app = express();
 // Host válido em toda a /api, Origin permitido quando enviado e OBRIGATÓRIO em POST/PUT/PATCH/DELETE (CSRF, DNS rebinding e chamadas locais sem Origin; ver origin-guard.js).
