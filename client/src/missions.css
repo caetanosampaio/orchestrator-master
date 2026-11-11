@@ -5,7 +5,7 @@
 .mi-page {
   /* os ícones de estado (WsIcon) leem --ws-*, definidos para a sidebar do Cockpit: repetidos aqui */
   --ws-idle: var(--led-idle); --ws-work: var(--led-run); --ws-err: var(--led-err); --ws-wait: var(--led-warn); --ws-done: var(--led-ok); --ws-ok: #22c55e; --ws-attn-text: var(--danger-text);
-  --s-idle: #6b7280; --s-working: var(--ws-claude, #e08060); --s-completed: #22c55e; --s-attention: #ef4444; --s-approval: #f59e0b; --s-cancelled: #6b7280;
+  --s-idle: #6b7280; --s-working: var(--ws-claude, #e08060); --s-completed: #22c55e; --s-attention: #c43030; --s-approval: #f59e0b; --s-cancelled: #6b7280;
   --hair: rgba(255, 255, 255, .08); --hair-2: rgba(255, 255, 255, .14); --mute: #7c8494; --mute-2: #9ca3af; /* --mute = 5,2:1 sobre o preto (texto pequeno precisa de 4,5:1) */
   flex: 1; min-height: 0; display: grid; grid-template-columns: 272px minmax(0, 1fr); background: #000; color: var(--text);
 }
@@ -35,9 +35,9 @@
 .mi-btn:active:not(:disabled) { transform: translateY(1px); }
 .mi-btn:disabled { opacity: .5; cursor: not-allowed; }
 .mi-btn:focus-visible, .mi-row:focus-visible, .mi-link:focus-visible, .mi-tabs button:focus-visible, .mi-plus:focus-visible, .mi-fold-h:focus-visible, .mi-seg:focus-visible { outline: 1px dashed var(--brand); outline-offset: 2px; }
-.mi-btn-primary { border-color: var(--bone); background: var(--bone); color: #fff; font-weight: 700; } /* #dc2626 + branco = 4,8:1 */
-.mi-btn-primary:hover:not(:disabled) { border-color: #b91c1c; background: #b91c1c; color: #fff; }
-.mi-btn-danger { border-color: rgba(239, 68, 68, .45); color: #f87171; } .mi-btn-danger:hover:not(:disabled) { border-color: var(--brand); background: rgba(239, 68, 68, .08); color: #fca5a5; }
+.mi-btn-primary { border-color: var(--bone); background: var(--bone); color: #fff; font-weight: 700; } /* #b42222 + branco = 4,8:1 */
+.mi-btn-primary:hover:not(:disabled) { border-color: #9a1818; background: #9a1818; color: #fff; }
+.mi-btn-danger { border-color: rgba(196, 48, 48, .45); color: #ee5a5a; } .mi-btn-danger:hover:not(:disabled) { border-color: var(--brand); background: rgba(196, 48, 48, .08); color: #fca5a5; }
 .mi-btn-ghost { border-color: transparent; color: var(--mute-2); } .mi-btn-ghost:hover:not(:disabled) { border-color: var(--hair-2); }
 .mi-btn.is-busy { cursor: progress; }
 .mi-spin { width: 11px; height: 11px; border: 1.5px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: mi-rot .7s linear infinite; }
@@ -57,20 +57,20 @@
 .mi-group-h, .mi-fold-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0; padding: 12px 8px 6px; color: var(--mute); font: 600 10.5px var(--mono); letter-spacing: .18em; text-transform: uppercase; }
 .mi-row { position: relative; width: 100%; display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 6px 8px; border: 0; border-radius: 4px; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; overflow: hidden; transition: background-color 120ms ease; }
 .mi-row:hover { background: rgba(255, 255, 255, .04); }
-.mi-row.on { background: rgba(239, 68, 68, .10); } /* selecionada: só o fundo tingido, como a linha ativa do Overclock */
+.mi-row.on { background: rgba(196, 48, 48, .10); } /* selecionada: só o fundo tingido, como a linha ativa do Overclock */
 .mi-row .wsi { flex: none; }
 .mi-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .mi-row-title { color: #e4e4e7; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mi-row.on .mi-row-title, .mi-row:hover .mi-row-title { color: #fff; }
 .mi-row-sub { color: var(--mute); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mi-row-n { flex: none; color: var(--mute); font-size: 12px; font-variant-numeric: tabular-nums; }
-.mi-row.st-approval .mi-row-n { color: var(--s-approval); } .mi-row.st-attention .mi-row-n { color: #f87171; } .mi-row.st-working .mi-row-n { color: var(--s-working); }
+.mi-row.st-approval .mi-row-n { color: var(--s-approval); } .mi-row.st-attention .mi-row-n { color: #ee5a5a; } .mi-row.st-working .mi-row-n { color: var(--s-working); }
 .mi-row.st-cancelled .mi-row-title { color: var(--mute-2); text-decoration: line-through; text-decoration-color: #4b5563; }
 .mi-row-meter { position: absolute; left: 8px; right: 8px; bottom: 0; height: 1px; background: var(--s-working); transform-origin: 0 50%; animation: mi-meter 1.8s ease-in-out infinite; }
 .mi-side-f { flex: none; max-height: 45%; overflow-y: auto; padding: 0 8px 8px; border-top: 1px solid var(--hair); scrollbar-width: thin; scrollbar-color: #27272a transparent; }
 .mi-fold-h { width: 100%; border: 0; background: none; cursor: pointer; padding: 12px 8px; transition: color 120ms ease; } .mi-fold-h:hover { color: #fff; }
 .mi-fold-h .mi-count { margin-left: auto; } .mi-fold-h svg { flex: none; }
-.mi-note { margin: 10px 8px; color: var(--mute-2); font-size: 12px; } .mi-note.err { color: #f87171; }
+.mi-note { margin: 10px 8px; color: var(--mute-2); font-size: 12px; } .mi-note.err { color: #ee5a5a; }
 .mi-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 16px 8px; font-size: 13px; } .mi-empty p { margin: 0; }
 
 /* ---------- área principal ---------- */
@@ -89,7 +89,7 @@
 .mi-head-id { flex: 1 1 380px; min-width: 0; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .mi-title { margin: 0; color: #fff; font-size: 28px; line-height: 1.15; font-weight: 700; letter-spacing: -.02em; overflow-wrap: anywhere; }
 .mi-state { display: inline-flex; align-items: center; gap: 7px; height: 22px; padding: 0 9px; border: 1px solid color-mix(in srgb, var(--st) 55%, transparent); border-radius: 4px; background: color-mix(in srgb, var(--st) 8%, transparent); color: var(--st); font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
-.mi-state.st-attention { color: #f87171; } .mi-state.st-idle, .mi-state.st-cancelled { color: var(--mute-2); }
+.mi-state.st-attention { color: #ee5a5a; } .mi-state.st-idle, .mi-state.st-cancelled { color: var(--mute-2); }
 .mi-state i { width: 6px; height: 6px; border-radius: 50%; background: var(--st); }
 .mi-state.st-working i, .mi-state.st-approval i { animation: mi-blink 1.2s ease-in-out infinite; }
 .mi-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
@@ -123,7 +123,7 @@
 /* ---------- gates (aprovações e bloqueios): cartão com a borda esquerda na cor do estado ---------- */
 .mi-control { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; padding-top: 16px; }
 .mi-ctl { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; border: 1px solid var(--hair-2); border-left: 2px solid var(--st); border-radius: 6px; background: #050505; animation: mi-spawn 320ms cubic-bezier(.23, 1, .32, 1) both; }
-.mi-ctl .mi-kicker { color: var(--st); } .mi-ctl.st-attention .mi-kicker { color: #f87171; } .mi-ctl .mi-kicker > i { background: var(--st); }
+.mi-ctl .mi-kicker { color: var(--st); } .mi-ctl.st-attention .mi-kicker { color: #ee5a5a; } .mi-ctl .mi-kicker > i { background: var(--st); }
 .mi-ctl.st-approval .mi-kicker > i { animation: mi-blink 1.2s ease-in-out infinite; }
 .mi-ctl-t { color: #fff; font-size: 14px; font-weight: 700; }
 .mi-ctl p:not(.mi-kicker) { margin: 0; color: #b6b7c0; font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }
@@ -149,16 +149,16 @@
 .mi-detail-head h3 { flex: 1 1 100%; order: 3; margin: 0; color: #fff; font-size: 15px; line-height: 1.35; font-weight: 700; overflow-wrap: anywhere; }
 .mi-detail-head .oc-iconbtn { margin-left: auto; }
 .mi-badge { display: inline-flex; align-items: center; gap: 6px; height: 20px; padding: 0 8px; border: 1px solid color-mix(in srgb, var(--st) 55%, transparent); border-radius: 4px; color: var(--st); font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
-.mi-badge.st-attention { color: #f87171; } .mi-badge.st-idle, .mi-badge.st-cancelled { color: var(--mute-2); }
+.mi-badge.st-attention { color: #ee5a5a; } .mi-badge.st-idle, .mi-badge.st-cancelled { color: var(--mute-2); }
 .mi-badge i { width: 6px; height: 6px; border-radius: 50%; background: var(--st); } .mi-badge.st-working i, .mi-badge.st-approval i { animation: mi-blink 1.2s ease-in-out infinite; }
 .mi-detail-agent { display: flex; align-items: center; gap: 8px; color: var(--mute-2); font-size: 12px; } .mi-detail-agent > span:nth-child(2) { flex: 1; min-width: 0; overflow-wrap: anywhere; } .mi-detail-agent b { color: #e4e4e7; } .mi-detail-agent .prov-mark { flex: none; }
 .mi-detail-appr { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid rgba(245, 158, 11, .4); border-radius: 6px; } .mi-detail-appr strong { display: flex; align-items: center; gap: 6px; color: var(--s-approval); font-size: 13px; }
 .mi-facts { padding: 10px 0; border-top: 1px solid var(--hair); border-bottom: 1px solid var(--hair); }
 .mi-sec h4 { margin: 0 0 8px; color: var(--mute); font-size: 10.5px; font-weight: 600; letter-spacing: .18em; text-transform: uppercase; } .mi-sec p { margin: 0; font-size: 12px; }
-.mi-errors { padding: 2px 0 2px 12px; border-left: 2px solid var(--s-attention); font-size: 12px; } .mi-errors strong { display: flex; align-items: center; gap: 6px; color: #f87171; } .mi-errors ul { margin: 6px 0 0; padding-left: 16px; color: #d4d4d8; overflow-wrap: anywhere; }
+.mi-errors { padding: 2px 0 2px 12px; border-left: 2px solid var(--s-attention); font-size: 12px; } .mi-errors strong { display: flex; align-items: center; gap: 6px; color: #ee5a5a; } .mi-errors ul { margin: 6px 0 0; padding-left: 16px; color: #d4d4d8; overflow-wrap: anywhere; }
 .mi-log { margin: 0; max-height: 220px; overflow: auto; padding: 10px 12px; border: 1px solid var(--hair); border-radius: 4px; background: #000; color: #d4d4d8; font: 12px/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; scrollbar-width: thin; scrollbar-color: #27272a transparent; }
 .mi-log.live::after { content: '▍'; margin-left: 2px; color: var(--s-working); animation: mi-caret 1s steps(1) infinite; }
-.mi-evlevel { display: flex; align-items: center; gap: 7px; margin: 0 0 6px; color: var(--st); font-size: 12px; font-weight: 600; } .mi-evlevel.st-attention { color: #f87171; }
+.mi-evlevel { display: flex; align-items: center; gap: 7px; margin: 0 0 6px; color: var(--st); font-size: 12px; font-weight: 600; } .mi-evlevel.st-attention { color: #ee5a5a; }
 .mi-evlevel i, .mi-verifs i { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--st); }
 .mi-reasons { margin: 0 0 8px; padding-left: 16px; color: var(--mute-2); font-size: 12px; }
 .mi-verifs, .mi-files { display: flex; flex-direction: column; gap: 4px; margin: 0 0 8px; padding: 0; list-style: none; font-size: 12px; }
@@ -184,7 +184,7 @@
 .mi-tasks .tone-run i { background: var(--s-working); animation: mi-blink 1.2s ease-in-out infinite; } .mi-tasks .tone-ok i { background: var(--s-completed); } .mi-tasks .tone-wait i { background: var(--s-approval); animation: mi-blink 1.6s ease-in-out infinite; } .mi-tasks .tone-err i { background: var(--s-attention); } .mi-tasks .tone-stop i { background: transparent; border: 1px solid #a78bfa; }
 .mi-task-t { flex: 1 1 220px; min-width: 0; } .mi-task-b { font-size: 11px; } .mi-task-s { color: var(--mute-2); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; }
 .mi-terms li b { color: #fff; } .mi-term-s { margin-left: auto; color: var(--mute-2); }
-.mi-terms .ag-working .mi-term-s { color: var(--s-working); } .mi-terms .ag-waiting .mi-term-s { color: var(--s-approval); } .mi-terms .ag-failed .mi-term-s { color: #f87171; } .mi-terms .ag-done .mi-term-s { color: var(--s-completed); }
+.mi-terms .ag-working .mi-term-s { color: var(--s-working); } .mi-terms .ag-waiting .mi-term-s { color: var(--s-approval); } .mi-terms .ag-failed .mi-term-s { color: #ee5a5a; } .mi-terms .ag-done .mi-term-s { color: var(--s-completed); }
 .mi-pane .mi-btn { margin-top: 12px; }
 
 /* ---------- formulário de nova missão ---------- */

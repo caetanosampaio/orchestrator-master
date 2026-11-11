@@ -75,3 +75,16 @@ test('Cockpit compacto: textos pequenos na barra lateral, no topo, na barra de c
   assert.ok(px(/\.oc-ptitle, \.oc-app \.oc-ptitle\.sub \{ font-size: ([\d.]+)px/) <= 11, 'título do terminal'); assert.ok(px(/\.oc-pf \{[^}]*font-size: ([\d.]+)px/) <= 10, 'rodapé do terminal');
   assert.ok(px(/\.ad, [^{]*\{ font-size: ([\d.]+)px/) <= 10, 'atividade'); assert.ok(!/xterm|fontSize|font-size: var\(--term/.test(tail), 'o texto do terminal não é tocado aqui');
 });
+
+test('vermelhos mais escuros e terminais sem cor por papel: nenhum vermelho vivo restou nos estilos e as bordas dos terminais são todas iguais, finas e em vermelho escuro', () => {
+  const tok = src('tokens.css'), css = src('cockpit-ui.css'), grid = src('components/TerminalGrid.jsx');
+  for (const [name, old] of [['--brand', '#ef4444'], ['--bone', '#dc2626'], ['--focus', '#ef4444']]) assert.ok(!new RegExp(`${name}: ${old}`).test(tok), `${name} voltou ao vermelho antigo`);
+  const lum = (hex) => { const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
+  const hexOf = (n) => new RegExp(`${n}: (#[0-9a-f]{6})`, 'i').exec(tok)[1], bright = (h) => 0.299 * parseInt(h.slice(1, 3), 16) + 0.587 * parseInt(h.slice(3, 5), 16) + 0.114 * parseInt(h.slice(5, 7), 16);
+  assert.ok(bright(hexOf('--brand')) < bright('#ef4444') - 15, 'a marca ficou mais escura'); assert.ok(bright(hexOf('--bone')) < bright('#dc2626'));
+  assert.ok((lum(hexOf('--err')) + 0.05) / (lum('#0a0a0a') + 0.05) >= 4.5, 'o vermelho de texto continua legível (AA)');
+  for (const f of ['missions.css', 'missions-workflow.css', 'overclock.css', 'oc.css', 'retro.css', 'shell.css', 'teams.css']) assert.ok(!/#ef4444|#dc2626|rgba\(239, ?68, ?68/i.test(src(f)), `${f} ainda tem o vermelho vivo`);
+  assert.match(css, /\.oc-app \.oc-pane \{ border: 1px solid var\(--pane-line\) !important; box-shadow: none !important; \}/); assert.match(css, /--pane-line: #7a2424/);
+  assert.ok(!/'--role'/.test(grid.slice(grid.indexOf('<section className={`oc-pane'), grid.indexOf('<header className="oc-ph">'))), 'o terminal não leva mais a cor do papel');
+  assert.ok(!/\.oc-app \.oc-prole[^}]*--role/.test(css), 'a etiqueta do papel não usa a cor do papel');
+});

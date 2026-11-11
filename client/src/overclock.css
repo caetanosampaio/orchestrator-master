@@ -21,7 +21,7 @@ html:not([data-motion="reduced"]) .oc-app .wsi-work .wsi-pix, html:not([data-mot
 .oc-side .oc-env:not(.oc-env-add):not(.oc-env-edit)::after { display: none; }
 .oc-side .oc-env { border-radius: 4px; }
 .oc-side .oc-env:hover { background: rgba(255, 255, 255, .04); box-shadow: none; }
-.oc-side .oc-env.on, .oc-env.on { background: rgba(239, 68, 68, .10); box-shadow: none; color: #fff; }
+.oc-side .oc-env.on, .oc-env.on { background: rgba(196, 48, 48, .10); box-shadow: none; color: #fff; }
 .oc-env::before { display: none; }
 .oc-side-title { color: #7c8494; font-weight: 600; } /* #7c8494 = 5,2:1 sobre o preto (o #6b7280 do Overclock dá 4,3:1: abaixo de AA para texto pequeno) */
 .oc-cnt { color: #7c8494; }
@@ -33,9 +33,9 @@ html:not([data-motion="reduced"]) .oc-app .wsi-work .wsi-pix, html:not([data-mot
 
 /* ---------- 4. terminais: borda lateral na cor do papel, cabeçalho com chips contornados (como os panes do Overclock) ---------- */
 .oc-pane { border-radius: 6px; border-top: 0; border-left: 2px solid var(--role); box-shadow: inset 0 0 0 1px var(--line-strong); }
-.oc-pane:focus-within { box-shadow: inset 0 0 0 1px rgba(239, 68, 68, .6); } /* pane em foco: contorno vermelho fino */
+.oc-pane:focus-within { box-shadow: inset 0 0 0 1px rgba(196, 48, 48, .6); } /* pane em foco: contorno vermelho fino */
 .oc-pane.st-working:not(:focus-within), .oc-pane.has-wait:not(.st-failed):not(:focus-within) { box-shadow: inset 0 0 0 1px var(--line-strong); }
-.oc-pane.st-failed:not(:focus-within) { box-shadow: inset 0 0 0 1px rgba(239, 68, 68, .45); }
+.oc-pane.st-failed:not(:focus-within) { box-shadow: inset 0 0 0 1px rgba(196, 48, 48, .45); }
 .oc-ph { background: #000; border-bottom: 1px solid var(--line); padding: 6px 10px; gap: 8px; }
 .oc-prole { padding: 1px 7px; border: 1px solid color-mix(in srgb, var(--role) 55%, transparent); border-radius: 4px; background: color-mix(in srgb, var(--role) 8%, transparent); color: var(--role); font-size: 11px; font-weight: 700; letter-spacing: .08em; }
 .oc-ptitle, .oc-ptitle.sub { padding: 1px 7px; border: 1px solid var(--line-strong); border-radius: 4px; color: var(--dim); font-size: 11px; font-weight: 500; }
@@ -66,9 +66,9 @@ html:not([data-motion="reduced"]) .tb-view-dot { animation: ovc-blink 1.4s ease-
 .tb-tabs[hidden] { display: none; } /* shell.css define .tb-tabs como flex: sem isto o atributo hidden não esconde as abas fora do Cockpit */
 
 /* ---------- 6. botões e diálogos: vermelho chapado, linha fina, sem sombra colorida ---------- */
-/* primário: #dc2626 com texto branco (4,8:1); o #ef4444 da marca fica para linhas e texto sobre preto (5,6:1), onde passa */
+/* primário: #b42222 com texto branco (4,8:1); o #c43030 da marca fica para linhas e texto sobre preto (5,6:1), onde passa */
 .btn.primary { background: var(--bone); box-shadow: none; }
-@media (hover: hover) and (pointer: fine) { .btn.primary:hover:not(:disabled) { background: #b91c1c; box-shadow: none; } }
+@media (hover: hover) and (pointer: fine) { .btn.primary:hover:not(:disabled) { background: #9a1818; box-shadow: none; } }
 
 /* ---------- 7. páginas: o Cockpit fica montado e só é escondido fora dele ---------- */
 .oc-view { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; }
