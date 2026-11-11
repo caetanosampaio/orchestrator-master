@@ -23,18 +23,6 @@
 .tc-m:hover .px-legb, .td-card:hover .px-legb, .ai-card:hover .px-legb, .mc-tile:hover .px-legb { animation: px-step .5s steps(2, jump-none) infinite .25s; }
 @keyframes px-step { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-.8px); } }
 
-/* ---------- editor de time dentro das Configurações: na largura da página, uma vaga por linha ---------- */
-.set-body .oc-compose { width: 100%; margin: 0; padding: 18px 20px; background: #050505; border: 1px solid var(--line); box-shadow: none; border-radius: 0; }
-.set-body .oc-compose-slots { gap: 8px; margin-bottom: var(--sp-3); }
-.set-body .oc-compose-slots li { flex-wrap: nowrap; gap: 10px; }
-.set-body .oc-compose-slots li > .oc-sel { flex: 1 1 0; min-width: 0; }
-.set-body .oc-compose-slots li > .sq-dot, .set-body .oc-compose-slots li > svg, .set-body .oc-compose-slots li > .prov-mark { flex: none; }
-.set-body .oc-compose-slots .sq-x { margin-left: 4px; flex: none; }
-.set-body .oc-compose .sq-name input { padding: 9px 12px; font-size: 13.5px; }
-.set-body .oc-compose-act .btn.primary { background: #ececec; border-color: #ececec; color: #000; font-weight: 600; box-shadow: none; }
-.set-body .oc-compose-act .btn.primary:hover:not(:disabled) { background: #fff; }
-@media (max-width: 900px) { .set-body .oc-compose-slots li { flex-wrap: wrap; } }
-
 /* ---------- Times prontos (formato da tela de referência, em preto) ---------- */
 .set-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-4); }
 .set-head .set-sub { margin-top: 6px; }
