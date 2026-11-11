@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Sidebar from './components/Sidebar.jsx';
 import Topbar from './components/Topbar.jsx';
+import DesktopTitleBar from './components/DesktopTitleBar.jsx';
 import Cockpit from './pages/Cockpit.jsx';
 import Missions from './pages/Missions.jsx';
-import ActivityDrawer from './components/ActivityDrawer.jsx';
 import Settings from './pages/Settings.jsx';
 import WorkspaceDialog from './components/WorkspaceDialog.jsx';
 import { useStore } from './store.jsx';
@@ -61,7 +61,8 @@ export default function App() {
   return (
     <div className="oc-app oc-app-col">
       <button type="button" className="skip" onClick={() => document.getElementById('main')?.focus()}>Pular para o conteúdo</button>
-      <Topbar narrow={narrow} onMenu={() => setNavOpen(true)} menuRef={menuRef} navOpen={navOpen} onOpenSettings={view === 'settings' ? closeSettings : openSettings} onOpenWorkspaces={openWorkspaces} view={view} onView={goView} missions={missionsData.missions} />
+      <DesktopTitleBar />
+      <Topbar narrow={narrow} onMenu={() => setNavOpen(true)} menuRef={menuRef} navOpen={navOpen} onOpenSettings={view === 'settings' ? closeSettings : openSettings} view={view} onView={goView} missions={missionsData.missions} />
       <div className="oc-body">
         {!narrow && view === 'cockpit' && <Sidebar {...side} />}
         {narrow && navOpen && view === 'cockpit' && <><div className="oc-scrim" onClick={closeNav} aria-hidden="true" /><Sidebar modal onClose={closeNav} {...side} /></>}
@@ -76,7 +77,7 @@ export default function App() {
         <main id="main" tabIndex={-1} className="oc-content">
           {/* O Cockpit fica SEMPRE montado (só escondido em Missions): os terminais não são recriados ao voltar, então rolagem e texto digitado se mantêm.
               Escondido, o contêiner mede 0 e o terminal não se reajusta (TerminalGrid só ajusta acima de 40px): nenhum redimensionamento vai ao servidor. */}
-          <div className="oc-view" hidden={view !== 'cockpit'}><Cockpit onOpenWorkspaces={openWorkspaces} onOpenSettings={openSettings} /><ActivityDrawer /></div>
+          <div className="oc-view" hidden={view !== 'cockpit'}><Cockpit onOpenWorkspaces={openWorkspaces} onOpenSettings={openSettings} /></div>
           {view === 'missions' && <Missions onOpenCockpit={openCockpit} data={missionsData} />}
           {view === 'settings' && <Settings key={settingsKey} initial={settingsTab} onClose={closeSettings} onOpenWorkspaces={openWorkspaces} />}
         </main>
