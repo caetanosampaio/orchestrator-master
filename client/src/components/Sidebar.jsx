@@ -114,7 +114,7 @@ export default function Sidebar({ modal = false, collapsed = false, onClose, onO
     <aside id="nav-drawer" ref={box} className={cls} {...(modal ? { role: 'dialog', 'aria-modal': true, 'aria-label': 'Ambientes de trabalho' } : { 'aria-label': 'Ambientes de trabalho' })}>
       {modal && (
         <div className="oc-side-head">
-          <span className="oc-brand" aria-label="FORGE"><span className="oc-brand-name">FORGE</span></span>
+          <span />
           <button type="button" className="oc-iconbtn" onClick={onClose} aria-label="Fechar a lista de ambientes"><Icon name="close" size={16} /></button>
         </div>
       )}

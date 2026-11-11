@@ -20,7 +20,6 @@
 /* ---------- topo na largura toda: FORGE no começo e as abas logo ao lado (mesmo lugar em todas as páginas) ---------- */
 .oc-app.oc-app-col { flex-direction: column; }
 .oc-app .oc-body { flex: 1; min-height: 0; display: flex; }
-.tb-row > .tb-brand { flex: none; align-self: stretch; display: flex; align-items: center; padding: 0 14px 0 12px; margin-right: calc(var(--sp-3) * -1); border-right: 1px solid var(--line); background: #000; }
 
 /* ---------- topo dos terminais ---------- */
 .oc-app .tbx { border-bottom: 1px solid var(--line); padding-block: 8px; }
@@ -34,9 +33,7 @@
 /* ---------- compacto: textos pequenos em todo o Cockpit (barra lateral, topo, barra de controles, cabeçalho e rodapé dos terminais, atividade) ----------
    Escala: 11px o nome principal, 10px o texto de apoio, 9,5px as etiquetas. O texto DENTRO do terminal não muda: ele segue a preferência "Fonte dos terminais". */
 .oc-app .tb-row:first-child { min-height: 28px; }
-.oc-app .tb-row > .tb-brand { padding: 0 12px 0 10px; }
-.oc-app .oc-brand-name { font-size: 10.5px; letter-spacing: .12em; }
-.oc-app .tb-view { min-height: 28px; padding: 0 12px; gap: 6px; font-size: 10px; letter-spacing: .12em; }
+.oc-app .oc-app .tb-view { min-height: 28px; padding: 0 12px; gap: 6px; font-size: 10px; letter-spacing: .12em; }
 .oc-app .tb-view-n, .oc-app .tb-c b, .oc-app .lm-t, .oc-app .tb-row .sr + b { font-size: 10px; }
 .oc-app .wt-name { font-size: 10.5px; }
 .oc-app .tb-tabs .oc-iconbtn, .oc-app .tb-tabs button { font-size: 10.5px; }
@@ -69,7 +66,6 @@
 .oc-app .oc-empty h3 { font-size: 13px; }
 .oc-app .oc-empty p, .oc-app .oc-empty .small { font-size: 11px; }
 
-.oc-app .ad, .oc-app .ad .mono, .oc-app .ad .dim, .oc-app .ad .small, .oc-app .ad b { font-size: 10px; }
 .oc-app .tb-c, .oc-app .tb-c b, .oc-app .tb-row .tb-c { font-size: 10px; }
 .oc-app .oc-side .oc-plus { width: 22px; height: 22px; }
 .oc-app .oc-side .oc-plus svg { width: 12px; height: 12px; }
@@ -79,10 +75,35 @@
 
 /* ---------- terminais: sem cor por papel nem por estado na borda; todos com a mesma linha fina em vermelho escuro ----------
    (!important porque as camadas antigas pintam a borda por papel, por foco, por execução e por falha em vários seletores de especificidade diferente) */
-.oc-app { --pane-line: #7a2424; --pane-line-focus: #a82c2c; }
+.oc-app { --pane-line: #4f171c; --pane-line-focus: #6e2027; }
 .oc-app .oc-pane { border: 1px solid var(--pane-line) !important; box-shadow: none !important; }
 .oc-app .oc-pane:focus-within { border-color: var(--pane-line-focus) !important; }
 .oc-app .oc-ph { border-bottom: 1px solid var(--pane-line); }
 .oc-app .oc-pf { border-top: 1px solid var(--pane-line); }
 .oc-app .oc-prole { padding: 1px 8px; border: 1px solid var(--line-strong); border-radius: 999px; background: transparent; color: var(--text); font: 500 11px var(--mono); }
 .oc-app .oc-ptitle, .oc-app .oc-ptitle.sub { color: var(--strong); }
+
+/* Missions: só o ícone, à esquerda de forge-app */
+.oc-app .tb-view-icon { padding: 0 12px; gap: 5px; }
+.oc-app .tb-view-icon svg { flex: none; }
+
+/* ---------- barra superior no formato da referência: abas em minúsculas, a ativa em negrito com o sublinhado vermelho, ícone de Missions com "!" e o círculo do perfil ---------- */
+.oc-app .tb { border-bottom: 1px solid var(--line); } /* fio cinza discreto; o vermelho fica só no sublinhado da aba selecionada */
+.oc-app .tb-view { text-transform: none; letter-spacing: 0; font: 500 11px var(--mono); color: var(--dim); }
+.oc-app .tb-view.on { color: #fff; font-weight: 700; }
+.oc-app .tb-view::after { height: 2px; }
+.oc-app .tb-view-icon { color: var(--dim); } .oc-app .tb-view-icon.on { color: #fff; }
+.oc-app .tb-bang { font: 700 12px var(--mono); color: var(--brand-soft); line-height: 1; }
+.oc-app .tb-avatar { flex: none; display: grid; place-items: center; width: 22px; height: 22px; margin-left: 4px; padding: 0; border: 1px solid var(--brand); border-radius: 50%; background: rgba(140, 36, 42, .14); color: #d9a3a8; font: 700 10px var(--mono); cursor: pointer; transition: border-color 140ms ease, background-color 140ms ease; }
+.oc-app .tb-avatar:hover, .oc-app .tb-avatar:focus-visible, .oc-app .tb-avatar.on { background: rgba(140, 36, 42, .3); color: #fff; outline: none; }
+
+/* ---------- faixa da janela do app desktop (macOS): os botões da janela ficam à esquerda e "FORGE <versão>" logo depois deles, como na referência ---------- */
+.oc-titlebar { flex: none; display: flex; align-items: center; height: 28px; padding: 0 12px 0 82px; background: #000; -webkit-app-region: drag; user-select: none; -webkit-user-select: none; }
+.oc-titlebar span { font: 500 11px var(--mono); color: var(--dim); letter-spacing: .02em; white-space: nowrap; }
+.oc-titlebar b { font-weight: 700; color: var(--strong); margin-right: 6px; }
+
+/* trabalho em segundo plano: um mini "!" amarelo-escuro ao lado de forge-app (terminais trabalhando), menor que o nome, subindo e descendo de leve */
+.oc-app .tb-work { display: inline-block; margin-left: 3px; font: 700 8.5px var(--mono); line-height: 1; color: #a8801f; text-transform: none; }
+html:not([data-motion="reduced"]) .oc-app .tb-work { animation: tb-work-bob 1.3s ease-in-out infinite; }
+@keyframes tb-work-bob { 0%, 100% { transform: translateY(1px); } 50% { transform: translateY(-2px); } }
+@media (prefers-reduced-motion: reduce) { .oc-app .tb-work { animation: none; } }

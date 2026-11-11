@@ -54,9 +54,7 @@ test('Cockpit na estrutura das Configurações: sem busca na barra lateral, o no
   const sb = src('components/Sidebar.jsx'), grid = src('components/TerminalGrid.jsx'), css = src('cockpit-ui.css'), tb = src('components/Topbar.jsx'), app = src('App.jsx');
   assert.ok(!/oc-side-search|Buscar workspaces|shownEnvs/.test(sb), 'a busca saiu da barra lateral'); assert.match(sb, /onPick=\{pick\}/, 'abrir workspace continua como antes');
   assert.ok(!/MascotLogo/.test(sb), 'o elmo saiu da barra lateral'); assert.ok(!/oc-brand-name/.test(sb.slice(0, sb.indexOf('{modal && ('))), 'a marca não fica mais na barra lateral aberta');
-  assert.match(tb, /!narrow && <div className="tb-brand"><span className="oc-brand-name">FORGE<\/span><\/div>/, 'o FORGE abre a barra do topo, em todas as páginas');
-  assert.ok(tb.indexOf('tb-brand') < tb.indexOf('className="tb-views"'), 'as abas vêm logo depois do FORGE');
-  assert.match(css, /\.tb-row > \.tb-brand \{[^}]*margin-right: calc\(var\(--sp-3\) \* -1\)/, 'sem o espaço da linha entre o FORGE e as abas');
+  assert.ok(!/oc-brand-name|tb-brand|>FORGE</.test(tb), 'o nome FORGE não fica mais na barra superior');
   assert.ok(app.indexOf('<Topbar ') < app.indexOf('<div className="oc-body">'), 'o topo ocupa a largura toda, acima da barra lateral'); assert.match(app, /oc-app oc-app-col/);
   assert.ok(sb.indexOf('oc-side-files') < sb.indexOf('className="oc-side-user"'), 'o perfil continua no rodapé, abaixo de Arquivos'); assert.ok(sb.indexOf('className="oc-side-user"') > sb.indexOf('<nav className="oc-envs"'), 'o perfil não subiu para o topo');
   assert.ok(!/onOpenSettings/.test(sb), 'a barra lateral não ganhou ação nova');
@@ -67,13 +65,13 @@ test('Cockpit na estrutura das Configurações: sem busca na barra lateral, o no
   assert.match(css, /border-radius: 0/, 'caixas quadradas na barra lateral'); assert.match(css, /\.oc-side \.oc-env\.on[^{]*\{[^}]*border-radius: 0/);
 });
 
-test('Cockpit compacto: textos pequenos na barra lateral, no topo, na barra de controles, nos terminais e na atividade; o texto dentro do terminal segue a preferência de fonte', () => {
+test('Cockpit compacto: textos pequenos na barra lateral, no topo, na barra de controles e nos terminais; o texto dentro do terminal segue a preferência de fonte', () => {
   const css = src('cockpit-ui.css'), tail = css.slice(css.indexOf('/* ---------- compacto'));
   const px = (re) => { const m = re.exec(tail); assert.ok(m, String(re)); return parseFloat(m[1]); };
-  assert.ok(px(/\.oc-env-name \{ font-size: ([\d.]+)px/) <= 11, 'nome do workspace'); assert.ok(px(/\.oc-brand-name \{ font-size: ([\d.]+)px/) <= 11, 'FORGE no canto');
+  assert.ok(px(/\.oc-env-name \{ font-size: ([\d.]+)px/) <= 11, 'nome do workspace');
   assert.ok(px(/\.tb-view \{[^}]*font-size: ([\d.]+)px/) <= 10, 'abas'); assert.ok(px(/\.oc-side-title \{[^}]*font-size: ([\d.]+)px/) <= 10, 'título do grupo');
   assert.ok(px(/\.oc-ptitle, \.oc-app \.oc-ptitle\.sub \{ font-size: ([\d.]+)px/) <= 11, 'título do terminal'); assert.ok(px(/\.oc-pf \{[^}]*font-size: ([\d.]+)px/) <= 10, 'rodapé do terminal');
-  assert.ok(px(/\.ad, [^{]*\{ font-size: ([\d.]+)px/) <= 10, 'atividade'); assert.ok(!/xterm|fontSize|font-size: var\(--term/.test(tail), 'o texto do terminal não é tocado aqui');
+  assert.ok(!/xterm|fontSize|font-size: var\(--term/.test(tail), 'o texto do terminal não é tocado aqui');
 });
 
 test('vermelhos mais escuros e terminais sem cor por papel: nenhum vermelho vivo restou nos estilos e as bordas dos terminais são todas iguais, finas e em vermelho escuro', () => {
@@ -81,10 +79,41 @@ test('vermelhos mais escuros e terminais sem cor por papel: nenhum vermelho vivo
   for (const [name, old] of [['--brand', '#ef4444'], ['--bone', '#dc2626'], ['--focus', '#ef4444']]) assert.ok(!new RegExp(`${name}: ${old}`).test(tok), `${name} voltou ao vermelho antigo`);
   const lum = (hex) => { const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
   const hexOf = (n) => new RegExp(`${n}: (#[0-9a-f]{6})`, 'i').exec(tok)[1], bright = (h) => 0.299 * parseInt(h.slice(1, 3), 16) + 0.587 * parseInt(h.slice(3, 5), 16) + 0.114 * parseInt(h.slice(5, 7), 16);
-  assert.ok(bright(hexOf('--brand')) < bright('#ef4444') - 15, 'a marca ficou mais escura'); assert.ok(bright(hexOf('--bone')) < bright('#dc2626'));
+  assert.ok(bright(hexOf('--brand')) < bright('#ef4444') - 45, 'a marca virou vinho/sangue'); assert.ok(bright(hexOf('--bone')) < bright('#dc2626') - 30); assert.ok(bright(hexOf('--brand-soft')) > bright(hexOf('--brand')), 'ícones e texto em vermelho um pouco mais claros que os fundos');
   assert.ok((lum(hexOf('--err')) + 0.05) / (lum('#0a0a0a') + 0.05) >= 4.5, 'o vermelho de texto continua legível (AA)');
   for (const f of ['missions.css', 'missions-workflow.css', 'overclock.css', 'oc.css', 'retro.css', 'shell.css', 'teams.css']) assert.ok(!/#ef4444|#dc2626|rgba\(239, ?68, ?68/i.test(src(f)), `${f} ainda tem o vermelho vivo`);
-  assert.match(css, /\.oc-app \.oc-pane \{ border: 1px solid var\(--pane-line\) !important; box-shadow: none !important; \}/); assert.match(css, /--pane-line: #7a2424/);
+  assert.match(css, /\.oc-app \.oc-pane \{ border: 1px solid var\(--pane-line\) !important; box-shadow: none !important; \}/); assert.match(css, /--pane-line: #4f171c/, 'a borda dos terminais em vinho escuro');
   assert.ok(!/'--role'/.test(grid.slice(grid.indexOf('<section className={`oc-pane'), grid.indexOf('<header className="oc-ph">'))), 'o terminal não leva mais a cor do papel');
   assert.ok(!/\.oc-app \.oc-prole[^}]*--role/.test(css), 'a etiqueta do papel não usa a cor do papel');
+});
+
+test('barra superior no formato da referência: só os recursos (forge-app, com Missions em ícone à esquerda), sem abas de workspace nem "+", sem a faixa de atividade no Cockpit e o círculo do perfil abre as Configurações', () => {
+  const tb = src('components/Topbar.jsx'), app = src('App.jsx'), css = src('cockpit-ui.css'), ui = src('components/ui.jsx');
+  assert.ok(!/WorkspaceTabs|openTabs|onOpenWorkspaces|tb-tabs/.test(tb), 'os workspaces moram só na barra lateral'); assert.ok(!fs.existsSync(new URL('../../client/src/components/WorkspaceTabs.jsx', import.meta.url)));
+  assert.ok(!/ActivityDrawer/.test(app) && !fs.existsSync(new URL('../../client/src/components/ActivityDrawer.jsx', import.meta.url)), 'a faixa de atividade saiu do Cockpit');
+  assert.match(tb, /<span>forge-app<\/span>/); assert.ok(tb.indexOf('name="briefcase"') < tb.indexOf('<span>forge-app</span>'), 'o ícone de Missions fica à esquerda de forge-app'); assert.match(tb, /onClick=\{\(\) => onView\('missions'\)\}/); assert.match(tb, /onClick=\{\(\) => onView\('cockpit'\)\}/);
+  assert.match(tb, /<b className="tb-bang" aria-hidden="true">!<\/b>/, 'missão esperando você: "!" vermelho'); assert.match(ui, /briefcase: 'M4 8h16/);
+  assert.match(tb, /className=\{`tb-avatar\$\{view === 'settings' \? ' on' : ''\}`\}[^>]*aria-label="Configurações" aria-pressed=\{view === 'settings'\}/); assert.match(tb, /<SystemStatus \/>/);
+  assert.match(css, /\.oc-app \.tb-view \{ text-transform: none; letter-spacing: 0;/, 'abas em minúsculas'); assert.match(css, /\.oc-app \.tb-view\.on \{ color: #fff; font-weight: 700; \}/); assert.match(css, /\.oc-app \.tb \{ border-bottom: 1px solid var\(--line\); \}/, 'sem a linha vermelha de ponta a ponta'); assert.ok(!/#4a1a1a/.test(css)); assert.match(css, /\.oc-app \.tb-view::after \{ height: 2px; \}/, 'o vermelho fica só no sublinhado da aba selecionada');
+});
+
+test('FORGE + versão só na janela do app: a faixa do macOS leva o nome e a versão ao lado dos botões da janela; fora do app (navegador) e no Windows nada é desenhado; o preload só expõe plataforma e versão', async () => {
+  const bar = src('components/DesktopTitleBar.jsx'), css = src('cockpit-ui.css'), app = src('App.jsx');
+  assert.match(app, /<DesktopTitleBar \/>/); assert.ok(app.indexOf('<DesktopTitleBar />') < app.indexOf('<Topbar '), 'a faixa vem acima da barra superior');
+  assert.match(bar, /d\.platform !== 'darwin'\) return null/); assert.match(bar, /<b>FORGE<\/b>\{d\.version\}/);
+  assert.match(css, /\.oc-titlebar \{[^}]*padding: 0 12px 0 82px[^}]*-webkit-app-region: drag/, 'espaço para os botões da janela à esquerda e área de arrastar');
+  const main = fs.readFileSync(new URL('../../desktop/main.cjs', import.meta.url), 'utf8'), pre = fs.readFileSync(new URL('../../desktop/preload.cjs', import.meta.url), 'utf8');
+  assert.match(main, /const title = `FORGE \$\{app\.getVersion\(\)\}`/); assert.match(main, /titleBarStyle: 'hidden', trafficLightPosition: \{ x: 14, y: 9 \}/); assert.match(main, /preload: path\.join\(__dirname, 'preload\.cjs'\)/); assert.match(main, /additionalArguments: \[`--forge-version=\$\{app\.getVersion\(\)\}`\]/);
+  assert.match(main, /contextIsolation: true, sandbox: true, nodeIntegration: false/, 'a página continua sem acesso ao sistema'); assert.match(main, /page-title-updated', \(e\) => e\.preventDefault\(\)/);
+  assert.match(pre, /exposeInMainWorld\('forgeDesktop', Object\.freeze\(\{ platform: process\.platform, version \}\)\)/); assert.ok(!/ipcRenderer|require\('node:|child_process|fs\b/.test(pre.replace(/\/\/[^\n]*/g, '')), 'o preload não expõe Node nem ipc');
+  const { version } = JSON.parse(fs.readFileSync(new URL('../../desktop/package.json', import.meta.url), 'utf8')); assert.match(version, /^\d+\.\d+\.\d+/);
+});
+
+test('trabalho em segundo plano: terminais trabalhando mostram um mini "!" amarelo-escuro ao lado de forge-app, em qualquer página (inclusive Missions), sem etiqueta', () => {
+  const tb = src('components/Topbar.jsx'), css = src('cockpit-ui.css');
+  assert.match(tb, /workingTerms > 0 && <b className="tb-work" role="status"[^>]*>!<\/b>/); assert.ok(!/<i aria-hidden="true" \/>work/.test(tb), 'não é mais uma etiqueta com a palavra work');
+  assert.match(tb, /em segundo plano/); assert.ok(!/view === 'cockpit' && workingTerms/.test(tb), 'não depende da página aberta');
+  const rule = /\.oc-app \.tb-work \{([^}]*)\}/.exec(css)[1]; const size = parseFloat(/font: 700 ([\d.]+)px/.exec(rule)[1]); assert.ok(size < 11, 'menor que o nome forge-app (11px)');
+  const hex = /color: (#[0-9a-f]{6})/i.exec(rule)[1], [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)); assert.ok(r > g && g > b && r < 200, 'amarelado e escuro, não claro');
+  assert.match(css, /@keyframes tb-work-bob \{[\s\S]*?translateY\(1px\)[\s\S]*?translateY\(-2px\)/, 'sobe e desce de leve'); assert.match(css, /prefers-reduced-motion: reduce\) \{ \.oc-app \.tb-work \{ animation: none; \} \}/);
 });
