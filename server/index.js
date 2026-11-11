@@ -17,6 +17,7 @@ import { createLoadouts, setupLoadouts } from './loadouts.js';
 import { createAgentStatus, hooksJson } from './agent-status.js';
 import { setupLayouts } from './layouts.js';
 import { setupTeamTemplates } from './team-templates.js';
+import { setupHarness, terminalDefaults, routesForMaestro, routeFor, taskHint } from './harness.js';
 import { createConversationStore, setupConversations, startConversationCapture } from './conversations.js';
 import { setupExecution, blockedReason } from './execution.js';
 import { missionStatus } from './mission-status.js';
@@ -88,7 +89,7 @@ const worktrees = createWorktreeManager({ db, track: childRegistry.track, childr
 const devHome = path.join(process.env.LOCALAPPDATA || os.homedir(), 'forge'); // modo dev; antes era 'ai-dev-orchestrator' (o histórico e os loadouts são copiados no boot, ver legacy-dirs.js)
 const legacyDevHome = path.join(process.env.LOCALAPPDATA || os.homedir(), 'ai-dev-orchestrator');
 const mcpDir = process.env.ORCH_DATA_DIR ? path.join(store.dataDir, 'mcp') : path.join(devHome, 'mcp'); // mcp tem tokens por sessão, regenerados a cada terminal: não se migra
-const maestro = createMaestro({ getTerminals: () => terminals, mcpDir, url: `http://127.0.0.1:${PORT}/mcp`, serverName: stableServerName(db, { save: store.saveOrThrow }) }); // nome com sufixo aleatório POR INSTALAÇÃO (estável entre boots, ver maestro.js): um .mcp.json homônimo não herda a pré-autorização // coordenação entre panes por MCP local (aprovação do usuário por padrão)
+const maestro = createMaestro({ getTerminals: () => terminals, harness: { routes: () => routesForMaestro(db), route: (type) => routeFor(db, type), hint: taskHint }, mcpDir, url: `http://127.0.0.1:${PORT}/mcp`, serverName: stableServerName(db, { save: store.saveOrThrow }) }); // nome com sufixo aleatório POR INSTALAÇÃO (estável entre boots, ver maestro.js): um .mcp.json homônimo não herda a pré-autorização // coordenação entre panes por MCP local (aprovação do usuário por padrão)
 // Conversas copiadas: com ORCH_DATA_DIR (testes, app desktop) na pasta de dados; no modo dev, FORA do repositório (mesmo motivo do mcpDir).
 const historyDir = process.env.ORCH_DATA_DIR ? path.join(store.dataDir, 'history') : path.join(devHome, 'history');
 if (!process.env.ORCH_DATA_DIR) for (const name of ['history', 'loadouts']) { const r = migrateLegacyDir(path.join(legacyDevHome, name), path.join(devHome, name)); if (r.status === 'migrated') console.log(`[forge] ${name} copiado de ${legacyDevHome} (a pasta original foi mantida)`); else if (r.status === 'error') console.error(`[forge] não foi possível copiar ${name} da pasta anterior: ${r.error}`); }
@@ -119,7 +120,7 @@ const trustOptions = inTest ? {} : {
   ...(process.env.ORCH_NO_TRUST === '1' ? {} : { trustFolders: ({ provider, cwd, configDir }) => { if (provider === 'claude') trustClaudeFolder(cwd, { configDir }); } }),
   ...(strictProjectConfig() ? {} : { inspectConfig: async () => [] }),
 };
-const terminals = createTerminalManager({ ...trustOptions, db, accounts, loadouts, agentStatus, statusLine: rateLimits, onEnd: (rec) => { if ((rec.provider ?? 'claude') === 'claude' && db.workspaces.some((w) => w.id === rec.workspaceId)) conversations.sync(rec); }, track: childRegistry.track, worktrees, mcp: maestro, persist: store.saveOrThrow, isChildAlive: (terminalId) => childRegistry.pending().some((r) => r && r.kind === 'terminal' && r.terminalId === terminalId && pidAlive(r.pid)), usage: createUsageReader({ pricesFile: path.join(store.dataDir, 'pricing.json') }) }); // terminais interativos (PTY) do Claude Code: um processo por pane, em paralelo
+const terminals = createTerminalManager({ ...trustOptions, db, defaults: (role, providerId) => terminalDefaults(db, role, providerId), accounts, loadouts, agentStatus, statusLine: rateLimits, onEnd: (rec) => { if ((rec.provider ?? 'claude') === 'claude' && db.workspaces.some((w) => w.id === rec.workspaceId)) conversations.sync(rec); }, track: childRegistry.track, worktrees, mcp: maestro, persist: store.saveOrThrow, isChildAlive: (terminalId) => childRegistry.pending().some((r) => r && r.kind === 'terminal' && r.terminalId === terminalId && pidAlive(r.pid)), usage: createUsageReader({ pricesFile: path.join(store.dataDir, 'pricing.json') }) }); // terminais interativos (PTY) do Claude Code: um processo por pane, em paralelo
 let worktreeRecovery = { settled: [], inconsistent: [], unregistered: [], unverified: [] }; // E3: preenchido logo DEPOIS do reclaim dos processos filhos (abaixo)
 const app = express();
 // Host válido em toda a /api, Origin permitido quando enviado e OBRIGATÓRIO em POST/PUT/PATCH/DELETE (CSRF, DNS rebinding e chamadas locais sem Origin; ver origin-guard.js).
@@ -424,6 +425,7 @@ setupTopics(app, { db });
 setupLoadouts(app, { loadouts }); // skills por papel: GET/PUT /api/loadouts
 setupUiSettings(app, { db }); // preferências da interface (db.settings.ui): GET/PUT /api/ui
 setupLayouts(app, { db }); // layout da grade por workspace
+setupHarness(app, { db }); // "Quem faz cada tarefa": a tabela de tipos de tarefa, o piloto (Maestro) e os agentes do usuário: /api/harness
 setupTeamTemplates(app, { db }); // squads salvos (equipes nomeadas com o agente de cada vaga): GET/POST /api/team-templates, PUT/DELETE /api/team-templates/:id
 setupConversations(app, { db, conversations }); // GET/DELETE /api/workspaces/:id/conversations[/:rec]
 { const capture = startConversationCapture({ db, conversations }); setTimeout(() => { capture.sweep().catch(() => {}); }, 3000).unref?.(); } // captura ao vivo das sessões rodando + varredura única das interrompidas // layout da grade de terminais por workspace (db.settings.layouts): GET /api/layouts, PUT /api/workspaces/:id/layout

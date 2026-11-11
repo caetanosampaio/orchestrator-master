@@ -25,7 +25,7 @@ test('resolveTab: nomes antigos (cli, providers) levam a Suas IAs; desconhecido 
 
 test('busca: por nome, descrição ou palavra-chave, sem diferenciar maiúsculas nem acentos; grupo sem resultado some; vazio = tudo', () => {
   assert.equal(filterNav(''), NAV); assert.equal(filterNav('   '), NAV);
-  assert.deepEqual(filterNav('MAESTRO').flatMap((g) => g.items.map((i) => i.id)), ['orquestracao']);
+  assert.deepEqual(filterNav('MAESTRO').flatMap((g) => g.items.map((i) => i.id)), ['tarefas', 'orquestracao']);
   assert.ok(filterNav('esforco').flatMap((g) => g.items.map((i) => i.id)).includes('equipes'), 'sem acento acha "esforço"');
   assert.ok(filterNav('codex').flatMap((g) => g.items.map((i) => i.id)).includes('ias'));
   assert.deepEqual(filterNav('zzzz-nada'), []);
@@ -36,7 +36,7 @@ test('catálogo: só Claude Code e Codex CLI são integrados; as outras IAs apar
   assert.deepEqual(integratedIds(), ['claude', 'codex']);
   assert.ok(plannedAis().length >= 8 && plannedAis().every((a) => a.integrated === false));
   assert.equal(new Set(CATALOG.map((a) => a.id)).size, CATALOG.length); assert.ok(CATALOG.every((a) => /^#[0-9a-f]{6}$/i.test(a.color)));
-  assert.equal(catalogById('forge'), FORGE_MASCOT); assert.equal(FORGE_MASCOT.crest, true); assert.equal(catalogById('nao-existe'), null); assert.equal(catalogColor('nao-existe'), null);
+  assert.equal(catalogById('forge'), FORGE_MASCOT); assert.equal(FORGE_MASCOT.brand, true); assert.equal(catalogById('nao-existe'), null); assert.equal(catalogColor('nao-existe'), null);
   assert.equal(providerColor('gemini'), catalogColor('gemini')); assert.equal(providerColor('nao-existe'), '#9aa3b2');
   assert.equal(aiName('claude'), 'Claude Code'); assert.equal(aiName('claude', 'Claude Code CLI'), 'Claude Code'); assert.equal(aiName('estranha', 'Outro nome'), 'Outro nome'); assert.equal(aiName('gemini'), 'Gemini'); assert.equal(aiName('xyz'), 'xyz');
 });
@@ -65,4 +65,13 @@ test('Cockpit na estrutura das Configurações: sem busca na barra lateral, o no
   assert.match(src('main.jsx'), /import '\.\/cockpit-ui\.css'/);
   assert.ok(!/oc-collapse|Recolher a barra lateral/.test(sb), 'sem o botão de recolher a barra lateral'); assert.ok(!/<Sidebar [^>]*collapsed=/.test(app), 'a barra nunca é aberta recolhida, nem com o estado antigo gravado');
   assert.match(css, /border-radius: 0/, 'caixas quadradas na barra lateral'); assert.match(css, /\.oc-side \.oc-env\.on[^{]*\{[^}]*border-radius: 0/);
+});
+
+test('Cockpit compacto: textos pequenos na barra lateral, no topo, na barra de controles, nos terminais e na atividade; o texto dentro do terminal segue a preferência de fonte', () => {
+  const css = src('cockpit-ui.css'), tail = css.slice(css.indexOf('/* ---------- compacto'));
+  const px = (re) => { const m = re.exec(tail); assert.ok(m, String(re)); return parseFloat(m[1]); };
+  assert.ok(px(/\.oc-env-name \{ font-size: ([\d.]+)px/) <= 11, 'nome do workspace'); assert.ok(px(/\.oc-brand-name \{ font-size: ([\d.]+)px/) <= 11, 'FORGE no canto');
+  assert.ok(px(/\.tb-view \{[^}]*font-size: ([\d.]+)px/) <= 10, 'abas'); assert.ok(px(/\.oc-side-title \{[^}]*font-size: ([\d.]+)px/) <= 10, 'título do grupo');
+  assert.ok(px(/\.oc-ptitle, \.oc-app \.oc-ptitle\.sub \{ font-size: ([\d.]+)px/) <= 11, 'título do terminal'); assert.ok(px(/\.oc-pf \{[^}]*font-size: ([\d.]+)px/) <= 10, 'rodapé do terminal');
+  assert.ok(px(/\.ad, [^{]*\{ font-size: ([\d.]+)px/) <= 10, 'atividade'); assert.ok(!/xterm|fontSize|font-size: var\(--term/.test(tail), 'o texto do terminal não é tocado aqui');
 });
