@@ -28,33 +28,18 @@ export function presetSquads(provider = 'claude') {
 }
 
 /**
- * Equipes do FORGE por OBJETIVO: cada uma diz o que faz e já traz o agente, o modelo e o esforço de cada vaga (ids das listas fechadas do servidor, ver providers/*.js; um teste confere cada vaga contra a
+ * Times prontos do FORGE (opcionais, para instalar): HOJE SÃO DOIS, os dois mistos (Claude Code e Codex CLI) e com funções diferentes. Cada um diz o que faz e já traz o agente, o modelo e o esforço de cada vaga (ids das listas fechadas do servidor, ver providers/*.js; um teste confere cada vaga contra a
  * validação estrita da API). Podem usar Claude Code, Codex CLI ou os dois: `squadMissing` diz o que falta instalar. Não são excluíveis; "usar como base" cria uma equipe sua a partir delas.
  */
 const vaga = (role, provider, model, effort, n = 1) => Array.from({ length: n }, () => Object.freeze({ role, provider, model, effort }));
 const curated = (id, name, tagline, about, slots) => Object.freeze({ id: `builtin:forge-${id}`, name, tagline, about, builtin: true, curated: true, slots: Object.freeze(slots) });
 const CURATED = Object.freeze([
-  curated('code-build', 'Construção de código', 'Divide a funcionalidade em tarefas, constrói em paralelo e revisa antes de entregar.',
-    'Use para implementar algo de ponta a ponta. O Maestro planeja e cobra, dois Construtores trabalham ao mesmo tempo e o Revisor confere o resultado.',
-    [...vaga('maestro', 'claude', 'opus', 'high'), ...vaga('builder', 'claude', 'sonnet', 'medium', 2), ...vaga('reviewer', 'claude', 'opus', 'high')]),
-  curated('quick-fix', 'Correção rápida', 'Dupla enxuta: um corrige, o outro confere.',
-    'Use para bugs pequenos e ajustes pontuais, quando não vale montar uma equipe grande. Esforço baixo para responder depressa.',
-    [...vaga('builder', 'claude', 'sonnet', 'low'), ...vaga('reviewer', 'claude', 'sonnet', 'medium')]),
-  curated('investigate', 'Investigação e diagnóstico', 'Só lê e mapeia: acha a causa, os arquivos e os riscos, sem alterar nada.',
-    'Use antes de mexer em código que você não conhece ou para entender um defeito. Ninguém nesta equipe edita arquivos: o resultado é um relatório.',
-    [...vaga('maestro', 'claude', 'opus', 'medium'), ...vaga('scout', 'claude', 'haiku', 'medium', 2)]),
-  curated('audit', 'Revisão e segurança', 'Dois revisores independentes procuram defeitos, regressões e falhas de segurança.',
-    'Use para auditar uma branch ou um pull request. O Batedor mapeia o que mudou e os Revisores, com esforço máximo, apontam os problemas por gravidade.',
-    [...vaga('maestro', 'claude', 'opus', 'high'), ...vaga('scout', 'claude', 'sonnet', 'high'), ...vaga('reviewer', 'claude', 'opus', 'max', 2)]),
-  curated('big-feature', 'Funcionalidade grande', 'Um batedor mapeia, três construtores executam em paralelo e um revisor fecha.',
-    'Use quando o trabalho se divide em várias partes independentes. Cada Construtor pode ficar numa branch própria; o Maestro junta os resultados.',
-    [...vaga('maestro', 'claude', 'opus', 'high'), ...vaga('scout', 'claude', 'haiku', 'medium'), ...vaga('builder', 'claude', 'sonnet', 'medium', 3), ...vaga('reviewer', 'claude', 'opus', 'high')]),
-  curated('mixed-build', 'Claude lidera, Codex constrói', 'O Claude coordena e revisa; três Codex escrevem o código.',
-    'Use para aproveitar os dois agentes: Claude no planejamento e na revisão, Codex na implementação. Exige Claude Code e Codex CLI instalados.',
-    [...vaga('maestro', 'claude', 'opus', 'high'), ...vaga('builder', 'codex', 'gpt-5-codex', 'medium', 3), ...vaga('reviewer', 'claude', 'opus', 'high')]),
-  curated('codex-build', 'Construção com Codex', 'Equipe completa só com Codex: coordena, constrói e revisa.',
-    'Use quando você trabalha só com o Codex CLI. Funciona como a Construção de código, com o modelo e o esforço do Codex.',
-    [...vaga('maestro', 'codex', 'gpt-5', 'high'), ...vaga('builder', 'codex', 'gpt-5-codex', 'medium', 2), ...vaga('reviewer', 'codex', 'gpt-5', 'high')]),
+  curated('code-build', 'Construção de código', 'O Claude planeja e revisa; dois Codex escrevem o código em paralelo.',
+    'Use para implementar algo de ponta a ponta. O Maestro (Claude) divide a tarefa, dois Construtores (Codex) trabalham ao mesmo tempo e o Revisor (Claude) confere o resultado antes de você integrar.',
+    [...vaga('maestro', 'claude', 'opus', 'high'), ...vaga('builder', 'codex', 'gpt-5-codex', 'medium', 2), ...vaga('reviewer', 'claude', 'opus', 'high')]),
+  curated('audit', 'Revisão e segurança', 'Duas IAs revisam de forma independente: uma de cada, e o que as duas apontam é o que mais pesa.',
+    'Use para auditar uma branch ou um pull request. O Batedor (Codex) mapeia o que mudou e os dois Revisores, um Claude e um Codex, procuram defeitos, regressões e falhas de segurança sem ver a opinião um do outro. Ninguém aqui edita arquivos.',
+    [...vaga('maestro', 'claude', 'opus', 'high'), ...vaga('scout', 'codex', 'gpt-5', 'medium'), ...vaga('reviewer', 'claude', 'opus', 'max'), ...vaga('reviewer', 'codex', 'gpt-5', 'high')]),
 ]);
 /** As equipes por objetivo (cópias novas: quem recebe pode mexer sem afetar as outras telas). */
 export const curatedSquads = () => CURATED.map((s) => ({ ...s, slots: s.slots.map((v) => ({ ...v })) }));
@@ -83,6 +68,20 @@ export function slotChoiceLabels(slot, options) {
   const find = (list, id) => (id ? (list ?? []).find((x) => x.id === id)?.label ?? id : null);
   return { model: find(o?.models, slot?.model) ?? 'Modelo padrão', effort: find(o?.efforts, slot?.effort) ?? 'Esforço padrão', modelSet: !!slot?.model, effortSet: !!slot?.effort };
 }
+
+/** Nome livre entre os seus times: o próprio nome, ou "Nome (2)", "Nome (3)"… (sem estourar o limite de caracteres). */
+export function uniqueName(name, squads = []) {
+  const base = cleanName(name).slice(0, MAX_NAME).trim(), taken = new Set((Array.isArray(squads) ? squads : []).map((s) => norm(s.name)));
+  if (!base || !taken.has(norm(base))) return base;
+  for (let n = 2; n < 100; n++) { const suf = ` (${n})`, cand = `${base.slice(0, MAX_NAME - suf.length).trim()}${suf}`; if (!taken.has(norm(cand))) return cand; }
+  return base;
+}
+/** Rascunho para INSTALAR um time pronto: as vagas dele (com modelo e esforço) e um nome livre; salva como time NOVO e seu, e dá para mudar tudo antes. */
+export function draftForInstall(squad, squads = []) {
+  return { ...draftFromSquad(squad), name: uniqueName(squad?.name, squads) };
+}
+/** Já existe um time seu com o nome desse time pronto (só informativo: instalar de novo é possível, com outro nome). */
+export const isInstalled = (squad, squads = []) => (Array.isArray(squads) ? squads : []).some((s) => norm(s.name) === norm(squad?.name));
 
 /** Vaga limpa para enviar ao servidor ou editar: `model` e `effort` só existem quando escolhidos ("Padrão" = ausente). */
 export const slotOf = (s) => ({ role: s.role, provider: s.provider, ...(s.model ? { model: s.model } : {}), ...(s.effort ? { effort: s.effort } : {}) });

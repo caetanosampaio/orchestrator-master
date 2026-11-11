@@ -9,7 +9,7 @@ import path from 'node:path';
 const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'orch-rows-')));
 process.env.ORCH_DATA_DIR = path.join(tmp, 'data');
 process.on('exit', () => { try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* temporário */ } });
-const { curatedSquads, squadMissing, squadProviders, describeSquad, slotChoiceLabels, builtinSquads, presetSquads, launchPlan, draftFromSquad, cleanSlots } = await import('../../client/src/squads.js');
+const { uniqueName, draftForInstall, isInstalled, curatedSquads, squadMissing, squadProviders, describeSquad, slotChoiceLabels, builtinSquads, presetSquads, launchPlan, draftFromSquad, cleanSlots } = await import('../../client/src/squads.js');
 const { providerColor, PROVIDER_COLORS } = await import('../../client/src/provider-view.js');
 const { validateTemplateBody } = await import('../team-templates.js');
 const { providerOptions } = await import('../providers/index.js');
@@ -19,7 +19,9 @@ const src = (f) => fs.readFileSync(new URL(`../../client/src/${f}`, import.meta.
 
 test('equipes por objetivo: nome, o que fazem, quando usar, e CADA vaga passa na validação estrita da API (papel, agente, modelo e esforço das listas fechadas)', () => {
   const list = curatedSquads();
-  assert.ok(list.length >= 5);
+  assert.equal(list.length, 2, 'só dois times prontos');
+  for (const t of list) assert.deepEqual(squadProviders(t).sort(), ['claude', 'codex'], `${t.name}: os dois são mistos (Claude e Codex)`);
+  assert.notDeepEqual(list[0].slots.map((v) => v.role).sort(), list[1].slots.map((v) => v.role).sort(), 'funções diferentes');
   assert.equal(new Set(list.map((s) => s.id)).size, list.length, 'ids únicos');
   for (const s of list) {
     assert.ok(s.id.startsWith('builtin:') && s.builtin === true && s.curated === true, s.name);
@@ -32,16 +34,17 @@ test('equipes por objetivo: nome, o que fazem, quando usar, e CADA vaga passa na
   assert.ok(list.some((s) => s.name === 'Construção de código'), 'a equipe de exemplo do pedido existe');
 });
 
-test('equipes por objetivo: só abrem com os agentes instalados (squadMissing); cópias independentes', () => {
-  const byName = Object.fromEntries(curatedSquads().map((s) => [s.name, s]));
-  assert.deepEqual(squadProviders(byName['Claude lidera, Codex constrói']).sort(), ['claude', 'codex']);
-  assert.deepEqual(squadMissing(byName['Claude lidera, Codex constrói'], ['claude']), ['codex']);
-  assert.deepEqual(squadMissing(byName['Construção de código'], ['claude']), []);
-  assert.deepEqual(squadMissing(byName['Construção com Codex'], ['claude']), ['codex']);
+test('times prontos: dois mistos com funções diferentes; só abrem com os dois agentes instalados (squadMissing); cópias independentes', () => {
+  const byName = Object.fromEntries(curatedSquads().map((t) => [t.name, t]));
+  assert.deepEqual(Object.keys(byName), ['Construção de código', 'Revisão e segurança']);
+  for (const t of Object.values(byName)) { assert.deepEqual(squadMissing(t, ['claude']), ['codex']); assert.deepEqual(squadMissing(t, ['codex']), ['claude']); assert.deepEqual(squadMissing(t, ['claude', 'codex']), []); }
   const a = curatedSquads(), b = curatedSquads(); a[0].slots[0].model = 'x'; a[0].name = 'Mudou';
-  assert.notEqual(b[0].model, 'x'); assert.notEqual(b[0].name, 'Mudou');
+  assert.notEqual(b[0].slots[0].model, 'x'); assert.notEqual(b[0].name, 'Mudou');
   const plan = launchPlan(byName['Construção de código']);
-  assert.deepEqual(plan.roles, ['maestro', 'builder', 'builder', 'reviewer']); assert.equal(plan.teamId, 'squad'); assert.deepEqual(plan.models, ['opus', 'sonnet', 'sonnet', 'opus']); assert.deepEqual(plan.efforts, ['high', 'medium', 'medium', 'high']);
+  assert.deepEqual(plan.roles, ['maestro', 'builder', 'builder', 'reviewer']); assert.deepEqual(plan.providers, ['claude', 'codex', 'codex', 'claude']); assert.equal(plan.teamId, 'squad');
+  assert.deepEqual(plan.models, ['opus', 'gpt-5-codex', 'gpt-5-codex', 'opus']); assert.deepEqual(plan.efforts, ['high', 'medium', 'medium', 'high']);
+  const audit = byName['Revisão e segurança']; assert.deepEqual(audit.slots.map((v) => `${v.role}:${v.provider}`), ['maestro:claude', 'scout:codex', 'reviewer:claude', 'reviewer:codex']);
+  assert.ok(!audit.slots.some((v) => v.role === 'builder'), 'a revisão não tem quem edite');
 });
 
 test('usar como base: a equipe do FORGE vira rascunho NOVO (sem id nem nome) com modelo e esforço', () => {
@@ -62,16 +65,16 @@ test('slotChoiceLabels: usa o rótulo do servidor, o id quando fora da lista e "
   assert.equal(slotChoiceLabels({ provider: 'claude', model: 'opus' }, null).model, 'opus', 'servidor antigo: mostra o id');
 });
 
-test('bonequinhos: cada provider tem a sua cor; desconhecido fica em cinza; o corpo 3D é o mesmo para todos', () => {
+test('bonequinhos: cada IA tem a sua cor (a das telas de referência); desconhecida fica em cinza; o corpo em pixel art é o mesmo para todas', () => {
   assert.notEqual(providerColor('claude'), providerColor('codex')); assert.match(providerColor('claude'), /^#[0-9a-f]{6}$/i); assert.equal(providerColor('x'), '#9aa3b2');
   assert.deepEqual(Object.keys(PROVIDER_COLORS).sort(), ['claude', 'codex']);
   const logo = src('components/ProviderLogo.jsx'), m = logo.slice(logo.indexOf('export function ProviderMascot'));
-  assert.match(m, /providerColor\(id\)/); assert.match(m, /<Mascot3D /); assert.ok(!/CLAUDE_ORANGE|#d87756/i.test(m), 'a cor vem do provider, não fixa no desenho');
-  assert.match(m, /\{label && <span className="pm-name">\{label\}<\/span>\}/, 'o nome do provider acompanha o bonequinho');
-  assert.ok(!/<svg/.test(m), 'o boneco não é mais uma imagem 2D');
+  assert.match(m, /providerColor\(id\)/); assert.match(m, /<PixelMascot /); assert.ok(!/CLAUDE_ORANGE|#d87756/i.test(m), 'a cor vem da IA, não fixa no desenho');
+  assert.match(m, /\{label && <span className="pm-name">\{label\}<\/span>\}/, 'o nome da IA acompanha o bonequinho');
+  assert.ok(!/Mascot3D|mascot-3d/.test(logo), 'o boneco não é mais 3D: as telas de referência são pixel art plano');
 });
 
-test('Configurações é uma PÁGINA (não um diálogo) e a engrenagem abre e fecha; Equipes usa linhas e agentes', () => {
+test('Configurações é uma PÁGINA (não um diálogo) e a engrenagem abre e fecha; a seção Times prontos desenha o próprio cabeçalho', () => {
   const app = src('App.jsx'), page = src('pages/Settings.jsx'), tb = src('components/Topbar.jsx');
   assert.ok(!fs.existsSync(new URL('../../client/src/components/SettingsDialog.jsx', import.meta.url)), 'o diálogo antigo saiu');
   assert.ok(!/Dialog/.test(page.replace(/Workspace/g, '')), 'a página não usa o componente Dialog');
@@ -79,9 +82,29 @@ test('Configurações é uma PÁGINA (não um diálogo) e a engrenagem abre e fe
   assert.match(app, /suspended=\{!!dialog \|\| view === 'settings'\}/, 'o aviso de pré-requisitos continua se afastando das Configurações');
   assert.match(page, /data-testid="settings-page"/); assert.match(page, /onClick=\{onClose\}/);
   assert.match(tb, /aria-pressed=\{view === 'settings'\}/);
-  const t = src('components/TeamsSettings.jsx');
-  assert.match(t, /<TeamRows title="Equipes do FORGE"/); assert.match(t, /<Agents providers=/); assert.match(t, /ProviderMascot id=\{p\.id\}/);
-  const rows = src('components/TeamRows.jsx');
-  assert.ok(!/ProviderMascot|Mascot3D/.test(rows), 'as equipes predefinidas não têm bonecos: só provider, modelo e esforço'); assert.match(rows, /<b className="tr-prov">\{labelOf\(slot\.provider\)\}<\/b>/); assert.match(rows, /slotChoiceLabels\(slot, options\)/); assert.match(rows, /describeSquad\(squad\)/);
   assert.match(src('main.jsx'), /import '\.\/teams\.css'/);
+});
+
+test('instalar: nome livre entre os seus times, vagas com modelo e esforço, time NOVO (sem id) e dá para instalar de novo com outro nome', () => {
+  const mine = [{ id: 'tpl_aaaaaaaa', name: 'Construção de código' }, { id: 'tpl_bbbbbbbb', name: 'construção de código (2)' }];
+  assert.equal(uniqueName('Time novo', mine), 'Time novo'); assert.equal(uniqueName('Construção de código', mine), 'Construção de código (3)', 'sem diferenciar maiúsculas');
+  assert.equal(uniqueName('x'.repeat(40), [{ name: 'x'.repeat(40) }]).length <= 40, true, 'respeita o limite de 40 caracteres'); assert.equal(uniqueName('', []), '');
+  const t = curatedSquads()[0], d = draftForInstall(t, mine);
+  assert.equal(d.id, null); assert.equal(d.name, 'Construção de código (3)'); assert.deepEqual(cleanSlots(d.slots), cleanSlots(t.slots)); assert.ok(d.slots.every((s) => s.model && s.effort));
+  const v = validateTemplateBody({ name: d.name, slots: cleanSlots(d.slots) }); assert.equal(v.error, undefined, 'o rascunho de instalação passa na validação estrita da API');
+  assert.equal(isInstalled(t, mine), true); assert.equal(isInstalled(curatedSquads()[1], mine), false); assert.equal(isInstalled(null, null), false);
+});
+
+test('Times prontos: seções Para instalar (dois) e Seus, ver por dentro e editar abrem como página dentro das Configurações, e instalar passa pela edição', () => {
+  const t = src('components/TeamsSettings.jsx'), cards = src('components/TeamCards.jsx'), page = src('pages/Settings.jsx'), nav = src('settings-nav.js');
+  assert.ok(!/title="Do FORGE"/.test(t), 'sem a lista de todas as possibilidades'); assert.match(t, /title="Para instalar"/); assert.match(t, /title="Seus"/); assert.match(t, /Ver por dentro/); assert.match(t, /Novo time/);
+  assert.match(t, /view\.name === 'edit'/); assert.match(t, /view\.name === 'detail'/); assert.match(t, /draftForInstall\(s, sq\.squads\)/); assert.match(t, /mode: 'install'/, '"Instalar" abre a edição antes de salvar');
+  assert.match(t, /saveLabel=\{mode === 'install' \? 'Instalar time' : null\}/); assert.match(t, /sq\.create\(name, slots\)/, 'só salvar cria o time (via /api/team-templates)');
+  assert.ok(!/onClose/.test(t), 'as páginas de dentro não escondem nem fecham a barra lateral das Configurações');
+  assert.match(nav, /own: true/); assert.match(page, /!cur\.own &&/, 'a seção desenha o próprio título; a barra lateral é sempre a da página');
+  assert.match(cards, /<ProviderMascot id=\{s\.provider\} size=\{size\} hat=\{s\.role === 'maestro'\} \/>/, 'cada vaga é um mascote na cor da IA, e o Maestro usa o chapéu'); assert.match(cards, /tc-m-l/, 'com o papel embaixo');
+  assert.ok(!/<ProviderMascot/.test(src('components/TerminalGrid.jsx')));
+  const grid = src('components/TerminalGrid.jsx'); assert.ok(!/curatedSquads/.test(grid), 'as equipes por objetivo são opcionais: só entram no Cockpit depois de instaladas');
+  const ais = src('components/settings/AisSection.jsx'); assert.match(ais, /<ProviderMascot id=\{r\.id\} size=\{40\} label=/, 'Suas IAs usa o mesmo estilo de mascote dos times');
+  assert.match(ais, /<ProviderMascot id=\{a\.id\} size=\{34\} label=/);
 });

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const src = (f) => fs.readFileSync(new URL(`../../client/src/${f}`, import.meta.url), 'utf8');
-const grid = src('components/TerminalGrid.jsx'), settings = src('pages/Settings.jsx'), pop = src('components/MaestroPopover.jsx'), ctrl = src('components/MaestroControls.jsx'), app = src('App.jsx');
+const grid = src('components/TerminalGrid.jsx'), settings = ['pages/Settings.jsx', 'settings-nav.js', 'components/settings/SettingsUi.jsx', 'components/settings/AppSections.jsx', 'components/settings/TeamSections.jsx', 'components/settings/AisSection.jsx', 'components/settings/MascotsSection.jsx'].map(src).join('\n'), pop = src('components/MaestroPopover.jsx'), ctrl = src('components/MaestroControls.jsx'), app = src('App.jsx');
 
 test('o cockpit não renderiza mais as barras permanentes do Maestro e dos Worktrees', () => {
   assert.doesNotMatch(grid, /function MaestroPanel|<MaestroPanel/);
@@ -13,7 +13,7 @@ test('o cockpit não renderiza mais as barras permanentes do Maestro e dos Workt
 });
 
 test('Configurações > Orquestração > Maestro Autônomo e Workspaces e Worktrees existem e usam os componentes de sempre (sem duplicar funcionalidade)', () => {
-  assert.match(settings, /\['orquestracao', 'Orquestração'/); assert.match(settings, /\['worktrees', 'Workspaces e Worktrees'/);
+  assert.match(settings, /item\('orquestracao', 'Orquestração'/); assert.match(settings, /item\('worktrees', 'Workspaces e Worktrees'/);
   assert.match(settings, /Maestro Autônomo/); assert.match(settings, /<MaestroControls/); assert.match(settings, /<WorktreePanel terminals/);
   assert.match(settings, /Todos os workspaces/, 'a tela separa o workspace aberto de todos os workspaces');
 });
