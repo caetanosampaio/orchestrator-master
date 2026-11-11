@@ -8,8 +8,8 @@ export const CATALOG = Object.freeze([
   ai('kimi', 'Kimi', '#6f48e0'), ai('kiro', 'Kiro', '#a448dc'), ai('cursor', 'Cursor', '#7490ad'),
   ai('copilot', 'Copilot', '#9580b0'), ai('grok', 'Grok', '#a98f7a'), ai('opencode', 'OpenCode', '#80b295'),
 ]);
-/** O mascote do próprio FORGE (chama na cabeça): não é uma IA, é a marca. */
-export const FORGE_MASCOT = Object.freeze({ id: 'forge', label: 'FORGE', color: '#ee5a2e', integrated: false, brand: true, crest: true });
+/** O mascote do próprio FORGE, o Forjador (arte própria em forge-mascot.js): não é uma IA, é a marca. */
+export const FORGE_MASCOT = Object.freeze({ id: 'forge', label: 'FORGE', color: '#ee5a2e', integrated: false, brand: true });
 
 export const catalogById = (id) => CATALOG.find((x) => x.id === id) ?? (id === FORGE_MASCOT.id ? FORGE_MASCOT : null);
 export const catalogColor = (id) => catalogById(id)?.color ?? null;

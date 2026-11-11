@@ -25,18 +25,17 @@ test('simetria: alças, olhos e pés espelham em torno do centro; os pés altern
   assert.ok(ar.y === al.y && al.y > body.y && al.y < body.y + body.h, 'as alças ficam no meio da altura do corpo');
 });
 
-test('variações: o chapéu (quem coordena) e a chama com cara brava (o mascote do FORGE) acrescentam peças em cima e aumentam o quadro; sem elas nada muda', () => {
-  const base = pixelShapes(), hat = pixelShapes({ hat: true }), crest = pixelShapes({ crest: true });
-  assert.equal(has(hat, 'hat').length, 1); assert.equal(has(hat, 'brim').length, 1); assert.ok(hat.h > base.h); assert.equal(hat.viewBox.split(' ')[1], '-2');
-  assert.equal(has(crest, 'bar').length, 3); assert.equal(has(crest, 'flame').length, 2); assert.equal(has(crest, 'brow').length, 2); assert.equal(has(crest, 'eyeb').length, 2); assert.ok(crest.h > hat.h);
-  assert.equal(has(crest, 'eye').length, 0, 'o rosto bravo troca os olhos comuns pelos azuis'); assert.deepEqual(pixelShapes({}), base);
-  for (const g of [hat, crest]) for (const s of g.shapes.filter((x) => x.t === 'rect')) assert.ok(s.y >= Number(g.viewBox.split(' ')[1]), 'nada acima do quadro');
+test('variação: o chapéu (quem coordena) acrescenta peças em cima e aumenta o quadro; sem ele nada muda; não há mais a chama copiada', () => {
+  const base = pixelShapes(), hat = pixelShapes({ hat: true });
+  assert.equal(has(hat, 'hat').length, 1); assert.equal(has(hat, 'brim').length, 1); assert.ok(hat.h > base.h); assert.equal(hat.viewBox.split(' ')[1], '-2'); assert.deepEqual(pixelShapes({}), base);
+  for (const s of hat.shapes.filter((x) => x.t === 'rect')) assert.ok(s.y >= Number(hat.viewBox.split(' ')[1]), 'nada acima do quadro');
+  const crest = pixelShapes({ crest: true }); assert.deepEqual(crest, base, 'a variação `crest` saiu: o FORGE tem arte própria'); assert.equal(has(base, 'bar').length, 0);
 });
 
 test('cores: as das telas de referência, uma por IA (todas diferentes) e a laranja da marca para o FORGE; o componente é SVG plano pintado por classes', () => {
   const colors = [...CATALOG, FORGE_MASCOT].map((a) => a.color.toLowerCase()); assert.equal(new Set(colors).size, colors.length, 'cada IA tem a sua cor');
-  assert.equal(CATALOG.filter((a) => a.integrated).map((a) => a.id).join(), 'claude,codex'); assert.equal(FORGE_MASCOT.crest, true);
+  assert.equal(CATALOG.filter((a) => a.integrated).map((a) => a.id).join(), 'claude,codex'); assert.equal(FORGE_MASCOT.brand, true); assert.equal(Object.hasOwn(FORGE_MASCOT, 'crest'), false);
   const c = src('components/PixelMascot.jsx'); assert.match(c, /<svg className=/); assert.match(c, /shapeRendering="crispEdges"/); assert.ok(!/preserve-3d|perspective|WebGL|from 'three'/.test(c));
-  const css = src('teams.css'); for (const k of ['px-body', 'px-hi', 'px-lo', 'px-arm', 'px-eye', 'px-glint', 'px-mouth', 'px-hat', 'px-bar', 'px-flame', 'px-eyeb']) assert.match(css, new RegExp(`\\.${k}\\b`), `falta a regra .${k}`);
+  const css = src('teams.css'); for (const k of ['px-body', 'px-hi', 'px-lo', 'px-arm', 'px-eye', 'px-glint', 'px-mouth', 'px-hat']) assert.match(css, new RegExp(`\\.${k}\\b`), `falta a regra .${k}`);
   assert.ok(!/preserve-3d/.test(css), 'sem CSS 3D');
 });

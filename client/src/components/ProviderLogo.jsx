@@ -77,12 +77,12 @@ export default function ProviderLogo({ id, size = 20, title, className = '', var
 
 /**
  * Bonequinho da IA, em pixel art (PixelMascot), reproduzido das telas de referência: o MESMO corpo para todas e só a cor muda, que é a da IA (provider-catalog.js). Com `label`, o nome vem junto:
- * embaixo (`layout="stack"`, padrão) ou ao lado (`layout="inline"`). `hat` = o chapéu de quem coordena; `crest` = a chama com cara brava (o mascote do FORGE).
+ * embaixo (`layout="stack"`, padrão) ou ao lado (`layout="inline"`). `hat` = o chapéu de quem coordena.
  */
-export function ProviderMascot({ id, size = 40, label = null, layout = 'stack', className = '', crest = false, hat = false }) {
+export function ProviderMascot({ id, size = 40, label = null, layout = 'stack', className = '', hat = false }) {
   return (
     <span className={`pm pm-${layout}${className ? ` ${className}` : ''}`} style={{ '--pm': providerColor(id) }} data-provider={id}>
-      <PixelMascot size={size} crest={crest} hat={hat} label={label ? null : `Provider ${id}`} />
+      <PixelMascot size={size} hat={hat} label={label ? null : `Provider ${id}`} />
       {label && <span className="pm-name">{label}</span>}
     </span>
   );
