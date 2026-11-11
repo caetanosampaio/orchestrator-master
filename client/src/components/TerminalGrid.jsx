@@ -117,7 +117,7 @@ function TerminalPane({ session, role, state, waiting, maximized, fontSize, stre
   const wait = waiting?.[0], waitText = wait ? String(wait.text ?? wait.note ?? '').replace(/\s+/g, ' ').trim() : '';
   const waitTitle = waiting?.length ? `Aguardando a sua decisão: ${waiting.map((t) => t.text || t.note || t.id).join(' | ')}\nAprove ou recuse no painel do Maestro.` : '';
   return (
-    <section className={`oc-pane st-${state}${waiting?.length ? ' has-wait' : ''}${maximized ? ' max' : ''}`} style={{ '--role': role?.color || 'var(--brand)' }} aria-label={`Terminal ${session.title}, ${label}${waiting?.length ? ', aguardando a sua decisão' : ''}`} onMouseDownCapture={() => noteInteraction(id)} onFocusCapture={() => noteInteraction(id)} onBlurCapture={() => noteInteraction(id)}>
+    <section className={`oc-pane st-${state}${waiting?.length ? ' has-wait' : ''}${maximized ? ' max' : ''}`} aria-label={`Terminal ${session.title}, ${label}${waiting?.length ? ', aguardando a sua decisão' : ''}`} onMouseDownCapture={() => noteInteraction(id)} onFocusCapture={() => noteInteraction(id)} onBlurCapture={() => noteInteraction(id)}>
       <header className="oc-ph">
         <span className={`oc-pstate st-${shown} pv-${session.provider || 'claude'}`} role="status">{shown === 'working' && (session.provider || 'claude') === 'claude' ? <ProviderLogo id="claude" size={14} className="pv-work" /> : <i className={`oc-pdot st-${shown}`} aria-hidden="true" />}{label}</span>
         {nm.role && <b className="oc-prole">{nm.role}</b>}

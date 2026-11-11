@@ -24,10 +24,9 @@
 
 /* ---------- topo dos terminais ---------- */
 .oc-app .tbx { border-bottom: 1px solid var(--line); padding-block: 8px; }
-.oc-app .oc-pane { border-radius: 8px; box-shadow: inset 0 0 0 1px var(--line-strong); overflow: hidden; }
+.oc-app .oc-pane { border-radius: 8px; overflow: hidden; }
 .oc-app .oc-ph { background: #050505; border-bottom: 1px solid var(--line); padding: 8px 12px; gap: 10px; }
 .oc-app .oc-ptitle, .oc-app .oc-ptitle.sub { border: 0; padding: 0; color: var(--strong); font-size: 12.5px; font-weight: 600; }
-.oc-app .oc-prole { padding: 1px 8px; border-radius: 999px; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--role) 55%, transparent); color: var(--strong); font: 500 11px var(--mono); }
 .oc-app .oc-ptag, .oc-app .oc-pstate { border-radius: 999px; }
 .oc-app .oc-pbtn { border-radius: 6px; }
 .oc-app .oc-pf { border-top: 1px solid var(--line); }
@@ -62,7 +61,6 @@
 .oc-app .oc-ph { padding: 5px 10px; gap: 8px; min-height: 0; }
 .oc-app .oc-pstate { font-size: 10px; }
 .oc-app .oc-ptitle, .oc-app .oc-ptitle.sub { font-size: 11px; }
-.oc-app .oc-prole { font-size: 9.5px; padding: 0 7px; }
 .oc-app .oc-ptag, .oc-app .oc-ptag.wt, .oc-app .oc-ptag.acc { font-size: 9.5px; }
 .oc-app .oc-pusage, .oc-app .oc-pwait, .oc-app .oc-reconn { font-size: 10px; }
 .oc-app .oc-pbtn { width: 22px; height: 22px; }
@@ -78,3 +76,13 @@
 .oc-app .oc-empty .btn { min-height: 28px; padding: 0 12px; font-size: 11px; }
 .oc-app .oc-empty-ico { width: 40px; height: 40px; }
 .oc-app .sq-manage { display: flex; justify-content: center; } .oc-app .sq-manage .oc-link { font-size: 11px; }
+
+/* ---------- terminais: sem cor por papel nem por estado na borda; todos com a mesma linha fina em vermelho escuro ----------
+   (!important porque as camadas antigas pintam a borda por papel, por foco, por execução e por falha em vários seletores de especificidade diferente) */
+.oc-app { --pane-line: #7a2424; --pane-line-focus: #a82c2c; }
+.oc-app .oc-pane { border: 1px solid var(--pane-line) !important; box-shadow: none !important; }
+.oc-app .oc-pane:focus-within { border-color: var(--pane-line-focus) !important; }
+.oc-app .oc-ph { border-bottom: 1px solid var(--pane-line); }
+.oc-app .oc-pf { border-top: 1px solid var(--pane-line); }
+.oc-app .oc-prole { padding: 1px 8px; border: 1px solid var(--line-strong); border-radius: 999px; background: transparent; color: var(--text); font: 500 11px var(--mono); }
+.oc-app .oc-ptitle, .oc-app .oc-ptitle.sub { color: var(--strong); }

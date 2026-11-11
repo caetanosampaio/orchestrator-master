@@ -60,7 +60,7 @@
 .oc-badge.live i { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }
 .oc-badge.work { color: var(--run-text); box-shadow: inset 0 0 0 1px rgba(95, 163, 119, .45); }
 .oc-badge.warn { color: var(--warn-text); box-shadow: inset 0 0 0 1px rgba(146, 113, 62, .45); background: var(--warn-bg); }
-.oc-badge.attn { color: var(--danger-text); box-shadow: inset 0 0 0 1px rgba(184, 70, 70, .5); background: var(--err-bg); }
+.oc-badge.attn { color: var(--danger-text); box-shadow: inset 0 0 0 1px rgba(150, 55, 55, .5); background: var(--err-bg); }
 .oc-envrow { position: relative; }
 .oc-env-pen { position: absolute; right: 4px; top: 50%; width: 24px; height: 24px; margin-top: -12px; background: var(--coal-3); opacity: 0; transform: scale(.9); pointer-events: none; transition: opacity var(--dur-ui) ease, transform var(--dur-ui) var(--ease), color var(--dur-ui) ease; }
 .oc-envrow-head:hover .oc-env-pen, .oc-envrow-head:focus-within .oc-env-pen { opacity: 1; transform: none; pointer-events: auto; }
@@ -124,7 +124,7 @@
 .oc-pill.ok { color: var(--ok-text); box-shadow: inset 0 0 0 1px rgba(71, 125, 88, .4); }
 .oc-form { display: flex; flex-direction: column; gap: var(--sp-3); } .oc-form label { display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-sm); color: var(--dim); }
 .oc-actions { display: flex; gap: var(--sp-2); justify-content: flex-end; }
-.oc-note { margin: 0; padding: var(--sp-2) var(--sp-3); border-radius: var(--r-2); font-size: var(--fs-sm); background: var(--coal-2); } .oc-note.ok { color: var(--ok-text); box-shadow: inset 0 0 0 1px rgba(71, 125, 88, .3); } .oc-note.err { color: var(--danger-text); box-shadow: inset 0 0 0 1px rgba(184, 70, 70, .4); background: var(--err-bg); }
+.oc-note { margin: 0; padding: var(--sp-2) var(--sp-3); border-radius: var(--r-2); font-size: var(--fs-sm); background: var(--coal-2); } .oc-note.ok { color: var(--ok-text); box-shadow: inset 0 0 0 1px rgba(71, 125, 88, .3); } .oc-note.err { color: var(--danger-text); box-shadow: inset 0 0 0 1px rgba(150, 55, 55, .4); background: var(--err-bg); }
 
 /* ---------- configurações ---------- */
 .oc-dialog-lg .oc-dialog-body { padding: 0; gap: 0; }
@@ -210,7 +210,7 @@ input:focus-visible + .oc-switch-track { outline: 2px solid var(--focus); outlin
 .oc-pop-prov dt { font-size: 11px; color: var(--dim); } .oc-pop-prov dd { margin: 0; font-family: var(--mono); font-size: 16px; font-variant-numeric: tabular-nums; color: var(--faint); }
 .oc-pop-prov .work dd { color: var(--run-text); } .oc-pop-prov .work { border-color: rgba(95, 163, 119, .5); }
 .oc-pop-prov .ok dd { color: var(--ok-text); } .oc-pop-prov .ok { border-color: rgba(71, 125, 88, .4); }
-.oc-pop-prov .err dd { color: var(--danger-text); } .oc-pop-prov .err { border-color: rgba(184, 70, 70, .5); }
+.oc-pop-prov .err dd { color: var(--danger-text); } .oc-pop-prov .err { border-color: rgba(150, 55, 55, .5); }
 .oc-pop-off, .oc-pop-soon { margin: 0; font-size: 11.5px; color: var(--faint); } .oc-pop-soon { display: flex; align-items: center; gap: 6px; opacity: .8; } .oc-pop-soon span { margin-left: auto; }
 
 /* tela cheia: o pane ampliado toma também o espaço da barra (o controle de restaurar fica no cabeçalho do próprio pane) */
@@ -220,7 +220,7 @@ input:focus-visible + .oc-switch-track { outline: 2px solid var(--focus); outlin
 .oc-pane { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--term-bg); border-radius: var(--r-3); border-top: 2px solid var(--role); box-shadow: inset 0 0 0 1px var(--coal-line); overflow: hidden; animation: oc-pop var(--dur-3) var(--ease) both; transition: box-shadow var(--dur-3) ease; }
 .oc-pane:focus-within { box-shadow: inset 0 0 0 1px var(--role); }
 .oc-pane.st-working { box-shadow: inset 0 0 0 1px rgba(95, 163, 119, .45); }
-.oc-pane.st-failed { box-shadow: inset 0 0 0 1px rgba(184, 70, 70, .5); }
+.oc-pane.st-failed { box-shadow: inset 0 0 0 1px rgba(150, 55, 55, .5); }
 .oc-pane.st-exited { opacity: .82; }
 .oc-ph { flex: none; display: flex; align-items: center; gap: var(--sp-2); padding: 5px var(--sp-3); background: var(--coal-1); border-bottom: 1px solid var(--coal-line); font-size: var(--fs-xs); min-width: 0; }
 .oc-pdot { position: relative; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--dot, var(--muted)); transition: background-color var(--dur-4, .35s) ease, filter var(--dur-4, .35s) ease; }
@@ -389,14 +389,14 @@ html[data-motion="reduced"] .oc-scan i { animation: none; } html[data-motion="re
 .tp.on .tp-mark { color: var(--dim); }
 .tp.tone-live .tp-mark { color: var(--ok); }
 .tp.tone-warn .tp-mark { color: var(--warn); filter: drop-shadow(0 0 3px rgba(146, 113, 62, .45)); }
-.tp.tone-err .tp-mark { color: var(--err); filter: drop-shadow(0 0 3px rgba(184, 70, 70, .5)); }
+.tp.tone-err .tp-mark { color: var(--err); filter: drop-shadow(0 0 3px rgba(150, 55, 55, .5)); }
 .tp.tone-work .tp-mark { color: var(--glyph-work); filter: drop-shadow(0 0 3px rgba(var(--glyph-work-rgb), .55)); }
 .tp { gap: var(--sp-3); }
 
 /* ---------- sidebar simplificada: só workspaces, pegada de terminal ----------
    Uma linha por workspace: ícone de estado animado + nome em mono + contagem. Verde = ocioso, laranja = trabalhando, vermelho escuro com "!" = requer atenção.
    Todos os ícones têm o mesmo movimento simples (pulso de opacidade e escala), com ritmo diferente por estado. Desligado por prefers-reduced-motion / "Animações reduzidas". */
-.oc-side { --ws-idle: var(--led-idle); --ws-work: var(--run); --ws-attn: #b84646; --ws-attn-text: #d98080; }
+.oc-side { --ws-idle: var(--led-idle); --ws-work: var(--run); --ws-attn: #9a3a3a; --ws-attn-text: #d98080; }
 .oc-side .oc-env { min-height: 34px; padding: 0 var(--sp-2); gap: var(--sp-3); font-size: 13px; letter-spacing: 0; border-radius: var(--r-1); }
 .oc-side .oc-env-name { font-weight: 600; }
 .oc-side .oc-env:hover { background: rgba(255, 255, 255, .045); box-shadow: none; }
