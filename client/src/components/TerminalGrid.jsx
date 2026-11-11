@@ -16,7 +16,7 @@ import { paneState, pendingByPane, paneName, shapeFor, focusPlacement, evenTrack
 import MaestroPopover from './MaestroPopover.jsx';
 import SquadGallery from './SquadGallery.jsx';
 import { useSquads } from '../use-squads.js';
-import { builtinSquads, presetSquads, curatedSquads, squadMissing, launchPlan } from '../squads.js';
+import { builtinSquads, presetSquads, launchPlan } from '../squads.js';
 import { PRESETS } from '../team-view.js';
 
 // Presets de equipe (team-view.js): o mesmo fluxo abre 2, 4 ou 6 terminais do Claude Code em paralelo, cada um com o seu papel. Os ids gravados continuam duo/squad/full; só o rótulo do squad de quatro virou "Squad".
@@ -348,7 +348,7 @@ export default function TerminalGrid({ onOpenWorkspaces, onOpenSettings }) {
           <Icon name="terminal" size={18} />
           <h3>{where}</h3>
           <p className="dim">Nenhum terminal ativo. Abra uma equipe com um clique.</p>
-          <SquadGallery builtins={[...curatedSquads().filter((c) => !squadMissing(c, availableIds).length), ...builtinSquads(availableIds), ...presetSquads(provider)]} mine={sq.missing ? [] : sq.squads} byRole={byRole} providers={providers} busy={busy} launchingId={launchingId} room={room} onOpen={openSquad} onManage={() => onOpenSettings?.('equipes')} />
+          <SquadGallery builtins={[...builtinSquads(availableIds), ...presetSquads(provider)]} mine={sq.missing ? [] : sq.squads} byRole={byRole} providers={providers} busy={busy} launchingId={launchingId} room={room} onOpen={openSquad} onManage={() => onOpenSettings?.('equipes')} />
           {restorable > 0 && <div className="oc-empty-act"><Btn kind="quiet" onClick={() => onOpenSettings?.('historico')} title="Abre Configurações > Histórico de sessões para retomá-las, na ordem em que estavam">Restaurar {restorable} {restorable === 1 ? 'sessão' : 'sessões'}</Btn></div>}
           <p className="dim small oc-agent">Equipes prontas com <ProviderLogo id={provider} size={12} /> <b>{agentLabel}</b> · mude o agente padrão em <b>Configurações &gt; Equipes</b>.</p>
           <p className="dim small oc-foot">Os terminais <b>não passam</b> pelas aprovações do ciclo automático: o que o agente faz ali é decisão sua.</p>

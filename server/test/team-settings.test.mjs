@@ -48,11 +48,11 @@ test('equipes embutidas do estado vazio: presets simples com o agente padrão + 
   assert.equal(builtinSquads(['claude']).length, 0); assert.equal(builtinSquads(['claude', 'codex']).length, 3);
 });
 
-test('interface: Configurações > Equipes e Arquivos, e o chip do Cockpit virou "Arquivos" na sidebar', () => {
-  const st = src('pages/Settings.jsx');
-  assert.match(st, /\['equipes', 'Equipes'/); assert.match(st, /\['arquivos', 'Arquivos'/); assert.match(st, /<TeamsSettings \/>/); assert.match(st, /onOpenWorkspaces/);
+test('interface: Configurações > Times prontos e Arquivos, e o chip do Cockpit virou "Arquivos" na sidebar', () => {
+  const st = ['pages/Settings.jsx', 'settings-nav.js', 'components/settings/SettingsUi.jsx', 'components/settings/AppSections.jsx', 'components/settings/TeamSections.jsx', 'components/settings/AisSection.jsx', 'components/settings/MascotsSection.jsx'].map(src).join('\n');
+  assert.match(st, /item\('equipes', 'Times prontos'/); assert.match(st, /item\('arquivos', 'Arquivos'/); assert.match(st, /<TeamsSettings \/>/); assert.match(st, /onOpenWorkspaces/);
   const t = src('components/TeamsSettings.jsx');
-  assert.match(t, /useSquads\(\)/); assert.match(t, /options: sq\.options/, 'modelo e esforço vêm do `options` do servidor'); assert.match(t, /onDuplicate:/); assert.match(t, /cleanSlots\(draft\.slots\)/);
+  assert.match(t, /useSquads\(\)/); assert.match(t, /options: sq\.options/, 'modelo e esforço vêm do `options` do servidor'); assert.match(t, /draftFromCopy\(s\)/); assert.match(t, /cleanSlots\(draft\.slots\)/);
   const sb = src('components/Sidebar.jsx');
   assert.match(sb, /className="oc-side-files"[^>]*onClick=\{onOpenWorkspaces\}/); assert.match(sb, /<Icon name="folderOpen"[^>]*\/><span className="side-label">Arquivos<\/span>/);
   assert.ok(sb.indexOf('oc-side-files') < sb.indexOf('oc-side-user'), 'Arquivos fica acima do usuário');

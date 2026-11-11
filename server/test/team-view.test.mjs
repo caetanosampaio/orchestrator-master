@@ -71,8 +71,8 @@ test('toolbar: só os controles operacionais (sem chip de workspace nem menu de 
 });
 
 test('Configurações: Visualização (modo da grade do workspace aberto) e Histórico de sessões moram nas Configurações, com o mesmo controle e o mesmo conteúdo de antes', () => {
-  const st = src('pages/Settings.jsx');
-  assert.match(st, /\['visualizacao', 'Visualização'/); assert.match(st, /\['historico', 'Histórico de sessões'/);
+  const st = ['pages/Settings.jsx', 'settings-nav.js', 'components/settings/SettingsUi.jsx', 'components/settings/AppSections.jsx', 'components/settings/TeamSections.jsx', 'components/settings/AisSection.jsx', 'components/settings/MascotsSection.jsx'].map(src).join('\n');
+  assert.match(st, /item\('visualizacao', 'Visualização'/); assert.match(st, /item\('historico', 'Histórico de sessões'/);
   assert.match(st, /LAYOUT_MODES\.map/); assert.match(st, /useLayoutMode\(openWs\?\.id\)/); assert.match(st, /<SessionHistoryBody ws=\{openWs\}/);
   assert.match(st, /onAutoRestore=\{setAutoRestore\}/, 'o interruptor da restauração automática continua no histórico');
   assert.match(src('components/TerminalGrid.jsx'), /useLayoutMode\(ws\?\.id\)/, 'o cockpit lê o mesmo modo que as Configurações gravam');
