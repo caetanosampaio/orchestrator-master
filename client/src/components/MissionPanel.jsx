@@ -39,37 +39,66 @@ function Pipeline({ steps, progress, selectedNode, onSelectNode }) {
 
 const Meter = ({ label, hint, children }) => <div className="mi-meter-c" title={hint}><dt>{label}</dt><dd>{children}</dd></div>;
 
-/** Cabeçalho da missão: nome, objetivo e contexto, workspace, progresso (pipeline), estado e duração, custo, equipe (provedor e modelo) e as ações do ciclo. */
-export default function MissionPanel({ mission, workspace, usage, sessions, now, workflow, selectedNode, onSelectNode, onAction, onOpenTerminals, busyAction }) {
+/** Rodadas, custo e tokens da missão: informação complementar (vai num <details> fechado da página). */
+export function MissionMeters({ mission, usage }) {
+  const u = missionUsage(usage, mission.id), c = mission.cycle;
+  return (
+    <dl className="mi-meter">
+      <Meter label="Rodadas" hint="Rodadas executadas / limite do ciclo">{c ? <>{(c.rounds ?? []).length}{c.maxIterations ? <span className="dim"> / {c.maxIterations}</span> : null}</> : DASH}</Meter>
+      <Meter label="Custo estimado" hint="Estimativa da CLI, não é cobrança. Sem relato = —">{fmtUsd(u.costUsd)}{u.partial && <span className="dim"> parcial</span>}</Meter>
+      <Meter label="Tokens" hint="Entrada + saída reportadas pela CLI (cache fora)">{fmtTokens(u.tokens)}{(u.planner !== null || u.executor !== null) && <span className="dim mi-meter-s"> planner {fmtTokens(u.planner)} · executor {fmtTokens(u.executor)}</span>}</Meter>
+    </dl>
+  );
+}
+
+/** Equipe responsável (provedor e modelo reais; sem leitura = "modelo não informado"). */
+export function MissionTeam({ mission, sessions, working }) {
+  const team = missionTeam(mission, sessions);
+  if (!team.length) return <p className="dim mi-none">Sem agentes ainda.</p>;
+  return (
+    <ul className="mi-team" aria-label="Equipe responsável">
+      {team.map((a) => (
+        <li key={a.id} className={`mi-agent${a.source === 'ciclo' && working ? ' live' : ''}`} title={`${a.name}: ${a.role} · ${a.providerLabel}${a.model ? ` · ${a.model}` : ' · modelo não informado'}`}>
+          <ProviderLogo id={a.provider === 'codex' ? 'codex' : 'claude'} size={12} />
+          <b>{a.name}</b><span>{a.providerLabel}</span><span className="mi-agent-m">{a.model ?? 'modelo não informado'}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Cabeçalho COMPACTO da missão: nome e estado, ações discretas, objetivo resumido, progresso e duração. Custo, tokens e equipe ficam em seções recolhidas. */
+export default function MissionPanel({ mission, workspace, now, workflow, selectedNode, onSelectNode, onAction, onOpenTerminals, busyAction }) {
   const [ctxOpen, setCtxOpen] = useState(false);
   const state = missionState(mission), meta = STATE_META[state], progress = missionProgress(mission), dur = missionDuration(mission, now);
-  const u = missionUsage(usage, mission.id), team = missionTeam(mission, sessions), act = cycleActions(mission), c = mission.cycle;
-  const steps = (workflow?.nodes ?? []).filter((n) => n.kind === 'step');
+  const act = cycleActions(mission), c = mission.cycle;
+  const steps = (workflow?.nodes ?? []).filter((n) => n.kind === 'step' || n.kind === 'task'); // etapa do ciclo ou tarefa do Maestro (squad)
   const working = state === 'working';
   return (
     <header className={`mi-head st-${state}`} aria-label={`Missão ${mission.title}`}>
-      <p className="mi-kicker">
-        <i aria-hidden="true" /><span>Missão</span>
-        <span className="mi-tag" title={workspace?.path}><Icon name="workspace" size={11} />{workspace ? (workspace.displayName || workspace.name) : 'sem workspace'}</span>
-        {c && <span className="mi-tag">ciclo {CYCLE_LABEL[c.status] ?? c.status}</span>}
-        <span className="mi-kicker-d">criada {fmtDate(mission.createdAt)}</span>
-      </p>
-
       <div className="mi-head-row">
         <div className="mi-head-id">
           <h2 className="mi-title">{mission.title}</h2>
           <span className={`mi-state st-${state}`}><i aria-hidden="true" />{meta.label}</span>
         </div>
         <div className="mi-actions">
-          {act.start && <ActionButton kind="primary" busy={busyAction === 'start'} onClick={() => onAction('start')} title="Inicia o ciclo autônomo: o Planner decide, o Executor age no workspace e o sistema verifica">{c ? 'Novo ciclo' : 'Iniciar ciclo'}</ActionButton>}
+          {act.start && <ActionButton kind="primary" busy={busyAction === 'start'} onClick={() => onAction('start')} title="Inicia o ciclo autônomo: o Planner decide, o Executor age no workspace e o sistema verifica">{c ? 'Novo ciclo' : 'Iniciar'}</ActionButton>}
           {act.resume && <ActionButton kind="primary" busy={busyAction === 'resume'} onClick={() => onAction('resume')} title="Retoma o ciclo para o Planner reavaliar">Retomar</ActionButton>}
-          {act.cancel && <ActionButton kind="danger" busy={busyAction === 'cancel'} onClick={() => onAction('cancel')}>Cancelar ciclo</ActionButton>}
-          <ActionButton onClick={onOpenTerminals} title="Abre o Cockpit no workspace desta missão">Terminais</ActionButton>
+          {act.cancel && <ActionButton kind="ghost" busy={busyAction === 'cancel'} onClick={() => onAction('cancel')}>Cancelar</ActionButton>}
+          <ActionButton kind="ghost" onClick={() => onOpenTerminals()} title="Abre o Cockpit no workspace desta missão">Terminais</ActionButton>
           {act.remove && <ActionButton kind="ghost" busy={busyAction === 'remove'} onClick={() => onAction('remove')} title="Remover a missão">Remover</ActionButton>}
         </div>
       </div>
 
-      <p className="mi-objective">{mission.objective || <span className="dim">Sem objetivo descrito.</span>} <button type="button" className="mi-link" onClick={() => setCtxOpen((v) => !v)} aria-expanded={ctxOpen}>{ctxOpen ? 'ocultar contexto' : 'contexto'}</button></p>
+      <p className="mi-meta">
+        <span title={workspace?.path}>{workspace ? (workspace.displayName || workspace.name) : 'sem workspace'}</span>
+        {c && <span>ciclo {CYCLE_LABEL[c.status] ?? c.status}</span>}
+        <span>criada {fmtDate(mission.createdAt)}</span>
+        <span className="mi-meta-dur">{fmtDuration(dur)}{working && dur !== null && <i className="mi-live" aria-hidden="true" />}</span>
+      </p>
+
+      <p className="mi-objective">{mission.objective || <span className="dim">Sem objetivo descrito.</span>}{' '}
+        <button type="button" className="mi-link" onClick={() => setCtxOpen((v) => !v)} aria-expanded={ctxOpen}>{ctxOpen ? 'ocultar contexto' : 'contexto'}</button></p>
       {ctxOpen && (
         <dl className="mi-ctx">
           <dt>Workspace</dt><dd className="mono">{workspace?.path ?? DASH}</dd>
@@ -80,22 +109,6 @@ export default function MissionPanel({ mission, workspace, usage, sessions, now,
       )}
 
       <Pipeline steps={steps} progress={progress} selectedNode={selectedNode} onSelectNode={onSelectNode} />
-
-      <dl className="mi-meter">
-        <Meter label="Duração" hint="Do início do ciclo até agora (ou até o fim)">{fmtDuration(dur)}{working && dur !== null && <i className="mi-live" aria-hidden="true" />}</Meter>
-        <Meter label="Rodadas" hint="Rodadas executadas / limite do ciclo">{c ? <>{(c.rounds ?? []).length}{c.maxIterations ? <span className="dim"> / {c.maxIterations}</span> : null}</> : DASH}</Meter>
-        <Meter label="Custo estimado" hint="Estimativa da CLI, não é cobrança. Sem relato = —">{fmtUsd(u.costUsd)}{u.partial && <span className="dim"> parcial</span>}</Meter>
-        <Meter label="Tokens" hint="Entrada + saída reportadas pela CLI (cache fora)">{fmtTokens(u.tokens)}{(u.planner !== null || u.executor !== null) && <span className="dim mi-meter-s"> planner {fmtTokens(u.planner)} · executor {fmtTokens(u.executor)}</span>}</Meter>
-      </dl>
-
-      <ul className="mi-team" aria-label="Equipe responsável">
-        {team.map((a) => (
-          <li key={a.id} className={`mi-agent${a.source === 'ciclo' && working ? ' live' : ''}`} title={`${a.name}: ${a.role} · ${a.providerLabel}${a.model ? ` · ${a.model}` : ' · modelo não informado'}`}>
-            <ProviderLogo id={a.provider === 'codex' ? 'codex' : 'claude'} size={12} />
-            <b>{a.name}</b><span>{a.providerLabel}</span><span className="mi-agent-m">{a.model ?? 'modelo não informado'}</span>
-          </li>
-        ))}
-      </ul>
     </header>
   );
 }

@@ -163,12 +163,114 @@ export function stepsOf(m) {
 /** Aprovações pendentes do ciclo, por rodada. */
 const pendingApprovals = (c) => arr(c?.approvals).filter((a) => a?.status === 'pending');
 
+// ---------- agente de um nó (contrato: { name, role, provider, providerLabel, model, effort } ou null) ----------
+const PROVIDER_LABEL = { claude: 'Claude Code', codex: 'Codex CLI' };
+const strOrNull = (v) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+const firstLine = (s, n) => clip(String(s ?? '').trim().split(/\r?\n/).find((l) => l.trim()) ?? '', n);
+/** Agente de uma sessão de terminal. Modelo e esforço vêm da sessão (`model`/`effort`; `usage.model` é o que o terminal reportou); ausente = null. */
+function sessionAgent(s) {
+  if (!s) return null;
+  const provider = s.provider === 'codex' ? 'codex' : 'claude';
+  return { name: strOrNull(s.title) ?? strOrNull(s.roleLabel) ?? strOrNull(s.role) ?? 'agente', role: strOrNull(s.roleLabel) ?? strOrNull(s.role), provider, providerLabel: strOrNull(s.providerLabel) ?? PROVIDER_LABEL[provider], model: strOrNull(s.model) ?? strOrNull(s.usage?.model), effort: strOrNull(s.effort) };
+}
+/** Planner/Executor do ciclo: processo próprio, o servidor não informa modelo nem esforço (null, nunca copiado de um terminal). */
+const cycleAgent = (name, role) => ({ name, role, provider: 'claude', providerLabel: PROVIDER_LABEL.claude, model: null, effort: null });
+
+// ---------- workflow do squad: tarefas REAIS do Maestro (`/api/maestro`) endereçadas aos panes do workspace da missão ----------
+const TASK_TO_NODE = { pending: 'approval', delivered: 'working', done: 'completed', rejected: 'attention', expired: 'attention', failed: 'attention' };
+export const TASK_STATUS_LABEL = Object.freeze({ pending: 'aguardando aprovação', delivered: 'em andamento', done: 'concluída', rejected: 'recusada', expired: 'expirada', failed: 'falhou' });
+const ts = (iso) => { const t = Date.parse(iso ?? ''); return Number.isFinite(t) ? t : null; };
+
 /**
- * Grafo do workflow: Missão -> Planner -> etapas (em paralelo quando não dependem entre si) -> Entrega.
+ * Tarefas do Maestro desta missão, em ordem de criação. Cada item: { task, session (do pane de destino, ou null se ele sumiu), order }.
+ * Duas barreiras: (1) tempo: só tarefas criadas a partir do início da missão (cycle.startedAt, senão createdAt), as antigas do workspace ficam de fora;
+ * data ausente/inválida (da missão ou da tarefa) NÃO descarta. (2) workspace: a tarefa não traz o workspaceId, então liga-se por quem a recebeu ou a enviou.
+ * LIMITE: pane fechado some de /api/terminals e a tarefa não guarda o workspace. Ela só é mantida se o remetente (`from`) é um pane do workspace ou se o mesmo `to`
+ * aparece em outra tarefa já ligada; sem nenhuma dessas pistas (pane desconhecido, sem como ligar ao workspace) é descartada, nunca adivinhada.
+ */
+function squadTasks(m, ctx) {
+  const all = arr(ctx?.sessions).filter((s) => s && s.id), mine = new Map(all.filter((s) => s.workspaceId === m?.workspaceId).map((s) => [s.id, s])), others = new Set(all.filter((s) => s.workspaceId !== m?.workspaceId).map((s) => s.id));
+  const from = ts(m?.cycle?.startedAt) ?? ts(m?.createdAt);
+  const tasks = arr(ctx?.maestro?.tasks).filter((t) => t && t.id && !others.has(t.to) && !(from !== null && ts(t.createdAt) !== null && ts(t.createdAt) < from));
+  const linked = new Set(tasks.filter((t) => mine.has(t.to) || mine.has(t.from)).map((t) => t.id)), pane = new Set(tasks.filter((t) => linked.has(t.id)).map((t) => t.to));
+  return tasks.filter((t) => linked.has(t.id) || pane.has(t.to))
+    .sort((a, b) => (ts(a.createdAt) ?? 0) - (ts(b.createdAt) ?? 0) || String(a.id).localeCompare(String(b.id)))
+    .map((task, order) => ({ task, session: mine.get(task.to) ?? null, order }));
+}
+
+/**
+ * Dependência INFERIDA pelo tempo (tarefas do Maestro não têm dependsOn): B depende de A se A foi concluída (doneAt) antes de B ser criada.
+ * Reduz transitivamente (A->B->C não liga A->C). Só olha tarefas anteriores na ordem de criação: nunca faz ciclo.
+ */
+function inferDeps(items) {
+  const deps = new Map();
+  for (const b of items) {
+    const bAt = ts(b.task.createdAt);
+    const direct = items.filter((a) => a.order < b.order && bAt !== null && ts(a.task.doneAt) !== null && ts(a.task.doneAt) <= bAt).map((a) => a.task.id);
+    const anc = new Set(); // ancestrais das dependências diretas: se já é alcançável por outra, a aresta é redundante
+    const walk = (id) => { for (const d of deps.get(id) ?? []) if (!anc.has(d)) { anc.add(d); walk(d); } };
+    direct.forEach(walk);
+    deps.set(b.task.id, direct.filter((id) => !anc.has(id)));
+  }
+  return deps;
+}
+
+function squadWorkflow(m, ctx, items) {
+  const mstate = missionState(m), deps = inferDeps(items), nid = (id) => `task:${id}`;
+  const depth = new Map();
+  for (const it of items) depth.set(it.task.id, Math.max(-1, ...deps.get(it.task.id).map((d) => depth.get(d))) + 1); // ordem de criação: as dependências já têm profundidade
+  const maxDepth = Math.max(...depth.values());
+  const active = items.filter((it) => ['pending', 'delivered'].includes(it.task.status)).length;
+  const maestroSession = arr(ctx?.sessions).filter((s) => s?.workspaceId === m?.workspaceId && s.role === 'maestro').sort((a, b) => (a.status === 'running' ? 0 : 1) - (b.status === 'running' ? 0 : 1))[0] ?? null;
+  const nodes = [
+    { id: 'mission', kind: 'mission', title: 'Missão', subtitle: clip(m?.title, 60), state: 'completed', col: 0, agent: null, currentTask: null, terminalId: null, source: 'squad' },
+    { id: 'maestro', kind: 'maestro', title: 'Maestro', subtitle: `${items.length} tarefa(s)`, state: active ? 'working' : 'completed', col: 1, agent: sessionAgent(maestroSession), currentTask: active ? `${active} tarefa(s) em andamento` : null, terminalId: maestroSession?.status === 'running' ? maestroSession.id : null, source: 'squad' },
+  ];
+  for (const { task: t, session: s } of items) {
+    const st = TASK_TO_NODE[t.status] ?? 'idle';
+    nodes.push({
+      id: nid(t.id), kind: 'task', taskId: t.id, taskStatus: t.status, taskType: t.taskType ?? null, title: firstLine(t.text, 90) || 'Tarefa', subtitle: s ? strOrNull(s.roleLabel) ?? strOrNull(t.toRole) : strOrNull(t.toTitle) ?? strOrNull(t.toRole), state: st, col: 2 + depth.get(t.id),
+      agent: sessionAgent(s), currentTask: st === 'working' ? firstLine(t.text, 120) : null, terminalId: s?.status === 'running' ? s.id : null, source: 'squad', // pane que sumiu: sem agente nem terminal (null), o nó mostra o destino gravado na tarefa
+    });
+  }
+  const allDone = items.every((it) => it.task.status === 'done');
+  nodes.push({ id: 'delivery', kind: 'delivery', title: 'Entrega', subtitle: allDone ? 'tarefas concluídas' : null, state: mstate === 'cancelled' ? 'cancelled' : mstate === 'completed' || allDone ? 'completed' : 'idle', col: maxDepth + 3, agent: null, currentTask: null, terminalId: null, source: 'squad' });
+
+  const byCol = new Map();
+  for (const n of nodes) { const l = byCol.get(n.col) ?? []; l.push(n); byCol.set(n.col, l); }
+  const rows = Math.max(1, ...[...byCol.values()].map((l) => l.length));
+  for (const l of byCol.values()) l.forEach((n, i) => { n.row = i + (rows - l.length) / 2; });
+
+  const stateOf = (id) => nodes.find((n) => n.id === id)?.state, edges = [];
+  const edge = (from, to) => {
+    const a = stateOf(from), b = stateOf(to);
+    edges.push({ id: `${from}>${to}`, from, to, state: b === 'working' ? 'active' : b === 'approval' ? 'wait' : b === 'attention' ? 'err' : a === 'completed' && b === 'completed' ? 'done' : 'idle' });
+  };
+  edge('mission', 'maestro');
+  const hasChild = new Set([...deps.values()].flat());
+  for (const { task: t } of items) {
+    const d = deps.get(t.id);
+    if (!d.length) edge('maestro', nid(t.id)); else d.forEach((x) => edge(nid(x), nid(t.id)));
+    if (!hasChild.has(t.id)) edge(nid(t.id), 'delivery');
+  }
+  return { nodes, edges, cols: Math.max(...nodes.map((n) => n.col)) + 1, rows };
+}
+
+/**
+ * Grafo do workflow, das etapas REAIS. Fonte 1 (squad): tarefas do Maestro dos panes do workspace (`ctx.maestro`, `ctx.sessions`):
+ * Missão -> Maestro -> tarefas (N simultâneas = N ramos; sequência = linha reta) -> Entrega. Fonte 2 (ciclo, sem tarefas do Maestro): `cycleWorkflow`.
+ */
+export function buildWorkflow(m, ctx = { sessions: [], maestro: null }) {
+  const items = squadTasks(m, ctx);
+  return items.length ? squadWorkflow(m, ctx, items) : cycleWorkflow(m);
+}
+
+/**
+ * Grafo do ciclo: Missão -> Planner -> etapas (em paralelo quando não dependem entre si) -> Entrega.
  * Cada nó: { id, kind: mission|planner|step|delivery, title, state, col, row, stages? }. Cada aresta: { id, from, to, state: idle|active|done|wait|err }.
  * `col` cresce pela profundidade de dependência; `row` é centrado por coluna (etapas independentes ficam em linhas distintas = tarefas paralelas).
  */
-export function buildWorkflow(m) {
+function cycleWorkflow(m) {
   const c = m?.cycle, state = missionState(m), steps = stepsOf(m), pend = pendingApprovals(c);
   const nodes = [], edges = [];
   const nid = (id) => `step:${id}`; // o Planner aceita ids como "mission", "planner" ou "delivery": o prefixo evita colisão com os nós fixos
@@ -189,8 +291,9 @@ export function buildWorkflow(m) {
   const deliveryState = state === 'cancelled' ? 'cancelled' : state === 'completed' ? 'completed' : c?.status === 'completed' ? 'completed'
     : steps.length && steps.every((s) => s.status === 'completed') && c && ['planning', 'running'].includes(c.status) ? 'working' : 'idle';
 
-  nodes.push({ id: 'mission', kind: 'mission', title: 'Missão', subtitle: clip(m?.title, 60), state: started ? 'completed' : 'idle', col: 0 });
-  nodes.push({ id: 'planner', kind: 'planner', title: 'Planner', subtitle: c?.plan ? `${steps.length} etapa(s)` : c ? 'decide a cada rodada' : null, state: plannerState, col: 1, plannerCalls: c?.plannerCalls ?? null });
+  const base = { agent: null, currentTask: null, terminalId: null, source: 'ciclo' }; // o ciclo roda em processo próprio: não há terminal para abrir
+  nodes.push({ id: 'mission', kind: 'mission', title: 'Missão', subtitle: clip(m?.title, 60), state: started ? 'completed' : 'idle', col: 0, ...base });
+  nodes.push({ id: 'planner', kind: 'planner', title: 'Planner', subtitle: c?.plan ? `${steps.length} etapa(s)` : c ? 'decide a cada rodada' : null, state: plannerState, col: 1, plannerCalls: c?.plannerCalls ?? null, ...base, agent: cycleAgent('Planner', 'Decide a próxima etapa'), currentTask: plannerState === 'working' ? 'Planejando a próxima etapa' : null });
 
   const stepNodes = steps.map((s) => {
     const round = lastRound(c, s), stages = roundStages(round);
@@ -200,12 +303,12 @@ export function buildWorkflow(m) {
     if (approval) st = 'approval';
     else if (state === 'cancelled' && (st === 'idle' || st === 'working')) st = 'cancelled';
     const attempts = arr(c?.rounds).filter((r) => (s.stepId ? r.stepId === s.stepId && r.planId === c.plan?.id : r.taskId === s.taskId)).length;
-    return { id: nid(s.id), stepKey: s.id, taskId: round?.taskId ?? s.taskId ?? null, kind: 'step', title: s.title, state: st, col: 2 + depth.get(s.id), stages: round ? stages : { exec: { state: st === 'idle' ? 'idle' : stages.exec.state, label: st === 'idle' ? 'na fila' : stages.exec.label }, verify: stages.verify }, round: round?.n ?? null, attempts, uncertain: s.uncertain, approvalId: approval?.id ?? null, source: s.source };
+    return { id: nid(s.id), stepKey: s.id, taskId: round?.taskId ?? s.taskId ?? null, kind: 'step', title: s.title, state: st, col: 2 + depth.get(s.id), stages: round ? stages : { exec: { state: st === 'idle' ? 'idle' : stages.exec.state, label: st === 'idle' ? 'na fila' : stages.exec.label }, verify: stages.verify }, round: round?.n ?? null, attempts, uncertain: s.uncertain, approvalId: approval?.id ?? null, stepSource: s.source, ...base, agent: cycleAgent('Executor', 'Executa uma etapa por vez'), currentTask: st === 'working' ? clip(s.title, 120) : null };
   });
   nodes.push(...stepNodes);
   const matched = new Set(stepNodes.map((n) => n.approvalId).filter(Boolean)), loose = pend.find((a) => !matched.has(a.id)); // pendente sem etapa (ciclo sem plano): quem espera é o Planner
   if (loose) { const pn = nodes.find((n) => n.id === 'planner'); pn.state = 'approval'; pn.approvalId = loose.id; }
-  nodes.push({ id: 'delivery', kind: 'delivery', title: 'Entrega', subtitle: deliveryState === 'completed' ? 'relatório pronto' : null, state: deliveryState, col: (steps.length ? maxDepth + 3 : 2) });
+  nodes.push({ id: 'delivery', kind: 'delivery', title: 'Entrega', subtitle: deliveryState === 'completed' ? 'relatório pronto' : null, state: deliveryState, col: (steps.length ? maxDepth + 3 : 2), ...base });
 
   // linhas: cada coluna é centrada na altura da maior coluna
   const byCol = new Map();
@@ -231,24 +334,40 @@ export function buildWorkflow(m) {
 
 /** Resumo do pipeline: etapas, fases (colunas de etapas), quantas executando, quantas na fila e a maior fase (etapas sem dependência entre si). */
 export function parallelInfo(wf) {
-  const steps = wf.nodes.filter((n) => n.kind === 'step');
+  const steps = wf.nodes.filter((n) => n.kind === 'step' || n.kind === 'task');
   const lanes = steps.reduce((a, n) => { a[n.col] = (a[n.col] ?? 0) + 1; return a; }, {});
   return { running: steps.filter((n) => n.state === 'working').length, queued: steps.filter((n) => n.state === 'idle').length, maxLane: Math.max(1, ...Object.values(lanes)), steps: steps.length, phases: Object.keys(lanes).length };
 }
 
 // ---------- detalhes de um nó ----------
 /** Detalhe de um nó do workflow: agente, atividade (final do log), evidências (relatório da rodada) e aprovações. Só o que está gravado. */
-export function nodeDetail(m, nodeId, { sessions = [], activity = [] } = {}) {
-  const wf = buildWorkflow(m), node = wf.nodes.find((n) => n.id === nodeId);
+export function nodeDetail(m, nodeId, { sessions = [], activity = [], maestro = null } = {}) {
+  const wf = buildWorkflow(m, { sessions, maestro }), node = wf.nodes.find((n) => n.id === nodeId);
   if (!node) return null;
-  const c = m?.cycle, team = missionTeam(m, sessions);
-  const out = { id: node.id, kind: node.kind, title: node.title, state: node.state, agent: null, activity: [], evidence: null, files: [], errors: [], approval: null, instructions: null, acceptance: [], facts: [] };
+  const c = m?.cycle;
+  // `agent`, `terminalId` e `context` (texto da tarefa ou instruções da etapa) valem para todos os nós; `errors` só traz o que está gravado
+  const out = { id: node.id, kind: node.kind, title: node.title, state: node.state, source: node.source, agent: node.agent ?? null, terminalId: node.terminalId ?? null, currentTask: node.currentTask ?? null, context: null, activity: [], evidence: null, files: [], errors: [], approval: null, instructions: null, acceptance: [], facts: [] };
   const mine = arr(activity).filter((a) => a?.missionId === m?.id);
   const approvalOf = (id) => { const a = arr(c?.approvals).find((x) => x.id === id); return a ? { id: a.id, round: a.round, createdAt: a.createdAt, digest: typeof a.digest === 'string' ? a.digest : null, action: obj(a.action), rules: arr(a.rules).map((r) => clip(r?.id ?? r?.reason ?? r, 80)) } : null; };
   if (node.approvalId) out.approval = approvalOf(node.approvalId);
-  if (node.kind === 'mission') { out.facts = [['Objetivo', m?.objective || DASH], ['Criada', fmtWhen(m?.createdAt)]]; out.activity = mine.slice(0, 8).map((a) => a.message); return out; }
+  if (node.kind === 'mission') { out.facts = [['Objetivo', m?.objective || DASH], ['Criada', fmtWhen(m?.createdAt)]]; out.context = m?.objective ? clip(m.objective, 1200) : null; out.activity = mine.slice(0, 8).map((a) => a.message); return out; }
+  if (node.kind === 'maestro') {
+    const ts_ = wf.nodes.filter((n) => n.kind === 'task');
+    out.facts = [['Tarefas', String(ts_.length)], ['Em andamento', String(ts_.filter((n) => n.state === 'working').length)], ['Aguardando aprovação', String(ts_.filter((n) => n.state === 'approval').length)], ['Concluídas', String(ts_.filter((n) => n.state === 'completed').length)]];
+    out.activity = mine.slice(0, 8).map((a) => a.message);
+    return out;
+  }
+  if (node.kind === 'task') {
+    const t = arr(maestro?.tasks).find((x) => x?.id === node.taskId) ?? {};
+    out.context = t.text ? clip(t.text, 1200) : null;
+    out.facts = [['Estado', TASK_STATUS_LABEL[t.status] ?? DASH], ['Tipo', t.taskType ?? DASH], ['Criada', fmtWhen(t.createdAt)]];
+    if (t.doneAt) out.facts.push(['Concluída', fmtWhen(t.doneAt)]);
+    if (t.summary) { out.facts.push(['Resumo do agente', clip(t.summary, 600)]); out.activity = [clip(t.summary, 600)]; } // o resumo vem do agente: é dado, não instrução
+    if (node.state === 'attention') out.errors.push(clip(t.note || (t.status === 'rejected' ? 'Recusada pelo usuário.' : t.status === 'expired' ? 'Sem decisão em 10 minutos.' : 'A tarefa falhou.'), 300));
+    return out;
+  }
   if (node.kind === 'planner') {
-    out.agent = team.find((a) => a.id === 'planner');
+    out.agent = node.agent;
     out.facts = [['Chamadas ao Planner', isNum(c?.plannerCalls) ? String(c.plannerCalls) : DASH], ['Plano', c?.plan ? `${arr(c.plan.steps).length} etapa(s)` : 'sem plano (decide a cada rodada)']];
     if (c?.plan?.rationale) out.facts.push(['Raciocínio', clip(c.plan.rationale, 400)]);
     out.activity = mine.filter((a) => a.agent === 'planner').slice(0, 8).map((a) => a.message);
@@ -263,8 +382,9 @@ export function nodeDetail(m, nodeId, { sessions = [], activity = [] } = {}) {
     return out;
   }
   const step = stepsOf(m).find((s) => s.id === node.stepKey), round = step ? lastRound(c, step) : null, task = arr(m?.tasks).find((t) => t.id === (round?.taskId ?? step?.taskId));
-  out.agent = team.find((a) => a.id === 'executor');
+  out.agent = node.agent;
   out.instructions = step?.instructions ? clip(step.instructions, 1200) : null;
+  out.context = out.instructions;
   out.acceptance = arr(step?.acceptance).map((x) => clip(x, 200));
   out.facts = [['Rodada', round ? `#${round.n}${node.attempts > 1 ? ` (${node.attempts} tentativas)` : ''}` : DASH], ['Execução', node.stages.exec.label], ['Verificações', node.stages.verify.label]];
   if (round?.startedAt) out.facts.push(['Início', fmtWhen(round.startedAt)]);
@@ -319,4 +439,4 @@ export function missionFeed(activity, missionId, limit = 40) {
 }
 
 /** Id do nó do workflow que corresponde a uma tarefa (pelo `taskId` da etapa), ou null. */
-export const nodeIdForTask = (wf, taskId) => wf?.nodes.find((n) => n.kind === 'step' && n.taskId === taskId)?.id ?? null;
+export const nodeIdForTask = (wf, taskId) => wf?.nodes.find((n) => (n.kind === 'step' || n.kind === 'task') && n.taskId === taskId)?.id ?? null;

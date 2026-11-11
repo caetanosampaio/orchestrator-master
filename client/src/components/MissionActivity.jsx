@@ -3,7 +3,7 @@ import { Icon } from './ui.jsx';
 import ProviderLogo from './ProviderLogo.jsx';
 import { ActionButton } from './MissionPanel.jsx';
 import { ActionSummary } from './MissionNodeDetail.jsx';
-import { controlItems, missionFeed, buildWorkflow, missionTeam, nodeIdForTask } from '../missions-view.js';
+import { controlItems, missionFeed, missionTeam, nodeIdForTask } from '../missions-view.js';
 import { taskTone, taskLabel } from '../op-state.js';
 
 const hhmm = (iso) => { const t = Date.parse(iso ?? ''); return Number.isFinite(t) ? new Date(t).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : ''; };
@@ -12,8 +12,8 @@ const hhmm = (iso) => { const t = Date.parse(iso ?? ''); return Number.isFinite(
  * Faixa de controle: o que pede VOCÊ agora (aprovações pendentes do ciclo e das tarefas manuais, falha ou bloqueio). Só aparece quando há algo; pulsa em âmbar/vermelho.
  * A aprovação do ciclo exige o `digest` da ação mostrada: o servidor recusa se a ação mudou desde a solicitação.
  */
-export function ControlBar({ mission, onDecide, busyAction, onSelectNode }) {
-  const items = controlItems(mission), wf = buildWorkflow(mission);
+export function ControlBar({ mission, onDecide, busyAction, onSelectNode, workflow }) {
+  const items = controlItems(mission), wf = workflow ?? null; // sem `workflow` não há "ver etapa" (nunca se remonta um grafo sem o contexto do squad); as aprovações continuam visíveis
   if (!items.length) return null;
   return (
     <section className="mi-control" aria-label="Pede a sua atenção" role="alert">
@@ -37,13 +37,14 @@ export function ControlBar({ mission, onDecide, busyAction, onSelectNode }) {
 }
 
 /** Área inferior: Atividade (linha do tempo real de /api/activity), Tarefas e Terminais do workspace (com o estado real de cada agente). */
-export default function MissionActivity({ mission, activity, sessions, stateOf, onSelectNode, onOpenTerminals }) {
+export default function MissionActivity({ mission, activity, sessions, stateOf, onSelectNode, onOpenTerminals, workflow }) {
   const [tab, setTab] = useState('feed');
   const feed = missionFeed(activity, mission.id), tasks = mission.tasks ?? [], team = missionTeam(mission, sessions, { stateOf }).filter((a) => a.source === 'terminal');
-  const wf = buildWorkflow(mission);
+  const wf = workflow ?? null;
+  if (!wf) return null; // o workflow vem da página (com sessões e Maestro): sem ele não se desenha um grafo divergente
   const tabs = [['feed', 'Atividade', feed.length], ['tasks', 'Tarefas', tasks.length], ['terms', 'Terminais', team.length]];
   return (
-    <section className="mi-activity" aria-label="Atividade e controle">
+    <div className="mi-activity">
       <div className="mi-tabs" role="tablist" aria-label="Atividade da missão">
         {tabs.map(([id, label, n]) => (
           <button key={id} type="button" role="tab" id={`mi-tab-${id}`} aria-selected={tab === id} aria-controls={`mi-pane-${id}`} className={tab === id ? 'on' : ''} onClick={() => setTab(id)}>{label}{n > 0 && <span className="oc-n">{n}</span>}</button>
@@ -79,10 +80,10 @@ export default function MissionActivity({ mission, activity, sessions, stateOf, 
                 ))}
               </ul>
             )}
-            <button type="button" className="mi-btn" onClick={onOpenTerminals}><Icon name="cockpit" size={14} /><span>Abrir no Cockpit</span></button>
+            <button type="button" className="mi-btn" onClick={() => onOpenTerminals()}><Icon name="cockpit" size={14} /><span>Abrir no Cockpit</span></button>
           </>
         )}
       </div>
-    </section>
+    </div>
   );
 }
