@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { useStore } from '../store.jsx';
-import { usePrefs } from '../hooks.js';
 import { useSquads } from '../use-squads.js';
 import { availableMixes } from '../team-view.js';
 import { curatedSquads, draftFromPreset, draftFromSquad, draftFromCopy, draftForInstall, isInstalled, cleanSlots, describeSquad, slotChoiceLabels, squadMissing } from '../squads.js';
@@ -52,12 +51,10 @@ function Detail({ squad, kind, byRole, labelOf, options, available, known, onBac
  */
 export default function TeamsSettings() {
   const { terminals, notify } = useStore();
-  const [prefs, setPref] = usePrefs();
   const sq = useSquads();
   const [view, setView] = useState({ name: 'list' }), [saving, setSaving] = useState(false), [freshId, setFreshId] = useState(null);
   const providers = terminals?.providers ?? [], roles = terminals?.roles ?? [], byRole = Object.fromEntries(roles.map((r) => [r.id, r]));
   const available = providers.filter((p) => p.available).map((p) => p.id), known = providers.length > 0, labelOf = labelFor(providers);
-  const provider = available.includes(prefs.provider) ? prefs.provider : (available[0] ?? 'claude');
   const quick = availableMixes(available).filter((m) => QUICK[m.id]);
   const common = { byRole, labelOf, options: sq.options, available, known };
   const back = () => setView({ name: 'list' });
@@ -97,7 +94,7 @@ export default function TeamsSettings() {
   const see = (squad, kind) => setView({ name: 'detail', squad, kind });
   return (
     <>
-      <PageHead title="Times prontos" tag="Squads" sub="Times com papéis e agentes prontos para abrir no Cockpit. Instale os opcionais, edite e monte os seus."
+      <PageHead title="Times prontos" tag="Squads" sub="Os times que aparecem no Cockpit vêm daqui: instale os prontos, edite e monte os seus. Em cada workspace você escolhe qual abrir."
         action={<TcBtn icon="plus" onClick={newTeam}>Novo time</TcBtn>} />
       <TeamSection id="install" title="Para instalar" hint="Opcionais, com Claude e Codex juntos. Instalar é grátis e você edita antes.">
         {curatedSquads().map((s, i) => (
@@ -121,14 +118,6 @@ export default function TeamsSettings() {
           </div>
         )}
       </TeamSection>
-      <Block title="Times básicos do Cockpit" hint="Dupla, Squad, Squad de 6 e Construtor já vêm no Cockpit e usam um agente só." id="basics">
-        <div className="set-card"><div className="set-row">
-          <div className="set-row-t"><b>Agente dos times básicos</b><span className="dim small">Qual agente os times básicos do Cockpit abrem.</span></div>
-          <div className="set-row-c"><select value={provider} onChange={(e) => setPref('provider', e.target.value)} aria-label="Agente dos times básicos" disabled={!available.length}>
-            {providers.map((p) => <option key={p.id} value={p.id} disabled={!p.available}>{labelOf(p.id)}{p.available ? '' : ' (indisponível)'}</option>)}
-          </select></div>
-        </div></div>
-      </Block>
     </>
   );
 }

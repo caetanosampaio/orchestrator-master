@@ -9,7 +9,7 @@ import path from 'node:path';
 const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'orch-rows-')));
 process.env.ORCH_DATA_DIR = path.join(tmp, 'data');
 process.on('exit', () => { try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* temporário */ } });
-const { uniqueName, draftForInstall, isInstalled, curatedSquads, squadMissing, squadProviders, describeSquad, slotChoiceLabels, builtinSquads, presetSquads, launchPlan, draftFromSquad, cleanSlots } = await import('../../client/src/squads.js');
+const { uniqueName, draftForInstall, isInstalled, curatedSquads, squadMissing, squadProviders, describeSquad, slotChoiceLabels, launchPlan, draftFromSquad, cleanSlots } = await import('../../client/src/squads.js');
 const { providerColor, PROVIDER_COLORS } = await import('../../client/src/provider-view.js');
 const { validateTemplateBody } = await import('../team-templates.js');
 const { providerOptions } = await import('../providers/index.js');
@@ -52,8 +52,8 @@ test('usar como base: a equipe do FORGE vira rascunho NOVO (sem id nem nome) com
   assert.equal(d.id, null); assert.equal(d.name, ''); assert.ok(d.slots.every((s) => s.model && s.effort));
 });
 
-test('describeSquad: equipes por objetivo e estruturas básicas têm texto; equipe do usuário só o que ela traz', () => {
-  for (const s of [...curatedSquads(), ...builtinSquads(['claude', 'codex']), ...presetSquads('claude')]) { const d = describeSquad(s); assert.ok(d.tagline && d.about, `${s.id} sem texto`); }
+test('describeSquad: os times prontos têm texto; equipe do usuário só o que ela traz', () => {
+  for (const s of curatedSquads()) { const d = describeSquad(s); assert.ok(d.tagline && d.about, `${s.id} sem texto`); }
   assert.deepEqual(describeSquad({ id: 'tpl_aaaaaaaa', name: 'Minha' }), { tagline: null, about: null });
 });
 
@@ -107,4 +107,14 @@ test('Times prontos: seções Para instalar (dois) e Seus, ver por dentro e edit
   const grid = src('components/TerminalGrid.jsx'); assert.ok(!/curatedSquads/.test(grid), 'as equipes por objetivo são opcionais: só entram no Cockpit depois de instaladas');
   const ais = src('components/settings/AisSection.jsx'); assert.match(ais, /<ProviderMascot id=\{r\.id\} size=\{40\} label=/, 'Suas IAs usa o mesmo estilo de mascote dos times');
   assert.match(ais, /<ProviderMascot id=\{a\.id\} size=\{34\} label=/);
+});
+
+test('Cockpit sem terminais: só os times de Configurações (instalados e seus), sem equipes fixas; vazio orienta e leva a Times prontos; o agente padrão dos times básicos saiu das Configurações', () => {
+  const grid = src('components/TerminalGrid.jsx'), gal = src('components/SquadGallery.jsx'), t = src('components/TeamsSettings.jsx');
+  assert.ok(!/builtinSquads|presetSquads|curatedSquads/.test(grid), 'o Cockpit não lista equipes embutidas');
+  assert.match(grid, /<SquadGallery mine=\{sq\.missing \? \[\] : sq\.squads\} mineTitle="Times prontos"/); assert.match(grid, /Nenhum time pronto ainda/); assert.match(grid, /onOpenSettings\?\.\('equipes'\)/, 'leva a Configurações > Times prontos');
+  assert.match(grid, /onOpen=\{openSquad\}/, 'abrir um time continua como antes'); assert.ok(!/oc-agent/.test(grid), 'sem a linha do agente padrão das equipes prontas');
+  assert.match(gal, /\{mine\.length === 0 && !onNew && empty\}/);
+  assert.ok(!/Times básicos do Cockpit|Agente dos times básicos/.test(t), 'a escolha do agente das equipes embutidas saiu');
+  const pg = src('pages/Settings.jsx'); assert.ok(pg.includes('TeamsSettings'));
 });

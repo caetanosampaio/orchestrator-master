@@ -124,7 +124,7 @@ test('tela sem terminais: galeria de equipes ligada ao cockpit (gestão em Confi
   assert.match(g, /openPlan\(launchPlan\(/, 'abrir uma equipe usa o plano (papéis, agentes, modelos e esforços por vaga)');
   assert.doesNotMatch(g, /Equipe mista…/, 'o botão antigo foi substituído pela galeria de equipes');
   const gal = src('components/SquadGallery.jsx');
-  for (const t of ['Equipes do FORGE', 'Minhas equipes', 'Nova equipe', 'Gerenciar equipes', 'role="alertdialog"']) assert.match(gal, new RegExp(t), t);
+  for (const t of ['Equipes do FORGE', 'Minhas equipes', 'Nova equipe', 'Gerenciar times', 'role="alertdialog"']) assert.match(gal, new RegExp(t), t);
   const cmp = src('components/TeamComposer.jsx');
   for (const t of ['Adicionar vaga', 'Salvar squad', 'Abrir equipe', 'Começar de', 'Modelo da vaga', 'Esforço da vaga']) assert.match(cmp, new RegExp(t), t);
   const css = src('retro.css'); for (const k of ['sq-in', 'sq-boot', 'sq-glow', 'sq-wave', 'sq-flash']) assert.match(css, new RegExp(`@keyframes ${k}`), `animação ${k}`);
