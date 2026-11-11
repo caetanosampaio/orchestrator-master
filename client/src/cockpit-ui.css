@@ -1,0 +1,33 @@
+/* Cockpit na mesma estrutura das Configurações (settings.css): barra lateral com grupo e itens com a barra de seleção (o perfil fica no rodapé, no lugar de sempre, só com o visual de cartão); e o topo dos terminais como cartão (os ícones do cabeçalho continuam os de sempre).
+   Só aparência: nenhum controle do Cockpit muda de função. Carregado depois de tudo (por isso o prefixo .oc-app, que vence as camadas anteriores). */
+
+/* ---------- barra lateral ---------- */
+
+.oc-app .oc-side-user { padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: #050505; } /* o perfil continua no rodapé; só ganha o visual de cartão */
+.oc-app .oc-side-user .oc-avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--raise3); box-shadow: inset 0 0 0 1px var(--line-strong); font-size: 12px; font-weight: 600; }
+.oc-app .oc-side-user .oc-me-t b { color: var(--strong); font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.oc-app .oc-side-title { text-transform: none; letter-spacing: 0; font: 500 11.5px var(--sans); color: var(--dim); }
+.oc-app .oc-side .oc-env { border-radius: 6px; min-height: 36px; }
+.oc-app .oc-side .oc-env:hover { background: var(--raise2); box-shadow: none; }
+.oc-app .oc-side .oc-env.on { background: var(--raise3); box-shadow: inset 2px 0 0 var(--brand); }
+.oc-app .oc-side .oc-env:not(.oc-env-add):not(.oc-env-edit)::after { display: none; } /* sem as linhas divisórias: a lista fica lisa, como a das Configurações */
+.oc-app .oc-side-files { border-radius: 6px; min-height: 34px; padding: 0 10px; color: var(--dim); }
+.oc-app .oc-side-files:hover, .oc-app .oc-side-files:focus-visible { background: var(--raise2); color: var(--strong); outline: none; }
+
+/* Caixas QUADRADAS na barra lateral (como no Overclock): itens de workspace, "+", Arquivos e perfil, sem cantos arredondados */
+.oc-app .oc-side .oc-env, .oc-app .oc-side .oc-env:hover, .oc-app .oc-side .oc-env.on, .oc-app .oc-side-user, .oc-app .oc-side-files, .oc-app .oc-side .oc-plus, .oc-app .oc-side .oc-env-pen, .oc-app .oc-side .oc-cnt, .oc-app .oc-side .oc-env-input { border-radius: 0; }
+
+/* ---------- topo na largura toda: FORGE no começo e as abas logo ao lado (mesmo lugar em todas as páginas) ---------- */
+.oc-app.oc-app-col { flex-direction: column; }
+.oc-app .oc-body { flex: 1; min-height: 0; display: flex; }
+.tb-row > .tb-brand { flex: none; align-self: stretch; display: flex; align-items: center; padding: 0 14px 0 12px; margin-right: calc(var(--sp-3) * -1); border-right: 1px solid var(--line); background: #000; }
+
+/* ---------- topo dos terminais ---------- */
+.oc-app .tbx { border-bottom: 1px solid var(--line); padding-block: 8px; }
+.oc-app .oc-pane { border-radius: 8px; box-shadow: inset 0 0 0 1px var(--line-strong); overflow: hidden; }
+.oc-app .oc-ph { background: #050505; border-bottom: 1px solid var(--line); padding: 8px 12px; gap: 10px; }
+.oc-app .oc-ptitle, .oc-app .oc-ptitle.sub { border: 0; padding: 0; color: var(--strong); font-size: 12.5px; font-weight: 600; }
+.oc-app .oc-prole { padding: 1px 8px; border-radius: 999px; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--role) 55%, transparent); color: var(--strong); font: 500 11px var(--mono); }
+.oc-app .oc-ptag, .oc-app .oc-pstate { border-radius: 999px; }
+.oc-app .oc-pbtn { border-radius: 6px; }
+.oc-app .oc-pf { border-top: 1px solid var(--line); }

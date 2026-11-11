@@ -5,7 +5,6 @@ import { usePrefs } from '../hooks.js';
 import { environments, wsTone, wsAlert } from '../env-view.js';
 import { Icon } from './ui.jsx';
 import ProviderLogo from './ProviderLogo.jsx';
-import { MascotLogo } from './MascotLogo.jsx';
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 const TONE_LABEL = { idle: 'sem atividade', work: 'executando', wait: 'aguardando você', done: 'concluído', err: 'com falha' };
@@ -74,7 +73,7 @@ function EnvItem({ env, collapsed, editing, onPick, onEdit, onSave, onCancel }) 
 }
 
 /** Ambientes de trabalho: um item por workspace cadastrado, montado a partir dos dados reais. Em telas estreitas vira uma gaveta modal. */
-export default function Sidebar({ modal = false, collapsed = false, onToggle, onClose, onOpenWorkspaces }) {
+export default function Sidebar({ modal = false, collapsed = false, onClose, onOpenWorkspaces }) { // sem botão de recolher: a barra tem sempre a largura pequena (`collapsed` fica só como estado de reserva, nunca passado)
   const { workspaces, state, terminals, maestro, workingIds, openWorkspaceIds, act, unseenWs } = useStore();
   const [prefs] = usePrefs();
   const box = useRef(null);
@@ -82,7 +81,6 @@ export default function Sidebar({ modal = false, collapsed = false, onToggle, on
   const sessions = terminals?.sessions ?? [];
   const activeId = state?.activeWorkspace?.id ?? null;
   const envs = useMemo(() => environments({ workspaces, sessions, activeId, workingIds, maestroTasks: maestro?.tasks ?? [], finished: unseenWs }), [workspaces, sessions, activeId, workingIds, maestro, unseenWs]);
-  const anyWorking = envs.some((e) => e.working > 0); // o Elmo em Chamas (marca) esquenta quando há tarefa rodando em qualquer workspace
 
   useEffect(() => {
     if (!modal) return undefined;
@@ -114,12 +112,12 @@ export default function Sidebar({ modal = false, collapsed = false, onToggle, on
 
   return (
     <aside id="nav-drawer" ref={box} className={cls} {...(modal ? { role: 'dialog', 'aria-modal': true, 'aria-label': 'Ambientes de trabalho' } : { 'aria-label': 'Ambientes de trabalho' })}>
-      <div className="oc-side-head">
-        <span className="oc-brand" aria-label="FORGE"><MascotLogo working={anyWorking} /><span className="oc-brand-name side-label">FORGE</span></span>
-        {modal
-          ? <button type="button" className="oc-iconbtn" onClick={onClose} aria-label="Fechar a lista de ambientes"><Icon name="close" size={16} /></button>
-          : <button type="button" className="oc-iconbtn oc-collapse" onClick={onToggle} aria-label={collapsed ? 'Expandir a barra lateral' : 'Recolher a barra lateral'} aria-expanded={!collapsed} title={collapsed ? 'Expandir' : 'Recolher'}><Icon name="panel" size={17} /></button>}
-      </div>
+      {modal && (
+        <div className="oc-side-head">
+          <span className="oc-brand" aria-label="FORGE"><span className="oc-brand-name">FORGE</span></span>
+          <button type="button" className="oc-iconbtn" onClick={onClose} aria-label="Fechar a lista de ambientes"><Icon name="close" size={16} /></button>
+        </div>
+      )}
 
       <div className="oc-side-title side-label"><span>Workspaces</span>{envs.length > 0 && <span className="oc-n">{envs.length}</span>}
         <button type="button" className="oc-iconbtn oc-plus" onClick={onOpenWorkspaces} aria-label="Abrir ou adicionar workspace" title="Abrir ou adicionar workspace"><Icon name="plus" size={14} /></button>
