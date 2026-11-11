@@ -30,6 +30,27 @@ export function filterByRole(skills, loadouts, role = null) {
   const list = Array.isArray(skills) ? skills : [];
   return role ? list.filter((s) => loadouts?.roles?.[role]?.skills?.includes(s.id)) : list;
 }
+// ---- grupo e origem de cada skill (catalog.skills[]: { id, description, body, group, source, license, origin }) ----
+export const SKILL_GROUPS = Object.freeze([Object.freeze({ id: 'processo', label: 'Processo' }), Object.freeze({ id: 'dominio', label: 'Domínio' })]);
+/** Grupo da skill: 'dominio' só quando o servidor diz; qualquer outro valor (ou servidor antigo, sem o campo) vale 'processo'. */
+export const skillGroup = (s) => (s?.group === 'dominio' ? 'dominio' : 'processo');
+export const groupLabel = (g) => SKILL_GROUPS.find((x) => x.id === g)?.label ?? 'Processo';
+const line = (v, max) => (typeof v === 'string' ? v.replace(/[\p{Cc}\p{Cf}]+/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, max) : '');
+/** De onde a skill veio: as vendorizadas (cópia de um projeto de terceiros) mostram a origem e a licença; as do FORGE, nada a mais. */
+export function skillSource(s) {
+  const vendored = s?.source === 'vendored';
+  return { vendored, origin: vendored ? (line(s.origin, 200) || null) : null, license: vendored ? (line(s.license, 60) || null) : null };
+}
+/** O catálogo para os seletores (sem o texto longo): só entradas com id, na ordem do servidor. */
+export const catalogSkills = (loadouts) => (Array.isArray(loadouts?.catalog?.skills) ? loadouts.catalog.skills : [])
+  .filter((s) => s && typeof s.id === 'string' && s.id)
+  .map((s) => ({ id: s.id, description: typeof s.description === 'string' ? s.description : '', group: skillGroup(s), ...skillSource(s) }));
+/** As skills separadas por grupo, na ordem Processo e Domínio; grupo vazio não aparece. */
+export function groupSkills(skills) {
+  const list = Array.isArray(skills) ? skills.filter((s) => s && typeof s.id === 'string') : [];
+  return SKILL_GROUPS.map((g) => ({ id: g.id, label: g.label, skills: list.filter((s) => skillGroup(s) === g.id) })).filter((g) => g.skills.length > 0);
+}
+
 /** Números do topo: quantas skills, quantos papéis, quantas a tabela cita e quantos papéis foram personalizados. */
 export function summary(loadouts, rows) {
   const skills = loadouts?.catalog?.skills ?? [], roles = roleKeys(loadouts);

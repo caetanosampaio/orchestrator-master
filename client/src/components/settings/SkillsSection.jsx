@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useStore } from '../../store.jsx';
 import { useSkills } from '../../use-skills.js';
-import { callName, rolesLoading, tasksUsing, toggleSkill, diffFromDefault, firstSentence, filterByRole, summary, ROLE_ORDER } from '../../skills-view.js';
+import { callName, rolesLoading, tasksUsing, toggleSkill, diffFromDefault, firstSentence, filterByRole, summary, ROLE_ORDER, skillGroup, groupLabel, groupSkills, skillSource } from '../../skills-view.js';
 import { Block, Card, Head, EditPanel, EditRow, CheckChips } from './SettingsUi.jsx';
 import { TcBtn } from '../TeamCards.jsx';
 
@@ -14,17 +14,19 @@ const RoleDot = ({ role }) => <span className="sk-role" style={{ '--c': role.col
 /** Um cartão do catálogo: o nome (como o agente chama), o que faz, quem recebe, onde a tabela cita e o texto que o agente recebe. */
 function SkillCard({ skill, roles, loadouts, rows, go, copy }) {
   const [open, setOpen] = useState(false);
-  const who = rolesLoading(loadouts, skill.id), tasks = tasksUsing(rows, skill.id), shown = tasks.slice(0, 3);
+  const who = rolesLoading(loadouts, skill.id), tasks = tasksUsing(rows, skill.id), shown = tasks.slice(0, 3), src = skillSource(skill);
   return (
     <article className={`sk-card${open ? ' open' : ''}`}>
       <div className="sk-main">
-        <div className="sk-head"><code className="sk-name">{skill.id}</code><button type="button" className="sk-call" onClick={() => copy(callName(skill.id))} title="Copiar como o agente chama esta skill">{callName(skill.id)}</button></div>
+        <div className="sk-head"><code className="sk-name">{skill.id}</code><span className="tc-tag sk-group">{groupLabel(skillGroup(skill))}</span>{src.vendored && <span className="tc-tag">de terceiros</span>}<button type="button" className="sk-call" onClick={() => copy(callName(skill.id))} title="Copiar como o agente chama esta skill">{callName(skill.id)}</button></div>
         <p className="sk-desc">{firstSentence(skill.description, 220)}</p>
         <dl className="sk-meta">
           <div><dt>Quem recebe</dt><dd>{who.length ? who.map((r) => <RoleDot key={r} role={roles[r] ?? { label: r, color: 'var(--dim)' }} />) : <span className="dim">nenhum papel</span>}</dd></div>
           <div><dt>Na tabela</dt><dd>{tasks.length
             ? <>{shown.map((t) => <button key={t.id} type="button" className="sk-task" onClick={() => go?.('tarefas')} title="Abrir Quem faz cada tarefa">{t.label}</button>)}{tasks.length > shown.length && <span className="dim">+{tasks.length - shown.length}</span>}</>
             : <span className="dim">nenhum tipo de tarefa</span>}</dd></div>
+          {src.vendored && <div><dt>Origem</dt><dd className="sk-origin">{src.origin ?? 'não informada'}</dd></div>}
+          {src.vendored && <div><dt>Licença</dt><dd>{src.license ?? 'não informada'}</dd></div>}
         </dl>
       </div>
       <button type="button" className="sk-toggle" aria-expanded={open} onClick={() => setOpen((v) => !v)}><i className="hz-caret" aria-hidden="true" />{open ? 'Esconder o texto' : 'Ver o texto que o agente recebe'}</button>
@@ -75,15 +77,18 @@ export default function SkillsSection({ go = null }) {
         </EditPanel>
       </Block>
 
-      <Block title="Catálogo" hint="Só as skills que existem hoje. O texto é fixo e vem do FORGE." id="sk-catalog">
+      <Block title="Catálogo" hint="Só as skills que existem hoje. O texto é fixo e vem com o FORGE; as de terceiros mostram a origem e a licença." id="sk-catalog">
         <div className="hz-filter" role="group" aria-label="Filtrar por papel">
           <button type="button" className={filter === null ? 'on' : ''} aria-pressed={filter === null} onClick={() => setFilter(null)}>Todas</button>
           {order.map((r) => <button key={r} type="button" className={filter === r ? 'on' : ''} aria-pressed={filter === r} onClick={() => setFilter(r)}>{roles[r]?.label ?? r}</button>)}
         </div>
-        <div className="sk-list">
-          {list.map((s) => <SkillCard key={s.id} skill={s} roles={roles} loadouts={d} rows={k.rows} go={go} copy={copy} />)}
-          {list.length === 0 && <p className="dim small" role="status">Nenhuma skill para este papel.</p>}
-        </div>
+        {groupSkills(list).map((g) => (
+          <section key={g.id} className="sk-group-sec" aria-labelledby={`sk-g-${g.id}`}>
+            <h4 className="sk-group-h" id={`sk-g-${g.id}`}>{g.label}<span className="dim">{g.id === 'dominio' ? 'Conhecimento de uma área (frontend, backend, testes…). Entra pelas vagas dos times.' : 'Como o squad trabalha junto: dividir, entregar, revisar.'}</span></h4>
+            <div className="sk-list">{g.skills.map((s) => <SkillCard key={s.id} skill={s} roles={roles} loadouts={d} rows={k.rows} go={go} copy={copy} />)}</div>
+          </section>
+        ))}
+        {list.length === 0 && <p className="dim small" role="status">Nenhuma skill para este papel.</p>}
       </Block>
 
       <Block title="Servidor MCP do FORGE" hint="Já vem em todo terminal; não é uma skill." id="sk-mcp">

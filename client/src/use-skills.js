@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from './api.js';
+import { catalogSkills } from './skills-view.js';
 
 /**
  * Skills: o catálogo e o que cada papel recebe (GET /api/loadouts) mais a tabela "Quem faz cada tarefa" (GET /api/harness), só para mostrar onde cada skill é citada.
@@ -22,4 +23,15 @@ export function useSkills() {
     finally { if (alive.current) setBusy(false); }
   }, []);
   return { loadouts, rows, error, busy, savedAt, reload: load, setRoleSkills: (role, skills) => run({ role, skills }), resetRole: (role) => run({ role, reset: true }) };
+}
+
+/** Só o catálogo (GET /api/loadouts), para o editor de times escolher as skills de cada vaga. `skills` = null enquanto lê ou se o servidor não oferece (o editor esconde o seletor). */
+export function useSkillCatalog() {
+  const [skills, setSkills] = useState(null), [error, setError] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    api.get('/api/loadouts').then((l) => { if (alive) { setSkills(catalogSkills(l)); setError(null); } }).catch((e) => { if (alive) setError(e?.status === 404 ? 'missing' : (e?.message || 'Não foi possível ler as skills.')); });
+    return () => { alive = false; };
+  }, []);
+  return { skills, error };
 }

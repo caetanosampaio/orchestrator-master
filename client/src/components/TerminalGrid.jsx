@@ -18,6 +18,8 @@ import SquadGallery from './SquadGallery.jsx';
 import { useSquads } from '../use-squads.js';
 import { launchPlan } from '../squads.js';
 import { PRESETS } from '../team-view.js';
+import BriefingBox from './BriefingBox.jsx';
+import { runningMaestros } from '../briefing-view.js';
 
 // Presets de equipe (team-view.js): o mesmo fluxo abre 2, 4 ou 6 terminais do Claude Code em paralelo, cada um com o seu papel. Os ids gravados continuam duo/squad/full; só o rótulo do squad de quatro virou "Squad".
 export const SQUADS = PRESETS.filter((p) => p.id !== 'builder');
@@ -192,6 +194,7 @@ export default function TerminalGrid({ onOpenWorkspaces, onOpenSettings, onOpenS
   const liveMine = mine.filter((s) => s.status === 'running').length;
   const room = (terminals?.maxSessions ?? 8) - live;
   const total = squadUsage(mine);
+  const maestroPanes = ws ? runningMaestros(mine, ws.id) : []; // com um Maestro rodando aparece o briefing
   const [mode] = useLayoutMode(ws?.id); // escolhido em Configurações > Visualização
   const maxId = L.maximized ? (mine.find((s) => s.recordId === L.maximized)?.id ?? null) : null;
 
@@ -256,7 +259,7 @@ export default function TerminalGrid({ onOpenWorkspaces, onOpenSettings, onOpenS
   const opening = useRef(false); // trava síncrona: dois cliques seguidos nunca abrem duas vezes (o estado `busy` só vale depois da renderização)
   const nextSquad = () => 1 + Math.max(0, ...sessions.map((x) => Number(/ S(\d+)\.\d+$/.exec(x.title)?.[1] ?? 0)));
   /** Abre os terminais. `join` = chave de squad (session.squadId) de um squad ATIVO deste workspace: o terminal entra no worktree dele. Devolve false se não abriu nada por decisão/trava. */
-  const open = async (list, { squad = false, join = null, confirmMore = true, provider: useProvider = provider, providers: perSlot = null, models: perModel = null, efforts: perEffort = null } = {}) => {
+  const open = async (list, { squad = false, join = null, confirmMore = true, provider: useProvider = provider, providers: perSlot = null, models: perModel = null, efforts: perEffort = null, templateId = null, slotIndexes = null } = {}) => {
     if (opening.current) return false;
     if (!ws) { onOpenWorkspaces?.(); return false; }
     if (squad && confirmMore && liveMine > 0 && !window.confirm(`Já há ${liveMine} ${liveMine === 1 ? 'terminal ativo' : 'terminais ativos'} em ${where}. Abrir MAIS ${list.length} terminais de uma nova equipe?`)) return false;
@@ -267,7 +270,9 @@ export default function TerminalGrid({ onOpenWorkspaces, onOpenSettings, onOpenS
       // em paralelo: cada terminal é um processo próprio; as falhas são individuais. Os do squad levam o número dele no título (ex.: Construtor S1)
       const editors = list.filter((r) => byRole[r]?.edits).length;
       // Worktree DESLIGADO = automático: o servidor dá worktree próprio a cada agente que edita assim que há mais de um no workspace (qualquer agente); LIGADO = worktree sempre, um squad compartilha UM.
-      const spawn = (r, i, ack, squadId) => api.post('/api/terminals', { role: r, provider: (perSlot && perSlot[i]) || useProvider, ...(perModel?.[i] ? { model: perModel[i] } : {}), ...(perEffort?.[i] ? { effort: perEffort[i] } : {}), isolate: isolate ? true : 'auto', ...(!isolate && editors > 1 ? { expectEditors: editors } : {}), ...(squadId ? { squadId } : {}), workspaceId: ws.id, topicId, ...(ack ? { acknowledgeProjectConfig: true } : {}), ...(n ? { title: `${byRole[r]?.label ?? r} S${n}.${i + 1}` } : {}) });
+      // time salvo/pronto: `templateId` + `slotIndex` da vaga (sempre os dois juntos) e o servidor aplica as skills e a instrução do time, conferindo papel e agente da vaga
+      const slotOfTeam = (i) => (templateId && Number.isInteger(slotIndexes?.[i]) ? { templateId, slotIndex: slotIndexes[i] } : {});
+      const spawn = (r, i, ack, squadId) => api.post('/api/terminals', { role: r, provider: (perSlot && perSlot[i]) || useProvider, ...(perModel?.[i] ? { model: perModel[i] } : {}), ...(perEffort?.[i] ? { effort: perEffort[i] } : {}), ...slotOfTeam(i), isolate: isolate ? true : 'auto', ...(!isolate && editors > 1 ? { expectEditors: editors } : {}), ...(squadId ? { squadId } : {}), workspaceId: ws.id, topicId, ...(ack ? { acknowledgeProjectConfig: true } : {}), ...(n ? { title: `${byRole[r]?.label ?? r} S${n}.${i + 1}` } : {}) });
       // Worktree: um squad inteiro compartilha UM worktree. O 1º terminal o cria; os outros entram nele (esperam o 1º para saber o id). Terminal avulso continua com o seu.
       let rs;
       if (isolate && squad && list.length > 1) {
@@ -289,8 +294,8 @@ export default function TerminalGrid({ onOpenWorkspaces, onOpenSettings, onOpenS
     return true;
   };
   // ---- equipes ----
-  /** Abre um plano { roles, providers, models?, efforts?, teamId }: todos os terminais de uma vez, cada um com o agente, o modelo e o esforço da sua vaga; o preset só é gravado como equipe do workspace quando bate exatamente. */
-  const openPlan = async (plan) => { const ran = await open(plan.roles, { squad: plan.roles.length > 1, providers: plan.providers, models: plan.models, efforts: plan.efforts }); if (ran !== false && ws && plan.teamId) layoutActions.setTeam(ws.id, plan.teamId); return ran; };
+  /** Abre um plano { roles, providers, models?, efforts?, teamId, templateId, slotIndexes }: todos os terminais de uma vez, cada um com o agente, o modelo, o esforço e (pelo time) as skills da sua vaga; o preset só é gravado como equipe do workspace quando bate exatamente. */
+  const openPlan = async (plan) => { const ran = await open(plan.roles, { squad: plan.roles.length > 1, providers: plan.providers, models: plan.models, efforts: plan.efforts, templateId: plan.templateId, slotIndexes: plan.slotIndexes }); if (ran !== false && ws && plan.teamId) layoutActions.setTeam(ws.id, plan.teamId); return ran; };
   const openSquad = async (s) => { setLaunchingId(s.id); try { await openPlan(launchPlan(s)); } finally { setLaunchingId(null); } };
   const closeAll = async () => {
     if (!mine.length || !window.confirm(`Encerrar os ${mine.length} terminais de ${where}? Os agentes em andamento serão interrompidos (worktrees são mantidos).`)) return;
@@ -332,6 +337,7 @@ export default function TerminalGrid({ onOpenWorkspaces, onOpenSettings, onOpenS
             {maestro && (maestro.autonomous || maestro.tasks.length > 0 || mine.some((x) => x.role === 'maestro' && x.status === 'running')) && <MaestroPopover onOpenSettings={onOpenSettings} />}
         </div>
       </div>}
+      {ws && maestroPanes.length > 0 && <BriefingBox workspaceId={ws.id} maestros={maestroPanes} briefings={maestro?.briefings} />}
 
       {!ws ? (
         <div className="oc-empty">
