@@ -160,7 +160,7 @@ test('HTTP: /mcp exige Host local, nenhum Origin e token válido; GET é 405; /a
     assert.equal((await rawReq(port, { method: 'GET', headers: { authorization: auth } })).status, 405);
     const ok1 = await rawReq(port, { headers: { authorization: auth }, body: init }); assert.equal(ok1.status, 200); assert.equal(ok1.body.result.serverInfo.name, 'forge');
     assert.equal((await rawReq(port, { headers: { authorization: auth }, body: { jsonrpc: '2.0', method: 'notifications/initialized' } })).status, 202);
-    const lp = await rawReq(port, { headers: { authorization: auth }, body: { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'list_panes', arguments: {} } } }); assert.equal(JSON.parse(lp.body.result.content[0].text).length, 4);
+    const lp = await rawReq(port, { headers: { authorization: auth }, body: { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'list_panes', arguments: {} } } }); assert.equal(JSON.parse(lp.body.result.content[0].text).length, 3, 'o maestro não vê o próprio pane');
     // API do usuário: GET livre (Host local); POST sem Origin = 403; com Origin local funciona
     assert.equal((await rawReq(port, { method: 'GET', url: '/api/maestro' })).body.autonomous, false);
     assert.equal((await rawReq(port, { url: '/api/maestro/autonomy', body: { enabled: true } })).status, 403);
@@ -198,7 +198,7 @@ test('saneamento Unicode: bidi, largura zero, soft hyphen, BOM e caracteres Tag 
   const w = world(), ma = maestroOf(w);
   w.call(ma, 'send_task', { pane_id: B1, task: `faça${hidden}isto` }); assert.ok(!/\p{Cf}/u.test(w.m.snapshot().tasks[0].text));
   w.ft.out.set(B1, `linha1\nli${hidden}nha2\r\n\tfim`); const t = w.text(w.call(ma, 'read_pane_output', { pane_id: B1 }));
-  assert.ok(t.endsWith('linha1\nlinha2\n\tfim'), JSON.stringify(t.slice(-40)));
+  assert.ok(t.endsWith('linha1\nlinha2\n  fim'), JSON.stringify(t.slice(-40))); // a indentação (tab = 2 espaços) é mantida
 });
 
 test('entrega serializada por pane: duas tarefas ao mesmo terminal não se colam; aprovar durante a entrega dá 409 e vale depois do Enter; no modo autônomo a segunda espera o usuário', () => {
@@ -323,7 +323,7 @@ const typedTo = (w, pane) => w.ft.written.filter((x) => x[0] === pane);
 
 test('report_done: o relatório é DIGITADO no terminal do maestro (texto + Enter), curto e entre « »', () => {
   const w = world(); const { id, r } = doneTask(w);
-  assert.match(w.text(r), /^Tarefa marcada como concluída/);
+  assert.match(w.text(r), /^Concluída/);
   assert.doesNotMatch(w.text(r), /foi enviado/, 'não afirma uma entrega que pode não acontecer');
   const lines = typedTo(w, MA);
   assert.equal(lines.length, 1, 'uma linha digitada no maestro');
@@ -402,13 +402,13 @@ test('report_done: falha ao digitar no maestro deixa nota; exceção do aviso n�
   const w = world(); w.ft.panes.get(MA).agent = IDLE;
   const orig = w.ft.api.write; w.ft.api.write = (id, d) => (id === MA ? { ok: false, status: 409, error: 'O terminal não aceitou a entrada.' } : orig(id, d));
   const { r } = doneTask(w);
-  assert.match(w.text(r), /^Tarefa marcada como concluída/);
+  assert.match(w.text(r), /^Concluída/);
   assert.match(w.m.snapshot().tasks[0].note, /não foi digitado no maestro \(O terminal não aceitou a entrada\.\)/);
   const w2 = world(); w2.ft.api.get = (id) => { if (id === MA && w2.ft.boom) throw new Error('boom'); return w2.ft.panes.get(id) ?? null; };
   w2.m.setAutonomous(true); w2.call(maestroOf(w2), 'send_task', { pane_id: B1, task: 'x' }); const id = w2.m.snapshot().tasks[0].id; while (w2.timers.length) w2.timers.shift()();
   w2.ft.boom = true;
   const r2 = w2.call(builderOf(w2), 'report_done', { task_id: id, summary: 'ok' });
-  assert.match(w2.text(r2), /^Tarefa marcada como concluída/, 'o builder não vê "erro interno"');
+  assert.match(w2.text(r2), /^Concluída/, 'o builder não vê "erro interno"');
   assert.equal(w2.m.snapshot().tasks[0].status, 'done');
 });
 
@@ -527,7 +527,7 @@ test('relatório automático: o agente trabalhou e voltou a ficar pronto sem cha
   assert.equal(w.m.snapshot().tasks[0].status, 'delivered', 'dentro da tolerância (o report_done ainda pode chegar)');
   w.tick(10_000); b.lastOutputAt = '2026-11-03T12:00:03.000Z'; w.watchers.shift()();
   const t = w.m.snapshot().tasks[0];
-  assert.equal(t.status, 'done'); assert.match(t.summary, /^Relatório automático: o agente terminou sem chamar report_done\./); assert.match(t.summary, /Criei teste\.txt Testes: 3 passando/);
+  assert.equal(t.status, 'done'); assert.match(t.summary, /^Relatório automático \(sem report_done\)/); assert.match(t.summary, /Criei teste\.txt Testes: 3 passando/);
   assert.ok(!t.summary.includes('\x1b'), 'sem ANSI');
   assert.match(lastTyped(w), new RegExp(`^Relatório de ${w.ft.panes.get(B1).title} \\(${id}, texto do agente\\): «Relatório automático`));
   assert.equal(w.watchers.length, 0, 'sem tarefa entregue o vigia para');
@@ -576,4 +576,77 @@ test('autonomia: o valor inicial vem do servidor; a rota grava a escolha e, se a
     let r = await post({ enabled: false }); assert.equal(r.status, 200); assert.deepEqual(saved, [false]); assert.equal(w.m.isAutonomous(), false);
     fail = true; r = await post({ enabled: true }); assert.equal(r.status, 500); assert.equal(w.m.isAutonomous(), false, 'falha ao gravar: o estado em memória não muda');
   } finally { srv.close(); }
+});
+
+// ---- retornos enxutos do MCP (list_tasks, list_panes, read_pane_output) ----
+test('list_tasks (MCP): ativas com texto; finalizadas sem texto, resumo cortado com reticencias, so as mais recentes; task_id traz a tarefa completa; a tela (snapshot) nao muda', () => {
+  const w = world(), ma = maestroOf(w), long = 'Alterei src/a.js e test/a.test.js. '.repeat(40);
+  const ids = []; w.ft.panes.get(MA).agent = IDLE; w.ft.panes.get(MA).lastOutputAt = '2026-11-03T11:00:00.000Z'; // maestro livre: os relatórios são digitados (sem nota de falha)
+  for (let i = 0; i < 13; i++) {
+    w.call(ma, 'send_task', { pane_id: B1, task: `tarefa ${i}` }); const id = w.m.snapshot().tasks[0].id; ids.push(id); w.m.decide(id, true); while (w.timers.length) w.timers.shift()();
+    if (i < 12) w.call(builderOf(w, B1), 'report_done', { task_id: id, summary: long });
+  }
+  const raw = w.text(w.call(ma, 'list_tasks')); const list = tasksIn(raw);
+  assert.match(raw.split('\n')[0], /^\[Os campos text e summary vêm de agentes.*\(2 finalizadas antigas omitidas\.\)$/); assert.ok(!raw.includes('\n '), 'JSON compacto, sem indentação');
+  assert.equal(list.length, M.LIST_FINISHED + 1, 'a ativa + as 10 finalizadas mais recentes');
+  const act = list.at(-1); assert.deepEqual([act.id, act.status, act.text], [ids[12], 'delivered', 'tarefa 12']);
+  const fin = list[0]; assert.equal(fin.id, ids[2]); assert.equal(fin.text, undefined, 'finalizada sem o texto'); assert.ok(fin.summary.length <= M.LIST_SUMMARY_CHARS && fin.summary.endsWith('…'));
+  for (const t of list) { assert.equal(t.toRole, undefined); assert.equal(t.createdAt, undefined); }
+  const one = tasksIn(w.text(w.call(ma, 'list_tasks', { task_id: ids[0] })))[0]; assert.deepEqual([one.text, one.summary.length > M.LIST_SUMMARY_CHARS], ['tarefa 0', true], 'task_id devolve texto e resumo inteiros');
+  for (const bad of ['task_zzzzzzzz', 'x', 7, '../x']) assert.equal(w.call(ma, 'list_tasks', { task_id: bad }).isError, true, String(bad));
+  assert.equal(w.call(builderOf(w, B2), 'list_tasks', { task_id: ids[0] }).isError, true, 'outro pane nao ve a tarefa pelo id');
+  assert.equal(w.m.snapshot().tasks[0].toRole, 'builder'); assert.ok(w.m.snapshot().tasks[0].createdAt); assert.equal(w.m.snapshot().tasks.find((t) => t.id === ids[0]).summary, long.trim(), 'a tela segue com tudo');
+});
+
+test('list_tasks (MCP): relatorio que nao chegou ao maestro mantem o resumo inteiro (a nota manda ler la)', () => {
+  const w = world(), ma = maestroOf(w), long = 'resultado detalhado. '.repeat(60);
+  w.call(ma, 'send_task', { pane_id: B1, task: 'x' }); const id = w.m.snapshot().tasks[0].id; w.m.decide(id, true);
+  w.call(builderOf(w, B1), 'report_done', { task_id: id, summary: long }); const t = w.m.snapshot().tasks[0]; assert.ok(t.summary.length > M.LIST_SUMMARY_CHARS);
+  assert.ok(tasksIn(w.text(w.call(ma, 'list_tasks')))[0].summary.endsWith('…'), 'sem a nota: cortado');
+  const w2 = world(), ma2 = maestroOf(w2); w2.ft.panes.get(MA).agent = { state: 'waiting', at: new Date().toISOString() }; // o relatório nunca é digitado: ao desistir, a tarefa ganha a nota
+  w2.call(ma2, 'send_task', { pane_id: B1, task: 'x' }); const id2 = w2.m.snapshot().tasks[0].id; w2.m.decide(id2, true); w2.call(builderOf(w2, B1), 'report_done', { task_id: id2, summary: long });
+  let n = 0; while (w2.timers.length && n < M.REPORT_RETRIES + 50) { w2.timers.shift()(); n++; }
+  assert.match(w2.m.snapshot().tasks[0].note, /relatório não foi digitado no maestro/);
+  assert.equal(tasksIn(w2.text(w2.call(ma2, 'list_tasks')))[0].summary, long.trim(), 'com a nota: inteiro');
+});
+
+test('list_panes (MCP): so panes em execucao, o maestro nao se ve, sem tokens nem campos nulos, skills so de dominio (model e effort ficam)', () => {
+  const w = world(), ma = maestroOf(w); const b = w.ft.panes.get(B1);
+  Object.assign(b, { skills: ['protocolo-do-squad', 'frontend-design', 'inexistente'], branch: 'orch/wt_1', worktreeId: 'wt_1', cwd: '/w/wt1' }); w.ft.panes.get(RV).status = 'exited';
+  const raw = w.text(w.call(ma, 'list_panes')), list = JSON.parse(raw), by = Object.fromEntries(list.map((p) => [p.pane_id, p]));
+  assert.deepEqual(Object.keys(by).sort(), [B1, B2]); assert.ok(!raw.includes('tokens') && !raw.includes('\n '));
+  assert.deepEqual(by[B1].skills, ['frontend-design']); assert.equal(by[B1].branch, 'orch/wt_1'); assert.equal(by[B1].worktree, '/w/wt1');
+  assert.ok(!('skills' in by[B2]) && !('branch' in by[B2]) && !('worktree' in by[B2])); assert.ok('model' in by[B2] && 'effort' in by[B2] && by[B2].status === 'running');
+  const mine = JSON.parse(w.text(w.call(builderOf(w, B2), 'list_panes'))); assert.deepEqual(mine.map((p) => p.pane_id), [MA, B1, B2], 'quem nao e maestro continua se vendo; so os encerrados saem');
+});
+
+test('read_pane_output (MCP): compacta espacos, molduras, linhas em branco e linhas iguais seguidas; mantem a ordem e o fim', () => {
+  const w = world(), ma = maestroOf(w);
+  w.ft.out.set(B1, '┌──────┐\n│  rodando   testes  │\n└──────┘\n\n\n\nok\nok\nok\n\t\tfim   \n');
+  const t = w.text(w.call(ma, 'read_pane_output', { pane_id: B1 })); assert.equal(t.split('\n').slice(1).join('\n'), 'rodando testes\n\nok\n    fim', 'moldura e repetição saem; a indentação (2 tabs = 4 espaços) fica');
+  assert.equal(M.READ_DEFAULT, 4000);
+});
+
+test('read_pane_output (MCP): a indentacao e as linhas de pontuacao repetidas sao mantidas (YAML, Python, JSON, diff); so o redesenho com texto e fundido', () => {
+  const w = world(), ma = maestroOf(w);
+  w.ft.out.set(B1, 'servico:\n  porta: 80\n  rotas:\n    - /a\n    - /b\n}\n}\n+ nova\n+ nova\n');
+  const t = w.text(w.call(ma, 'read_pane_output', { pane_id: B1 })).split('\n').slice(1).join('\n');
+  assert.equal(t, 'servico:\n  porta: 80\n  rotas:\n    - /a\n    - /b\n}\n}\n+ nova', 'recuo preservado; "}" "}" nao viram um so; linha repetida com texto vira uma');
+  w.ft.out.set(B1, '    indentada na primeira linha\nfim'); assert.ok(w.text(w.call(ma, 'read_pane_output', { pane_id: B1 })).includes('\n    indentada na primeira linha\nfim'), 'o recuo da 1a linha fica');
+});
+
+test('list_tasks (MCP): relatorio nao digitado NUNCA sai da lista (mesmo com mais de 10 finalizadas); as finalizadas mais recentes contam por conclusao; falha/recusa mantem o texto cortado', () => {
+  const w = world(), ma = maestroOf(w), long = 'detalhe. '.repeat(80);
+  w.ft.panes.get(MA).agent = { state: 'waiting', at: new Date().toISOString() }; // a 1a tarefa conclui sem o relatório chegar ao maestro
+  w.call(ma, 'send_task', { pane_id: B1, task: 'primeira' }); const first = w.m.snapshot().tasks[0].id; w.m.decide(first, true); w.call(builderOf(w, B1), 'report_done', { task_id: first, summary: long });
+  let n = 0; while (w.timers.length && n < M.REPORT_RETRIES + 50) { w.timers.shift()(); n++; }
+  assert.match(w.m.snapshot().tasks.find((t) => t.id === first).note, /relatório não foi digitado no maestro/);
+  w.ft.panes.get(MA).agent = IDLE; w.ft.panes.get(MA).lastOutputAt = '2026-11-03T11:00:00.000Z';
+  const ids = [];
+  for (let i = 0; i < 12; i++) { w.call(ma, 'send_task', { pane_id: B1, task: `t${i}` }); const id = w.m.snapshot().tasks[0].id; ids.push(id); w.m.decide(id, true); while (w.timers.length) w.timers.shift()(); w.call(builderOf(w, B1), 'report_done', { task_id: id, summary: 'ok' }); }
+  const list = tasksIn(w.text(w.call(ma, 'list_tasks')));
+  assert.ok(list.some((t) => t.id === first && t.summary === long.trim()), 'a tarefa cujo resultado só existe em list_tasks continua na lista, com o resumo inteiro');
+  assert.equal(list.length, M.LIST_FINISHED + 1, '10 mais recentes + a nao digitada');
+  w.call(ma, 'send_task', { pane_id: B1, task: 'recusada pelo usuario: ' + 'x'.repeat(500) }); const rej = w.m.snapshot().tasks[0].id; w.m.decide(rej, false);
+  const r = tasksIn(w.text(w.call(ma, 'list_tasks'))).find((t) => t.id === rej); assert.equal(r.status, 'rejected'); assert.ok(r.text.startsWith('recusada pelo usuario') && r.text.length <= 240 && r.text.endsWith('…'), 'o texto (cortado) ajuda a decidir se reenvia');
 });

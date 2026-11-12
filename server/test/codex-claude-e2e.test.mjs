@@ -67,7 +67,7 @@ test('Codex como maestro (token só no ambiente) coordena um Claude e outro Code
   assert.equal((await mcpCall('0'.repeat(48), 'list_panes')).status, 401);
   const lp = await mcpCall(token, 'list_panes'); assert.equal(lp.status, 200);
   const panes = JSON.parse(lp.json.result.content[0].text);
-  assert.deepEqual(panes.map((p) => [p.role, p.provider]).sort(), [['builder', 'claude'], ['builder', 'codex'], ['maestro', 'codex']]);
+  assert.deepEqual(panes.map((p) => [p.role, p.provider]).sort(), [['builder', 'claude'], ['builder', 'codex']]); // o maestro não vê o próprio pane
 
   // 3) o Codex-maestro entrega tarefas (modo autônomo = sem esperar o clique do usuário): o Claude recebe texto puro + Enter; o Codex, a colagem entre colchetes + Enter
   maestro.setAutonomous(true);
@@ -85,7 +85,7 @@ test('Codex como maestro (token só no ambiente) coordena um Claude e outro Code
   const tok2 = /TOKEN=([0-9a-f]{48})/.exec(out(cx.session.id))?.[1]; assert.ok(tok2 && tok2 !== token, 'cada pane tem o seu token');
   assert.match((await mcpCall(tok2, 'send_task', { pane_id: cl.session.id, task: 'x' })).json.result.content[0].text, /Só o maestro envia tarefas/);
   const taskId = maestro.snapshot().tasks.find((t) => t.to === cx.session.id).id;
-  assert.match((await mcpCall(tok2, 'report_done', { task_id: taskId, summary: 'revisado na branch orch/wt_1' })).json.result.content[0].text, /Tarefa marcada como concluída/);
+  assert.match((await mcpCall(tok2, 'report_done', { task_id: taskId, summary: 'revisado na branch orch/wt_1' })).json.result.content[0].text, /^Concluída/);
   assert.equal(maestro.snapshot().tasks.find((t) => t.id === taskId).status, 'done');
 
   // 5) encerrar o pane revoga o token do ambiente
