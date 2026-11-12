@@ -45,6 +45,31 @@ export function categoryOf(rel) {
 
 /** O nome é o diretório interno do Git? Windows e macOS (APFS padrão) ignoram caixa, e o Windows ignora pontos/espaços finais e fluxos (`.git::$INDEX_ALLOCATION`): `.GIT`, `.git.` e `.git ` são o mesmo `.git`. `.github`/`.gitignore` não. */
 export const isGitName = (name) => { const n = String(name ?? '').split(':')[0].replace(/[. ]+$/, '').toLowerCase(); return n === '.git' || /^\.?git~\d+$/.test(n); }; // inclui o nome curto 8.3 do NTFS (`GIT~1`)
+/**
+ * Arquivos do `.git` que mudam o que o repositório EXECUTA ou IGNORA (hooks, config, exclude): o instantâneo comum não entra em `.git`, então o escopo (scope.js) os vigia à parte.
+ * Só o `.git` da raiz. Em worktree vinculado ele é um ARQUIVO (`gitdir: <pasta>`): vigia-se o config, o exclude e os hooks do repositório comum (`commondir`), onde o Git realmente os lê,
+ * e o `config.worktree` do próprio worktree; só leitura, e um ponteiro adulterado muda o conjunto e aparece como desvio.
+ * Devolve [{ rel: '.git/config' | '.git/config.worktree' | '.git/info/exclude' | '.git/hooks/<nome>', abs }] (o rel é o NOME LÓGICO; abs é onde o arquivo está); nunca lança.
+ */
+export function gitConfigFiles(root) {
+  const out = [];
+  const add = (rel, abs) => { try { if (fs.lstatSync(abs).isFile()) out.push({ rel: `.git/${rel}`, abs }); } catch { /* ausente */ } };
+  const readSmall = (abs) => { try { return fs.statSync(abs).size <= 2048 ? fs.readFileSync(abs, 'utf8').trim() : ''; } catch { return ''; } };
+  try {
+    const ents = fs.readdirSync(root, { withFileTypes: true }).filter((e) => isGitName(e.name) && !e.isSymbolicLink()).sort((a, b) => (a.name === '.git' ? -1 : b.name === '.git' ? 1 : 0));
+    if (!ents.length) return out;
+    let dir = path.join(root, ents[0].name), own = null;
+    if (ents[0].isFile()) { // worktree vinculado: .git = "gitdir: <pasta>"
+      const m = /^gitdir:\s*(.+)$/m.exec(readSmall(dir)); if (!m) return out;
+      own = path.resolve(root, m[1].trim()); const common = readSmall(path.join(own, 'commondir'));
+      dir = common ? path.resolve(own, common) : own;
+    } else if (!ents[0].isDirectory()) return out;
+    add('config', path.join(dir, 'config')); add('info/exclude', path.join(dir, 'info', 'exclude'));
+    if (own) add('config.worktree', path.join(own, 'config.worktree'));
+    try { for (const e of fs.readdirSync(path.join(dir, 'hooks'), { withFileTypes: true })) if (e.isFile() || e.isSymbolicLink()) out.push({ rel: `.git/hooks/${e.name}`, abs: path.join(dir, 'hooks', e.name) }); } catch { /* sem hooks */ }
+  } catch { /* ilegível */ }
+  return out;
+}
 /** Diretório que o instantâneo não percorre (a entrada `.git` vale em qualquer caixa). */
 export const isSkippedDir = (name) => SKIP_DIRS.has(name) || isGitName(name);
 
@@ -191,7 +216,7 @@ export function buildEvidence({ report, verification, configured = 0, expectedRe
   if (integrity?.status === 'flagged') inconclusive.push(`testes ou configuração de validação foram alterados e ainda não foram revisados (${(integrity.pending ?? []).slice(0, 5).map((c) => `${c.path} ${c.change === 'created' ? 'criado' : c.change === 'deleted' ? 'apagado' : 'modificado'}`).join('; ')}${(integrity.pending ?? []).length > 5 ? '; …' : ''}): uma verificação que passa sobre testes alterados pelo Executor não prova a conclusão`);
   else if (integrity?.status === 'unknown') inconclusive.push(`integridade dos testes não verificável: ${integrity.reason ?? 'instantâneo do workspace indisponível'}`);
   // Escopo (scope.js): arquivo sensível/de segredo alterado FORA do que a etapa autorizou invalida a rodada (nunca vira verificada, nem pela aceitação humana de inconclusiva); só nomes, nunca conteúdo.
-  if (scope?.status === 'exceeded') failed.push(`alteração fora do escopo autorizado em arquivo sensível ou de segredo (${(scope.files ?? []).slice(0, 5).map((f) => `${f.path} ${f.change === 'created' ? 'criado' : f.change === 'deleted' ? 'apagado' : 'modificado'}`).join('; ')}${(scope.files ?? []).length > 5 ? '; …' : ''})`);
+  if (scope?.status === 'exceeded') failed.push(`alteração fora do escopo autorizado em arquivo sensível, de segredo ou de configuração do Git (${(scope.files ?? []).slice(0, 5).map((f) => `${f.path} ${f.change === 'created' ? 'criado' : f.change === 'deleted' ? 'apagado' : 'modificado'}`).join('; ')}${(scope.files ?? []).length > 5 ? '; …' : ''})`);
   else if (scope?.status === 'unknown') inconclusive.push(`escopo das alterações não verificável: ${scope.reason ?? 'instantâneo do workspace indisponível'}`);
   const hasReal = verification === 'passed', hasFiles = !!expectedResults?.length && expectedResults.every((r) => r.ok);
   const basis = hasReal && hasFiles ? 'real_verification+expected_files' : hasReal ? 'real_verification' : hasFiles ? 'expected_files' : 'executor_claim_only';
