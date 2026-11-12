@@ -161,7 +161,7 @@ test('Maestro: list_routes devolve a tabela (só para o maestro) e aparece só n
   const names = (c) => w.m.rpc(c, { jsonrpc: '2.0', id: 1, method: 'tools/list' }).result.tools.map((t) => t.name);
   assert.ok(names(w.maestro).includes('list_routes')); assert.ok(!names(w.builder).includes('list_routes'));
   const r = w.call(w.maestro, 'list_routes'); assert.ok(!r.isError); const j = JSON.parse(r.content[0].text.slice(r.content[0].text.indexOf('\n') + 1));
-  assert.equal(j.task_types.length, H.TASK_TYPES.length); assert.deepEqual(j.task_types[0], { task_type: 'fix-bug', label: 'Consertar um defeito', group: 'Desenvolvimento', role: 'builder', provider: 'claude', model: 'sonnet', effort: 'medium', skills: ['implementar-em-passos-pequenos', 'relato-de-conclusao'], agent: null });
+  assert.equal(j.task_types.length, H.TASK_TYPES.length); assert.deepEqual(j.task_types[0], { task_type: 'fix-bug', label: 'Consertar um defeito', role: 'builder', provider: 'claude', model: 'sonnet', effort: 'medium' });
   assert.deepEqual(j.pilot, { provider: 'claude', model: 'opus', effort: 'high', reserve_model: 'sonnet' });
   assert.equal(w.call(w.builder, 'list_routes').isError, true);
   const panes = JSON.parse(w.call(w.maestro, 'list_panes').content[0].text); assert.ok(panes.every((p) => 'model' in p && 'effort' in p));

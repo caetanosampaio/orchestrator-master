@@ -159,7 +159,7 @@ test('maestro.list_panes: informa provedor, branch e caminho do worktree para o 
   const list = JSON.parse(w.call(w.ma, 'list_panes').content[0].text);
   const by = Object.fromEntries(list.map((x) => [x.pane_id, x]));
   assert.equal(by[CX].provider, 'codex'); assert.equal(by[CX].branch, 'orch/wt_1'); assert.equal(by[CX].worktree, '/w/wt1');
-  assert.equal(by[CL].provider, 'claude'); assert.equal(by[CL].branch, null); assert.equal(by[CL].worktree, null);
+  assert.equal(by[CL].provider, 'claude'); assert.equal(by[CL].branch, undefined); assert.equal(by[CL].worktree, undefined); assert.equal(by[MA], undefined, 'o maestro não vê o próprio pane'); assert.ok(list.every((x) => !('tokens' in x)));
 });
 
 test('nome do servidor MCP: tanto forge_<hex> quanto o legado orchestrator_<hex> viram chave válida de mcp_servers no Codex', () => {

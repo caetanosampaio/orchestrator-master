@@ -207,12 +207,15 @@ export function terminalDefaults(db, role, providerId) {
   const a = h.agents.find((x) => x.id === p.agentId); if (a) out.extraPrompt = a.instruction;
   return out;
 }
-/** A tabela como o Maestro enxerga (ferramenta MCP list_routes). Só dados nossos e do usuário; nada de caminho nem de credencial. */
+/**
+ * A tabela como o Maestro enxerga (ferramenta MCP list_routes). Só dados nossos e do usuário; nada de caminho nem de credencial. Enxuta de propósito: grupo (só da tela) e skills por linha
+ * ficam de fora (o hint que o servidor acrescenta à tarefa já leva tipo, skills e agente); `role` fica porque diz que papel de pane faz o tipo; `agent` só aparece quando a linha tem um.
+ */
 export function routesForMaestro(db) {
   const v = harnessView(db), ag = new Map(v.agents.map((a) => [a.id, a]));
   return {
     pilot: { provider: v.pilot.effective.provider, model: v.pilot.effective.model, effort: v.pilot.effective.effort, reserve_model: v.pilot.effective.reserveModel },
-    task_types: v.rows.map((r) => ({ task_type: r.id, label: r.label, group: r.group, role: r.role, provider: r.effective.provider, model: r.effective.model, effort: r.effective.effort, skills: r.effective.skills, agent: ag.get(r.effective.agentId)?.name ?? null })),
+    task_types: v.rows.map((r) => { const agent = ag.get(r.effective.agentId)?.name; return { task_type: r.id, label: r.label, role: r.role, provider: r.effective.provider, model: r.effective.model, effort: r.effective.effort, ...(agent ? { agent } : {}) }; }),
   };
 }
 /** Uma linha da tabela para o send_task (ou null se o tipo não existe). */
