@@ -35,7 +35,7 @@ export const claudeProvider = Object.freeze({
   // durante a partida) e os panes seguintes abrem no modo clássico, sem preencher o terminal, até alguém rodar /tui fullscreen em cada um. A variável vence essa desativação automática.
   paneEnv: Object.freeze({ CLAUDE_CODE_NO_FLICKER: '1' }),
   // Como uma tarefa do Maestro é entregue: o texto vai como bloco (o Claude Code o trata como colagem) e o Enter segue separado, `delayMs` depois.
-  submit: Object.freeze({ bracketed: false, delayMs: 200 }),
+  submit: Object.freeze({ bracketed: false, delayMs: process.platform === 'win32' ? 200 : 500 }), // macOS/Linux: com 200 ms o Enter chegava ainda dentro da janela de colagem e era engolido (o texto ficava no campo)
   /**
    * Argumentos do pane. mode: 'new' (--session-id fixo, papel e nome), 'resume' (mesma sessão) ou 'fork' (cópia com UUID novo; a original fica intacta).
    * Na retomada o Claude Code restaura histórico, prompt de sistema, nome e permission mode: NÃO se repassa nada disso.

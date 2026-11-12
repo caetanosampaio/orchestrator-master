@@ -27,14 +27,14 @@ function fakeTerms() {
   } };
 }
 function world(over = {}) {
-  const ft = fakeTerms(), timers = []; let clock = Date.parse('2026-11-03T12:00:00.000Z'); let n = 0;
+  const ft = fakeTerms(), timers = [], watchers = []; let clock = Date.parse('2026-11-03T12:00:00.000Z'); let n = 0;
   const dir = path.join(tmp, `mcp-${Math.random().toString(16).slice(2)}`);
   // uid injetado: task_ + 8 dígitos hexadecimais (formato real de store.uid)
-  const m = M.createMaestro({ getTerminals: () => ft.api, mcpDir: dir, url: 'http://127.0.0.1:4999/mcp', now: () => new Date(clock).toISOString(), uid: (p) => `${p}_${String(++n).padStart(8, '0')}`, setTimer: (fn) => { timers.push(fn); return { unref() {} }; }, ...over });
+  const m = M.createMaestro({ getTerminals: () => ft.api, mcpDir: dir, url: 'http://127.0.0.1:4999/mcp', now: () => new Date(clock).toISOString(), uid: (p) => `${p}_${String(++n).padStart(8, '0')}`, setTimer: (fn) => { timers.push(fn); return { unref() {} }; }, watchTimer: (fn) => { watchers.push(fn); return { unref() {} }; }, ...over });
   const as = (terminalId, role) => ({ terminalId, role });
   const call = (caller, name, args = {}) => m.rpc(caller, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }).result;
   const text = (r) => r.content[0].text;
-  return { ft, m, timers, dir, as, call, text, tick: (ms) => { clock += ms; } };
+  return { ft, m, timers, watchers, dir, as, call, text, tick: (ms) => { clock += ms; } };
 }
 const tasksIn = (text) => JSON.parse(text.slice(text.indexOf('\n') + 1)); // list_tasks começa com o aviso de texto não confiável
 const maestroOf = (w) => w.as(MA, 'maestro'), builderOf = (w, id = B1) => w.as(id, 'builder');
@@ -275,7 +275,7 @@ test('entrega autônoma: pane aguardando permissão deixa a tarefa pendente com 
   assert.match(w.m.snapshot().tasks[0].note, /aguardando uma permissão/);
 });
 
-// ---- confirmação do envio (Enter repetido): só no Codex, só com o agente pronto e sem reação ----
+// ---- confirmação do envio (Enter repetido): Codex e Claude (hooks), só com o agente pronto e sem reação ----
 const codexPane = (w, agent) => { const p = w.ft.panes.get(B1); p.provider = 'codex'; p.agent = agent; return p; };
 const sendTo = (w) => { w.call(maestroOf(w), 'send_task', { pane_id: B1, task: 'faça z' }); w.m.decide(w.m.snapshot().tasks[0].id, true); };
 const entersTo = (w, id = B1) => w.ft.written.filter((x) => x[0] === id && x[1] === '\r').length;
@@ -289,7 +289,7 @@ test('confirmação do envio (Codex): agente pronto que não reagiu ao Enter rec
   assert.equal(w.timers.length, 3, 'depois de 2 repetições para de agendar');
 });
 
-test('confirmação do envio: reagiu, ocupado, sem sinal, Claude (hooks), outra linha sendo digitada ou saída recente => nada é repetido', () => {
+test('confirmação do envio: Claude (hooks) repete; reagiu, ocupado, sem sinal, saída recente ou terminal acabado => nada é repetido', () => {
   const run = (setup, after = null) => {
     const w = world(); setup(w);
     sendTo(w); w.timers[0]?.(); w.tick(500); if (after) after(w);
@@ -301,7 +301,9 @@ test('confirmação do envio: reagiu, ocupado, sem sinal, Claude (hooks), outra 
   assert.equal(run((w) => codexPane(w, { state: 'running', at: old })), 1, 'já estava ocupado: não dá para confirmar');
   assert.equal(run((w) => codexPane(w, { state: 'waiting', at: old })), 0, 'esperando permissão: nem é entregue');
   assert.equal(run((w) => { w.ft.panes.get(B1).provider = 'codex'; }), 1, 'sem sinal de estado: nada a confirmar');
-  assert.equal(run((w) => { w.ft.panes.get(B1).agent = { state: 'idle', at: old }; }), 1, 'Claude (hooks): um hook quebrado deixaria o estado velho; nunca repete');
+  assert.equal(run((w) => { w.ft.panes.get(B1).agent = { state: 'idle', at: old }; }), 2, 'Claude (hooks): pronto e sem reação ao Enter (engolido, como no Mac) => repete uma vez');
+  assert.equal(run((w) => { w.ft.panes.get(B1).agent = { state: 'completed', at: old }; }, (w) => { w.ft.panes.get(B1).agent = { state: 'running', at: '2026-11-03T12:00:00.300Z' }; }), 1, 'Claude: reagiu (UserPromptSubmit => running): nada é repetido');
+  assert.equal(run((w) => { w.ft.panes.get(B1).agent = { state: 'running', at: old }; }), 1, 'Claude já ocupado: não dá para confirmar, não repete');
   assert.equal(run((w) => codexPane(w, { state: 'idle', at: old }), (w) => { w.ft.panes.get(B1).lastOutputAt = new Date().toISOString(); }), 1, 'saída recente: o usuário pode estar digitando');
   assert.equal(run((w) => codexPane(w, { state: 'idle', at: old }), (w) => { w.ft.panes.get(B1).status = 'exited'; }), 1, 'o terminal acabou: nada a repetir');
 });
@@ -501,4 +503,77 @@ test('briefing é o que o usuário escreve no terminal do Maestro: o prompt diz 
   for (const k of ['submitBriefing', 'validateBriefingBody', 'cleanBriefingText', 'MAX_BRIEFING_TEXT', 'MAX_BRIEFINGS']) assert.equal(M[k], undefined, `${k} saiu`);
   const src = fs.readFileSync(new URL('../maestro.js', import.meta.url), 'utf8');
   assert.ok(!/api\/maestro\/briefing|get_briefing/.test(src.replace(/\/\/.*$/gm, '')), 'nenhuma rota nem ferramenta de briefing no código');
+});
+
+// ---- relatório AUTOMÁTICO: o terminal da equipe terminou sem report_done ----
+const NEWER = '2026-11-03T12:00:01.000Z';
+/** Entrega uma tarefa a B1 (maestro autônomo, maestro livre) e devolve o id; descarta os timers do Enter. */
+function delivered(w) {
+  const ma = w.ft.panes.get(MA); ma.agent = IDLE; ma.lastOutputAt = '2026-11-03T11:00:00.000Z';
+  w.m.setAutonomous(true);
+  w.call(maestroOf(w), 'send_task', { pane_id: B1, task: 'crie teste.txt' });
+  const id = w.m.snapshot().tasks[0].id; while (w.timers.length) w.timers.shift()();
+  assert.equal(w.watchers.length, 1, 'entregar liga o vigia');
+  return id;
+}
+const lastTyped = (w) => typedTo(w, MA).filter((x) => x[1] !== '\r').at(-1)?.[1] ?? null;
+
+test('relatório automático: o agente trabalhou e voltou a ficar pronto sem chamar report_done => tarefa concluída com o fim do terminal e o Maestro avisado', () => {
+  const w = world(), id = delivered(w); const b = w.ft.panes.get(B1);
+  w.ft.out.set(B1, '\x1b[32mCriei teste.txt\x1b[0m\nTestes: 3 passando\n');
+  b.agent = { state: 'running', at: NEWER }; b.lastOutputAt = NEWER; w.tick(1000); w.watchers.shift()();
+  assert.equal(w.m.snapshot().tasks[0].status, 'delivered', 'ainda trabalhando');
+  b.agent = { state: 'completed', at: '2026-11-03T12:00:03.000Z' }; w.tick(2000); w.watchers.shift()();
+  assert.equal(w.m.snapshot().tasks[0].status, 'delivered', 'dentro da tolerância (o report_done ainda pode chegar)');
+  w.tick(10_000); b.lastOutputAt = '2026-11-03T12:00:03.000Z'; w.watchers.shift()();
+  const t = w.m.snapshot().tasks[0];
+  assert.equal(t.status, 'done'); assert.match(t.summary, /^Relatório automático: o agente terminou sem chamar report_done\./); assert.match(t.summary, /Criei teste\.txt Testes: 3 passando/);
+  assert.ok(!t.summary.includes('\x1b'), 'sem ANSI');
+  assert.match(lastTyped(w), new RegExp(`^Relatório de ${w.ft.panes.get(B1).title} \\(${id}, texto do agente\\): «Relatório automático`));
+  assert.equal(w.watchers.length, 0, 'sem tarefa entregue o vigia para');
+});
+
+test('relatório automático: sem trabalho observado depois da entrega, ou com o terminal ainda imprimindo, nada é concluído', () => {
+  const w = world(); delivered(w); const b = w.ft.panes.get(B1);
+  b.agent = { state: 'completed', at: NEWER }; w.tick(60_000); w.watchers.shift()();
+  assert.equal(w.m.snapshot().tasks[0].status, 'delivered', 'um Stop anterior ao trabalho desta tarefa (agente ocupado na entrega) não conta');
+  b.agent = { state: 'running', at: NEWER }; w.watchers.at(-1)?.(); b.agent = { state: 'completed', at: '2026-11-03T12:00:02.000Z' };
+  b.lastOutputAt = new Date(Date.parse('2026-11-03T12:00:00.000Z') + 60_000).toISOString(); // imprimiu há instantes
+  w.watchers.at(-1)?.(); assert.equal(w.m.snapshot().tasks[0].status, 'delivered', 'saída recente: ainda não terminou');
+});
+
+test('relatório automático: sem sinal de estado só o silêncio longo conclui; erro do agente também conta como fim', () => {
+  const w = world(); delivered(w); const b = w.ft.panes.get(B1); b.agent = null; b.lastOutputAt = NEWER;
+  w.tick(5000); w.watchers.shift()(); assert.equal(w.m.snapshot().tasks[0].status, 'delivered', '5 s de silêncio não bastam sem estado');
+  w.tick(M.AUTO_REPORT_QUIET_MS); w.watchers.shift()(); assert.equal(w.m.snapshot().tasks[0].status, 'done');
+  const w2 = world(); delivered(w2); const b2 = w2.ft.panes.get(B1);
+  b2.agent = { state: 'running', at: NEWER }; w2.watchers.shift()(); b2.agent = { state: 'error', at: '2026-11-03T12:00:02.000Z' }; b2.lastOutputAt = '2026-11-03T12:00:02.000Z'; w2.tick(20_000); w2.watchers.shift()();
+  assert.equal(w2.m.snapshot().tasks[0].status, 'done');
+});
+
+test('relatório automático: terminal que acabou antes de concluir avisa o Maestro; report_done tardio substitui o resumo automático e avisa de novo', () => {
+  const w = world(), id = delivered(w); w.ft.panes.get(B1).status = 'exited';
+  w.watchers.shift()(); const t = w.m.snapshot().tasks[0];
+  assert.equal(t.status, 'failed'); assert.match(lastTyped(w), /«O terminal acabou antes de concluir a tarefa\.»/);
+  const w2 = world(), id2 = delivered(w2); const b = w2.ft.panes.get(B1);
+  b.agent = { state: 'running', at: NEWER }; w2.watchers.shift()(); b.agent = { state: 'completed', at: '2026-11-03T12:00:02.000Z' }; b.lastOutputAt = '2026-11-03T12:00:02.000Z'; w2.tick(20_000); w2.watchers.shift()();
+  assert.equal(w2.m.snapshot().tasks[0].auto, undefined); assert.match(w2.m.snapshot().tasks[0].summary, /^Relatório automático/);
+  while (w2.timers.length) w2.timers.shift()();
+  const r = w2.call(builderOf(w2), 'report_done', { task_id: id2, summary: 'Feito de verdade.' });
+  assert.equal(r.isError, undefined); assert.equal(w2.m.snapshot().tasks[0].summary, 'Feito de verdade.');
+  assert.match(lastTyped(w2), /«Feito de verdade\.»/);
+  assert.equal(w2.call(builderOf(w2), 'report_done', { task_id: id2, summary: 'de novo' }).isError, true, 'concluída de verdade: não muda mais');
+  assert.ok(id && id2);
+});
+
+test('autonomia: o valor inicial vem do servidor; a rota grava a escolha e, se a gravação falhar, nada muda', async () => {
+  const w = world({ autonomous: true }); assert.equal(w.m.isAutonomous(), true); assert.equal(world().m.isAutonomous(), false, 'createMaestro nasce desligado');
+  const saved = []; let fail = false;
+  const app = express(); app.use('/api', apiGuard); app.use(express.json({ limit: '100kb' })); M.setupMaestro(app, { maestro: w.m, onAutonomy: (v) => { if (fail) throw new Error('disco'); saved.push(v); } });
+  const srv = http.createServer(app); await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const post = (body) => fetch(`http://127.0.0.1:${srv.address().port}/api/maestro/autonomy`, { method: 'POST', headers: { 'content-type': 'application/json', origin: `http://127.0.0.1:${srv.address().port}` }, body: JSON.stringify(body) });
+  try {
+    let r = await post({ enabled: false }); assert.equal(r.status, 200); assert.deepEqual(saved, [false]); assert.equal(w.m.isAutonomous(), false);
+    fail = true; r = await post({ enabled: true }); assert.equal(r.status, 500); assert.equal(w.m.isAutonomous(), false, 'falha ao gravar: o estado em memória não muda');
+  } finally { srv.close(); }
 });

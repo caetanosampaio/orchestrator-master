@@ -52,7 +52,7 @@ Electron (desktop/)  ->  servidor Node + Express (server/, só 127.0.0.1)  ->  C
 
 **Estado do agente.** Claude: hooks gravam eventos em arquivos que o servidor lê. Codex: o servidor interpreta a sequência OSC 7501 na saída do PTY. Os dois viram `idle`, `running`, `waiting`, `completed` ou `error`; o cliente deriva o estado do painel, do workspace (sidebar) e global a partir disso (`paneState`, `wsTone`).
 
-**Tarefa do Maestro.** O Maestro chama `send_task` por MCP; a tarefa fica pendente; o usuário aprova ou recusa (`/api/maestro/tasks/:id/approve|reject`); aprovada, o texto é entregue ao terminal de destino do jeito que a CLI dele espera.
+**Tarefa do Maestro.** O Maestro chama `send_task` por MCP; com o maestro autônomo ligado (padrão, preferência gravada) o texto é entregue na hora ao terminal de destino do jeito que a CLI dele espera; desligado, a tarefa fica pendente e o usuário aprova ou recusa (`/api/maestro/tasks/:id/approve|reject`). Um vigia acompanha as tarefas entregues e, quando o terminal termina sem `report_done`, conclui a tarefa e digita o relatório no Maestro.
 
 ## Segurança
 

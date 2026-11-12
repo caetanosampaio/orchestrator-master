@@ -6,8 +6,8 @@
 //   - ferramentas: list_panes (todos), list_tasks (todos; o maestro vê tudo, os demais só as tarefas endereçadas a eles), send_task e read_pane_output (SÓ o papel maestro),
 //     report_done (só o pane a quem a tarefa foi entregue);
 //   - briefing: não há rota nem ferramenta. Tudo que o USUÁRIO escreve no terminal do Maestro já é o briefing (o prompt do papel, em terminals.js, e a skill orquestrar-briefing dizem o que fazer com ele);
-//   - send_task NÃO escreve no outro terminal por conta própria: cria uma tarefa PENDENTE que o usuário aprova ou recusa na tela. Só com o "maestro autônomo" ligado (desligado a cada
-//     boot, ligado apenas pelo usuário na interface, nunca por ferramenta) a entrega é imediata, e ainda assim limitada por minuto; acima do limite a tarefa volta a esperar o usuário;
+//   - send_task NÃO escreve no outro terminal por conta própria: cria uma tarefa PENDENTE que o usuário aprova ou recusa na tela. Só com o "maestro autônomo" ligado (preferência do usuário gravada no banco, mudada apenas
+//     pela interface, nunca por ferramenta; `createMaestro` nasce desligado e o servidor passa o valor gravado) a entrega é imediata, e ainda assim limitada por minuto; acima do limite a tarefa volta a esperar o usuário;
 //   - o texto entregue é saneado (sem controles nem ESC, uma linha, tamanho limitado) e a saída lida de um pane é DADO NÃO CONFIÁVEL (sem ANSI, tamanho limitado, com aviso).
 //
 // Limites honestos (não é uma barreira de segurança):
@@ -84,21 +84,23 @@ export function stableServerName(db, { save = null, gen = () => randomBytes(3).t
 }
 
 // Confirmação do envio: depois do Enter, se o agente está pronto para receber (idle, completed ou error) e NÃO reagiu (nenhuma mudança de estado desde o Enter), o texto ficou parado no campo de entrada
-// (ex.: o Enter foi engolido durante a renderização do Codex): repete o Enter, no máximo ENTER_RETRIES vezes. Só nos provedores cujo estado vem do próprio terminal (Codex): nos hooks do Claude, um hook
-// quebrado deixaria o estado velho e o Enter repetido poderia aprovar um pedido de permissão. Não repete com outra linha sendo digitada nem com saída recente (o usuário pode estar digitando).
+// (ex.: o Enter foi engolido durante a renderização do Codex): repete o Enter, no máximo ENTER_RETRIES vezes. Vale para qualquer provedor com estado conhecido, hooks do Claude inclusive: no Mac o Enter da entrega
+// era engolido pelo Claude Code (o texto ficava parado no campo e o usuário tinha de enviar à mão). Um hook que já morreu deixaria o estado velho, mas a primeira entrega já teria o mesmo risco (o Enter
+// responde a um pedido de permissão), e `waiting` nunca repete. Não repete com outra linha sendo digitada nem com saída recente (o usuário pode estar digitando).
 // O relatório espera o maestro ficar livre por até REPORT_MAX_WAIT_MS (antes eram 2 min, e um maestro trabalhando, que imprime o tempo todo, perdia o aviso). `running` há mais de STALE_RUNNING_MS
 // sem NENHUMA saída conta como estado velho (o hook Stop não dispara quando o usuário interrompe com Esc) e não bloqueia: um agente realmente trabalhando imprime (spinner) a cada instante.
+export const WATCH_MS = 2000, AUTO_REPORT_GRACE_MS = 5000, AUTO_REPORT_QUIET_MS = 30_000, AUTO_SUMMARY_CHARS = 900; // vigia das tarefas entregues: relatório automático quando o terminal termina sem report_done
 export const ENTER_RETRIES = 2, CONFIRM_MS = 2000, REPORT_RETRY_MS = 3000, QUIET_MS = 1500, REPORT_MAX_WAIT_MS = 60 * 60 * 1000, STALE_RUNNING_MS = 15_000;
 export const REPORT_RETRIES = Math.ceil(REPORT_MAX_WAIT_MS / REPORT_RETRY_MS);
 const READY_STATES = new Set(['idle', 'completed', 'error']);
 
-export function createMaestro({ getTerminals, harness = null, mcpDir, url, serverName = SERVER_NAME, lockDir = restrictDir, now = store.now, uid = store.uid, setTimer = setTimeout, autoPerMinute = AUTO_PER_MINUTE, submitDelayMs = null, confirmMs = CONFIRM_MS, reportRetryMs = REPORT_RETRY_MS } = {}) {
+export function createMaestro({ getTerminals, harness = null, mcpDir, url, serverName = SERVER_NAME, lockDir = restrictDir, now = store.now, uid = store.uid, setTimer = setTimeout, autonomous: initialAutonomous = false, autoPerMinute = AUTO_PER_MINUTE, watchTimer = setTimeout, watchMs = WATCH_MS, submitDelayMs = null, confirmMs = CONFIRM_MS, reportRetryMs = REPORT_RETRY_MS } = {}) {
   const byHash = new Map();   // sha256(token) -> { terminalId, role }
   const byTerminal = new Map(); // terminalId -> { hash, file }
   const tasks = [];           // mais antigas primeiro
   const sending = new Set();  // panes com uma entrega em curso (texto já digitado, Enter ainda não enviado): evita duas tarefas coladas na mesma linha
   const maxReportTries = Math.ceil(REPORT_MAX_WAIT_MS / Math.max(1, reportRetryMs));
-  let dirLocked = false, autonomous = false;
+  let dirLocked = false, autonomous = initialAutonomous === true, watching = false;
   const autoStamps = [];      // instantes das entregas automáticas (janela de 1 min)
 
   if (mcpDir) { try { for (const f of fs.readdirSync(mcpDir)) if (/^term_[0-9a-f]{8}\.json$/.test(f)) fs.rmSync(path.join(mcpDir, f), { force: true }); } catch { /* pasta ainda não existe */ } } // tokens são só de memória: arquivos de um boot anterior não valem mais
@@ -136,7 +138,7 @@ export function createMaestro({ getTerminals, harness = null, mcpDir, url, serve
   function sweep() {
     const t0 = Date.parse(now()) || Date.now();
     for (const t of tasks) {
-      if (t.status === 'delivered' && paneOf(t.to)?.status !== 'running') { t.status = 'failed'; t.note = 'O terminal acabou antes de concluir a tarefa.'; continue; }
+      if (t.status === 'delivered' && paneOf(t.to)?.status !== 'running') { t.status = 'failed'; t.note = 'O terminal acabou antes de concluir a tarefa.'; t.noticePending = true; continue; }
       if (t.status !== 'pending') continue;
       if (t0 - Date.parse(t.createdAt) > PENDING_TTL_MS) { t.status = 'expired'; t.decidedAt = now(); t.note = 'Sem decisão em 10 minutos.'; }
       else if (paneOf(t.to)?.status !== 'running') { t.status = 'failed'; t.decidedAt = now(); t.note = 'O terminal de destino foi encerrado.'; }
@@ -151,7 +153,6 @@ export function createMaestro({ getTerminals, harness = null, mcpDir, url, serve
       const cur = paneOf(paneId), st = cur?.agent;
       if (!cur || cur.status !== 'running' || !st || !READY_STATES.has(st.state) || !(Date.parse(st.at) < enterAt)) return;
       if (sending.has(paneId) || Date.now() - Date.parse(cur.lastOutputAt) < 1000) return;
-      if (typeof (isProvider(cur.provider) ? getProvider(cur.provider) : getProvider(DEFAULT_PROVIDER)).oscState !== 'function') return;
       try { terms().write(paneId, '\r'); } catch { return; }
       confirmSubmit(paneId, enterAt, tries + 1);
     }, confirmMs).unref?.();
@@ -204,9 +205,46 @@ export function createMaestro({ getTerminals, harness = null, mcpDir, url, serve
       else task.note = `O relatório não foi digitado no maestro (${why}); o resultado está em list_tasks.`;
     };
     const busy = busyReason(task.from, from); if (busy) return wait(busy);
-    const safe = String(task.summary).replace(/[\[\]«»]/g, ' ').replace(/ {2,}/g, ' ').trim();
+    const safe = String(task.status === 'failed' ? (task.note ?? 'A tarefa falhou.') : task.summary).replace(/[\[\]«»]/g, ' ').replace(/ {2,}/g, ' ').trim();
     const w = typeLine(task.from, from, `Relatório de ${task.toTitle} (${task.id}, texto do agente): «${safe}»`);
     if (!w.ok) task.note = `O relatório não foi digitado no maestro (${w.error}); o resultado está em list_tasks.`;
+  }
+
+  /**
+   * Relatório AUTOMÁTICO: o `report_done` depende de o agente lembrar de chamá-lo (e de a ferramenta MCP estar disponível). Sem ele o Maestro nunca saberia que o terminal acabou e o usuário teria de
+   * avisar à mão. Enquanto houver tarefa entregue, um vigia olha os terminais de destino: quando o agente trabalhou DEPOIS da entrega e voltou a ficar pronto (hooks/OSC) por AUTO_REPORT_GRACE_MS, ou, sem
+   * sinal de estado, ficou AUTO_REPORT_QUIET_MS sem imprimir, a tarefa é concluída com o trecho final do terminal (dado não confiável, vai entre « » como qualquer relatório) e o Maestro é avisado.
+   * Terminal que acabou antes de concluir também vira aviso ao Maestro. Se o agente chamar `report_done` depois, o resumo dele substitui o automático.
+   */
+  function autoSummary(task) {
+    const flat = cleanLine(cleanOutput(terms().readOutput(task.to, 6000), 6000), 6000).slice(-AUTO_SUMMARY_CHARS).trim();
+    return `Relatório automático: o agente terminou sem chamar report_done. Trecho final do terminal: ${flat || '(sem saída legível)'}`;
+  }
+  function checkDelivered() {
+    const t0 = Date.parse(now()) || Date.now();
+    for (const t of tasks) {
+      if (t.noticePending) { t.noticePending = false; try { notifyMaestro(t); } catch { /* o resultado segue em list_tasks */ } continue; }
+      if (t.status !== 'delivered') continue;
+      const pane = paneOf(t.to); if (!pane || pane.status !== 'running') continue;
+      const since = Date.parse(t.decidedAt), st = pane.agent, outAt = Date.parse(pane.lastOutputAt);
+      let finished = false;
+      if (st?.state) {
+        const at = Date.parse(st.at);
+        if (st.state === 'running' && at >= since) t.sawRunning = true;
+        finished = t.sawRunning === true && READY_STATES.has(st.state) && at >= since && t0 - at >= AUTO_REPORT_GRACE_MS && !(t0 - outAt < QUIET_MS);
+      } else finished = outAt >= since && t0 - outAt >= AUTO_REPORT_QUIET_MS; // sem sinal de estado: só o silêncio longo depois de ter trabalhado
+      if (!finished) continue;
+      t.status = 'done'; t.doneAt = now(); t.auto = true; t.summary = autoSummary(t);
+      try { notifyMaestro(t); } catch { /* o resultado segue em list_tasks */ }
+    }
+  }
+  function watch() {
+    if (watching) return; watching = true;
+    const step = () => {
+      try { sweep(); checkDelivered(); } catch { /* o vigia nunca derruba o servidor */ }
+      if (tasks.some((t) => t.status === 'delivered' || t.noticePending)) watchTimer(step, watchMs).unref?.(); else watching = false;
+    };
+    watchTimer(step, watchMs).unref?.();
   }
 
   function deliver(task, by) {
@@ -217,7 +255,8 @@ export function createMaestro({ getTerminals, harness = null, mcpDir, url, serve
     if (target.agent?.state === 'waiting') return { ok: false, transient: true, error: 'O terminal de destino está aguardando uma permissão; responda a ela primeiro e tente de novo.' };
     const line = `[Tarefa ${task.id} do maestro] ${task.text}${task.hint ?? ''} (Ao terminar, chame a ferramenta report_done com task_id ${task.id} e um resumo curto com: o que foi feito, arquivos alterados e pendências.)`;
     const w = typeLine(task.to, target, line); if (!w.ok) { task.status = 'failed'; task.decidedAt = now(); task.note = w.error; return { ok: false, error: w.error }; }
-    task.status = 'delivered'; task.decidedAt = now(); task.decidedBy = by; task.note = null;
+    task.status = 'delivered'; task.decidedAt = now(); task.decidedBy = by; task.note = null; task.sawRunning = false;
+    watch();
     return { ok: true };
   }
   function autoAllowed() { const cut = Date.now() - 60_000; while (autoStamps.length && autoStamps[0] < cut) autoStamps.shift(); return autoStamps.length < autoPerMinute; }
@@ -290,10 +329,11 @@ export function createMaestro({ getTerminals, harness = null, mcpDir, url, serve
     report_done: (c, a) => {
       sweep(); const t = taskById(a?.task_id);
       if (!t || t.to !== c.terminalId) return err('Tarefa não encontrada para este pane.');
-      if (t.status !== 'delivered') return err(`A tarefa está em "${t.status}"; só tarefas entregues podem ser concluídas.`);
+      const replaceAuto = t.status === 'done' && t.auto === true; // o agente lembrou depois do relatório automático: o resumo dele vale mais
+      if (t.status !== 'delivered' && !replaceAuto) return err(`A tarefa está em "${t.status}"; só tarefas entregues podem ser concluídas.`);
       const full = cleanLine(a?.summary, MAX_SUMMARY + 1); if (!full) return err('Informe um resumo curto.');
       const cut = full.length > MAX_SUMMARY, summary = cut ? `${full.slice(0, MAX_SUMMARY - 17).trimEnd()} (texto cortado)` : full; // o corte aparece no próprio texto
-      t.status = 'done'; t.doneAt = now(); t.summary = summary;
+      t.status = 'done'; t.doneAt = now(); t.summary = summary; t.auto = false;
       try { notifyMaestro(t); } catch { /* o aviso ao maestro é só um extra: o resultado segue em list_tasks */ }
       return ok(`Tarefa marcada como concluída${cut ? ` (o resumo passava de ${MAX_SUMMARY} caracteres e foi cortado)` : ''}. O maestro será avisado se estiver disponível.`);
     },
@@ -331,7 +371,7 @@ export function createMaestro({ getTerminals, harness = null, mcpDir, url, serve
   return { serverName, issue, revoke, authenticate, rpc, snapshot, setAutonomous, decide, isAutonomous: () => autonomous };
 }
 
-export function setupMaestro(app, { maestro }) {
+export function setupMaestro(app, { maestro, onAutonomy = null }) {
   // /mcp: só clientes que não são navegadores (qualquer Origin é recusado), Host local e token válido; sem CORS, sem GET/SSE
   app.all('/mcp', (req, res) => {
     if (!isAllowedHost(req.get('host'))) return res.status(403).json({ error: 'Host não permitido.' });
@@ -345,6 +385,7 @@ export function setupMaestro(app, { maestro }) {
   app.get('/api/maestro', (req, res) => res.json(maestro.snapshot()));
   app.post('/api/maestro/autonomy', (req, res) => {
     if (typeof req.body?.enabled !== 'boolean') return res.status(400).json({ error: 'Informe enabled (verdadeiro ou falso).' });
+    try { onAutonomy?.(req.body.enabled); } catch { return res.status(500).json({ error: 'Não foi possível gravar a preferência: o banco não pôde ser gravado; nada foi alterado.' }); } // a gravação falhou: nada muda
     return res.json(maestro.setAutonomous(req.body.enabled));
   });
   const decide = (approve) => (req, res) => { const r = maestro.decide(req.params.id, approve); res.status(r.status).json(r.ok ? maestro.snapshot() : { error: r.error }); };
