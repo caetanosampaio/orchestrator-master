@@ -3,24 +3,31 @@
 //
 // Só as categorias que a política trata como sensíveis (arquivos que mudam o que o projeto instala/executa) e de segredo são vigiadas, por HASH: o conteúdo nunca é lido para
 // fora desta função nem gravado (para segredos, só o nome do arquivo e o tipo de mudança aparecem). Um arquivo comum fora do escopo NÃO é desvio (o comportamento atual é mantido).
+// Categoria `git_config` (o agente do perfil sem confirmação tem shell): `.git/config`, `.git/hooks/*`, `.git/info/exclude` e `.gitmodules`. Um hook ou uma config alterada faz o PRÓXIMO comando
+// git (do usuário, de um terminal, do verificador) executar código ou esconder arquivos; `.git/...` nunca é "autorizado" (safeRelPath o recusa), então qualquer mudança neles é desvio.
 //
 // Autorizado = arquivos declarados em expectedFiles da etapa + os arquivos que uma aprovação humana concedida para ESSA ação cobriu (subjects das regras sensitive_files/secret_files).
 // Uma simples menção a um arquivo no texto da etapa NÃO autoriza nada.
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { MAX_SCAN, MAX_HASH_BYTES, isSkippedDir, safeRelPath } from './evidence.js';
+import { MAX_SCAN, MAX_HASH_BYTES, isSkippedDir, safeRelPath, gitConfigFiles } from './evidence.js';
 import { isSecretPath, isSensitivePath } from './policy.js';
 
 const MAX_DEPTH = 12, MAX_WATCHED = 500;
 
-const kindOf = (rel) => (isSecretPath(rel) ? 'secret' : isSensitivePath(rel) ? 'sensitive' : null);
+const GITMODULES = /(^|\/)\.gitmodules$/i;
+const kindOf = (rel) => (isSecretPath(rel) ? 'secret' : GITMODULES.test(rel) ? 'git_config' : isSensitivePath(rel) ? 'sensitive' : null);
 const hashOf = (abs, st) => { try { return st.size <= MAX_HASH_BYTES ? crypto.createHash('sha256').update(fs.readFileSync(abs)).digest('hex') : `big:${st.size}:${Math.round(st.mtimeMs)}`; } catch { return null; } };
 
-/** Instantâneo { complete, files: { rel: { h, kind } } } dos arquivos sensíveis/de segredo do workspace (síncrono, limitado, sem seguir links). null se o workspace não pôde ser lido. */
+// Um hook que vira link simbólico conta pelo DESTINO do link (texto), nunca seguindo-o.
+const gitHashOf = (abs) => { try { const l = fs.lstatSync(abs); return l.isSymbolicLink() ? crypto.createHash('sha256').update(`link:${fs.readlinkSync(abs)}`).digest('hex') : hashOf(abs, l); } catch { return null; } };
+
+/** Instantâneo { complete, files: { rel: { h, kind } } } dos arquivos sensíveis/de segredo/de configuração do Git do workspace (síncrono, limitado, sem seguir links). null se o workspace não pôde ser lido. */
 export function scopeSnapshot(root) {
   try {
     const files = {}; let scanned = 0, complete = true;
+    for (const g of gitConfigFiles(root)) { const h = gitHashOf(g.abs); if (h === null) complete = false; else files[g.rel] = { h, kind: 'git_config' }; }
     const stack = [['', 0]];
     while (stack.length && complete) {
       const [dir, depth] = stack.pop();
@@ -44,7 +51,7 @@ export function scopeSnapshot(root) {
 
 /**
  * Compara antes e depois contra o escopo autorizado.
- * @returns {{status:'clean'|'exceeded'|'unknown', files:{path:string, change:'created'|'modified'|'deleted', category:'secret'|'sensitive'}[], changed:number, authorized:string[], reason?:string}}
+ * @returns {{status:'clean'|'exceeded'|'unknown', files:{path:string, change:'created'|'modified'|'deleted', category:'secret'|'sensitive'|'git_config'}[], changed:number, authorized:string[], reason?:string}}
  *   `files` = SÓ os desvios (fora do escopo), sem conteúdo. `unknown` = não foi possível ver tudo: nunca se afirma que não houve desvio.
  */
 export function scopeCheck({ before, after, expected = [], approvedSubjects = [] }) {
