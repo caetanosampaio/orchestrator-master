@@ -84,3 +84,15 @@ test('source "api" é aceito no contrato e não gera nota (a barra está preench
   const n = normalizeLimits({ updatedAt: at(0), providers: [{ provider: 'claude', label: 'Claude Code', accounts: [{ id: 'system', label: 'Sistema', source: 'api', session: { usedPct: 5, resetsAt: at(3600e3), windowMinutes: 300 }, week: null }] }] }, now);
   assert.equal(n.providers[0].accounts[0].source, 'api'); assert.equal(sourceNote({ source: 'api' }, 'claude'), null);
 });
+
+test('última leitura: fonte aceita e aviso de idade só quando a leitura não é recente (o valor não zera; a idade aparece)', async () => {
+  const { staleNote, fmtAgo, normalizeLimits: norm } = await import('../../client/src/limits-view.js');
+  const now = Date.parse('2026-11-10T12:00:00Z'), at = (s) => new Date(now + s * 1000).toISOString();
+  const raw = (updatedAt, source = 'ultima-leitura') => ({ providers: [{ provider: 'claude', label: 'Claude Code', accounts: [{ id: 'system', label: 'Sistema', source, updatedAt, session: { usedPct: 41, resetsAt: at(3600), windowMinutes: 300 }, week: null }] }] });
+  const a = norm(raw(at(-1200)), now).providers[0].accounts[0];
+  assert.equal(a.source, 'ultima-leitura'); assert.equal(a.session.usedPct, 41);
+  assert.match(staleNote(a, now), /Última leitura há 20 min/);
+  assert.equal(staleNote(norm(raw(at(-60)), now).providers[0].accounts[0], now), null, 'recente: sem aviso');
+  assert.equal(staleNote({ source: 'sem-dados', session: null, week: null }, now), null); assert.equal(staleNote(null, now), null);
+  assert.equal(fmtAgo(at(-30), now), 'menos de 1 min'); assert.equal(fmtAgo(at(-7200), now), '2 h'); assert.equal(fmtAgo(at(-3 * 86400), now), '3 d'); assert.equal(fmtAgo(at(+9999), now), null); assert.equal(fmtAgo('lixo', now), null);
+});

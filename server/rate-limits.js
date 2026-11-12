@@ -34,6 +34,8 @@ const API_TTL_MS = 30_000; // consulta ao provedor no máximo a cada ~30 s por c
 const API_STALE_MS = 5 * 60_000; // leitura da API mais velha que isto não vale mais como "atual"
 const API_TIMEOUT_MS = 15_000, API_MAX_BACKOFF_MS = 10 * 60_000, API_RATE_LIMITED_MS = 5 * 60_000;
 const MAX_FILE_CACHE = 500;
+const LAST_KNOWN_FILE = 'last-known.json', MAX_LAST_FILE = 64 * 1024, LAST_WRITE_MS = 60_000, LAST_KEY_RE = /^(?:codex|claude:(?:system|acc_[0-9a-f]{8}))$/;
+const SAME_WINDOW_MS = 120_000; // resetsAt a menos disto = a mesma janela (a API e a status line arredondam diferente)
 const FUTURE_SKEW_MS = 10 * 60_000; // `at` além disto no futuro é lixo
 const STALE_FILE_MS = 30 * 86_400_000;
 const SESSION_WINDOW_MINUTES = 300, WEEK_WINDOW_MINUTES = 10080;
@@ -57,7 +59,7 @@ export function statusLineSettings({ node, script, dir }) {
 /** Grava o arquivo de settings de forma atômica (e só se o conteúdo mudou). Lança em erro de disco. */
 export function writeSettingsFile(file, settings) {
   const text = `${JSON.stringify(settings, null, 2)}\n`;
-  try { if (fs.readFileSync(file, 'utf8') === text) return false; } catch { /* não existe: grava */ }
+  try { const st = fs.lstatSync(file); if (st.isFile() && st.size <= 1024 * 1024 && fs.readFileSync(file, 'utf8') === text) return false; } catch { /* não existe: grava */ } // lstat: link simbólico nunca é seguido nem lido
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   const tmp = `${file}.${randomBytes(6).toString('hex')}.tmp`; // nome aleatório + 'wx': um link plantado com nome previsível nunca é seguido
   try { fs.writeFileSync(tmp, text, { flag: 'wx', mode: 0o600 }); fs.renameSync(tmp, file); }
@@ -168,13 +170,49 @@ export function createRateLimits({ db, accounts = null, dir: dirIn, script: scri
     return m;
   }
 
+  // ---- última leitura boa da API, em disco: o app fechado e reaberto NÃO zera as barras (nem o login vencido, o 429 ou a falta de rede). Só valores de uso e plano; nenhum token, caminho ou e-mail ----
+  const lastFile = path.join(dir, LAST_KNOWN_FILE);
+  const pubWin = (w) => { if (!isObj(w)) return null; const usedPct = pctOf(w.usedPct), at = Date.parse(w.resetsAt); return usedPct === null || !Number.isFinite(at) ? null : { usedPct, resetsAt: new Date(at).toISOString(), windowMinutes: Number.isFinite(w.windowMinutes) ? w.windowMinutes : null }; };
+  function loadLastKnown() {
+    const out = new Map();
+    if (!usageApi) return out; // sem consulta à API (testes, ORCH_LIMITS_API fora do ar no boot) não há o que reaproveitar
+    try {
+      const st = fs.lstatSync(lastFile); if (!st.isFile() || st.size > MAX_LAST_FILE) return out;
+      const j = JSON.parse(fs.readFileSync(lastFile, 'utf8')), t = now();
+      if (!isObj(j) || !isObj(j.entries)) return out;
+      for (const [k, e] of Object.entries(j.entries)) {
+        if (!LAST_KEY_RE.test(k) || !isObj(e)) continue;
+        const okAt = Number(e.okAt), session = pubWin(e.session), week = pubWin(e.week);
+        if (!Number.isFinite(okAt) || okAt > t + FUTURE_SKEW_MS || (!session && !week)) continue;
+        out.set(k, { okAt: Math.min(okAt, t), planType: cleanPlan(e.planType) ?? null, session, week }); // nunca no futuro
+      }
+    } catch { /* sem arquivo ou ilegível: começa sem leitura */ }
+    return out;
+  }
+  const lastKnown = loadLastKnown();
+  let lastSig = '', lastWriteAt = 0;
+  /** Grava as leituras conhecidas (atômico). Só quando o valor mudou ou passou LAST_WRITE_MS (o instante da leitura segue recente sem escrever a cada consulta). Nunca lança. */
+  function saveLastKnown() {
+    if (!usageApi) return;
+    try {
+      if (!apiOn()) return; // API desligada: o arquivo fica como está
+      const entries = {};
+      for (const [k, e] of lastKnown) entries[k] = { okAt: e.okAt, planType: e.planType, session: e.session, week: e.week };
+      for (const [k, m] of apiStates) if (m.data && m.okAt && LAST_KEY_RE.test(k)) entries[k] = { okAt: m.okAt, planType: cleanPlan(m.data.planType) ?? null, session: m.data.session ?? null, week: m.data.week ?? null };
+      const sig = JSON.stringify(Object.entries(entries).map(([k, e]) => [k, e.planType, e.session, e.week])), t = now();
+      if (sig === lastSig && t - lastWriteAt < LAST_WRITE_MS) return;
+      writeSettingsFile(lastFile, { v: 1, entries }); lastSig = sig; lastWriteAt = t;
+    } catch { /* disco indisponível: vale só nesta execução */ }
+  }
+
   // ---- uso REAL da conta no provedor (usage-api.js): inclui o que foi gasto fora do FORGE (terminal externo, navegador). Consulta em segundo plano, nunca bloqueia view() ----
   const apiOn = () => String(env()?.ORCH_LIMITS_API ?? '').trim().toLowerCase() !== 'off';
   const apiStates = new Map(); // chave -> { gen, pending, startedAt, nextAt, fails, okAt, data, reason }
   function apiOf(key, fetchIt) {
     if (!usageApi || !apiOn()) return null;
     const t = now();
-    const m = apiStates.get(key) ?? { gen: 0, pending: false, startedAt: 0, nextAt: 0, fails: 0, okAt: 0, data: null, reason: null };
+    const seed = lastKnown.get(key); // a última leitura gravada em disco (antes de reiniciar o app): vale como `ultima-leitura` até a 1ª consulta nova
+    const m = apiStates.get(key) ?? { gen: 0, pending: false, startedAt: 0, nextAt: 0, fails: 0, okAt: seed?.okAt ?? 0, data: seed ? { ok: true, planType: seed.planType, session: seed.session, week: seed.week } : null, reason: null, seeded: !!seed };
     apiStates.set(key, m);
     if (m.pending && t - m.startedAt >= API_TIMEOUT_MS) { m.gen++; m.pending = false; m.fails++; m.reason = 'erro'; m.nextAt = t + Math.min(apiTtlMs * 2 ** m.fails, API_MAX_BACKOFF_MS); } // consulta que nunca resolve: descarta (o resultado tardio é ignorado) e recua
     if (!m.pending && t >= m.nextAt) {
@@ -182,7 +220,7 @@ export function createRateLimits({ db, accounts = null, dir: dirIn, script: scri
       Promise.resolve().then(fetchIt).then(
         (r) => {
           if (gen !== m.gen) return;
-          if (r?.ok) { m.data = r; m.okAt = now(); m.fails = 0; m.reason = null; m.nextAt = now() + apiTtlMs; return; }
+          if (r?.ok) { m.data = r; m.okAt = now(); m.seeded = false; m.fails = 0; m.reason = null; m.nextAt = now() + apiTtlMs; saveLastKnown(); return; }
           m.fails++; m.reason = typeof r?.reason === 'string' ? r.reason : 'erro';
           const wait = m.reason === 'sem-credencial' || m.reason === 'token-expirado' ? apiTtlMs : m.reason === 'limitado' ? API_RATE_LIMITED_MS : Math.min(apiTtlMs * 2 ** m.fails, API_MAX_BACKOFF_MS); // recuo: erro/429 não vira martelada
           m.nextAt = now() + wait;
@@ -192,41 +230,74 @@ export function createRateLimits({ db, accounts = null, dir: dirIn, script: scri
     }
     return m;
   }
-  /** Janelas da última leitura da API, só se recente e ainda vigentes; senão null (cai nas fontes locais). */
-  function apiWindows(m, nowMs) {
-    if (!m?.data || nowMs - m.okAt >= apiStaleMs || nowMs < m.okAt - FUTURE_SKEW_MS) return null;
+  /**
+   * Última leitura da API da conta (fresca ou não) como candidata, só com as janelas ainda vigentes. Ela NÃO é descartada por idade: o provedor limita as consultas (429), o login vence até o CLI renovar
+   * (só acontece quando alguém usa o terminal) e o servidor reinicia; nesses casos o valor conhecido continua valendo (o uso só cresce dentro da janela) e `updatedAt` diz de quando ele é.
+   * `kind`: 'api' = leitura recente (< apiStaleMs, autoridade máxima); 'ultima-leitura' = mais velha, ou lida do disco depois de reiniciar.
+   */
+  function apiCand(m, nowMs) {
+    if (!m?.data || !m.okAt || nowMs < m.okAt - FUTURE_SKEW_MS) return null;
     const ok = (w) => (w && Date.parse(w.resetsAt) > nowMs ? w : null);
     const session = ok(m.data.session), week = ok(m.data.week);
-    return session || week ? { session, week, planType: m.data.planType ?? null, at: new Date(m.okAt).toISOString() } : null;
+    return session || week ? { kind: !m.seeded && nowMs - m.okAt < apiStaleMs ? 'api' : 'ultima-leitura', atMs: m.okAt, session, week, planType: m.data.planType ?? null } : null;
+  }
+
+  /**
+   * Por janela (5 h / semana), escolhe entre as candidatas: leitura recente da API vence; senão, a de janela mais nova (resetsAt maior); na MESMA janela (resetsAt a menos de 2 min: a API e a status line
+   * arredondam diferente) vale o MAIOR uso (dentro da janela ele só cresce; nunca se mostra menos do que já foi lido), e a medida mais recente desempata. Devolve as janelas, a origem (`kind`) e o instante da medida mais recente entre as escolhidas.
+   */
+  function merge(cands, nowMs) {
+    const out = { session: null, week: null, kind: null, atMs: 0 };
+    for (const key of ['session', 'week']) {
+      let best = null;
+      for (const c of cands) {
+        const w = c?.[key]; if (!w || !(Date.parse(w.resetsAt) > nowMs)) continue;
+        if (!best) { best = { w, c }; continue; }
+        if (best.c.kind === 'api' && c.kind !== 'api') continue;
+        if (c.kind === 'api' && best.c.kind !== 'api') { best = { w, c }; continue; }
+        const dr = Date.parse(w.resetsAt) - Date.parse(best.w.resetsAt);
+        if (Math.abs(dr) > SAME_WINDOW_MS ? dr > 0 : w.usedPct > best.w.usedPct || (w.usedPct === best.w.usedPct && c.atMs > best.c.atMs)) best = { w, c };
+      }
+      if (best) { out[key] = best.w; if (best.c.atMs >= out.atMs) { out.atMs = best.c.atMs; out.kind = best.c.kind; } }
+    }
+    return out;
   }
 
   /** O dado `w` (lido de um arquivo com `at`) é mais novo que o melhor até agora? Pela janela: maior resetsAt; empate: maior usedPct (só cresce na janela); último desempate: `at`. */
   const newer = (w, atMs, best) => !best || w.resetsAt > best.w.resetsAt || (w.resetsAt === best.w.resetsAt && (w.usedPct > best.w.usedPct || (w.usedPct === best.w.usedPct && atMs > best.atMs)));
+
+  /** Candidata local do Claude: o dado mais novo dos arquivos da status line, por janela. null sem dado. */
+  function statusLineCand(id, nowMs) {
+    let bestS = null, bestW = null;
+    for (const sid of sessionsOf(id)) {
+      const d = readSessionFile(sid);
+      if (!d || d.atMs > nowMs + FUTURE_SKEW_MS) continue;
+      if (d.fiveHour && d.fiveHour.resetsAt * 1000 > nowMs && newer(d.fiveHour, d.atMs, bestS)) bestS = { atMs: d.atMs, w: d.fiveHour };
+      if (d.sevenDay && d.sevenDay.resetsAt * 1000 > nowMs && newer(d.sevenDay, d.atMs, bestW)) bestW = { atMs: d.atMs, w: d.sevenDay };
+    }
+    const session = bestS ? publicWindow(bestS.w, SESSION_WINDOW_MINUTES, nowMs) : null, week = bestW ? publicWindow(bestW.w, WEEK_WINDOW_MINUTES, nowMs) : null;
+    return session || week ? { kind: 'statusline', atMs: Math.max(session ? bestS.atMs : 0, week ? bestW.atMs : 0), session, week } : null;
+  }
 
   function claudeAccount(id, label, nowMs) {
     const acc = { id, label, connected: null, plan: null, source: 'sem-dados', session: null, week: null, updatedAt: null };
     try {
       if (accounts?.statusOf) { const m = connectedOf(`claude:${id}`, async () => { const s = await accounts.statusOf(id); return { connected: s?.checked ? s.loggedIn : null, plan: s?.subscriptionType }; }); acc.connected = m.connected; acc.plan = m.plan; }
     } catch { /* informativo */ }
-    try { // 1) uso real da conta (todos os clientes), se o login permitir
-      const api = apiWindows(apiOf(`claude:${id}`, () => usageApi.claude(id)), nowMs);
-      if (api) { acc.source = 'api'; acc.session = api.session; acc.week = api.week; acc.updatedAt = api.at; if (!acc.plan) acc.plan = api.planType; return acc; }
-    } catch { /* cai nas fontes locais */ }
+    let mode = 'on';
     try {
-      const mode = modeOf(id);
-      if (mode === 'off') { acc.source = 'desligado'; return acc; }
-      if (mode === 'own') { acc.source = 'statusline-propria'; return acc; }
-      let bestS = null, bestW = null;
-      for (const sid of sessionsOf(id)) {
-        const d = readSessionFile(sid);
-        if (!d || d.atMs > nowMs + FUTURE_SKEW_MS) continue;
-        if (d.fiveHour && d.fiveHour.resetsAt * 1000 > nowMs && newer(d.fiveHour, d.atMs, bestS)) bestS = { atMs: d.atMs, w: d.fiveHour };
-        if (d.sevenDay && d.sevenDay.resetsAt * 1000 > nowMs && newer(d.sevenDay, d.atMs, bestW)) bestW = { atMs: d.atMs, w: d.sevenDay };
+      mode = modeOf(id);
+      const cands = [];
+      try { const a = apiCand(apiOf(`claude:${id}`, () => usageApi.claude(id)), nowMs); if (a) cands.push(a); } catch { /* sem API: valem as fontes locais */ } // uso real da conta (todos os clientes), se o login permitir
+      if (mode === 'on') { try { const l = statusLineCand(id, nowMs); if (l) cands.push(l); } catch { /* informativo */ } }
+      const m = merge(cands, nowMs);
+      if (m.session || m.week) {
+        acc.source = m.kind; acc.session = m.session; acc.week = m.week; acc.updatedAt = m.atMs > 0 ? new Date(m.atMs).toISOString() : null;
+        const a = cands.find((c) => c.kind !== 'statusline'); if (!acc.plan && a?.planType) acc.plan = a.planType;
+        return acc;
       }
-      acc.session = bestS ? publicWindow(bestS.w, SESSION_WINDOW_MINUTES, nowMs) : null;
-      acc.week = bestW ? publicWindow(bestW.w, WEEK_WINDOW_MINUTES, nowMs) : null;
-      if (acc.session || acc.week) { acc.source = 'statusline'; acc.updatedAt = new Date(Math.max(acc.session ? bestS.atMs : 0, acc.week ? bestW.atMs : 0)).toISOString(); }
-    } catch { acc.source = 'sem-dados'; acc.session = null; acc.week = null; acc.updatedAt = null; }
+    } catch { acc.session = null; acc.week = null; acc.updatedAt = null; }
+    acc.source = mode === 'off' ? 'desligado' : mode === 'own' ? 'statusline-propria' : 'sem-dados';
     return acc;
   }
 
@@ -236,15 +307,16 @@ export function createRateLimits({ db, accounts = null, dir: dirIn, script: scri
       if (typeof codexAuth === 'function') { const m = connectedOf('codex', async () => { const a = await codexAuth(); return { connected: a?.known === true && typeof a.loggedIn === 'boolean' ? a.loggedIn : null }; }); acc.connected = m.connected; }
     } catch { /* informativo */ }
     try {
-      const api = apiWindows(apiOf('codex', () => usageApi.codex()), nowMs);
-      if (api) { acc.source = 'api'; acc.plan = cleanPlan(api.planType) ?? null; acc.session = api.session; acc.week = api.week; acc.updatedAt = api.at; return acc; }
-    } catch { /* cai nos rollouts */ }
-    try {
-      const r = codex.read();
-      if (r) {
-        acc.plan = cleanPlan(r.planType) ?? null;
-        if (r.session || r.week) { acc.source = 'rollout'; acc.session = r.session ?? null; acc.week = r.week ?? null; acc.updatedAt = typeof r.at === 'string' ? r.at : null; }
-      }
+      const cands = []; let rolloutPlan = null;
+      try { const a = apiCand(apiOf('codex', () => usageApi.codex()), nowMs); if (a) cands.push(a); } catch { /* cai nos rollouts */ }
+      try {
+        const r = codex.read();
+        if (r) { rolloutPlan = cleanPlan(r.planType) ?? null; const at = Date.parse(r.at); if (r.session || r.week) cands.push({ kind: 'rollout', atMs: Number.isFinite(at) ? at : 0, session: r.session ?? null, week: r.week ?? null }); }
+      } catch { /* informativo */ }
+      const a = cands.find((c) => c.kind !== 'rollout');
+      acc.plan = cleanPlan(a?.planType) ?? rolloutPlan;
+      const m = merge(cands, nowMs);
+      if (m.session || m.week) { acc.source = m.kind; acc.session = m.session; acc.week = m.week; acc.updatedAt = m.atMs > 0 ? new Date(m.atMs).toISOString() : null; }
     } catch { acc.source = 'sem-dados'; acc.session = null; acc.week = null; acc.updatedAt = null; }
     return acc;
   }
@@ -253,7 +325,7 @@ export function createRateLimits({ db, accounts = null, dir: dirIn, script: scri
   function build() {
     const nowMs = now();
     const claude = [];
-    let list = []; try { list = accounts?.list?.() ?? []; } catch { list = []; }
+    let list = [], listOk = true; try { list = accounts?.list?.() ?? []; } catch { list = []; listOk = false; }
     let available = true; try { available = accounts?.available ? accounts.available() !== false : true; } catch { available = true; } // sem Claude Code instalado, não há conta a mostrar
     if (available) {
       claude.push(claudeAccount(SYSTEM_ID, 'Sistema', nowMs));
@@ -261,7 +333,12 @@ export function createRateLimits({ db, accounts = null, dir: dirIn, script: scri
     }
     const live = new Set(['codex', ...claude.map((a) => `claude:${a.id}`)]);
     for (const k of [...conn.keys()]) if (!live.has(k)) conn.delete(k); // conta removida: esquece o estado de login dela
-    for (const k of [...apiStates.keys()]) if (!live.has(k)) apiStates.delete(k);
+    if (listOk && available) { // só com a lista de contas lida de verdade: uma falha passageira não apaga as leituras gravadas
+      let dropped = false;
+      for (const k of [...apiStates.keys()]) if (!live.has(k)) { apiStates.delete(k); dropped = true; }
+      for (const k of [...lastKnown.keys()]) if (!live.has(k)) { lastKnown.delete(k); dropped = true; } // conta removida: some também a leitura gravada
+      if (dropped) saveLastKnown();
+    }
     return { updatedAt: new Date(nowMs).toISOString(), providers: [{ provider: 'claude', label: 'Claude Code', accounts: claude }, { provider: 'codex', label: 'Codex CLI', accounts: [codexAccount(nowMs)] }] };
   }
 
@@ -282,7 +359,7 @@ export function createRateLimits({ db, accounts = null, dir: dirIn, script: scri
       let removed = 0;
       try {
         for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-          if (!e.isFile() || !/^[0-9a-f-]{36}\.json(?:\.[0-9a-f]+\.tmp)?$/i.test(e.name)) continue;
+          if (!e.isFile() || !/^(?:[0-9a-f-]{36}\.json(?:\.[0-9a-f]+\.tmp)?|last-known\.json\.[0-9a-f]+\.tmp)$/i.test(e.name)) continue;
           const f = path.join(dir, e.name);
           try { if (now() - fs.lstatSync(f).mtimeMs > STALE_FILE_MS) { fs.rmSync(f, { force: true }); removed++; } } catch { /* próximo */ }
         }

@@ -1,7 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import ProviderLogo from './ProviderLogo.jsx';
-import { WINDOWS, DASH, usageColor, usageBand, providerSummary, resetLabel, fmtResetLong, fmtResetAt, sourceNote, clampPct } from '../limits-view.js';
+import { WINDOWS, DASH, usageColor, usageBand, providerSummary, resetLabel, fmtResetLong, fmtResetAt, sourceNote, staleNote, clampPct } from '../limits-view.js';
 import '../limits.css';
 
 const W = 350, GAP = 6, EDGE = 8;
@@ -60,6 +60,7 @@ function ProviderPanel({ sum, now, anchor, onClose }) {
             <li key={a.id} className="lm-row">
               <div className="lm-row-h"><b>{a.index !== null && sum.accounts.length > 1 ? `Conta ${a.index} · ${a.label}` : a.label}</b>{a.plan && <span className="lm-plan">{a.plan}</span>}</div>
               {note ? <p className="small dim lm-note">{note}</p> : WINDOWS.map((w) => <WindowBlock key={w.key} win={w} data={a[w.key]} now={now} />)}
+              {!note && staleNote(a, now) && <p className="small dim lm-note">{staleNote(a, now)}</p>}
             </li>
           );
         })}
