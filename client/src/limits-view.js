@@ -66,7 +66,7 @@ const cleanWindow = (w, now) => {
   if (pct === null || !Number.isFinite(at) || at <= now) return null; // reset já passou: o dado velho não vale como atual
   return { usedPct: pct, resetsAt: new Date(at).toISOString(), windowMinutes: isNum(w.windowMinutes) ? w.windowMinutes : null };
 };
-const SOURCES = new Set(['api', 'statusline', 'rollout', 'statusline-propria', 'desligado', 'sem-dados']);
+const SOURCES = new Set(['api', 'ultima-leitura', 'statusline', 'rollout', 'statusline-propria', 'desligado', 'sem-dados']);
 
 /**
  * Normaliza a resposta de /api/limits. Servidor antigo (sem a rota) ou resposta inválida = null (a barra mostra "—").
@@ -110,6 +110,20 @@ export function providerSummary(provider) {
 export function resetLabel(account, now = Date.now()) {
   const w = account?.critical ? account[account.critical] : null;
   return w ? fmtReset(w.resetsAt, now) ?? DASH : DASH;
+}
+
+/** Idade de uma leitura: "agora há pouco" até 1 min; depois minutos, horas ou dias. null se o instante é inválido ou futuro. */
+export function fmtAgo(iso, now = Date.now()) {
+  const t = Date.parse(iso); if (!Number.isFinite(t) || t > now + 60_000) return null;
+  const m = Math.floor((now - t) / 60_000);
+  return m < 1 ? 'menos de 1 min' : m < 60 ? `${m} min` : m < 1440 ? `${Math.floor(m / 60)} h` : `${Math.floor(m / 1440)} d`;
+}
+export const STALE_READING_MS = 5 * 60_000;
+/** Aviso quando as barras vêm de uma leitura que não é recente (o provedor não respondeu agora, o login venceu ou o app acabou de abrir): o valor continua valendo, e a idade aparece. */
+export function staleNote(account, now = Date.now()) {
+  if (!account || (!account.session && !account.week) || account.source !== 'ultima-leitura') return null; // só a leitura guardada/antiga do provedor: status line e rollout de sessão ociosa não são "o provedor não respondeu"
+  const t = Date.parse(account.updatedAt); if (!Number.isFinite(t) || now - t < STALE_READING_MS) return null;
+  const ago = fmtAgo(account.updatedAt, now); return ago ? `Última leitura há ${ago}; atualiza sozinha assim que o provedor responder (o valor não zera ao reabrir o app).` : null;
 }
 
 /** Explica por que uma conta está sem barras (texto do painel). */

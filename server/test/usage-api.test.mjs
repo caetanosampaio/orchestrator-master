@@ -104,14 +104,14 @@ test('integração: respeita o intervalo (TTL) e reconsulta depois dele, acompan
   w.clock.t -= 0; assert.equal(acc(w.rl.view(), 'claude', 'system').session.usedPct, 45);
 });
 
-test('integração: falha/429 recua (sem martelar), cai nas fontes locais e volta quando a API volta; dado velho (>5 min) não vale', async () => {
+test('integração: falha/429 recua (sem martelar), cai nas fontes locais e volta quando a API volta; dado velho (>5 min) vira última leitura (não é descartado)', async () => {
   let mode = 'fail'; const w = world({ claude: () => (mode === 'fail' ? { ok: false, reason: 'rede' } : mode === 'limit' ? { ok: false, reason: 'limitado' } : ok()) });
   w.rl.view(); await flush(); assert.equal(acc(w.rl.view(), 'claude', 'system').source, 'sem-dados');
   w.clock.t += 31_000; w.rl.view(); await flush(); assert.equal(w.calls.claude.length, 1, 'recuo exponencial: 31 s depois ainda não reconsulta');
   w.clock.t += 120_000; mode = 'ok'; w.rl.view(); await flush(); assert.equal(w.calls.claude.length, 2);
   assert.equal(acc(w.rl.view(), 'claude', 'system').source, 'api');
-  mode = 'fail'; w.clock.t += 6 * 60_000; // leitura mais velha que 5 min deixa de valer
-  assert.notEqual(acc(w.rl.view(), 'claude', 'system').source, 'api');
+  mode = 'fail'; w.clock.t += 6 * 60_000; // leitura mais velha que 5 min deixa de ser "api" (leitura recente), mas o valor continua como última leitura
+  assert.equal(acc(w.rl.view(), 'claude', 'system').source, 'ultima-leitura'); assert.equal(acc(w.rl.view(), 'claude', 'system').session.usedPct, 12);
   const w2 = world({ claude: () => ({ ok: false, reason: 'limitado' }) }); w2.rl.view(); await flush(); w2.clock.t += 200_000; w2.rl.view(); await flush(); assert.equal(w2.calls.claude.length, 1, '429 espera ~5 min');
 });
 
