@@ -10,7 +10,8 @@ const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'orch-a
 process.env.ORCH_DATA_DIR = path.join(tmp, 'data');
 const { acquireInstanceLock, lockPathFor } = await import('../instance-lock.js');
 const { createTerminalManager } = await import('../terminals.js');
-const { createExecutor, CLAUDE_ARGS } = await import('../executor/index.js');
+const { createExecutor } = await import('../executor/index.js');
+const { executorArgs } = await import('../exec-profile.js');
 const { createGitProbe, GIT_MISSING } = await import('../prereqs.js');
 const realPath = process.env.PATH ?? process.env.Path;
 after(() => { process.env.PATH = realPath; fs.rmSync(tmp, { recursive: true, force: true }); });
@@ -106,7 +107,8 @@ process.stdin.on('end', () => { fs.writeFileSync(${JSON.stringify(argsFile)}, JS
   const h = ex.start({ missionId: 'm', taskId: 't', cwd: tmp, prompt, onLine: () => {} });
   const r = await h.done;
   assert.equal(r.status, 'completed', r.error);
-  assert.deepEqual(JSON.parse(fs.readFileSync(argsFile, 'utf8')), CLAUDE_ARGS, 'o argv é exatamente a lista fixa');
+  // O perfil padrão leva regras `Bash(npm test:*)` (parênteses, espaço e asterisco): no wrapper .cmd elas só passam ENTRE ASPAS DUPLAS (claude-cli.js) e chegam inteiras ao argv.
+  assert.deepEqual(JSON.parse(fs.readFileSync(argsFile, 'utf8')), executorArgs('default'), 'o argv do createExecutor() padrão é exatamente o do perfil padrão (executorArgs)');
   assert.equal(fs.readFileSync(stdinFile, 'utf8'), prompt, 'o prompt vai por stdin, intacto');
 
   // modelo/esforço do Planner (valores válidos) passam; qualquer coisa fora da lista permitida é recusada ANTES de iniciar

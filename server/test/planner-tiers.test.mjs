@@ -10,6 +10,7 @@ const FAKE_ARGV = path.join(HERE, 'fake-argv-cli.mjs'); // devolve os argumentos
 const FAKE_CLI = path.join(HERE, 'fake-cli.mjs');        // comportamento conforme "MODE:x" no prompt (sleep = fica vivo até ser interrompido)
 const { PLANNER_ARGS, plannerArgs, createClaudePlanner } = await import('../planner.js');
 const { createExecutor, CLAUDE_ARGS } = await import('../executor/index.js');
+const { executorArgs } = await import('../exec-profile.js');
 
 const viaArgv = { command: process.execPath, prefixArgs: [FAKE_ARGV] };
 const viaFake = { command: process.execPath, prefixArgs: [FAKE_CLI] };
@@ -73,7 +74,9 @@ test('describeTier: modelo/esforço SOLICITADOS (null = padrão da CLI); só com
 });
 
 test('o Executor continua inalterado: argumentos fixos, sem --model/--effort, e `args` por chamada só quando pedido', async () => {
-  assert.deepEqual(CLAUDE_ARGS, ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'acceptEdits', '--permission-prompts', 'none', '--no-session-persistence', '--strict-mcp-config', '--setting-sources', 'user', '--tools', 'Read,Edit,Write,Glob,Grep']);
+  assert.deepEqual(CLAUDE_ARGS, executorArgs('default'), 'os argumentos do Executor são os do perfil padrão (acceptEdits + comandos pré-aprovados)');
+  assert.deepEqual(CLAUDE_ARGS.slice(0, 12), ['-p', '--output-format', 'stream-json', '--verbose', '--permission-prompts', 'none', '--no-session-persistence', '--strict-mcp-config', '--setting-sources', 'user', '--permission-mode', 'acceptEdits']);
+  assert.equal(CLAUDE_ARGS.includes('--tools'), false);
   createClaudePlanner({ ...CFG, routing: 'on' }); // criar um Planner configurado não mexe nos argumentos do Executor
   assert.equal(CLAUDE_ARGS.includes('--model') || CLAUDE_ARGS.includes('--effort'), false);
   const configured = ['--so-para-teste', 'a'];

@@ -1,0 +1,29 @@
+/* FORGE — botão de acompanhamento ao vivo (página Missões). Prefixo `mi-live`. Mesma linguagem de missions.css: preto, hairline, mono, vermelho chapado
+   só na ação primária, SEM brilho. As variáveis --hair/--mute/--red-t vêm de .mi-page (com reserva aqui). Botões reutilizam .mi-btn. */
+
+.mi-live { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; padding: 8px 0 8px 14px; border-left: 2px solid var(--hair-2, rgba(255, 255, 255, .14)); font-family: var(--mono, monospace); }
+.mi-live-row { display: flex; align-items: center; justify-content: space-between; gap: 10px 16px; flex-wrap: wrap; }
+.mi-live-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mi-live .mi-btn { min-height: 30px; height: auto; padding-top: 5px; padding-bottom: 5px; white-space: normal; text-align: center; }
+
+.mi-live-note { margin: 0; color: var(--mute, #7c8494); font-size: 11.5px; line-height: 1.55; overflow-wrap: anywhere; }
+
+.mi-live-link { display: flex; flex-direction: column; gap: 5px; }
+.mi-live-state { display: flex; align-items: center; gap: 8px; margin: 0; color: #d4d4d8; font-size: 12px; line-height: 1.5; }
+.mi-live-dot { flex: none; width: 7px; height: 7px; background: #22c55e; }
+.mi-live-state.is-expired .mi-live-dot { background: transparent; border: 1px solid #6b7280; box-sizing: border-box; }
+.mi-live-state.is-expired { color: var(--mute-2, #9ca3af); }
+.mi-live-lab { color: var(--mute-2, #9ca3af); font-size: 10.5px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; }
+.mi-live-url { width: 100%; box-sizing: border-box; height: 30px; padding: 0 9px; border: 1px solid var(--hair-2, rgba(255, 255, 255, .14)); border-radius: 6px; background: #000; color: #d4d4d8; font: 12px var(--mono, monospace); text-overflow: ellipsis; }
+.mi-live-url:focus-visible, .mi-live .mi-btn:focus-visible { outline: 1px dashed var(--brand, #c2555c); outline-offset: 2px; }
+
+.mi-live-msg { margin: 0; min-height: 0; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.mi-live-msg:empty { display: none; }
+.mi-live-msg.is-ok { color: var(--mute-2, #9ca3af); }
+.mi-live-msg.is-error { color: var(--red-t, #c2555c); }
+
+@media (max-width: 520px) { /* 320-390px: botões empilham em largura total, sem rolagem horizontal */
+  .mi-live-actions { width: 100%; }
+  .mi-live-actions .mi-btn { flex: 1 1 100%; }
+}
+@media (prefers-reduced-motion: reduce) { .mi-live *, .mi-live *::before, .mi-live *::after { animation: none !important; transition-duration: .01ms !important; } }

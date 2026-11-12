@@ -3,6 +3,7 @@ import { Icon } from './ui.jsx';
 import ProviderLogo from './ProviderLogo.jsx';
 import { STATE_META, NODE_STATE_LABEL, missionState, missionProgress, missionDuration, fmtDuration, missionUsage, missionTeam, cycleActions, DASH } from '../missions-view.js';
 import { fmtUsd, fmtTokens } from '../usage-view.js';
+import { executorSeal } from '../permission-profile.js';
 
 const CYCLE_LABEL = { planning: 'planejando', running: 'em execução', blocked: 'bloqueado', completed: 'concluído', cancelled: 'cancelado', limit_reached: 'no limite de rodadas' };
 const fmtDate = (iso) => { const t = Date.parse(iso ?? ''); return Number.isFinite(t) ? new Date(t).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : DASH; };
@@ -74,6 +75,7 @@ export default function MissionPanel({ mission, workspace, now, workflow, select
   const act = cycleActions(mission), c = mission.cycle;
   const steps = (workflow?.nodes ?? []).filter((n) => n.kind === 'step' || n.kind === 'task'); // etapa do ciclo ou tarefa do Maestro (squad)
   const working = state === 'working';
+  const seal = executorSeal(mission, workspace); // perfil do Executor (rodada gravada ou, sem rodada, o atual do workspace)
   return (
     <header className={`mi-head st-${state}`} aria-label={`Missão ${mission.title}`}>
       <div className="mi-head-row">
@@ -93,6 +95,7 @@ export default function MissionPanel({ mission, workspace, now, workflow, select
       <p className="mi-meta">
         <span title={workspace?.path}>{workspace ? (workspace.displayName || workspace.name) : 'sem workspace'}</span>
         {c && <span>ciclo {CYCLE_LABEL[c.status] ?? c.status}</span>}
+        {seal && <span className={`pp-seal pp-seal-${seal.tone}`} title={seal.title} aria-label={`${seal.label}. ${seal.title}`}>{seal.glyph && <b aria-hidden="true">{seal.glyph}</b>}{seal.label}</span>}
         <span>criada {fmtDate(mission.createdAt)}</span>
         <span className="mi-meta-dur">{fmtDuration(dur)}{working && dur !== null && <i className="mi-live" aria-hidden="true" />}</span>
       </p>

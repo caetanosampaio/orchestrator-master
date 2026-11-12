@@ -1,21 +1,25 @@
 // Política de execução e aprovações (M9). Regras PURAS e centralizadas: nada aqui executa processos, grava o banco nem confia em quem pediu a ação.
 //
-// O que o sistema realmente faz (e, portanto, o que a política classifica): o Executor só LÊ, CRIA e EDITA arquivos dentro do workspace (Read, Edit, Write, Glob, Grep;
-// sem shell, rede, instalação, exclusão, commit ou deploy) e o orquestrador roda scripts de verificação já aprovados por um humano (verify.js: aprovação ligada ao hash
-// do script; é o controle existente para "executar comandos" e não é duplicado aqui).
+// A política depende do PERFIL de permissão do workspace (exec-profile.js, `profileOf(workspace)`; só o usuário muda o perfil, nunca o Planner, o chat nem o Maestro):
+//   default : a barreira REAL é o que a CLI do Executor recebe (`acceptEdits` + `--allowedTools` com a lista pré-aprovada + `--disallowedTools` da rede; exec-profile.js). Esta política é
+//             só aviso antecipado: nega, ANTES de gastar uma execução, o que a CLI negaria de qualquer jeito (instalar, push/deploy, commit, git que descarta trabalho, curl/rm -rf...).
+//   bypass  : o Executor roda com `bypassPermissions`: NENHUMA barreira da CLI. A política vira SÓ aviso antecipado por heurística de TEXTO sobre o que a etapa DECLARA; ela NÃO é
+//             barreira (o agente pode fazer o que o texto não menciona, ou descrever de outro jeito). Pede aprovação humana para o que é arriscado e nega só o intocável.
+// Nos DOIS perfis: arquivos sensíveis/de segredo e sobrescrita integral exigem aprovação humana; .git, o estado do orquestrador e ação não classificável são sempre negados.
 //
 // Decisões, da menos para a mais restritiva (a pior vence):
-//   allow             : ler/criar/editar arquivos comuns do workspace.
-//   approval_required : alteração de arquivos que mudam o que o projeto instala ou executa (manifestos, CI, Docker, hooks), arquivos de segredos, sobrescrita integral.
-//   deny              : o que o Executor NÃO tem como fazer (shell, instalar, publicar, commit/push, excluir, rede), caminhos fora do workspace, .git e o estado do orquestrador.
+//   allow             : ler/criar/editar arquivos comuns do workspace (e, em bypass, shell/rede/commit comuns).
+//   approval_required : manifestos, CI, Docker, hooks, segredos, sobrescrita integral (os dois perfis). Só em bypass: caminho fora do workspace e instalar dependências, git destrutivo e
+//                       efeitos externos (push, deploy, publicar). Instalar e sobrescrita aceitam autorização prévia no plano; o resto, só aprovação individual na hora (preAuthProblem).
+//   deny              : sempre .git, estado do orquestrador e ação não classificável; no perfil padrão também o que a CLI não permite (ver acima) e caminhos fora do workspace.
 //
 // Limite honesto: a política avalia o ESCOPO DECLARADO da etapa (título, instruções, critérios e expectedFiles), não cada chamada de ferramenta do Executor durante a
-// execução (a CLI não oferece esse gancho aqui). As regras de texto são heurísticas de aviso antecipado; a barreira real contra shell/rede/exclusão é a lista fixa de
-// ferramentas do Executor (executor/index.js).
+// execução (a CLI não oferece esse gancho aqui). As regras de texto têm falsos positivos e negativos (veja os testes); o scope.js confere depois o que mudou de fato.
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { safeRelPath } from './evidence.js';
+import { safeRelPath, isGitName } from './evidence.js';
+import { profileOf } from './exec-profile.js';
 
 export const POLICY_VERSION = 1;
 export const DECISIONS = ['allow', 'approval_required', 'deny'];
@@ -52,14 +56,39 @@ const clausesOf = (text) => text.split(CLAUSE_SPLIT).filter((c) => c && c.trim()
 /** Há um verbo de escrita NÃO negado na oração? */
 const writes = (clause) => [...clause.matchAll(WRITE_VERB)].some((v) => !NEG_CTX.test(clause.slice(0, v.index)));
 
-// Capacidades que o Executor NÃO tem: pedir isso é pedir o impossível, e "aprovar" seria simular uma proteção. Cada item: [rótulo, regex].
-const UNSUPPORTED = [
-  ['instalar dependências', /\b(?:npm|pnpm|yarn|bun|pip3?|poetry|cargo)\s+(?:install|add|i|ci)\b|\binstal(?:e|ar|ação|acao)\b[^.\n]{0,30}\b(?:depend[eê]ncias?|pacotes?|packages?|dependencies)\b/i],
-  ['publicar, fazer deploy, commit ou push', /\bgit\s+(?:push|commit|reset|clean|rebase|merge|checkout|stash)\b|\bnpm\s+publish\b|\bdocker\s+push\b|\bkubectl\b|\bterraform\s+apply\b|\b(?:fazer|realizar|executar|rodar)\s+(?:o\s+|um\s+)?(?:deploy|commit|push)\b|\bdeploy(?:ar)?\s+(?:em|para|na|no)\b|\bpublicar\b[^.\n]{0,30}\b(?:site|app|pacote|package|produ[cç][aã]o)\b|\bpublish\b/i],
-  ['executar comandos de shell', /\b(?:execut(?:e|ar)|rod(?:e|ar)|run)\b[^.\n]{0,30}\b(?:comandos?|commands?|shell|terminal|bash|powershell|cmd)\b|\b(?:curl|wget|sudo|Invoke-WebRequest|Remove-Item)\b|\brm\s+-[a-z]*[rf]|\brmdir\b|\bdel\s+\//i],
-  ['acessar a rede', /\b(?:baix(?:ar|e)|download|acessar|acesse|fetch)\b[^.\n]{0,60}https?:\/\//i],
-  ['excluir arquivos ou pastas', /\b(?:apag(?:ar|ue|ando)|exclu(?:ir|a|indo)|delet(?:ar|e)|deleting)\b[^.\n]{0,25}\b(?:arquivos?|pastas?|diret[oó]rios?|files?|folders?|director(?:y|ies))\b/i],
+// Pedidos que o perfil PADRÃO não permite (a CLI os negaria sozinha): pedir isso é pedir o impossível, e "aprovar" seria simular uma proteção. Cada item: [rótulo, regex].
+// Shell genérico ("rode o comando npm test") NÃO está aqui: no perfil padrão a CLI pré-aprova testes/verificações e o resto é negado por ela; só os binários perigosos são vetados antes.
+const RE_INSTALL = /\b(?:npm|pnpm|yarn|bun|pip3?|poetry|cargo)\s+(?:install|add|i|ci)\b|\binstal(?:e|ar|ação|acao)\b[^.\n]{0,30}\b(?:depend[eê]ncias?|pacotes?|packages?|dependencies)\b/i;
+const RE_VCS_DESTRUCTIVE = /\bgit\s+(?:reset|clean|rebase|merge|checkout|stash)\b/i;
+const RE_COMMIT = /\bgit\s+commit\b|\b(?:fazer|realizar|executar|rodar)\s+(?:o\s+|um\s+)?commit\b/i;
+const RE_EXTERNAL = /\bgit\s+push\b|\bnpm\s+publish\b|\bdocker\s+push\b|\bkubectl\b|\bterraform\s+apply\b|\b(?:fazer|realizar|executar|rodar)\s+(?:o\s+|um\s+)?(?:deploy|push)\b|\bdeploy(?:ar)?\s+(?:em|para|na|no)\b|\bpublicar\b[^.\n]{0,30}\b(?:site|app|pacote|package|produ[cç][aã]o)\b|\bpublish\b/i;
+const RE_SHELL_DANGER = /\b(?:curl|wget|sudo|Invoke-WebRequest|Remove-Item)\b|\brm\s+-[a-z]*[rf]|\brmdir\b|\bdel\s+\//i;
+const RE_NETWORK = /\b(?:baix(?:ar|e)|download|acessar|acesse|fetch)\b[^.\n]{0,60}https?:\/\//i;
+const RE_DELETE = /\b(?:apag(?:ar|ue|ando)|exclu(?:ir|a|indo)|delet(?:ar|e)|deleting)\b[^.\n]{0,25}\b(?:arquivos?|pastas?|diret[oó]rios?|files?|folders?|director(?:y|ies))\b/i;
+const joinRe = (...res) => new RegExp(res.map((r) => r.source).join('|'), 'i');
+const DEFAULT_DENY = [
+  ['instalar dependências', RE_INSTALL, 'O perfil padrão não pré-aprova instalação de dependências: ligue o modo sem confirmação ou faça você mesmo.'],
+  ['publicar, fazer deploy, commit ou push', joinRe(RE_VCS_DESTRUCTIVE, RE_COMMIT, RE_EXTERNAL)],
+  ['executar comandos perigosos (curl, wget, sudo, Invoke-WebRequest, Remove-Item, rm -rf, rmdir)', RE_SHELL_DANGER],
+  ['acessar a rede', RE_NETWORK],
+  ['excluir arquivos ou pastas', RE_DELETE],
 ];
+/** Manifestos e lockfiles da raiz que uma instalação de dependências altera; `dependency_install` lista os que existem e o ciclo os aceita no controle de escopo depois da aprovação. */
+export const DEPENDENCY_FILES = Object.freeze(['package.json', 'package-lock.json', 'npm-shrinkwrap.json', 'yarn.lock', 'pnpm-lock.yaml', 'bun.lockb', 'requirements.txt', 'Pipfile', 'Pipfile.lock', 'poetry.lock', 'pyproject.toml', 'go.mod', 'go.sum', 'Cargo.toml', 'Cargo.lock']);
+// Caminho inválido que uma PESSOA consegue avaliar ao aprovar (absoluto, unidade, ".."); lixo (caractere de controle, curinga, comprimento) não é aprovável.
+const approvableOutside = (raw) => { const s = typeof raw === 'string' ? raw.trim().replace(/\\/g, '/') : ''; return !!s && s.length <= 200 && !/[\u0000-\u001f*?<>|"]/.test(s) && (s.startsWith('/') || /^[A-Za-z]:/.test(s) || s.split('/').includes('..')); }; // eslint-disable-line no-control-regex
+const hasGitSegment = (raw) => typeof raw === 'string' && raw.replace(/\\/g, '/').split('/').some((x) => isGitName(x));
+
+/** Texto (PT-BR) da política vigente para o prompt do Planner e do chat: o que é bloqueado e o que exige aprovação humana, por perfil. Só descreve; quem decide é evaluateTask. */
+export function policyPromptText(profile) {
+  if (profile === 'bypass') {
+    return 'POLÍTICA DO SERVIDOR (fixa; você não pode alterá-la nem conceder aprovações): etapas que mexam na pasta .git, no estado interno do orquestrador ou não possam ser classificadas são BLOQUEADAS e voltam como falha; '
+      + 'EXIGEM aprovação humana antes de rodar (nada disso é concedido por você nem pela aprovação do plano): manifestos/lockfiles, CI, Docker, hooks, arquivos de segredos (.env), sobrescrita de arquivos por inteiro, caminhos fora do workspace, '
+      + 'instalar dependências (esta pode ser autorizada ao aprovar o plano), git que descarta trabalho (reset, clean, checkout, rebase, merge, stash) e efeitos externos (push, deploy, publicar, docker push, kubectl, terraform apply; só aprovação individual). Shell, rede e commit comuns não pedem aprovação.';
+  }
+  return 'POLÍTICA DO SERVIDOR (fixa; você não pode alterá-la nem conceder aprovações): etapas que peçam instalar dependências, publicar/deploy, commit/push, git que descarta trabalho (reset, clean, checkout, rebase, merge, stash), curl/wget/sudo, apagar arquivos ou pastas, acessar a rede ou usar caminhos fora do workspace são BLOQUEADAS e voltam como falha; '
+    + 'etapas que alterem manifestos/lockfiles, CI, Docker, hooks, arquivos de segredos (.env) ou sobrescrevam arquivos por inteiro EXIGEM aprovação humana antes de rodar.';
+}
 const NEGATION = /\b(n[aã]o|nunca|sem|jamais|never|without|don'?t|do not)\b[^.\n]*$/i; // "não faça commit" não é um pedido de commit
 
 const normText = (s) => String(s ?? '').replace(/\\/g, '/');
@@ -73,6 +102,7 @@ function asks(re, text) {
 /** @returns {{decision:'allow'|'approval_required'|'deny', rules:object[], summary:{what:string, why:string[], impact:string[]}}} */
 export function evaluateTask(action, { workspace = null, protectedDirs = [], exists = null } = {}) {
   const rule = (id, decision, reason, impact, subjects) => ({ id, decision, reason, impact, ...(subjects?.length ? { subjects } : {}) });
+  const profile = profileOf(workspace), bypass = profile === 'bypass'; // fail-safe: qualquer coisa que não seja exatamente 'bypass' é o perfil padrão
   const wsPath = workspace?.path;
   const there = exists ?? ((rel) => { try { return !!wsPath && fs.existsSync(path.join(wsPath, rel)); } catch { return false; } });
   const a = action && typeof action === 'object' ? action : {};
@@ -100,14 +130,35 @@ export function evaluateTask(action, { workspace = null, protectedDirs = [], exi
       return [...out];
     };
 
-    // --- deny ---
-    const badPaths = files.filter((f) => !f.rel).map((f) => String(f.raw).slice(0, 80));
-    if (badPaths.length || OUTSIDE_TEXT.test(text)) found.push(rule('outside_workspace', 'deny', 'A ação referencia um caminho fora do espaço de trabalho (absoluto, "..", unidade, pasta do usuário ou diretório interno do Git).', 'O Executor só pode atuar dentro do espaço de trabalho; nada é executado.', badPaths));
-    else if (GIT_DIR_TEXT.test(text)) found.push(rule('git_internal', 'deny', 'A ação mexe na pasta interna do Git (.git).', 'Alterar .git pode corromper o histórico do projeto; nada é executado.'));
+    // --- deny (e, em bypass, aprovação individual para caminhos fora do workspace) ---
+    const badFiles = files.filter((f) => !f.rel), badPaths = badFiles.map((f) => String(f.raw).slice(0, 80));
+    const GIT_REASON = ['A ação mexe na pasta interna do Git (.git).', 'Alterar .git pode corromper o histórico do projeto; nada é executado.'];
+    if (!bypass) {
+      if (badPaths.length || OUTSIDE_TEXT.test(text)) found.push(rule('outside_workspace', 'deny', 'A ação referencia um caminho fora do espaço de trabalho (absoluto, "..", unidade, pasta do usuário ou diretório interno do Git).', 'O Executor só pode atuar dentro do espaço de trabalho; nada é executado.', badPaths));
+      else if (GIT_DIR_TEXT.test(text)) found.push(rule('git_internal', 'deny', ...GIT_REASON));
+    } else {
+      // .git é negado nos dois perfis (também como caminho de expectedFiles, que a validação de caminho rejeita); o resto fora do workspace vira aprovação INDIVIDUAL (nunca pré-autorizável).
+      const gitFiles = badFiles.filter((f) => hasGitSegment(f.raw)), otherBad = badFiles.filter((f) => !hasGitSegment(f.raw));
+      if (otherBad.length || OUTSIDE_TEXT.test(text)) {
+        const approvable = otherBad.every((f) => approvableOutside(f.raw));
+        found.push(rule('outside_workspace', approvable ? 'approval_required' : 'deny', approvable
+          ? 'A ação referencia um caminho fora do espaço de trabalho (absoluto, "..", unidade ou pasta do usuário). No modo sem confirmação o Executor não fica preso ao workspace.'
+          : 'A ação referencia um caminho inválido (caractere de controle, curinga ou comprimento excessivo) que não pode ser avaliado com segurança.',
+        approvable ? 'O Executor pode ler e alterar arquivos fora do espaço de trabalho, com as permissões do usuário; só prossegue com a sua aprovação individual a cada execução.' : 'Nada é executado.', otherBad.map((f) => String(f.raw).slice(0, 80))));
+      }
+      if (gitFiles.length || GIT_DIR_TEXT.test(text)) found.push(rule('git_internal', 'deny', ...GIT_REASON));
+    }
     const inState = rels.filter((rel) => protectedDirs.some((d) => { const r = path.relative(d, path.resolve(wsPath, rel)); return !!d && !r.startsWith('..') && !path.isAbsolute(r); }));
     const wsInState = protectedDirs.some((d) => { const r = path.relative(path.resolve(d), path.resolve(wsPath)); return !r.startsWith('..') && !path.isAbsolute(r); });
     if (inState.length || wsInState || STATE_TEXT.test(text)) found.push(rule('orchestrator_state', 'deny', 'A ação alcança o estado interno do orquestrador (banco de dados, aprovações), que o Executor não pode alterar.', 'Permitir isso deixaria o Executor alterar as próprias aprovações; nada é executado.', inState));
-    for (const [label, re] of UNSUPPORTED) if (asks(re, text)) found.push(rule('unsupported_capability', 'deny', `A ação pede para ${label}, o que o Executor não faz (ele só lê e edita arquivos dentro do espaço de trabalho).`, 'Não existe como executar nem como aprovar esta ação; o Planner precisa replanejar sem ela.'));
+    if (!bypass) {
+      for (const [label, re, why] of DEFAULT_DENY) if (asks(re, text)) found.push(rule('unsupported_capability', 'deny', why ?? `A ação pede para ${label}, o que o perfil padrão do Executor não permite (ele edita arquivos do espaço de trabalho e só roda comandos pré-aprovados: testes e git de leitura).`, 'Não existe como executar nem como aprovar esta ação neste perfil; o Planner precisa replanejar sem ela.'));
+    } else {
+      // Sem confirmação: nada disto é negado, mas o que é difícil de desfazer ou sai da máquina pede um humano. Shell, rede, exclusão e commit comuns passam (heurística de texto, não barreira).
+      if (asks(RE_INSTALL, text)) found.push(rule('dependency_install', 'approval_required', 'A etapa pede para instalar dependências, o que baixa e executa código de terceiros (scripts de instalação) com as permissões do usuário.', 'Pacotes novos alteram o projeto e podem alterar a máquina; manifestos e lockfiles mudam. Pode ser autorizada de antemão ao aprovar o plano.', DEPENDENCY_FILES.filter(there)));
+      if (asks(RE_EXTERNAL, text)) found.push(rule('external_effect', 'approval_required', 'A ação pede um efeito externo (push, deploy, publicação, docker push, kubectl, terraform apply).', 'Efeitos fora da máquina não se desfazem: exige a sua aprovação individual a cada execução (não pode ser autorizada de antemão).'));
+      if (asks(RE_VCS_DESTRUCTIVE, text)) found.push(rule('destructive_vcs', 'approval_required', 'A ação pede um comando Git que descarta ou reescreve trabalho (reset, clean, checkout, rebase, merge, stash).', 'Mudanças ainda não salvas podem ser perdidas ou o histórico alterado; exige a sua aprovação individual.'));
+    }
 
     // --- approval_required ---
     const secrets = mentions(SECRET_FILE, SECRET_EXAMPLE, true);
@@ -135,12 +186,15 @@ export function actionDigest(action, workspace, scope, verdict) {
     v: POLICY_VERSION, ws: { id: workspace?.id ?? null, path: workspace?.path ?? null }, step: scope?.stepId ?? null, plan: scope?.planId ?? null,
     title: String(action.title ?? '').trim(), instructions: String(action.instructions ?? '').trim(), acceptance: (action.acceptance ?? []).map((x) => String(x).trim()),
     files: [...(action.expectedFiles ?? [])].sort(), agent: action.agent ?? null, rules: verdict.rules.filter((r) => r.decision !== 'allow').map((r) => r.id).sort(),
+    // O perfil só entra no digest em bypass: o do perfil padrão fica IDÊNTICO ao de antes (aprovações pendentes já gravadas continuam válidas) e trocar o perfil (nos dois sentidos) anula as pendentes.
+    ...(profileOf(workspace) === 'bypass' ? { profile: 'bypass' } : {}),
   };
   return crypto.createHash('sha256').update(JSON.stringify(canon)).digest('hex');
 }
 
-// Autorização prévia (ao aprovar o plano): só para o que uma pessoa PODE conceder por etapa. deny nunca; segredos exigem aprovação individual na hora; qualquer regra desconhecida também não.
-const PREAUTH_RULES = ['sensitive_files', 'destructive_overwrite'];
+// Autorização prévia (ao aprovar o plano): só para o que uma pessoa PODE conceder por etapa. deny nunca; segredos, efeitos externos, git destrutivo e caminho fora do workspace exigem aprovação
+// individual na hora; qualquer regra desconhecida também não.
+const PREAUTH_RULES = ['sensitive_files', 'destructive_overwrite', 'dependency_install'];
 /** @returns {{ok:boolean, reason:string|null}} esta avaliação pode ser pré-autorizada na aprovação do plano? */
 export function preAuthProblem(verdict) {
   if (verdict?.decision === 'allow') return { ok: false, reason: 'não precisa de autorização (a política já permite)' };

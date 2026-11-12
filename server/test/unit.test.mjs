@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { runBlockers, authorizeBlockers } from '../executor/policy.js';
 import { parseLine, formatEvent } from '../executor/stream.js';
 import { CLAUDE_ARGS } from '../executor/index.js';
+import { executorArgs } from '../exec-profile.js';
 import { validateDir } from '../workspaces.js';
 
 const ws = { id: 'ws1', path: process.cwd() };
@@ -60,11 +61,16 @@ test('validateDir: relativo, UNC, raiz e inexistente são recusados', () => {
   assert.equal(validateDir(undefined).ok, false);
 });
 
-test('argumentos fixos da CLI nunca desativam permissões', () => {
+test('argumentos fixos da CLI (perfil padrão): sem bypass, sem pedido de permissão, sem --tools restritivo, rede bloqueada e só comandos pré-aprovados', () => {
+  assert.deepEqual(CLAUDE_ARGS, executorArgs('default'));
   const joined = CLAUDE_ARGS.join(' ');
   assert.ok(!/dangerously|bypassPermissions|skip-permissions/i.test(joined));
   assert.ok(CLAUDE_ARGS.includes('--permission-prompts') && CLAUDE_ARGS[CLAUDE_ARGS.indexOf('--permission-prompts') + 1] === 'none');
-  assert.ok(!/Bash|PowerShell|WebFetch/.test(CLAUDE_ARGS[CLAUDE_ARGS.indexOf('--tools') + 1]));
+  assert.equal(CLAUDE_ARGS[CLAUDE_ARGS.indexOf('--permission-mode') + 1], 'acceptEdits');
+  assert.ok(!CLAUDE_ARGS.includes('--tools'), 'o conjunto de ferramentas é o do terminal; quem restringe é acceptEdits + allowedTools');
+  const dis = CLAUDE_ARGS.slice(CLAUDE_ARGS.indexOf('--disallowedTools') + 1, CLAUDE_ARGS.indexOf('--allowedTools')); assert.deepEqual(dis, ['WebFetch', 'WebSearch']);
+  const allow = CLAUDE_ARGS.slice(CLAUDE_ARGS.indexOf('--allowedTools') + 1); assert.ok(allow.length > 0 && allow.every((r) => /^Bash\(/.test(r)), 'só regras Bash pré-aprovadas');
+  assert.ok(!allow.some((r) => /install|curl|npx|push|rm |Remove/.test(r)), 'nada de instalar, rede, npx, push ou apagar');
 });
 
 test('stream: traduz eventos reais e mantém texto bruto', () => {

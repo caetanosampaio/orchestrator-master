@@ -98,12 +98,14 @@ function filesSection(rounds, tasks) {
       const cur = by.get(f.path) ?? { path: f.path, status: null, added: null, removed: null, preexisting: true, rounds: [] };
       cur.status = f.status ?? cur.status; cur.added = f.added ?? cur.added; cur.removed = f.removed ?? cur.removed;
       cur.preexisting = cur.preexisting && !!f.preexisting; cur.rounds.push(r.n);
+      if (f.committed === true) cur.committed = true; // arquivo de um commit feito pelo agente (aditivo: o campo só existe quando verdadeiro)
       by.set(f.path, cur);
     }
   }
   for (const t of tasks) for (const f of arr(t.files)) { // tarefas manuais (sem ciclo)
     if (!isObj(f) || typeof f.path !== 'string') continue;
     const cur = by.get(f.path) ?? { path: f.path, status: f.status ?? null, added: f.added ?? null, removed: f.removed ?? null, preexisting: !!f.preexisting, rounds: [] };
+    if (f.committed === true) cur.committed = true;
     by.set(f.path, cur);
   }
   const all = [...by.values()].sort((a, b) => a.path.localeCompare(b.path));
@@ -238,6 +240,14 @@ export function buildDelivery(mission, workspace = null, { now = () => new Date(
   // ---- observado ----
   const manual = tasks.filter((t) => !t.auto);
   const files = filesSection(rounds, c ? [] : manual);
+  // Perfil de permissão com que cada rodada executou: o que o ciclo gravou na política da rodada (round.policy.profile) ou, na falta, o que a execução gravou na tarefa (task.permissionProfile).
+  // Sem registro (dado anterior a este campo) = null: nada é presumido. Só descreve; não altera entrega, garantia nem aceitação.
+  const profileName = (v) => (v === 'default' || v === 'bypass' ? v : null);
+  const taskOfRound = (r) => (r.taskId == null ? null : tasks.find((t) => t.id === r.taskId) ?? null);
+  const permRounds = rounds.map((r) => ({ n: r.n, profile: profileName(isObj(r.policy) ? r.policy.profile : null) ?? profileName(taskOfRound(r)?.permissionProfile) }));
+  const manualBypass = c ? [] : manual.filter((t) => profileName(t.permissionProfile) === 'bypass');
+  const bypassRounds = permRounds.filter((x) => x.profile === 'bypass').map((x) => x.n);
+  const bypassUsed = bypassRounds.length > 0 || manualBypass.length > 0;
   const planSteps = arr(c?.plan?.steps).filter(isObj);
   // attempts: rodadas gravadas com o planId e o stepId da etapa NO PLANO ATUAL (0 = nunca executada; ciclos antigos, que só têm uma rodada por etapa, dão 1). Derivado, nunca gravado.
   const stepsOut = planSteps.map((s) => { const rs = rounds.filter((x) => x.planId === c.plan?.id && x.stepId === s.id), r = rs.at(-1); return { id: s.id, title: clip(s.title, 200), dependsOn: arr(s.dependsOn), status: stepStatusFromRound(r), round: r?.n ?? null, uncertain: !!r?.report?.outcomeUncertain, executedByRound: !!r, attempts: rs.length }; });
@@ -253,9 +263,18 @@ export function buildDelivery(mission, workspace = null, { now = () => new Date(
     manualTasks: c ? [] : manual.map((t) => ({ taskId: t.id, title: clip(t.title, 200), status: t.status, exitCode: t.exitCode ?? null })),
     files: {
       source: 'git status/diff do workspace depois de cada execução (task.files)', ...files,
-      limitation: 'Lista PARCIAL: reflete o que o Git mostrou alterado ao fim de cada execução; não prova que representa todas as alterações reais do workspace (arquivos criados e revertidos, ignorados pelo Git, fora do Git ou além do limite de listagem não aparecem). "preexisting" = já estava alterado antes da execução.',
+      limitation: 'Lista PARCIAL: reflete o que o Git mostrou alterado ao fim de cada execução, mais os arquivos dos commits que o agente fez durante ela (committed: true); não prova que representa todas as alterações reais (arquivos criados e revertidos, ignorados pelo Git, fora do Git, fora do workspace, dependências instaladas, processos iniciados pelo agente ou além do limite de listagem não aparecem). "preexisting" = já estava alterado antes da execução.',
     },
+    permissions: { rounds: permRounds, bypassUsed },
   };
+  if (bypassUsed) limitations.push(`A execução teve shell e rede sem confirmação (perfil sem confirmação${bypassRounds.length ? ` nas rodadas ${bypassRounds.join(', ')}` : ' em tarefa manual'}); arquivos fora do workspace e processos iniciados pelo agente não são observados.`);
+  if (bypassUsed || permRounds.some((x) => x.profile !== null)) limitations.push('As dependências instaladas (node_modules) não são vigiadas e podem ter sido alteradas durante a execução; o verificador as executa.');
+  // Commits do agente: com shell ele pode commitar, e o `git status` do fim da execução não mostra mais esses arquivos (por isso entram em task.files com committed: true).
+  const sha = (v) => (typeof v === 'string' && /^[0-9a-f]{7,64}$/.test(v) ? v.slice(0, 8) : null);
+  for (const { label, t } of [...rounds.map((r) => ({ label: `Rodada ${r.n}`, t: taskOfRound(r) })), ...(c ? [] : manual.map((t) => ({ label: `Tarefa "${clip(t.title, 60)}"`, t })))]) {
+    const a = sha(t?.headAfter);
+    if (a && a !== sha(t?.headBefore)) limitations.push(`${label}: o agente fez commits no workspace (HEAD ${sha(t.headBefore) ?? 'sem commits'} -> ${a}); os arquivos desses commits constam em "files" como committed.`);
+  }
   if (files.unknownRounds.length) limitations.push(`Arquivos alterados desconhecidos nas rodadas ${files.unknownRounds.join(', ')} (workspace sem Git ou execução interrompida sem relatório final).`);
   if (files.truncatedRounds.length) limitations.push(`A lista de arquivos pode estar truncada nas rodadas ${files.truncatedRounds.join(', ')} (limite de ${PER_ROUND_CAP} por rodada).`);
   if (files.truncatedList) limitations.push(`Foram listados só ${MAX_FILES} de ${files.total} arquivos.`);

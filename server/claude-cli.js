@@ -8,6 +8,23 @@ import { resolveClaude } from './providers/claude.js';
 const SHELL_SAFE_ARG = /^[A-Za-z0-9][A-Za-z0-9._:,=\[\]\/-]*$|^-{1,2}[A-Za-z0-9][A-Za-z0-9-]*$/;
 export const shellSafeArgs = (list) => list.every((a) => typeof a === 'string' && SHELL_SAFE_ARG.test(a));
 
+// Regras de permissão `Ferramenta(especificação)` como `Bash(npm run test:*)` (ver exec-profile.js) precisam de espaço, parênteses e `*`: só esta forma é aceita ENTRE ASPAS DUPLAS, com um conjunto fechado de
+// caracteres e sem nenhum metacaractere do cmd.exe (& | < > ^ % ! ") nem aspas. Dentro de aspas duplas o cmd.exe não interpreta ( ) * nem espaços. Terminar em `)` também impede que uma barra invertida
+// FINAL escape a aspa de fechamento na análise do argv do Windows. Um texto qualquer com espaço (ex.: `a b`) continua recusado. O argumento que já passa em SHELL_SAFE_ARG segue SEM aspas, como sempre.
+const QUOTED_ARG = /^[A-Za-z][A-Za-z0-9_]*\([A-Za-z0-9 ._:,=()*\/\\-]+\)$/;
+const quotable = (a) => typeof a === 'string' && QUOTED_ARG.test(a);
+/** Linha de comando do wrapper .cmd: cada argumento simples como está; o que exige aspas, entre aspas. null se algum argumento é recusado. */
+export function cmdLineArgs(list) {
+  const out = [];
+  for (const a of list) {
+    if (typeof a !== 'string') return null;
+    if (SHELL_SAFE_ARG.test(a)) out.push(a);
+    else if (quotable(a)) out.push(`"${a}"`);
+    else return null;
+  }
+  return out;
+}
+
 /**
  * Como iniciar o `claude`. Com `command` injetado (testes) vale exatamente o que foi injetado, sem shell. No padrão usa a MESMA resolução dos terminais (providers/claude.js):
  * `claude.exe` direto ou, para `claude.cmd`/`.bat`, o cmd.exe com a linha de comando montada aqui (windowsVerbatimArguments) entre aspas externas, como o `/s` exige.
@@ -19,9 +36,10 @@ export function launchSpec({ injected, command, prefixArgs }, extraArgs, { resol
   if (!r) return { file: 'claude', args: extraArgs, verbatim: false };
   if (!r.viaShell) return { file: r.file, args: [...r.args, ...extraArgs], verbatim: false };
   const script = r.args[r.args.length - 1];
-  if (!shellSafeArgs(extraArgs)) return { error: 'Argumento recusado: o Claude Code é um wrapper .cmd e só aceita argumentos simples (sem caracteres especiais do shell).' };
+  const parts = cmdLineArgs(extraArgs);
+  if (!parts) return { error: 'Argumento recusado: o Claude Code é um wrapper .cmd e só aceita argumentos simples (sem caracteres especiais do shell).' };
   if (/[%"^&|<>!\r\n]/.test(script)) return { error: 'O caminho do claude.cmd contém caracteres que o cmd.exe interpretaria; instale o Claude Code em outro caminho.' };
-  return { file: r.file, args: ['/d', '/s', '/c', `"${[`"${script}"`, ...extraArgs].join(' ')}"`], verbatim: true };
+  return { file: r.file, args: ['/d', '/s', '/c', `"${[`"${script}"`, ...parts].join(' ')}"`], verbatim: true };
 }
 
 // Variáveis que SOBREPÕEM o login de uma conta do FORGE: numa conta isolada (CLAUDE_CONFIG_DIR própria) a CLI tem de usar o login DAQUELA conta, não uma chave do ambiente.

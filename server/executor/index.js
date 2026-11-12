@@ -1,10 +1,14 @@
 // Executor real: roda UMA tarefa por vez com o Claude Code, como processo filho controlado.
 //
 // Segurança (fixa no código, nada vem do cliente):
-//  - binário `claude` resolvido como nos terminais (providers/claude.js; `.cmd` via cmd.exe só com argumentos de lista permitida), argumentos montados aqui, cwd = workspace validado;
-//  - NUNCA usa --dangerously-skip-permissions nem bypassPermissions;
-//  - --permission-prompts none: qualquer pedido de permissão é negado automaticamente;
-//  - --tools restringe a leitura/edição de arquivos (sem Bash, sem rede);
+//  - binário `claude` resolvido como nos terminais (providers/claude.js; `.cmd` via cmd.exe só com argumentos de lista permitida), argumentos montados em exec-profile.js, cwd = workspace validado;
+//  - NUNCA usa --dangerously-skip-permissions (nem --allow-dangerously-skip-permissions);
+//  - --permission-prompts none: qualquer pedido de permissão é negado automaticamente (ninguém responde sem tela);
+//  - o conjunto de ferramentas é o do terminal (Bash, rede, instalar...; sem --tools restritivo) e o PERFIL do workspace decide o que de fato é permitido (exec-profile.js):
+//      * default: a barreira real é `--permission-mode acceptEdits` + `--allowedTools` (só comandos pré-aprovados: testes/verificações e git de leitura) + `--disallowedTools WebFetch WebSearch`;
+//        o que não está na lista é negado. Isto depende da semântica das regras da CLI (hipóteses não verificadas documentadas em exec-profile.js), não de uma lista fechada de ferramentas;
+//      * bypass (opt-in do usuário por workspace): `--permission-mode bypassPermissions`; a barreira de ferramentas NÃO existe: shell e rede rodam sem confirmação, com as permissões do usuário.
+//        O que continua valendo é a política do orquestrador (aprovação de arquivos sensíveis/segredos, push/deploy), a verificação real e o portão de conclusão;
 //  - --setting-sources user: hooks e permissões do projeto alvo não afrouxam a execução;
 //  - o prompt vai por stdin (sem limite/escape de linha de comando).
 import { spawn, execFile } from 'node:child_process';
@@ -14,21 +18,18 @@ import { killTreeSync, processStartedAt, waitGone, START_TOLERANCE_MS } from '..
 import { killTree } from '../proc.js';
 import { pidAlive } from '../instance-lock.js';
 import { launchSpec, shellSafeArgs, claudeEnv } from '../claude-cli.js';
+import { executorArgs } from '../exec-profile.js';
 
 export const bus = new EventEmitter(); // 'task' | 'log' | 'state' -> consumido pelo SSE
 bus.setMaxListeners(50);
 
-export const CLAUDE_ARGS = [
-  '-p', '--output-format', 'stream-json', '--verbose',
-  '--permission-mode', 'acceptEdits', '--permission-prompts', 'none',
-  '--no-session-persistence', '--strict-mcp-config', '--setting-sources', 'user',
-  '--tools', 'Read,Edit,Write,Glob,Grep',
-];
+// Argumentos do perfil PADRÃO (o mais restrito); o perfil do workspace é aplicado por tarefa em execution.js/agents.js. Nunca inclui bypass.
+export const CLAUDE_ARGS = executorArgs('default');
 
 // launchSpec e shellSafeArgs vivem em ../claude-cli.js (compartilhados com as contas); shellSafeArgs continua exportado daqui.
 export { shellSafeArgs };
 
-export function createExecutor({ command, prefixArgs = [], args = CLAUDE_ARGS, timeoutMs = 15 * 60 * 1000, orphanTools = {}, env: envOf = claudeEnv } = {}) {
+export function createExecutor({ command, prefixArgs = [], args = executorArgs('default'), timeoutMs = 15 * 60 * 1000, orphanTools = {}, env: envOf = claudeEnv } = {}) {
   const injected = command !== undefined;
   const { alive = pidAlive, startedAtOf = processStartedAt, kill = killTreeSync, wait = waitGone } = orphanTools; // injetáveis só nos testes
   let active = null;

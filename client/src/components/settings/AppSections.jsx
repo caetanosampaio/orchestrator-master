@@ -1,10 +1,12 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useStore } from '../../store.jsx';
 import { usePrefs, useLayoutMode } from '../../hooks.js';
 import { LAYOUT_MODES } from '../../env-view.js';
 import { FONT_RANGE } from '../../prefs.js';
 import { Btn, Icon } from '../ui.jsx';
 import { Row, Switch, Card, Segmented } from './SettingsUi.jsx';
+import PermissionProfileDialog, { ProfileSeal } from '../PermissionProfileDialog.jsx';
+import { profileOf } from '../../permission-profile.js';
 
 // Seções do grupo "App e computador" (o histórico de sessões saiu daqui: abre pelo botão Sessões, na barra lateral do Cockpit): preferências locais da interface. Só opções que existem de verdade.
 
@@ -66,8 +68,10 @@ export function AppearanceSection() {
 }
 
 export function FilesSection({ onOpenWorkspaces }) {
-  const { state } = useStore();
+  const { state, workspaces } = useStore();
+  const [permOpen, setPermOpen] = useState(false);
   const openWs = state?.activeWorkspace ?? null, wsName = openWs ? (openWs.displayName || openWs.name) : '';
+  const wsNow = openWs ? (workspaces ?? []).find((w) => w.id === openWs.id) ?? openWs : null; // o perfil vem da lista de workspaces (a mesma da barra lateral)
   return (
     <>
       <p className="dim small">Os arquivos do FORGE são as pastas de projeto (workspaces). Os terminais dos agentes abrem na pasta do workspace aberto{openWs ? ` (${wsName})` : ''}.</p>
@@ -75,7 +79,12 @@ export function FilesSection({ onOpenWorkspaces }) {
         <Row title="Workspaces" hint="Abrir, trocar ou adicionar uma pasta de projeto.">
           <Btn onClick={() => onOpenWorkspaces?.()} disabled={!onOpenWorkspaces}><Icon name="folderOpen" size={14} /> Abrir ou adicionar workspace</Btn>
         </Row>
+        <Row title="Permissões" hint={openWs ? `Perfil das missões em ${wsName}: padrão ou sem confirmação. Por enquanto vale só para missões, não para os terminais.` : 'Abra um workspace para ver o perfil de permissão das missões dele.'}>
+          {wsNow && <ProfileSeal profile={profileOf(wsNow)} />}
+          <Btn onClick={() => setPermOpen(true)} disabled={!openWs}>Permissões do workspace</Btn>
+        </Row>
       </Card>
+      {permOpen && openWs && <PermissionProfileDialog workspace={{ id: openWs.id, name: wsName }} onClose={() => setPermOpen(false)} />}
     </>
   );
 }

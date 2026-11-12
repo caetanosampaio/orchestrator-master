@@ -4,12 +4,13 @@ import * as store from './store.js';
 import { bus } from './executor/index.js';
 import { runBlockers, authorizeBlockers } from './executor/policy.js';
 import { validateDir } from './workspaces.js';
-import { gitChanges } from './git.js';
+import { gitChanges, gitHead, gitCommittedFiles } from './git.js';
 import { reclaimOrphans, ORPHAN_NOTE } from './orphans.js';
 import { asyncRoute } from './async-route.js';
 import { pidAlive } from './instance-lock.js';
 import { usageRecord, usageEvent } from './usage.js';
-import { agentArgs } from './agents.js';
+import { agentArgs, DEFAULT_AGENT } from './agents.js';
+import { profileOf, executorLimitsText } from './exec-profile.js';
 import { evaluateTask } from './policy.js';
 import { retryContext } from './plan.js';
 
@@ -25,7 +26,8 @@ export function blockedReason(db, executor, mission, task) {
   });
 }
 
-export function buildPrompt(mission, task) {
+/** `profile` = perfil de permissão do workspace ('default' | 'bypass'): define o texto do que o Executor pode fazer. */
+export function buildPrompt(mission, task, profile = 'default') {
   const deps = task.dependsOn.map((id) => find(mission.tasks, id)).filter(Boolean)
     .map((d) => `- ${d.title}: ${(d.report || '(sem relatório)').slice(0, 800)}`).join('\n');
   const cyc = mission.cycle, round = task.auto && cyc ? (cyc.rounds || []).find((r) => r.taskId === task.id) : null;
@@ -41,7 +43,8 @@ export function buildPrompt(mission, task) {
     retry, // reparo limitado: fatos da tentativa anterior desta MESMA etapa (vazio em qualquer outra tarefa); fora de `instructions`, então não entra na política
     'Regras:',
     '- Trabalhe apenas dentro do diretório atual e faça somente esta tarefa; não antecipe tarefas futuras.',
-    '- Você só pode ler e editar arquivos (sem shell, sem rede). Não apague arquivos, não faça commit nem push.',
+    `- ${executorLimitsText(profile)}`,
+    '- Não apague arquivos que a tarefa não pede.',
     '- Ao terminar, responda com um relatório curto: o que foi feito, arquivos alterados e pendências.',
     task.auto ? 'Finalize com um bloco ```json: {"summary": "...", "checks": [{"name": "...", "result": "pass|fail|not_run", "detail": "..."}]} listando SOMENTE verificações que você realmente fez (releitura e conferência dos arquivos). Use not_run para o que não pôde verificar; não invente resultados.' : '',
     task.auto ? 'Depois da sua execução, o próprio orquestrador roda as verificações reais (testes/build) do projeto; não afirme que rodou testes.' : '',
@@ -109,9 +112,8 @@ export function setupExecution(app, { db, executor, verifier = null, orphanTools
    * `finished` só resolve depois de persistir o estado final da tarefa.
    */
   async function startTaskRun(mission, task, { autoAccept = false, shouldAbort = null } = {}) {
-    // Perfil de agente (tarefas do ciclo trazem `agent`; as manuais não: nada muda para elas). Perfil desconhecido NUNCA inicia a CLI.
-    let profileArgs;
-    if (task?.agent !== undefined) { try { profileArgs = agentArgs(task.agent); } catch (e) { return { ok: false, reason: e.message }; } }
+    // Agente (tarefas do ciclo trazem `agent`; as manuais não). Agente desconhecido NUNCA inicia a CLI. Os argumentos finais dependem também do PERFIL DE PERMISSÃO do workspace (abaixo).
+    if (task?.agent !== undefined) { try { agentArgs(task.agent); } catch (e) { return { ok: false, reason: e.message }; } }
     // Cancelamento pedido durante a preparação: nada é iniciado (e não é falha). Cada checagem vem logo após um await; a última fica
     // colada em executor.start() SEM await no meio, então não há corrida entre "ainda não cancelado" e "processo iniciado".
     const aborted = () => (shouldAbort?.() ? { ok: false, cancelled: true, reason: 'Cancelado antes de iniciar a execução.' } : null);
@@ -127,16 +129,22 @@ export function setupExecution(app, { db, executor, verifier = null, orphanTools
     // M9: ponto comum de execução (ciclo e tarefa manual): o que a política NEGA nunca inicia a CLI. (A aprovação de ações sensíveis do ciclo é tratada em cycle.js; a tarefa manual já exige a autorização humana explícita.)
     const verdict = evaluateTask({ title: task.title, instructions: task.instructions ?? '', acceptance: task.acceptance ?? [], expectedFiles: [] }, { workspace, protectedDirs: [store.dataDir] });
     if (verdict.decision === 'deny') return { ok: false, reason: `Negada pela política: ${verdict.summary.why.join(' ')}` };
-    const before = await gitChanges(workspace.path); // linha de base para saber o que a execução alterou
+    const [before, headBefore] = await Promise.all([gitChanges(workspace.path), gitHead(workspace.path)]); // linha de base (arquivos e commit atual) para saber o que a execução alterou
     if (aborted()) return aborted();
     why = check(); // revalida: outra requisição pode ter tomado o lock durante o await
     if (why) return { ok: false, reason: why };
 
     const beforePaths = new Set(before.files.map((f) => f.path));
+    // Perfil de permissão: vem do WORKSPACE (nunca do Planner nem da tarefa), também em tarefa manual e em worktree (o objeto efetivo herda o campo do cadastrado).
+    // Lido sem await depois da última checagem; `bypass` só se o objeto efetivo E o cadastro atual dizem `bypass` (desligar durante os awaits acima vale). Qualquer outra coisa = default.
+    const profile = profileOf(workspace) === 'bypass' && profileOf(find(db.workspaces, mission.workspaceId)) === 'bypass' ? 'bypass' : 'default';
+    let profileArgs;
+    // Sem `agent` (tarefa manual) e perfil padrão: valem os argumentos do próprio executor (que já são os do perfil padrão); em bypass a tarefa manual também recebe os do perfil.
+    if (task?.agent !== undefined || profile === 'bypass') { try { profileArgs = agentArgs(task.agent ?? DEFAULT_AGENT, { profile }); } catch (e) { return { ok: false, reason: e.message }; } }
     let handle;
     try {
       handle = executor.start({
-        missionId: mission.id, taskId: task.id, cwd: workspace.path, prompt: buildPrompt(mission, task), ...(profileArgs ? { args: profileArgs } : {}),
+        missionId: mission.id, taskId: task.id, cwd: workspace.path, prompt: buildPrompt(mission, task, profile), ...(profileArgs ? { args: profileArgs } : {}),
         onLine: (line) => {
           task.logTotal = (task.logTotal || 0) + 1;
           task.log.push(line.slice(0, 2000));
@@ -161,7 +169,7 @@ export function setupExecution(app, { db, executor, verifier = null, orphanTools
       Object.assign(task, {
         status: 'running', authorized: false, startedAt: store.now(), finishedAt: null, exitCode: null, error: null,
         usage: null, tokenUsage: null, report: '', files: [], log: [], logTotal: 0, pid: handle.pid, dirtyBefore: before.files.length > 0, gitRepo: before.isRepo,
-        permissionDenied: false,
+        permissionDenied: false, deniedCommands: [], permissionProfile: profile, headBefore, headAfter: null,
       });
       if (task.dirtyBefore) { task.log.push('[aviso] o workspace já tinha alterações não commitadas antes desta execução'); task.logTotal = 1; }
       store.log('execution', `Execução iniciada: ${task.title}`, { missionId: mission.id, taskId: task.id, agent: 'executor' });
@@ -182,8 +190,13 @@ export function setupExecution(app, { db, executor, verifier = null, orphanTools
 
     const finalize = async () => {
       const r = await handle.done;
-      const after = await gitChanges(workspace.path);
-      task.files = after.files.map((f) => ({ ...f, preexisting: beforePaths.has(f.path) }));
+      const [after, headAfter] = await Promise.all([gitChanges(workspace.path), gitHead(workspace.path)]);
+      // Com Bash o agente pode COMMITAR: o `git status` não mostra mais esses arquivos. Se o HEAD mudou, os arquivos dos commits entram em task.files com `committed: true`.
+      const committed = after.isRepo && headAfter && headAfter !== headBefore ? await gitCommittedFiles(workspace.path, headBefore, headAfter) : [];
+      const byPath = new Map(after.files.map((f) => [f.path, { ...f, preexisting: beforePaths.has(f.path) }]));
+      for (const c of committed) { const cur = byPath.get(c.path); if (cur) cur.committed = true; else byPath.set(c.path, { ...c, preexisting: beforePaths.has(c.path), committed: true }); }
+      task.files = [...byPath.values()]; task.headAfter = headAfter;
+      task.deniedCommands = r.result?.deniedCommands ?? []; // até 5 pedidos negados (texto truncado): o bloqueio diz o que o humano precisaria liberar
       task.finishedAt = store.now(); task.exitCode = r.exitCode; task.error = r.error; delete task.pid;
       task.usage = r.result ? { costUsd: r.result.costUsd, durationMs: r.result.durationMs, turns: r.result.turns } : null;
       // Estado final das métricas: com result -> basis 'final'; sem result (falha/interrupção) -> o parcial fica como 'live' provisório; nada reportado -> null.
