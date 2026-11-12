@@ -1,6 +1,8 @@
 // Visão derivada dos terminais para a sidebar e para a grade do Cockpit. PURA (sem React, sem rede): só reorganiza dados REAIS do servidor
 // (workspaces, sessões de /api/terminals e tarefas do maestro). Nada é inventado: cada workspace cadastrado é um ambiente, sempre visível; trocar de ambiente só muda qual está ativo.
 
+import { profileOf } from './permission-profile.js';
+
 const base = (p) => String(p ?? '').replace(/[\\/]+$/, '').split(/[\\/]/).pop() || String(p ?? '');
 const parent = (p) => { const parts = String(p ?? '').replace(/[\\/]+$/, '').split(/[\\/]/); return parts.length > 1 ? parts.at(-2) : ''; };
 
@@ -37,6 +39,7 @@ export function environments({ workspaces = [], sessions = [], activeId = null, 
       return {
         id: w.id, name: names.get(w.id), original: String(w.name ?? '').trim() || base(w.path), renamed: !!String(w.displayName ?? '').trim(), path: w.path, active: w.id === activeId, total: mine.length, running: running.length,
         working: n('working'), waiting: n('waiting'), done: n('done'), exited: mine.length - running.length, failed, pendingTasks, finished: finished.has(w.id), agent: lead ? providerOf(lead) : null, attention: failed > 0 || n('waiting') > 0,
+        profile: profileOf(w), // perfil de permissão das missões (default | bypass); a barra lateral destaca o bypass
       };
     });
 }
@@ -46,6 +49,15 @@ export function environments({ workspaces = [], sessions = [], activeId = null, 
  * `finished` = término não visto (store: some ao ativar o workspace ou interagir com o squad). Enquanto a equipe trabalha ou espera por você, não há "!" de término.
  */
 export const wsAlert = (tone, finished = false) => tone === 'err' || (finished === true && (tone === 'done' || tone === 'idle'));
+
+/**
+ * Quantos terminais vivos, em QUALQUER workspace, estão executando agora: a mesma regra da sidebar (`paneState`: estado real do agente pelos hooks; sem hooks, a leitura pela saída).
+ * Alimenta o "!" da aba forge-app. Usar só `workingIds` (saída que cresce) fazia o "!" sumir com o agente rodando em silêncio ou logo depois de o usuário mexer na interface.
+ */
+export function workingCount(sessions = [], workingIds = new Set(), maestroTasks = []) {
+  const pending = pendingPanes(maestroTasks);
+  return (Array.isArray(sessions) ? sessions : []).filter((s) => s && s.status === 'running' && paneState(s, workingIds, pending) === 'working').length;
+}
 
 /** Estado do ÍCONE do workspace (agregado dos terminais, só a partir de `environments()`). Prioridade: err (falha) > wait (aguarda você) > work (executando) > done (tudo concluído) > idle. */
 export const wsTone = (e) => (e?.failed > 0 ? 'err' : e?.waiting > 0 ? 'wait' : e?.working > 0 ? 'work' : e?.done > 0 ? 'done' : 'idle');

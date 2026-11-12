@@ -113,7 +113,9 @@ test('trabalho em segundo plano: terminais trabalhando mostram um mini "!" amare
   const tb = src('components/Topbar.jsx'), css = src('cockpit-ui.css');
   assert.match(tb, /workingTerms > 0 && <b className="tb-work" role="status"[^>]*>!<\/b>/); assert.ok(!/<i aria-hidden="true" \/>work/.test(tb), 'não é mais uma etiqueta com a palavra work');
   assert.match(tb, /em segundo plano/); assert.ok(!/view === 'cockpit' && workingTerms/.test(tb), 'não depende da página aberta');
-  const rule = /\.oc-app \.tb-work \{([^}]*)\}/.exec(css)[1]; const size = parseFloat(/font: 700 ([\d.]+)px/.exec(rule)[1]); assert.ok(size < 11, 'menor que o nome forge-app (11px)');
+  const rule = /\.oc-app \.tb-work \{([^}]*)\}/.exec(css)[1]; const size = parseFloat(/font: 700 ([\d.]+)px/.exec(rule)[1]); assert.ok(size >= 10 && size <= 12, 'um pouco maior que o mini-"!" antigo (8.5px), na altura do nome forge-app (11px)');
+  assert.ok(parseFloat(/tb-work-bob ([\d.]+)s/.exec(css)[1]) < 1.3, 'animação mais rápida que a original (1,3 s), mas ainda de leve');
+  assert.match(tb, /workingCount\(terminals\?\.sessions, workingIds, maestro\?\.tasks/, 'mesma regra da sidebar (hooks), não só a saída crescendo'); assert.match(tb, /HOLD_MS/, 'não pisca entre duas leituras');
   const hex = /color: (#[0-9a-f]{6})/i.exec(rule)[1], [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)); assert.ok(r > g && g > b && r < 200, 'amarelado e escuro, não claro');
   assert.match(css, /@keyframes tb-work-bob \{[\s\S]*?translateY\(1px\)[\s\S]*?translateY\(-2px\)/, 'sobe e desce de leve'); assert.match(css, /prefers-reduced-motion: reduce\) \{ \.oc-app \.tb-work \{ animation: none; \} \}/);
 });
