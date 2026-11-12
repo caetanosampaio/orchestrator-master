@@ -113,3 +113,15 @@ test('environments: `agent` (logo da sidebar) é o provider do maestro; sem maes
   assert.deepEqual(by, { a: 'codex', b: 'codex', c: null });
   assert.equal(environments({ workspaces: [ws('d', 'D', 'C:/d')], sessions: [sess('k', 'd', { role: 'maestro' })] })[0].agent, 'claude', 'sessão sem o campo provider vale Claude Code');
 });
+
+test('workingCount: "!" do forge-app conta terminais executando em qualquer workspace pelo estado real do agente (hooks), com a saída só como reserva', async () => {
+  const { workingCount } = await import('../../client/src/env-view.js');
+  const s = (id, ws, agent, status = 'running') => ({ id, workspaceId: ws, status, ...(agent ? { agent: { state: agent } } : {}) });
+  assert.equal(workingCount([s('a', 'w1', 'running'), s('b', 'w2', 'running')], new Set()), 2, 'hooks dizem executando mesmo sem a saída crescer (agente rodando em silêncio)');
+  assert.equal(workingCount([s('a', 'w1', 'idle'), s('b', 'w1', 'completed')], new Set(['a', 'b'])), 0, 'hooks mandam: ocioso/concluído não conta, mesmo com saída recente');
+  assert.equal(workingCount([s('a', 'w1', null)], new Set(['a'])), 1, 'sem hooks vale a leitura pela saída');
+  assert.equal(workingCount([s('a', 'w1', null)], new Set()), 0);
+  assert.equal(workingCount([s('a', 'w1', 'running', 'exited')], new Set(['a'])), 0, 'terminal encerrado nunca conta');
+  assert.equal(workingCount([s('a', 'w1', 'waiting')], new Set(['a'])), 0, 'aguardando você não é "executando"');
+  assert.equal(workingCount(undefined), 0); assert.equal(workingCount(null, new Set(), null), 0);
+});

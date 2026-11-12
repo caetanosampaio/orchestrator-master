@@ -96,9 +96,9 @@
 .oc-titlebar span { font: 500 11px var(--mono); color: var(--dim); letter-spacing: .02em; white-space: nowrap; }
 .oc-titlebar b { font-weight: 700; color: var(--strong); margin-right: 6px; }
 
-/* trabalho em segundo plano: um mini "!" amarelo-escuro ao lado de forge-app (terminais trabalhando), menor que o nome, subindo e descendo de leve */
-.oc-app .tb-work { display: inline-block; margin-left: 3px; font: 700 8.5px var(--mono); line-height: 1; color: #a8801f; text-transform: none; }
-html:not([data-motion="reduced"]) .oc-app .tb-work { animation: tb-work-bob 1.3s ease-in-out infinite; }
+/* trabalho em segundo plano: um "!" amarelo-escuro ao lado de forge-app (terminais trabalhando), do tamanho do nome, subindo e descendo de leve (ciclo de ~1 s) */
+.oc-app .tb-work { display: inline-block; margin-left: 3px; font: 700 11px var(--mono); line-height: 1; color: #a8801f; text-transform: none; }
+html:not([data-motion="reduced"]) .oc-app .tb-work { animation: tb-work-bob 1s ease-in-out infinite; }
 @keyframes tb-work-bob { 0%, 100% { transform: translateY(1px); } 50% { transform: translateY(-2px); } }
 @media (prefers-reduced-motion: reduce) { .oc-app .tb-work { animation: none; } }
 
