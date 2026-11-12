@@ -90,7 +90,7 @@ const worktrees = createWorktreeManager({ db, track: childRegistry.track, childr
 const devHome = path.join(process.env.LOCALAPPDATA || os.homedir(), 'forge'); // modo dev; antes era 'ai-dev-orchestrator' (o histórico e os loadouts são copiados no boot, ver legacy-dirs.js)
 const legacyDevHome = path.join(process.env.LOCALAPPDATA || os.homedir(), 'ai-dev-orchestrator');
 const mcpDir = process.env.ORCH_DATA_DIR ? path.join(store.dataDir, 'mcp') : path.join(devHome, 'mcp'); // mcp tem tokens por sessão, regenerados a cada terminal: não se migra
-const maestro = createMaestro({ getTerminals: () => terminals, harness: { routes: () => routesForMaestro(db), route: (type) => routeFor(db, type), hint: taskHint }, mcpDir, url: `http://127.0.0.1:${PORT}/mcp`, serverName: stableServerName(db, { save: store.saveOrThrow }) }); // nome com sufixo aleatório POR INSTALAÇÃO (estável entre boots, ver maestro.js): um .mcp.json homônimo não herda a pré-autorização // coordenação entre panes por MCP local (aprovação do usuário por padrão)
+const maestro = createMaestro({ autonomous: db.settings?.maestro?.autonomous !== false /* padrão LIGADO: o usuário quer a entrega automática; só um `false` gravado desliga */, getTerminals: () => terminals, harness: { routes: () => routesForMaestro(db), route: (type) => routeFor(db, type), hint: taskHint }, mcpDir, url: `http://127.0.0.1:${PORT}/mcp`, serverName: stableServerName(db, { save: store.saveOrThrow }) }); // nome com sufixo aleatório POR INSTALAÇÃO (estável entre boots, ver maestro.js): um .mcp.json homônimo não herda a pré-autorização // coordenação entre panes por MCP local (aprovação do usuário por padrão)
 // Conversas copiadas: com ORCH_DATA_DIR (testes, app desktop) na pasta de dados; no modo dev, FORA do repositório (mesmo motivo do mcpDir).
 const historyDir = process.env.ORCH_DATA_DIR ? path.join(store.dataDir, 'history') : path.join(devHome, 'history');
 if (!process.env.ORCH_DATA_DIR) for (const name of ['history', 'loadouts']) { const r = migrateLegacyDir(path.join(legacyDevHome, name), path.join(devHome, name)); if (r.status === 'migrated') console.log(`[forge] ${name} copiado de ${legacyDevHome} (a pasta original foi mantida)`); else if (r.status === 'error') console.error(`[forge] não foi possível copiar ${name} da pasta anterior: ${r.error}`); }
@@ -444,7 +444,12 @@ app.get('/api/provider-activity', (req, res) => {
   try { res.set('Cache-Control', 'no-store').json(providerActivity.view({ days })); } catch { bad(res, 'Não foi possível ler a atividade de tokens.', 500); }
 });
 setupAccounts(app, { accounts, logins }); // GET/POST/DELETE /api/accounts[/:id/(default|login...)]: leituras com token de sessão quando configurado
-setupMaestro(app, { maestro });
+setupMaestro(app, { maestro, onAutonomy: (enabled) => { // a escolha do usuário sobrevive ao reinício; falha ao gravar desfaz o estado parcial
+  db.settings ??= {};
+  const had = Object.hasOwn(db.settings, 'maestro'), prev = db.settings.maestro;
+  db.settings.maestro = { autonomous: enabled };
+  try { store.saveOrThrow(); } catch (e) { if (had) db.settings.maestro = prev; else delete db.settings.maestro; throw e; }
+} });
 setupChat(app, { db, planner, cycle, multiStep: () => orchestration().planMode }); // M5: chat geral; só prepara propostas, executar exige /api/chat/approve
 
 app.use('/api', (req, res) => bad(res, 'Rota não encontrada.', 404));
