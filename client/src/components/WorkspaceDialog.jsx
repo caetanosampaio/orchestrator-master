@@ -4,11 +4,13 @@ import { useStore } from '../store.jsx';
 import { friendlyNames } from '../env-view.js';
 import Dialog from './Dialog.jsx';
 import { Btn, Icon } from './ui.jsx';
+import PermissionProfileDialog, { ProfileSeal } from './PermissionProfileDialog.jsx';
+import { profileOf } from '../permission-profile.js';
 
 /** Abrir um workspace já cadastrado ou cadastrar um novo (caminho de uma pasta). Usa as mesmas rotas de sempre; nada é executado ao cadastrar. */
 export default function WorkspaceDialog({ onClose, onPicked = null }) { // onPicked: chamado quando o usuário escolhe ou cadastra um workspace (o Início o usa para seguir ao Cockpit, mesmo se for o que já estava ativo)
   const { workspaces, state, act, notify } = useStore();
-  const [path, setPath] = useState(''), [name, setName] = useState(''), [check, setCheck] = useState(null), [busy, setBusy] = useState(false);
+  const [path, setPath] = useState(''), [name, setName] = useState(''), [check, setCheck] = useState(null), [busy, setBusy] = useState(false), [permFor, setPermFor] = useState(null); // permFor: workspace cujo perfil de permissão está aberto (substitui esta lista até fechar)
   const names = friendlyNames(workspaces), activeId = state?.activeWorkspace?.id;
 
   const open = async (w) => { await act(() => api.post(`/api/workspaces/${w.id}/activate`)); onClose(); onPicked?.(); };
@@ -24,18 +26,20 @@ export default function WorkspaceDialog({ onClose, onPicked = null }) { // onPic
   };
 
   return (
+    permFor ? <PermissionProfileDialog workspace={{ id: permFor.id, name: names.get(permFor.id) }} onClose={() => setPermFor(null)} /> :
     <Dialog title="Arquivos" onClose={onClose} id="ws-dlg">
       {workspaces.length > 0 && (
         <section aria-label="Workspaces cadastrados">
           <h3 className="oc-h">Cadastrados</h3>
           <ul className="oc-wslist">
             {workspaces.map((w) => (
-              <li key={w.id}>
+              <li key={w.id} className="pp-wsli">
                 <button type="button" className={`oc-wsrow${w.id === activeId ? ' on' : ''}`} onClick={() => open(w)} title={w.path}>
                   <Icon name="workspace" size={16} />
                   <span className="oc-wsrow-t"><b>{names.get(w.id)}</b><span className="mono dim small">{w.path}</span></span>
                   {w.id === activeId ? <span className="oc-pill ok">aberto</span> : <span className="oc-pill">abrir</span>}
                 </button>
+                <button type="button" className="pp-wsperm" onClick={() => setPermFor(w)} aria-label={`Permissões das missões em ${names.get(w.id)}: perfil ${profileOf(w) === 'bypass' ? 'sem confirmação' : 'padrão'}`} title="Perfil de permissão das missões deste workspace"><ProfileSeal profile={profileOf(w)} /></button>
               </li>
             ))}
           </ul>

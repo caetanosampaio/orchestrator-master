@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="referrer" content="no-referrer">
+  <meta name="color-scheme" content="dark">
+  <title>FORGE · missão ao vivo</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/live/_/live.css">
+  <script type="module" src="/live/_/live.js"></script>
+</head>
+<body>
+  <a class="skip" href="#conteudo">Ir para o conteúdo</a>
+
+  <header class="top" role="banner">
+    <div class="top__brand">
+      <span class="top__logo" aria-hidden="true">FORGE</span>
+      <span class="top__tag">acompanhamento ao vivo · somente leitura</span>
+    </div>
+    <div class="top__status">
+      <span id="conn" class="conn conn--connecting" data-tone="warn" role="status" aria-live="polite">
+        <span class="led" aria-hidden="true"></span>
+        <span id="conn-label">conectando…</span>
+      </span>
+      <span id="updated" class="top__updated">aguardando o primeiro dado</span>
+    </div>
+    <div class="top__actions">
+      <button id="pause" class="btn" type="button" aria-pressed="false">Pausar a tela</button>
+      <a id="report" class="btn btn--primary" href="./report.md" download="relatorio-missao.md">Baixar relatório (.md)</a>
+    </div>
+  </header>
+
+  <noscript><p class="banner banner--err">Esta página precisa de JavaScript para mostrar a missão ao vivo.</p></noscript>
+
+  <div id="banner" class="banner" role="status" aria-live="polite" hidden></div>
+
+  <main id="conteudo" class="page" tabindex="-1">
+    <section id="hero" class="hero" aria-labelledby="mission-title">
+      <div class="hero__row">
+        <span id="state" class="state state--idle" data-tone="idle" role="status" aria-live="polite">
+          <span class="led" aria-hidden="true"></span>
+          <span id="state-label">Conectando…</span>
+        </span>
+        <span id="hero-meta" class="hero__meta"></span>
+      </div>
+      <h1 id="mission-title" class="hero__title">Missão</h1>
+      <p id="mission-objective" class="hero__objective"></p>
+      <p id="demo-note" class="hero__demo" hidden>Missão demonstrativa: nada foi executado.</p>
+    </section>
+
+    <p id="empty" class="empty">Aguardando o primeiro dado da missão…</p>
+
+    <section id="sec-now" class="card card--wide" aria-labelledby="h-now" hidden>
+      <h2 id="h-now" class="card__title">O que está fazendo agora</h2>
+      <div id="now-live" class="now" aria-live="polite" aria-atomic="true"></div>
+      <p id="now-clock" class="now__clock"></p>
+      <div id="progress" class="progress" hidden>
+        <div class="progress__head">
+          <span id="progress-label" class="progress__label"></span>
+          <span id="progress-pct" class="progress__pct"></span>
+        </div>
+        <div id="progress-track" class="progress__track" role="progressbar" aria-labelledby="h-now progress-label" aria-valuemin="0" aria-valuemax="100">
+          <div id="progress-fill" class="progress__fill"></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="grid">
+      <section id="sec-steps" class="card" aria-labelledby="h-steps" hidden>
+        <h2 id="h-steps" class="card__title">Etapas do plano</h2>
+        <div id="steps"></div>
+      </section>
+
+      <section id="sec-rounds" class="card" aria-labelledby="h-rounds" hidden>
+        <h2 id="h-rounds" class="card__title">Rodadas</h2>
+        <div id="rounds"></div>
+      </section>
+
+      <section id="sec-squad" class="card card--wide" aria-labelledby="h-squad" hidden>
+        <h2 id="h-squad" class="card__title">Squad do Maestro</h2>
+        <div id="squad"></div>
+      </section>
+
+      <section id="sec-verifications" class="card" aria-labelledby="h-verifications" hidden>
+        <h2 id="h-verifications" class="card__title">Verificações</h2>
+        <div id="verifications"></div>
+      </section>
+
+      <section id="sec-approvals" class="card" aria-labelledby="h-approvals" hidden>
+        <h2 id="h-approvals" class="card__title">Aprovações</h2>
+        <div id="approvals"></div>
+      </section>
+
+      <section id="sec-delivery" class="card" aria-labelledby="h-delivery" hidden>
+        <h2 id="h-delivery" class="card__title">Entrega</h2>
+        <div id="delivery"></div>
+      </section>
+
+      <section id="sec-timeline" class="card card--wide" aria-labelledby="h-timeline" hidden>
+        <div class="card__head">
+          <h2 id="h-timeline" class="card__title">Linha do tempo</h2>
+          <button id="timeline-order" class="btn btn--small" type="button">Mais antigos primeiro</button>
+        </div>
+        <div id="timeline"></div>
+      </section>
+
+      <section id="sec-recent" class="card card--wide" aria-labelledby="h-recent" hidden>
+        <h2 id="h-recent" class="card__title">Atividade recente</h2>
+        <div id="recent"></div>
+      </section>
+
+      <section id="sec-notes" class="card card--wide" aria-labelledby="h-notes" hidden>
+        <h2 id="h-notes" class="card__title">Avisos</h2>
+        <div id="notes"></div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="foot" role="contentinfo">
+    <p>Página somente leitura, servida só neste computador. O conteúdo vem dos agentes e é exibido como texto; a remoção de dados sensíveis é feita em melhor esforço, então trate este link como privado.</p>
+    <p id="expiry" class="foot__expiry"></p>
+  </footer>
+</body>
+</html>

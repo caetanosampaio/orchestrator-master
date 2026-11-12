@@ -2,8 +2,10 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { api, nav } from '../api.js';
 import { useStore } from '../store.jsx';
 import { environments, wsTone, wsAlert } from '../env-view.js';
+import { createPortal } from 'react-dom';
 import { Icon } from './ui.jsx';
 import ProviderLogo from './ProviderLogo.jsx';
+import PermissionProfileDialog, { ProfileSeal } from './PermissionProfileDialog.jsx';
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 const TONE_LABEL = { idle: 'sem atividade', work: 'executando', wait: 'aguardando você', done: 'concluído', err: 'com falha' };
@@ -48,15 +50,15 @@ function EnvRename({ env, onSave, onCancel }) {
 }
 
 /** Um workspace = uma linha: ícone de estado + nome + contagens. Clicar abre o workspace. Recolhida a sidebar, só o ícone. */
-function EnvItem({ env, collapsed, editing, onPick, onEdit, onSave, onCancel }) {
-  const tone = wsTone(env);
-  const full = `${env.name}: ${TONE_LABEL[tone]}; ${describe(env)}${env.active ? ' (aberto)' : ''}`;
+function EnvItem({ env, collapsed, editing, onPick, onEdit, onSave, onCancel, onPerm }) {
+  const tone = wsTone(env), bypass = env.profile === 'bypass';
+  const full = `${env.name}: ${TONE_LABEL[tone]}; ${describe(env)}${env.active ? ' (aberto)' : ''}${bypass ? '; missões em perfil sem confirmação' : ''}`;
   if (editing) return <li><EnvRename env={env} onSave={onSave} onCancel={onCancel} /></li>;
   const attn = env.failed + env.waiting;
   return (
     <li className="oc-envrow">
       <div className="oc-envrow-head">
-        <button type="button" className={`oc-env tone-${tone}${env.active ? ' on' : ''}${wsAlert(tone, env.finished) ? ' has-alert' : ''}`} onClick={() => onPick(env)} aria-current={env.active ? 'true' : undefined} aria-label={full} title={collapsed ? full : env.renamed ? `${env.path}\nNome original: ${env.original}` : env.path}>
+        <button type="button" className={`oc-env tone-${tone}${env.active ? ' on' : ''}${bypass ? ' pp-bypass' : ''}${wsAlert(tone, env.finished) ? ' has-alert' : ''}`} onClick={() => onPick(env)} aria-current={env.active ? 'true' : undefined} aria-label={full} title={collapsed ? full : env.renamed ? `${env.path}\nNome original: ${env.original}` : env.path}>
           <WsIcon tone={tone} agent={env.agent} />
           <span className="oc-env-name side-label">{env.name}</span>
           <span className="oc-env-badges" aria-hidden="true">
@@ -67,6 +69,7 @@ function EnvItem({ env, collapsed, editing, onPick, onEdit, onSave, onCancel }) 
         </button>
         {!collapsed && <button type="button" className="oc-iconbtn oc-env-pen" onClick={() => onEdit(env.id)} aria-label={`Renomear o ambiente ${env.name}`} title="Renomear (só o nome exibido)"><Icon name="pencil" size={13} /></button>}
       </div>
+      {bypass && !collapsed && <button type="button" className="pp-sideseal" onClick={() => onPerm(env)} aria-label={`Missões em ${env.name} rodam sem confirmação: abrir as permissões`} title="Perfil sem confirmação ligado para as missões deste workspace. Clique para abrir as permissões."><ProfileSeal profile="bypass" /></button>}
     </li>
   );
 }
@@ -76,6 +79,7 @@ export default function Sidebar({ modal = false, collapsed = false, onClose, onO
   const { workspaces, state, terminals, maestro, workingIds, openWorkspaceIds, act, unseenWs } = useStore();
   const box = useRef(null);
   const [editId, setEditId] = useState(null);
+  const [permEnv, setPermEnv] = useState(null); // workspace cujo perfil de permissão está aberto (diálogo no <body>: a gaveta modal não o prende)
   const sessions = terminals?.sessions ?? [];
   const activeId = state?.activeWorkspace?.id ?? null;
   const envs = useMemo(() => environments({ workspaces, sessions, activeId, workingIds, maestroTasks: maestro?.tasks ?? [], finished: unseenWs }), [workspaces, sessions, activeId, workingIds, maestro, unseenWs]);
@@ -123,7 +127,7 @@ export default function Sidebar({ modal = false, collapsed = false, onClose, onO
       <nav className="oc-envs" aria-label="Workspaces">
         {envs.length === 0
           ? <div className="oc-env-empty side-label"><p>Nenhum workspace ainda.</p><button type="button" className="oc-link" onClick={onOpenWorkspaces}>Adicionar um workspace</button></div>
-          : <ul>{envs.map((e) => <EnvItem key={e.id} env={e} collapsed={collapsed && !modal} editing={editId === e.id} onPick={pick} onEdit={setEditId} onSave={(t) => save(e, t)} onCancel={() => setEditId(null)} />)}</ul>}
+          : <ul>{envs.map((e) => <EnvItem key={e.id} env={e} collapsed={collapsed && !modal} editing={editId === e.id} onPick={pick} onEdit={setEditId} onSave={(t) => save(e, t)} onCancel={() => setEditId(null)} onPerm={setPermEnv} />)}</ul>}
         {collapsed && !modal && <button type="button" className="oc-env oc-env-add" onClick={onOpenWorkspaces} aria-label="Abrir ou adicionar workspace" title="Abrir ou adicionar workspace"><span className="wsi wsi-add"><Icon name="folderPlus" size={17} /></span></button>}
       </nav>
 
@@ -132,6 +136,7 @@ export default function Sidebar({ modal = false, collapsed = false, onClose, onO
         <button type="button" className="oc-side-files" onClick={onOpenWorkspaces} aria-label="Arquivos: abrir, trocar ou adicionar workspace" title="Arquivos: abrir, trocar ou adicionar workspace"><Icon name="folderOpen" size={16} /><span className="side-label">Arquivos</span></button>
         <button type="button" className="oc-side-files oc-side-sessions" onClick={onOpenSessions} disabled={!onOpenSessions} aria-label="Sessões: histórico de sessões do workspace aberto" title="Sessões: histórico de sessões, para retomar"><Icon name="clock" size={16} /><span className="side-label">Sessões</span></button>
       </div>
+      {permEnv && createPortal(<PermissionProfileDialog workspace={{ id: permEnv.id, name: permEnv.name }} onClose={() => setPermEnv(null)} />, document.body)}
     </aside>
   );
 }

@@ -15,16 +15,19 @@ const FAKE_ARGV = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fake-
 
 const { default: express } = await import('express');
 const store = await import('../store.js');
-const { createExecutor, CLAUDE_ARGS } = await import('../executor/index.js');
+const { createExecutor } = await import('../executor/index.js');
+const { executorArgs } = await import('../exec-profile.js');
 const { setupExecution } = await import('../execution.js');
 const { createCycle } = await import('../cycle.js');
 const { createRouter } = await import('../routing.js');
 const { summarizeUsage } = await import('../usage.js');
 
-const RUNNER_ARGS = ['--padrao-do-runner']; // o executor de teste tem argumentos próprios: só o perfil pode fazer a CLI receber CLAUDE_ARGS
+const RUNNER_ARGS = ['--padrao-do-runner']; // o executor de teste tem argumentos próprios: só o perfil do agente/workspace pode fazer a CLI receber executorArgs(...)
 let db, executor, startTaskRun, starts = 0, seq = 0;
 before(() => {
-  db = store.load(); db.missions = []; db.workspaces = [{ id: 'ws', name: 'ws', path: wsDir, verifications: [{ id: 'test', script: 'test', command: 'node --test', required: true, timeoutMs: 60000 }] }];
+  const verifications = [{ id: 'test', script: 'test', command: 'node --test', required: true, timeoutMs: 60000 }];
+  db = store.load(); db.missions = [];
+  db.workspaces = [{ id: 'ws', name: 'ws', path: wsDir, verifications }, { id: 'wsb', name: 'wsb', path: wsDir, permissionProfile: 'bypass', verifications }, { id: 'wsx', name: 'wsx', path: wsDir, permissionProfile: 'Bypass', verifications }];
   executor = createExecutor({ command: process.execPath, prefixArgs: [FAKE_ARGV], args: RUNNER_ARGS });
   const counted = new Proxy(executor, { get: (t, k) => (k === 'start' ? (o) => { starts++; return t.start(o); } : typeof t[k] === 'function' ? t[k].bind(t) : t[k]) });
   ({ startTaskRun } = setupExecution(express(), { db, executor: counted }));
@@ -44,27 +47,38 @@ const scripted = (answers) => {
 };
 const verifier = (status = 'pass') => ({ isBusy: () => false, stop: async () => ({ stopped: false }),
   run: async (w, item) => ({ id: item.id, script: item.script, required: item.required, command: `npm run ${item.script}`, source: 'backend', status, exitCode: status === 'pass' ? 0 : 1, durationMs: 5, outputTail: '', truncated: false, reason: status === 'pass' ? null : 'Terminou com código 1.' }) });
-const mkMission = () => { const m = { id: `a${++seq}`, demo: false, title: `Missão A${seq}`, objective: 'objetivo', workspaceId: 'ws', createdAt: 'T0', tasks: [] }; db.missions.push(m); return m; };
+const mkMission = (workspaceId = 'ws') => { const m = { id: `a${++seq}`, demo: false, title: `Missão A${seq}`, objective: 'objetivo', workspaceId, createdAt: 'T0', tasks: [] }; db.missions.push(m); return m; };
 const cycleOf = (m, planner, o = {}) => createCycle({ db, executor, planner, startTaskRun, verifier: o.ver ?? verifier(), listFiles: () => ['LEIAME.md'], router: o.router ?? null, limits: o.limits ?? null });
 async function run(answers, o = {}) {
-  const m = mkMission(), planner = scripted(answers), cy = cycleOf(m, planner, o), s0 = starts;
+  const m = mkMission(o.ws), planner = scripted(answers), cy = cycleOf(m, planner, o), s0 = starts;
   assert.equal((await cy.start(m.id, o.max ?? 4)).status, 202); await cy.idle();
   return { m, c: m.cycle, cy, planner, answers, starts: () => starts - s0 };
 }
 const argvOf = (t) => JSON.parse(t.report);
 
-test('sem `agent` na resposta: a tarefa usa `code`, a CLI recebe exatamente CLAUDE_ARGS e task.agent/round.agent ficam gravados', async () => {
+test('sem `agent` na resposta: a tarefa usa `code`, a CLI recebe exatamente os argumentos do perfil PADRÃO e task.agent/round.agent ficam gravados', async () => {
   const r = await run([cont('A'), done()]);
   assert.equal(r.c.status, 'completed', r.c.blockedReason); assert.equal(r.c.assurance, 'verified');
   assert.equal(r.m.tasks[0].agent, 'code'); assert.equal(r.c.rounds[0].agent, 'code'); assert.ok(!('agent' in r.c.rounds[0].plan), 'o plano guarda só o que o Planner enviou');
-  assert.deepEqual(argvOf(r.m.tasks[0]), CLAUDE_ARGS, 'o perfil, não os argumentos do runner de teste, definiu a chamada');
+  assert.deepEqual(argvOf(r.m.tasks[0]), executorArgs('default'), 'o perfil, não os argumentos do runner de teste, definiu a chamada'); assert.equal(r.m.tasks[0].permissionProfile, 'default', 'o perfil de permissão com que a execução rodou fica na tarefa');
   const saved = JSON.parse(JSON.stringify(r.m)); assert.equal(saved.tasks[0].agent, 'code'); assert.equal(saved.cycle.rounds[0].agent, 'code');
   assert.equal(store.validateDb({ ...structuredClone(db), missions: [saved] }), null);
 });
 
 test('`agent: "code"` explícito: mesmo resultado, e o plano registra o que o Planner pediu', async () => {
   const r = await run([cont('A', { agent: 'code' }), done()]);
-  assert.equal(r.c.status, 'completed', r.c.blockedReason); assert.equal(r.c.rounds[0].plan.agent, 'code'); assert.equal(r.m.tasks[0].agent, 'code'); assert.deepEqual(argvOf(r.m.tasks[0]), CLAUDE_ARGS);
+  assert.equal(r.c.status, 'completed', r.c.blockedReason); assert.equal(r.c.rounds[0].plan.agent, 'code'); assert.equal(r.m.tasks[0].agent, 'code'); assert.deepEqual(argvOf(r.m.tasks[0]), executorArgs('default'));
+});
+
+test('workspace em modo sem confirmação (bypass): a CLI recebe bypassPermissions, sem allowedTools nem --tools, e a tarefa grava o perfil; o Planner não escolhe isso', async () => {
+  const r = await run([cont('A'), done()], { ws: 'wsb' });
+  assert.equal(r.c.status, 'completed', r.c.blockedReason); assert.equal(r.m.tasks[0].permissionProfile, 'bypass');
+  const argv = argvOf(r.m.tasks[0]); assert.deepEqual(argv, executorArgs('bypass'), 'o argv é o do perfil sem confirmação');
+  assert.equal(argv[argv.indexOf('--permission-mode') + 1], 'bypassPermissions'); assert.ok(!argv.includes('--allowedTools') && !argv.includes('--tools') && !argv.some((a) => /dangerously/i.test(a)));
+  // o perfil vem SÓ do workspace: um campo `permissionProfile`/`profile` na decisão do Planner é rejeitado pelo esquema e a CLI não inicia
+  const bad = await run([cont('A', { permissionProfile: 'bypass' }), cont('B'), done()]); assert.equal(bad.starts(), 1); assert.match(bad.c.rejections[0].problem, /permissionProfile/); assert.equal(bad.m.tasks[0].permissionProfile, 'default');
+  // valor malformado no cadastro (outra caixa) = padrão (fail-safe)
+  const odd = await run([cont('A'), done()], { ws: 'wsx' }); assert.equal(odd.m.tasks[0].permissionProfile, 'default'); assert.deepEqual(argvOf(odd.m.tasks[0]), executorArgs('default'));
 });
 
 test('perfil desconhecido ou tipo inválido: rejeitado pelo mecanismo existente, a CLI NÃO inicia e a nova tentativa segue o fluxo de sempre', async () => {
@@ -88,10 +102,13 @@ test('defesa em profundidade: startTaskRun recusa uma tarefa com perfil inválid
   assert.equal(starts, s0); assert.equal(executor.isBusy(), false);
 });
 
-test('tarefa MANUAL (sem `agent`) não muda: a CLI recebe os argumentos do próprio runner', async () => {
+test('tarefa MANUAL (sem `agent`): no perfil padrão a CLI recebe os argumentos do próprio runner; em workspace bypass recebe os do perfil sem confirmação', async () => {
   const m = mkMission(), t = { id: 'tm', title: 'manual', status: 'queued', authorized: true, dependsOn: [], log: [], acceptance: [], instructions: 'x' }; m.tasks.push(t);
   const res = await startTaskRun(m, t); assert.equal(res.ok, true, res.reason); await res.finished;
-  assert.deepEqual(argvOf(t), RUNNER_ARGS); assert.ok(!('agent' in t));
+  assert.deepEqual(argvOf(t), RUNNER_ARGS); assert.ok(!('agent' in t)); assert.equal(t.permissionProfile, 'default');
+  const mb = mkMission('wsb'), tb = { id: 'tmb', title: 'manual', status: 'queued', authorized: true, dependsOn: [], log: [], acceptance: [], instructions: 'x' }; mb.tasks.push(tb);
+  const rb = await startTaskRun(mb, tb); assert.equal(rb.ok, true, rb.reason); await rb.finished;
+  assert.deepEqual(argvOf(tb), executorArgs('bypass')); assert.equal(tb.permissionProfile, 'bypass'); assert.ok(!('agent' in tb), 'a tarefa manual continua sem `agent`');
 });
 
 test('compatibilidade: ciclo/tarefas/rodadas ANTIGOS (sem `agent`) continuam válidos, retomam e entram no resumo de uso', async () => {
@@ -110,7 +127,7 @@ test('compatibilidade: ciclo/tarefas/rodadas ANTIGOS (sem `agent`) continuam vá
 
 test('mecanismos preservados com perfis: roteamento ligado, limite de chamadas, orçamento e "complete" com verificação reprovada', async () => {
   const on = await run([cont('A', { agent: 'code' }), done()], { router: createRouter() });
-  assert.equal(on.c.status, 'completed', on.c.blockedReason); assert.ok(on.planner.calls.every((x) => x.keys.includes('tier'))); assert.deepEqual(argvOf(on.m.tasks[0]), CLAUDE_ARGS);
+  assert.equal(on.c.status, 'completed', on.c.blockedReason); assert.ok(on.planner.calls.every((x) => x.keys.includes('tier'))); assert.deepEqual(argvOf(on.m.tasks[0]), executorArgs('default'));
   const cap = await run([cont('A'), cont('B'), done()], { limits: { maxPlannerCalls: 1, maxEstimatedCostUsd: null } });
   assert.equal(cap.c.blockedCode, 'planner_call_cap'); assert.equal(cap.starts(), 1, 'nenhuma execução depois do bloqueio'); assert.equal((await cap.cy.resume(cap.m.id)).status, 409);
   const budget = await run([cont('A'), done()], { limits: { maxPlannerCalls: null, maxEstimatedCostUsd: 0.01 } });

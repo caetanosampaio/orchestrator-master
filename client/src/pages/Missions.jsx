@@ -5,6 +5,7 @@ import { paneState } from '../env-view.js';
 import { buildWorkflow, missionState, nodeDetail, parallelInfo } from '../missions-view.js';
 import MissionSidebar from '../components/MissionSidebar.jsx';
 import MissionPanel, { MissionMeters, MissionTeam } from '../components/MissionPanel.jsx';
+import MissionLiveButton from '../components/MissionLiveButton.jsx';
 import MissionWorkflow from '../components/MissionWorkflow.jsx';
 import MissionNodeDetail from '../components/MissionNodeDetail.jsx';
 import MissionActivity, { ControlBar } from '../components/MissionActivity.jsx';
@@ -102,6 +103,7 @@ export default function Missions({ onOpenCockpit, data }) {
         ) : (
           <div className="mi-center">
             <MissionPanel mission={mission} workspace={workspace} now={now} workflow={wf} selectedNode={nodeId} onSelectNode={setNodeId} onAction={onAction} onOpenTerminals={openTerminals} busyAction={busy} />
+            <MissionLiveButton key={mission.id} mission={mission} />
             <ControlBar mission={mission} workflow={wf} onDecide={onDecide} busyAction={busy} onSelectNode={setNodeId} />
             <section className={`mi-flow st-${mstate}`} aria-label="Workflow da missão">
               <header className="mi-flow-head">

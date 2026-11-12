@@ -1,0 +1,74 @@
+/* Perfil de permissão do workspace (padrão | sem confirmação): selo, diálogo e atalhos. Retro-terminal do FORGE: mono, cantos retos, contorno de 1px.
+   O padrão é discreto (cinza); "sem confirmação" é vermelho, com "!" e texto (a cor nunca é o único sinal). Sem animação alguma. */
+
+/* ---------- selo ---------- */
+.pp-seal { display: inline-flex; align-items: center; gap: 5px; flex: none; max-width: 100%; padding: 0 7px; min-height: 18px; border-radius: var(--r-1); font-family: var(--mono); font-size: 10.5px; line-height: 1.5; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+.pp-seal-default { color: var(--faint); box-shadow: inset 0 0 0 1px var(--line); } /* #9ca3af sobre preto: > 7:1 */
+.pp-seal-bypass { color: #fff; background: rgba(140, 36, 42, .55); box-shadow: inset 0 0 0 1px #c04048; font-weight: 700; } /* branco sobre o vinho composto no preto: > 9:1 */
+.pp-seal b { display: inline-grid; place-items: center; width: 12px; height: 12px; border-radius: 1px; background: #fff; color: #7a1d23; font-size: 10px; line-height: 1; }
+
+/* ---------- barra lateral ---------- */
+.oc-env.pp-bypass { box-shadow: inset 2px 0 0 #c04048; } /* mesmo recolhida (só o ícone), a linha vermelha avisa */
+.oc-app .oc-side .oc-env.pp-bypass.on { box-shadow: inset 2px 0 0 #c04048; }
+.pp-sideseal { display: block; width: 100%; margin: 0 0 2px; padding: 0 var(--sp-2) 0 calc(var(--sp-2) + 22px); border: 0; background: transparent; text-align: left; cursor: pointer; min-height: 24px; }
+.pp-sideseal:hover .pp-seal-bypass { background: rgba(140, 36, 42, .8); }
+.pp-sideseal:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.oc-side.collapsed .pp-sideseal { display: none; }
+
+/* ---------- atalho por workspace (Arquivos) e linha de Configurações ---------- */
+.pp-wsli { display: flex; align-items: stretch; gap: var(--sp-2); }
+.pp-wsli > .oc-wsrow { flex: 1 1 auto; min-width: 0; }
+.pp-wsperm { flex: none; display: inline-flex; align-items: center; justify-content: center; min-width: 44px; padding: 0 var(--sp-2); border: 0; border-radius: var(--r-2); background: transparent; cursor: pointer; }
+.pp-wsperm:hover { background: var(--coal-2); }
+.pp-wsperm:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+@media (max-width: 420px) { .pp-wsli { flex-wrap: wrap; } .pp-wsperm { flex: 1 1 100%; min-height: 36px; justify-content: flex-start; } }
+.set-row-c > .pp-seal { margin-right: var(--sp-2); }
+
+/* ---------- cartão da missão ---------- */
+.mi-meta .pp-seal { vertical-align: middle; }
+
+/* ---------- diálogo ---------- */
+.pp { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
+.pp p { margin: 0; line-height: var(--lh); overflow-wrap: anywhere; }
+.pp-ws { font-size: var(--fs-sm); }
+.pp-ws b { color: var(--strong); }
+.pp-scope { padding: var(--sp-2) var(--sp-3); font-size: var(--fs-sm); color: var(--dim); background: var(--coal-2); box-shadow: inset 2px 0 0 var(--line-control); }
+.pp-scope b { color: var(--strong); }
+.pp-note { padding: var(--sp-2) var(--sp-3); font-size: var(--fs-sm); color: var(--dim); background: var(--coal-2); box-shadow: inset 0 0 0 1px var(--line); }
+.pp-note.pp-err { color: var(--danger-text); background: var(--err-bg); box-shadow: inset 0 0 0 1px rgba(192, 64, 72, .5); display: flex; flex-direction: column; gap: var(--sp-2); }
+.pp-block { color: var(--warn-text); box-shadow: inset 0 0 0 1px rgba(245, 158, 11, .35); background: var(--warn-bg); }
+
+.pp-state { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3); background: var(--coal-2); box-shadow: inset 0 0 0 1px var(--line); font-size: var(--fs-sm); }
+.pp-state-h { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; }
+.pp-state-k { font-family: var(--mono); font-size: var(--caps-size); letter-spacing: var(--caps-track); text-transform: uppercase; color: var(--faint); }
+.pp-state-bypass { background: var(--err-bg); box-shadow: inset 0 0 0 1px #c04048, inset 4px 0 0 #c04048; }
+.pp-state-bypass p { color: var(--text); }
+
+.pp-sec { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.pp-warn { padding: var(--sp-3); background: var(--err-bg); box-shadow: inset 0 0 0 1px rgba(192, 64, 72, .55); font-size: var(--fs-sm); display: flex; flex-direction: column; gap: var(--sp-2); }
+.pp-warn-t { display: flex; align-items: center; gap: var(--sp-2); color: var(--danger-text); font-family: var(--mono); font-size: var(--caps-size); letter-spacing: var(--caps-track); text-transform: uppercase; font-weight: 700; }
+.pp-warn-t b { display: inline-grid; place-items: center; width: 14px; height: 14px; background: #c04048; color: #fff; font-size: 11px; line-height: 1; }
+.pp-pre { white-space: pre-wrap; color: var(--text); }
+
+.pp-check { display: flex; align-items: flex-start; gap: var(--sp-3); min-height: 44px; padding: var(--sp-2) 0; font-size: var(--fs-sm); color: var(--text); cursor: pointer; }
+.pp-check input { flex: none; width: 18px; height: 18px; margin: 1px 0 0; accent-color: #c04048; cursor: pointer; }
+.pp-check input:disabled, .pp-check input:disabled + span { cursor: not-allowed; opacity: .6; }
+.pp-check input:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+.pp-actions { justify-content: flex-start; flex-wrap: wrap; }
+.pp-danger { border-color: #c04048; background: #7a1d23; color: #fff; font-weight: 700; } /* #7a1d23 + branco = 11:1 */
+.pp-danger:hover:not(:disabled) { background: #942a31; }
+.pp-danger:disabled { opacity: .45; cursor: not-allowed; }
+.pp-danger:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+.pp-allow, .pp-audit { margin: 0; padding: var(--sp-2) var(--sp-3); list-style: none; display: flex; flex-direction: column; gap: 2px; background: var(--coal-2); box-shadow: inset 0 0 0 1px var(--line); font-size: 12px; color: var(--dim); max-height: 180px; overflow: auto; }
+.pp-allow li, .pp-audit li { overflow-wrap: anywhere; line-height: 1.5; }
+.pp-allow li::before { content: '+ '; color: var(--ok-text); }
+.pp-audit li.on { color: var(--danger-text); }
+.pp-audit li.on::before { content: '! '; font-weight: 700; }
+.pp-audit li:not(.on)::before { content: '· '; }
+
+@media (max-width: 480px) {
+  .pp-actions .btn, .pp-actions .pp-danger { flex: 1 1 100%; min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) { .pp *, .pp-seal, .pp-sideseal, .pp-wsperm { transition: none !important; animation: none !important; } }

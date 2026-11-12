@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
+import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -223,11 +224,125 @@ test('Fase 1: destructive_overwrite exige um ALVO destrutivo (conteúdo/arquivo 
   for (const t of ['Substitua todo o texto "Lorem ipsum" por "Olá"', 'Substitua todos os placeholders pelos valores reais', 'Substitua tudo que for "foo" por "bar" no a.js', 'Esvazie a lista de itens pendentes', 'Limpe a lista antes de renderizar', 'Reescreva a função de soma', 'Não sobrescreva o README', 'Evite reescrever do zero o index.html', 'Edite a.js sem sobrescrever o conteúdo existente']) assert.equal(classify(t).d, 'allow', t);
 });
 
-test('Fase 1: NENHUMA regra deny foi enfraquecida (caminho fora, .git, estado, instalar, push, excluir, shell, rede) — nem combinada com texto negado ou sensível', () => {
+// Reescrito de propósito (perfil de permissão): o Executor agora tem as ferramentas do terminal. No perfil PADRÃO a CLI (acceptEdits + lista pré-aprovada) é a barreira real e a política só
+// antecipa a negação do que ela negaria: o shell GENÉRICO ("execute o comando npm test") deixou de ser negado; os binários perigosos, a rede, a exclusão, instalar, push/deploy, commit e git
+// que descarta trabalho continuam negados com o mesmo id de regra (`unsupported_capability`). As linhas dependentes do shell genérico foram revistas uma a uma abaixo.
+test('Fase 1 (perfil padrão): NENHUMA regra deny que a CLI não pré-aprova foi enfraquecida (caminho fora, .git, estado, instalar, push, excluir, binários perigosos, rede) — nem combinada com texto negado ou sensível', () => {
   const denies = [['Edite C:/Windows/system.ini', 'outside_workspace'], ['Altere ../x.js', 'outside_workspace'], ['Altere .git/config', 'git_internal'], ['Edite data/db.json', 'orchestrator_state'], ['Rode npm install express', 'unsupported_capability'], ['Faça git push para o remoto', 'unsupported_capability'],
-    ['Apague os arquivos temporários', 'unsupported_capability'], ['Execute o comando rm -rf build no terminal', 'unsupported_capability'], ['Baixe https://exemplo.com/a.zip', 'unsupported_capability'], ['Atualize o package.json e rode npm install', 'unsupported_capability'], ['Não altere o package.json, mas edite C:/x/y.txt', 'outside_workspace']];
+    ['Apague os arquivos temporários', 'unsupported_capability'], ['Execute o comando rm -rf build no terminal', 'unsupported_capability'], ['Baixe https://exemplo.com/a.zip', 'unsupported_capability'], ['Atualize o package.json e rode npm install', 'unsupported_capability'], ['Não altere o package.json, mas edite C:/x/y.txt', 'outside_workspace'],
+    ['Use curl para buscar a página', 'unsupported_capability'], ['Rode wget na página', 'unsupported_capability'], ['Execute com sudo', 'unsupported_capability'], ['Use Invoke-WebRequest no endpoint', 'unsupported_capability'], ['Rode Remove-Item na pasta build', 'unsupported_capability'], ['Rode rmdir build', 'unsupported_capability'],
+    ['Faça git reset --hard', 'unsupported_capability'], ['Rode git clean -fd', 'unsupported_capability'], ['Faça git checkout main', 'unsupported_capability'], ['Faça git rebase main', 'unsupported_capability'], ['Faça git merge dev', 'unsupported_capability'], ['Rode git stash', 'unsupported_capability'],
+    ['Publique com npm publish', 'unsupported_capability'], ['Rode docker push img', 'unsupported_capability'], ['Use kubectl apply', 'unsupported_capability'], ['Rode terraform apply', 'unsupported_capability'], ['Faça o deploy em produção', 'unsupported_capability']];
   for (const [t, id] of denies) { const r = classify(t); assert.equal(r.d, 'deny', t); assert.ok(r.ids.includes(id), `${t}: ${r.ids}`); }
   assert.equal(classify('Faça git commit depois de editar a.js', ['a.js']).d, 'deny'); assert.equal(classify('Ok, não faça git commit nem git push', ['a.js']).d, 'allow', 'negar o pedido proibido continua não sendo um pedido');
   assert.equal(classify('Estranho', [], { instructions: 7 }).d, 'deny', 'ação não classificável nunca é autorizada');
   const mixed = classify('Atualize o package.json e apague os arquivos de cache'); assert.equal(mixed.d, 'deny'); assert.ok(mixed.ids.includes('sensitive_files') && mixed.ids.includes('unsupported_capability'));
+  const inst = evaluateTask({ title: 'Etapa', instructions: 'Rode npm install express', acceptance: ['o resultado existe'], expectedFiles: [] }, { workspace: { id: 'ws', path: wsDir } });
+  assert.match(inst.summary.why.join(' '), /o perfil padrão não pré-aprova instalação[^]*ligue o modo sem confirmação ou faça você mesmo/i, 'mensagem nova de instalação');
+});
+
+test('perfil padrão: shell GENÉRICO deixou de ser negado (a CLI pré-aprova testes e git de leitura e nega o resto sozinha); só os binários perigosos continuam vetados na política', () => {
+  for (const t of ['Execute o comando npm test', 'Rode o comando node --test no terminal', 'Execute os comandos git status e git diff', 'Rode o build no shell', 'Run the tests with the command npm run lint']) { const r = classify(t); assert.deepEqual([r.d, r.ids], ['allow', ['workspace_file_edit']], t); }
+  for (const t of ['Execute o comando curl https://x', 'Rode o comando rm -rf dist']) assert.equal(classify(t).d, 'deny', t);
+});
+
+// ---------- Perfil de permissão: bypass (modo sem confirmação) ----------
+// Em bypass a política é só aviso antecipado por heurística de texto (a CLI não tem barreira). Matriz: unclassifiable/orchestrator_state/git_internal = deny; outside_workspace = aprovação
+// INDIVIDUAL; instalar = dependency_install (pré-autorizável); push/deploy/publicar = external_effect e git destrutivo = destructive_vcs (individuais); shell, rede, exclusão e commit = allow;
+// segredos, arquivos sensíveis e sobrescrita integral continuam exigindo aprovação (inalterado).
+const { preAuthProblem, DEPENDENCY_FILES } = await import('../policy.js');
+const BYP = () => ({ id: 'ws', path: wsDir, permissionProfile: 'bypass' });
+const classifyB = (instructions, expectedFiles = [], extra = {}, ws = BYP(), opts = {}) => { const v = evaluateTask({ title: 'Etapa', instructions, acceptance: ['o resultado existe'], expectedFiles, ...extra }, { workspace: ws, ...opts }); return { d: v.decision, ids: v.rules.map((r) => r.id), v }; };
+
+test('bypass: shell, rede, exclusão e commit comuns passam (allow); o que no perfil padrão é deny por ser capacidade da CLI deixa de ser', () => {
+  for (const t of ['Execute o comando npm test', 'Rode o comando rm -rf build no terminal', 'Use curl para buscar a página', 'Rode wget na página', 'Execute com sudo', 'Use Invoke-WebRequest no endpoint', 'Rode Remove-Item na pasta build', 'Rode rmdir build',
+    'Baixe https://exemplo.com/a.zip', 'Apague os arquivos temporários', 'Faça git commit depois de editar a.js', 'Rode o build no shell']) { const r = classifyB(t); assert.deepEqual([r.d, r.ids], ['allow', ['workspace_file_edit']], t); }
+});
+
+test('bypass: instalar dependências = dependency_install, aprovação PRÉ-AUTORIZÁVEL, com os manifestos e lockfiles existentes como subjects', () => {
+  const exists = (rel) => ['package.json', 'package-lock.json', 'Cargo.toml'].includes(rel);
+  for (const t of ['Rode npm install express', 'Execute pnpm add lodash', 'yarn install', 'pip install requests', 'cargo add serde', 'Instale as dependências do projeto', 'Instale os pacotes necessários']) {
+    const r = classifyB(t, [], {}, BYP(), { exists }); assert.equal(r.d, 'approval_required', t); assert.deepEqual(r.ids, ['dependency_install'], t);
+    assert.deepEqual(r.v.rules[0].subjects, ['package.json', 'package-lock.json', 'Cargo.toml'], t);
+    assert.deepEqual(preAuthProblem(r.v), { ok: true, reason: null }, `${t}: aceita autorização prévia no plano`);
+  }
+  assert.equal(classifyB('Rode npm install', [], {}, BYP(), { exists: () => false }).v.rules[0].subjects, undefined, 'sem manifesto existente, sem subjects');
+  assert.ok(DEPENDENCY_FILES.includes('package.json') && DEPENDENCY_FILES.includes('package-lock.json') && Object.isFrozen(DEPENDENCY_FILES));
+  assert.equal(classifyB('Não rode npm install; edite a.js').d, 'allow', 'negação respeitada');
+  assert.deepEqual(classifyB('Atualize o package.json e rode npm install', ['package.json'], {}, BYP(), { exists }).ids.sort(), ['dependency_install', 'sensitive_files'], 'as duas regras, ambas pré-autorizáveis');
+  assert.equal(preAuthProblem(classifyB('Atualize o package.json e rode npm install', ['package.json']).v).ok, true);
+});
+
+test('bypass: push/deploy/publicar/docker push/kubectl/terraform apply = external_effect, SÓ aprovação individual (nunca pré-autorizável)', () => {
+  for (const t of ['Faça git push para o remoto', 'Rode npm publish', 'Rode docker push img', 'Use kubectl apply -f x.yaml', 'Rode terraform apply', 'Faça o deploy em produção', 'Precisamos realizar o push', 'Publique o pacote no registro']) {
+    const r = classifyB(t); assert.equal(r.d, 'approval_required', t); assert.deepEqual(r.ids, ['external_effect'], t);
+    const pa = preAuthProblem(r.v); assert.equal(pa.ok, false, t); assert.match(pa.reason, /external_effect/, t);
+  }
+  assert.equal(classifyB('Ok, não faça git push').d, 'allow', 'negação respeitada');
+});
+
+test('bypass: git reset/clean/checkout/rebase/merge/stash = destructive_vcs (aprovação individual); git commit passa', () => {
+  for (const t of ['Faça git reset --hard', 'Rode git clean -fd', 'Faça git checkout main', 'Faça git rebase main', 'Faça git merge dev', 'Rode git stash']) {
+    const r = classifyB(t); assert.equal(r.d, 'approval_required', t); assert.deepEqual(r.ids, ['destructive_vcs'], t);
+    assert.equal(preAuthProblem(r.v).ok, false, t); assert.match(preAuthProblem(r.v).reason, /destructive_vcs/);
+  }
+  assert.equal(classifyB('Faça git commit -m x').d, 'allow');
+  const both = classifyB('Faça git reset --hard e depois git push'); assert.deepEqual(both.ids.sort(), ['destructive_vcs', 'external_effect']);
+});
+
+test('bypass: fora do workspace = aprovação INDIVIDUAL (nunca pré-autorizável); .git, estado do orquestrador e ação não classificável continuam deny; lixo de caminho não é aprovável', () => {
+  for (const t of ['Edite C:/Windows/system.ini', 'Altere ../x.js', 'Leia /etc/hosts', 'Edite ~/notas.txt']) {
+    const r = classifyB(t); assert.equal(r.d, 'approval_required', t); assert.deepEqual(r.ids, ['outside_workspace'], t); assert.equal(preAuthProblem(r.v).ok, false, t);
+  }
+  for (const f of ['/abs/x.txt', 'C:\\x\\y.txt', '../x.txt', 'a/../../x.txt']) { const r = classifyB('Crie o arquivo', [f]); assert.deepEqual([r.d, r.ids, r.v.rules[0].subjects], ['approval_required', ['outside_workspace'], [f]], f); assert.match(preAuthProblem(r.v).reason, /outside_workspace/); }
+  for (const f of ['a*b.txt', 'a?.txt', 'x'.repeat(250), 'a\u0001b', '']) { const r = classifyB('Crie o arquivo', [f]); assert.equal(r.d, 'deny', `lixo: ${JSON.stringify(f).slice(0, 30)}`); assert.deepEqual(r.ids, ['outside_workspace']); }
+  for (const t of ['Altere .git/config', 'Edite .GIT/hooks/x', 'use --git-dir=.git/hooks', 'Edite C:/x e depois .git/config']) { const r = classifyB(t); assert.equal(r.d, 'deny', t); assert.ok(r.ids.includes('git_internal'), `${t}: ${r.ids}`); }
+  for (const f of ['.git/hooks/pre-commit', '.GIT/config', 'sub/.git./x', 'a\\.Git\\x', '.git::$INDEX_ALLOCATION/x', '../.git/config']) { const r = classifyB('Crie o arquivo', [f]); assert.equal(r.d, 'deny', f); assert.ok(r.ids.includes('git_internal'), `${f}: ${r.ids}`); }
+  assert.equal(classifyB('Edite data/db.json').d, 'deny'); assert.ok(classifyB('Edite data/db.json').ids.includes('orchestrator_state'));
+  assert.equal(classifyB('Crie a.js', ['data/x.json'], {}, BYP(), { protectedDirs: [path.join(wsDir, 'data')] }).d, 'deny');
+  assert.equal(classifyB('Estranho', [], { instructions: 7 }).d, 'deny', 'ação não classificável nunca é autorizada');
+  assert.equal(evaluateTask({ title: 'x', instructions: 'y', acceptance: [], expectedFiles: [] }, { workspace: { id: 'w', permissionProfile: 'bypass' } }).decision, 'deny', 'sem caminho de workspace: não classificável');
+  assert.equal(classifyB('Edite a.js e .gitignore', ['a.js', '.gitignore']).d, 'allow', '.gitignore/.github não são .git');
+});
+
+test('bypass: segredos, arquivos sensíveis e sobrescrita integral exigem aprovação IGUAL ao perfil padrão (mesmos ids, mesma pré-autorização)', () => {
+  for (const [t, files] of [['Atualize o package.json', []], ['Adicione FOO ao .env', []], ['Leia o .env', []], ['Reescreva do zero o README', []], ['Crie a.js', ['package.json']], ['Crie a.js', ['.env']], ['Edite o Dockerfile e o .github/workflows/ci.yml', []], ['Sobrescreva o index.html', []],
+    ['Altere o yarn.lock', []], ['Crie o arquivo', ['.husky/pre-commit']]]) {
+    const d = classify(t, files), b = classifyB(t, files); assert.deepEqual([b.d, b.ids], [d.d, d.ids], t); assert.equal(b.d, 'approval_required', t);
+    assert.deepEqual(preAuthProblem(b.v), preAuthProblem(evaluateTask({ title: 'Etapa', instructions: t, acceptance: ['o resultado existe'], expectedFiles: files }, { workspace: { id: 'ws', path: wsDir } })), `${t}: pré-autorização igual`);
+  }
+  assert.equal(preAuthProblem(classifyB('Adicione FOO ao .env').v).ok, false, 'segredo: só aprovação individual');
+  for (const t of ['Não altere package.json', 'Documente em .env.example', 'Edite a.js sem sobrescrever o conteúdo existente']) assert.equal(classifyB(t).d, 'allow', t);
+});
+
+test('perfil: só o valor EXATO "bypass" muda a política; qualquer outra coisa (tipo errado, caixa, herdado, ausente) é o perfil padrão (fail-safe)', () => {
+  const act = { title: 'Etapa', instructions: 'Rode npm install express', acceptance: ['existe'], expectedFiles: [] };
+  const proto = Object.create({ permissionProfile: 'bypass' }); proto.id = 'ws'; proto.path = wsDir;
+  for (const ws of [{ id: 'ws', path: wsDir }, { id: 'ws', path: wsDir, permissionProfile: 'default' }, { id: 'ws', path: wsDir, permissionProfile: 'Bypass' }, { id: 'ws', path: wsDir, permissionProfile: ' bypass' }, { id: 'ws', path: wsDir, permissionProfile: true }, { id: 'ws', path: wsDir, permissionProfile: ['bypass'] }, { id: 'ws', path: wsDir, permissionProfile: { toString: () => 'bypass' } }, proto]) {
+    const v = evaluateTask(act, { workspace: ws }); assert.equal(v.decision, 'deny', JSON.stringify(ws.permissionProfile)); assert.deepEqual(v.rules.map((r) => r.id), ['unsupported_capability']);
+  }
+  assert.equal(evaluateTask(act, { workspace: { id: 'ws', path: wsDir, permissionProfile: 'bypass' } }).decision, 'approval_required');
+});
+
+test('digest: o perfil entra SÓ em bypass (o digest do perfil padrão é idêntico ao de antes) e trocar o perfil muda o digest, anulando aprovações pendentes', () => {
+  const scope = { stepId: 's1', planId: 'p1' }, a = { title: 'T', instructions: 'Atualize o package.json', acceptance: ['package.json lista lodash'], expectedFiles: ['package.json'] };
+  const dflt = { id: 'ws', path: wsDir }, bypass = { id: 'ws', path: wsDir, permissionProfile: 'bypass' }, explicitDefault = { id: 'ws', path: wsDir, permissionProfile: 'default' };
+  const dg = (ws, act = a) => actionDigest(act, ws, scope, evaluateTask(act, { workspace: ws }));
+  // digest "antigo": o mesmo cálculo de antes desta mudança (sem a chave `profile`), reproduzido à mão para travar a compatibilidade com aprovações já gravadas no banco real
+  const legacy = (act, ws) => crypto.createHash('sha256').update(JSON.stringify({ v: 1, ws: { id: ws.id, path: ws.path }, step: scope.stepId, plan: scope.planId, title: act.title.trim(), instructions: act.instructions.trim(), acceptance: act.acceptance.map((x) => String(x).trim()), files: [...act.expectedFiles].sort(), agent: act.agent ?? null, rules: evaluateTask(act, { workspace: ws }).rules.filter((r) => r.decision !== 'allow').map((r) => r.id).sort() })).digest('hex');
+  assert.equal(dg(dflt), legacy(a, dflt), 'perfil padrão: digest idêntico ao anterior'); assert.equal(dg(explicitDefault), legacy(a, dflt)); assert.equal(dg({ ...dflt, permissionProfile: 'lixo' }), legacy(a, dflt));
+  assert.notEqual(dg(bypass), dg(dflt), 'trocar para bypass muda o digest'); assert.notEqual(dg(bypass), legacy(a, bypass));
+  assert.equal(dg(bypass), dg({ ...bypass }), 'estável'); assert.match(dg(bypass), /^[0-9a-f]{64}$/);
+  const allow = { title: 'T', instructions: 'Crie a.js', acceptance: ['a.js existe'], expectedFiles: ['a.js'] };
+  assert.notEqual(dg(bypass, allow), dg(dflt, allow), 'também para ações permitidas');
+});
+
+test('bypass: o digest de uma aprovação pendente deixa de valer ao trocar o perfil (decideApproval invalida a solicitação)', async () => {
+  const { m, c, cy, starts } = await run([SENSITIVE(), blockedAns()]);
+  const a = c.approvals[0]; assert.equal(a.status, 'pending');
+  const ws = db.workspaces.find((w) => w.id === 'ws'); ws.permissionProfile = 'bypass';
+  try {
+    assert.equal(cy.decideApproval(m.id, a.id, { decision: 'approve', digest: a.digest }).status, 409, 'a política mudou desde a solicitação');
+    assert.equal(a.status, 'void'); assert.equal(starts(), 0);
+  } finally { delete ws.permissionProfile; }
 });

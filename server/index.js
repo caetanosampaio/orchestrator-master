@@ -6,11 +6,14 @@ import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import * as store from './store.js';
 import { uid, now } from './store.js';
-import { claudeCodeExecutor as realExecutor } from './executor/index.js';
+import { claudeCodeExecutor as realExecutor, bus as executorBus } from './executor/index.js';
+import { setupMissionLive } from './mission-live.js';
+import { buildLiveView, liveMarkdown } from './mission-live-view.js';
 import { gitInfo } from './git.js';
 import { asyncRoute } from './async-route.js';
 import { createGitProbe, prereqsOf, probeLogin } from './prereqs.js';
 import { validateDir, setupWorkspaceRemoval, setupWorkspaceRename } from './workspaces.js';
+import { setupPermissionProfile } from './permission-profile.js';
 import { topicsState, openAndActivate, snapshotTabs, restoreTabs, setupWorkspaceTabs, setupTopics } from './topics.js';
 import { setupUiSettings } from './ui-settings.js';
 import { createLoadouts, setupLoadouts } from './loadouts.js';
@@ -288,6 +291,7 @@ app.delete('/api/missions/:id', (req, res) => {
   }
   store.log('mission', `Missão removida: ${m.title}`);
   store.saveSoon();
+  try { missionLive.revokeForMission(m.id); } catch { /* o link também expira sozinho: a checagem a cada acesso vê que a missão sumiu */ }
   res.status(204).end();
 });
 
@@ -401,6 +405,17 @@ app.put('/api/settings', (req, res) => {
   res.json(db.settings);
 });
 
+// ---------- Acompanhamento ao vivo de cada missão no navegador (localhost) ----------
+// Página leve em /live/<token>/ (link de capacidade por missão, somente leitura, expira, revogável) com a visão REDIGIDA da missão e SSE por link (mission-live.js, mission-live-view.js).
+// Fica ANTES do catch-all do SPA (senão /live cairia no index.html). ORCH_LIVE=off desliga. As rotas POST/DELETE /api/missions/:id/live-link herdam apiGuard e o token de sessão do desktop.
+const missionLive = setupMissionLive(app, {
+  db, bus: executorBus, deliveryFor,
+  getSquad: () => ({ tasks: maestro.snapshot().tasks, sessions: terminals.list() }), // tarefas do Maestro + sessões de terminal (o vínculo missão↔tarefa depende dos panes do workspace)
+  visibleMission: (id) => visibleMissions().find((m) => m.id === id) ?? null,
+  now: () => Date.now(), env: process.env,
+  view: { buildLiveView: (m, ctx) => buildLiveView(m, { ...ctx, dataDir: store.dataDir }), liveMarkdown }, // dataDir vira marcador «dados» na redação
+});
+
 // ---------- Frontend buildado (opcional) ----------
 const dist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'client', 'dist');
 if (fs.existsSync(dist)) {
@@ -421,6 +436,7 @@ worktreeRecovery = await worktrees.recover(); // E3: a conciliação dos worktre
 setupVerification(app, { db, verifier });
 setupWorkspaceRemoval(app, { db, terminals, onRemoved: (id) => conversations.removeWorkspace(id) });
 setupWorkspaceRename(app, { db });
+setupPermissionProfile(app, { db, tokenActive: !!apiToken }); // GET/PUT /api/workspaces/:id/permission-profile: única escrita do perfil do Executor (só o usuário; ver permission-profile.js)
 setupWorkspaceTabs(app, { db });
 setupTopics(app, { db });
 setupLoadouts(app, { loadouts }); // skills por papel: GET/PUT /api/loadouts

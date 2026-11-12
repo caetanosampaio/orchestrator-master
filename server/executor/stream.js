@@ -103,7 +103,23 @@ export function createUsageTracker() {
   };
 }
 
-/** @returns {{lines:string[], usage?:object, result?:{text:string,isError:boolean,costUsd:number|null,durationMs:number|null,turns:number|null}}} */
+const MAX_DENIED = 5, MAX_DENIED_LEN = 160;
+/** Até 5 pedidos negados (`Ferramenta: comando`, truncados), para o bloqueio dizer ao humano o que precisaria liberar. Só texto do que a CLI reportou; nada é inventado. */
+function deniedOf(list) {
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  for (const d of list) {
+    if (out.length >= MAX_DENIED) break;
+    if (!d || typeof d !== 'object') continue;
+    const tool = typeof d.tool_name === 'string' ? d.tool_name.slice(0, 40) : 'ferramenta';
+    const what = String(brief(d.tool_input && typeof d.tool_input === 'object' ? d.tool_input : {})).replace(/\s+/g, ' ').trim();
+    const text = `${tool}${what ? `: ${what}` : ''}`;
+    out.push(text.length > MAX_DENIED_LEN ? `${text.slice(0, MAX_DENIED_LEN)}…` : text);
+  }
+  return out;
+}
+
+/** @returns {{lines:string[], usage?:object, result?:{text:string,isError:boolean,costUsd:number|null,durationMs:number|null,turns:number|null,permissionDenials:number,deniedCommands:string[]}}} */
 export function formatEvent(ev) {
   const lines = [];
   if (!ev || typeof ev !== 'object') return { lines };
@@ -132,6 +148,7 @@ function formatCore(ev, lines) {
       durationMs: typeof ev.duration_ms === 'number' ? ev.duration_ms : null,
       turns: typeof ev.num_turns === 'number' ? ev.num_turns : null,
       permissionDenials: Array.isArray(ev.permission_denials) ? ev.permission_denials.length : 0,
+      deniedCommands: deniedOf(ev.permission_denials),
     };
     lines.push(`[fim] ${ev.subtype ?? 'result'}${result.turns != null ? ` · ${result.turns} turnos` : ''}${result.costUsd != null ? ` · US$ ${result.costUsd.toFixed(4)}` : ''}`);
     return { lines, result };

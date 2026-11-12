@@ -140,7 +140,9 @@ function createWindow() {
   // compara a origem por URL, não por prefixo de texto (`http://127.0.0.1:5000` não pode "conter" `http://127.0.0.1:50001`)
   const isInternal = (url) => { try { return new URL(url).origin === origin; } catch { return false; } };
   win.webContents.on('will-navigate', (e, url) => { if (!isInternal(url)) { e.preventDefault(); if (/^https?:\/\//i.test(url)) shell.openExternal(url); } });
-  win.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:\/\//i.test(url) && !isInternal(url)) shell.openExternal(url); return { action: 'deny' }; });
+  // acompanhamento ao vivo de uma missão (/live/<token>/): é uma página do próprio servidor local, feita para o navegador padrão (somente leitura, sem o token de sessão); qualquer outra URL interna segue negada
+  const isLivePage = (url) => { try { const u = new URL(url); return u.origin === origin && /^\/live\/[A-Za-z0-9_-]{40,}\/?$/.test(u.pathname); } catch { return false; } };
+  win.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:\/\//i.test(url) && (!isInternal(url) || isLivePage(url))) shell.openExternal(url); return { action: 'deny' }; });
   win.on('closed', () => { win = null; });
   win.loadURL(`${origin}/`);
 }
