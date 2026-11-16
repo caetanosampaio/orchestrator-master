@@ -4,6 +4,7 @@
 
 import { isAgent, AGENT_NAMES } from './agents.js';
 import { criterionProblem, safeRelPath, MAX_EXPECTED } from './evidence.js';
+import { ROLES, TIER_NAMES, isRole, isTier } from './tiers.js';
 
 export const DECISIONS = ['continue', 'complete', 'blocked'];
 export const PLAN_DECISION = 'plan'; // M4: só é aceita com `validateDecision(raw, { plan: true })` (ORCH_CYCLE_PLAN=on); sem isso o contrato é o de sempre
@@ -42,7 +43,7 @@ export const list = (v, name, minN, maxN, maxLen) => {
 
 // ---------- Plano de múltiplas etapas (M4) ----------
 export const MAX_PLAN_STEPS = 10;
-const STEP_KEYS = ['id', 'title', 'instructions', 'acceptance', 'dependsOn', 'agent', 'expectedFiles'];
+const STEP_KEYS = ['id', 'title', 'instructions', 'acceptance', 'dependsOn', 'agent', 'expectedFiles', 'role', 'tier']; // role/tier: opcionais (rótulo e nível de modelo); `route` e `wave` são DERIVADOS e continuam rejeitados aqui
 const STEP_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/;
 
 /** expectedFiles (opcional): arquivos que a etapa deve CRIAR ou ALTERAR; o sistema os confere no disco depois. Caminhos relativos ao workspace, sem '..', absolutos nem coringas. */
@@ -84,12 +85,14 @@ export function validatePlanSteps(raw, { strict = false } = {}) { // strict (M8)
     const e = str(x.title, `${at}.title`, 1, 200) || str(x.instructions, `${at}.instructions`, 1, 4000) || list(x.acceptance, `${at}.acceptance`, 1, 8, 300);
     if (e) return { ok: false, error: e };
     if (x.agent !== undefined && !isAgent(x.agent)) return { ok: false, error: `"${at}.agent" deve ser um perfil conhecido (${AGENT_NAMES.join(' | ')})` };
+    if (x.role !== undefined && !isRole(x.role)) return { ok: false, error: `"${at}.role" deve ser ${ROLES.join(' | ')}` };
+    if (x.tier !== undefined && !isTier(x.tier)) return { ok: false, error: `"${at}.tier" deve ser ${TIER_NAMES.join(' | ')}` };
     const ef = validateExpectedFiles(x.expectedFiles, `${at}.expectedFiles`); if (!ef.ok) return ef;
     if (strict) { const ap = acceptanceProblem(at, x.acceptance, x.title); if (ap) return { ok: false, error: ap }; }
     const deps = x.dependsOn ?? [];
     if (!Array.isArray(deps) || deps.length > MAX_PLAN_STEPS - 1 || deps.some((d) => typeof d !== 'string')) return { ok: false, error: `${at}.dependsOn deve ser uma lista de ids de etapas` };
     if (new Set(deps).size !== deps.length) return { ok: false, error: `${at}.dependsOn repete uma dependência` };
-    steps.push({ id: x.id, title: x.title.trim(), instructions: x.instructions.trim(), acceptance: x.acceptance.map((a) => a.trim()), dependsOn: [...deps], ...(x.agent !== undefined ? { agent: x.agent } : {}), ...(ef.files ? { expectedFiles: ef.files } : {}) });
+    steps.push({ id: x.id, title: x.title.trim(), instructions: x.instructions.trim(), acceptance: x.acceptance.map((a) => a.trim()), dependsOn: [...deps], ...(x.agent !== undefined ? { agent: x.agent } : {}), ...(ef.files ? { expectedFiles: ef.files } : {}), ...(x.role !== undefined ? { role: x.role } : {}), ...(x.tier !== undefined ? { tier: x.tier } : {}) });
   }
   for (const st of steps) {
     for (const d of st.dependsOn) {

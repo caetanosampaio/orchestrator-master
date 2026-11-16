@@ -14,6 +14,8 @@ import { asyncRoute } from './async-route.js';
 import { createGitProbe, prereqsOf, probeLogin } from './prereqs.js';
 import { validateDir, setupWorkspaceRemoval, setupWorkspaceRename } from './workspaces.js';
 import { setupPermissionProfile } from './permission-profile.js';
+import { setupStepTier } from './step-tier.js';
+import { tiersFromEnv } from './tiers.js';
 import { topicsState, openAndActivate, snapshotTabs, restoreTabs, setupWorkspaceTabs, setupTopics } from './topics.js';
 import { setupUiSettings } from './ui-settings.js';
 import { createLoadouts, setupLoadouts } from './loadouts.js';
@@ -30,7 +32,7 @@ import { setupCycle, DEFAULT_MAX_ITERATIONS, HARD_MAX_ITERATIONS } from './cycle
 import { createClaudePlanner, plannerConfigFromEnv } from './planner.js';
 import { routingFromEnv, createRouter } from './routing.js';
 import { cycleLimitsFromEnv } from './limits.js';
-import { planModeFromEnv, stepRetriesFromEnv, resolveOrchestration, MAX_STEP_ATTEMPTS, MAX_STEP_RETRIES } from './plan.js';
+import { planModeFromEnv, stepRetriesFromEnv, autoCloseFromEnv, resolveOrchestration, MAX_STEP_ATTEMPTS, MAX_STEP_RETRIES } from './plan.js';
 import { resolveSupervision, supervisionMs, MAX_MINUTES_LIMIT, STALL_MINUTES_LIMIT, MAX_AUTO_RESUMES } from './supervisor.js';
 import { resolveWorktreeIsolation, createWorktreeManager, setupWorktrees } from './worktrees.js';
 import { createTerminalManager, setupTerminals } from './terminals.js';
@@ -68,6 +70,8 @@ const router = routingMode === 'on' ? createRouter() : null;
 const cycleLimits = cycleLimitsFromEnv(); // ORCH_CYCLE_MAX_PLANNER_CALLS / ORCH_CYCLE_MAX_ESTIMATED_COST_USD (padrão: desativados); valor inválido impede o boot
 stepRetriesFromEnv(); // ORCH_CYCLE_MAX_STEP_RETRIES=0|1|2|off: valor inválido impede o boot, antes de qualquer dado. O valor EFETIVO (ambiente > configurações > padrão) é resolvido por orchestration()
 planModeFromEnv(); // ORCH_CYCLE_PLAN=on|off: valor inválido impede o boot, antes de qualquer dado. O valor EFETIVO (ambiente > configurações > padrão) é resolvido por orchestration()
+autoCloseFromEnv(); // ORCH_CYCLE_AUTO_CLOSE=on|off: valor inválido impede o boot, antes de qualquer dado. O valor EFETIVO (ambiente > configurações > padrão ligado) é resolvido por orchestration()
+tiersFromEnv(); // ORCH_TIER_LEVE|PADRAO|PROFUNDA=modelo:esforco: valor inválido impede o boot, antes de qualquer dado. A tabela EFETIVA (somente leitura) sai em /api/state.orchestration.tiers
 resolveWorktreeIsolation({ settings: {} }); // Marco C: ORCH_WORKTREE_ISOLATION=on|off; valor inválido impede o boot, antes de qualquer dado
 resolveSupervision({ settings: {} }); // Marco B: ORCH_CYCLE_SUPERVISOR / _MAX_MINUTES / _STALL_MINUTES / _AUTO_RESUMES; valor inválido impede o boot, antes de qualquer dado
 const childRegistry = createChildRegistry(); // PIDs do Planner e do verificador no banco (db.childProcesses), para o boot reclamar o que um servidor anterior deixou vivo
@@ -167,7 +171,7 @@ app.get('/api/state', asyncRoute(async (req, res) => {
     persistenceIncident: store.persistenceIncident(), // aditivo (M2): último incidente de gravação (início, nº de falhas, quando foi reconciliado); null se nunca houve
     persistence: store.persistenceStatus(), // aditivo: ok, código do último erro, quando falhou e quantas falhas seguidas (sem caminhos)
     settings: { cycleMaxIterations: DEFAULT_MAX_ITERATIONS, ...db.settings, cycleHardMax: HARD_MAX_ITERATIONS },
-    orchestration: { planMode: o.planMode, stepRetries: o.stepRetries, maxStepAttempts: MAX_STEP_ATTEMPTS, hardMaxIterations: HARD_MAX_ITERATIONS, source: o.source }, // efetivo + origem (env | settings | default)
+    orchestration: { planMode: o.planMode, stepRetries: o.stepRetries, autoClose: o.autoClose, maxStepAttempts: MAX_STEP_ATTEMPTS, hardMaxIterations: HARD_MAX_ITERATIONS, source: o.source, tiers: tiersFromEnv() }, // efetivo + origem (env | settings | default); tiers = tabela EFETIVA de níveis { leve|padrao|profunda: { model, effort } }, só leitura
     worktrees: { isolation: worktreeIsolation(), items: worktrees.list(), unregistered: worktreeRecovery.unregistered }, // Marco C, aditivo
     supervision: sv, // Marco B, aditivo: { supervisor, maxMinutes, stallMinutes, autoResumes, source } — efetivo + origem de cada valor
     activeWorkspace: find(db.workspaces, db.settings.activeWorkspaceId) || null,
@@ -378,23 +382,25 @@ app.put('/api/settings', (req, res) => {
   if (b.cycleMaxIterations !== undefined && (!Number.isInteger(b.cycleMaxIterations) || b.cycleMaxIterations < 1 || b.cycleMaxIterations > HARD_MAX_ITERATIONS)) return bad(res, `cycleMaxIterations deve ser um inteiro de 1 a ${HARD_MAX_ITERATIONS}.`);
   if (b.planMode !== undefined && typeof b.planMode !== 'boolean') return bad(res, 'planMode deve ser verdadeiro ou falso.');
   if (b.stepRetries !== undefined && (!Number.isInteger(b.stepRetries) || b.stepRetries < 0 || b.stepRetries > MAX_STEP_RETRIES)) return bad(res, `stepRetries deve ser um inteiro de 0 a ${MAX_STEP_RETRIES}.`);
+  if (b.autoClose !== undefined && typeof b.autoClose !== 'boolean') return bad(res, 'autoClose deve ser verdadeiro ou falso.');
   if (b.supervisor !== undefined && typeof b.supervisor !== 'boolean') return bad(res, 'supervisor deve ser verdadeiro ou falso.');
   if (b.worktreeIsolation !== undefined && typeof b.worktreeIsolation !== 'boolean') return bad(res, 'worktreeIsolation deve ser verdadeiro ou falso.');
   for (const [k, max] of [['maxMinutes', MAX_MINUTES_LIMIT], ['stallMinutes', STALL_MINUTES_LIMIT], ['autoResumes', MAX_AUTO_RESUMES]]) {
     if (b[k] !== undefined && (!Number.isInteger(b[k]) || b[k] < 0 || b[k] > max)) return bad(res, `${k} deve ser um inteiro de 0 a ${max}.`);
   }
-  const orchKeys = ['planMode', 'stepRetries', 'supervisor', 'maxMinutes', 'stallMinutes', 'autoResumes', 'worktreeIsolation'].filter((k) => b[k] !== undefined);
+  const orchKeys = ['planMode', 'stepRetries', 'autoClose', 'supervisor', 'maxMinutes', 'stallMinutes', 'autoResumes', 'worktreeIsolation'].filter((k) => b[k] !== undefined);
   if (orchKeys.length) {
     const locked = orchKeys.filter((k) => (orchestration().source[k] ?? supervision().source[k] ?? (k === 'worktreeIsolation' ? worktreeIsolation().source : null)) === 'env');
     if (locked.length) return bad(res, `${locked.join(' e ')} ${locked.length > 1 ? 'são definidos' : 'é definido'} pelo ambiente do servidor (variáveis ORCH_CYCLE_*, como ORCH_CYCLE_PLAN) e não podem ser mudados pela interface; altere o ambiente e reinicie.`, 409);
     if (db.missions.some((m) => ['planning', 'running'].includes(m.cycle?.status))) return bad(res, 'Há um ciclo em andamento: aguarde terminar ou cancele antes de mudar o planejamento, as retentativas ou a supervisão.', 409);
   }
   // Aplica e GRAVA com confirmação; se o disco falhar, volta EXATAMENTE ao estado anterior (nada fica só na memória dizendo que foi salvo) e responde 503.
-  const KEYS = ['showDemoData', 'cycleMaxIterations', 'planMode', 'stepRetries', 'supervisor', 'maxMinutes', 'stallMinutes', 'autoResumes', 'worktreeIsolation'], prev = new Map(KEYS.map((k) => [k, Object.hasOwn(db.settings, k) ? { v: db.settings[k] } : null]));
+  const KEYS = ['showDemoData', 'cycleMaxIterations', 'planMode', 'stepRetries', 'autoClose', 'supervisor', 'maxMinutes', 'stallMinutes', 'autoResumes', 'worktreeIsolation'], prev = new Map(KEYS.map((k) => [k, Object.hasOwn(db.settings, k) ? { v: db.settings[k] } : null]));
   if (typeof b.showDemoData === 'boolean') db.settings.showDemoData = b.showDemoData;
   if (b.cycleMaxIterations !== undefined) db.settings.cycleMaxIterations = b.cycleMaxIterations;
   if (b.planMode !== undefined) db.settings.planMode = b.planMode;
   if (b.stepRetries !== undefined) db.settings.stepRetries = b.stepRetries;
+  if (b.autoClose !== undefined) db.settings.autoClose = b.autoClose;
   for (const k of ['supervisor', 'maxMinutes', 'stallMinutes', 'autoResumes', 'worktreeIsolation']) if (b[k] !== undefined) db.settings[k] = b[k];
   // requireApproval é fixo: aprovação humana é obrigatória.
   try { store.saveOrThrow(); } catch (e) {
@@ -446,7 +452,8 @@ setupHarness(app, { db }); // "Quem faz cada tarefa": a tabela de tipos de taref
 setupTeamTemplates(app, { db }); // squads salvos (equipes nomeadas com o agente de cada vaga): GET/POST /api/team-templates, PUT/DELETE /api/team-templates/:id
 setupConversations(app, { db, conversations }); // GET/DELETE /api/workspaces/:id/conversations[/:rec]
 { const capture = startConversationCapture({ db, conversations }); setTimeout(() => { capture.sweep().catch(() => {}); }, 3000).unref?.(); } // captura ao vivo das sessões rodando + varredura única das interrompidas // layout da grade de terminais por workspace (db.settings.layouts): GET /api/layouts, PUT /api/workspaces/:id/layout
-const cycle = setupCycle(app, { db, executor: claudeCodeExecutor, planner, startTaskRun, verifier, router, limits: cycleLimits, multiStep: () => orchestration().planMode, stepRetries: () => orchestration().stepRetries, supervision: () => supervisionMs(supervision()), worktrees, worktreeIsolation: () => worktreeIsolation().enabled });
+setupStepTier(app, { db }); // POST /api/missions/:id/cycle/steps/:stepId/tier: única escrita de cycle.plan.pins (fixa o nível de uma etapa ainda "queued"; mesmo apiGuard/token das demais escritas)
+const cycle = setupCycle(app, { db, executor: claudeCodeExecutor, planner, startTaskRun, verifier, router, limits: cycleLimits, multiStep: () => orchestration().planMode, stepRetries: () => orchestration().stepRetries, autoClose: () => orchestration().autoClose, supervision: () => supervisionMs(supervision()), worktrees, worktreeIsolation: () => worktreeIsolation().enabled });
 setupWorktrees(app, { db, manager: worktrees });
 setupTerminals(app, { manager: terminals });
 // Limite real de uso por conta (5 h e semana), somente leitura, sem caminhos/ids/e-mails; a interface consulta a cada ~15-30 s (memo de 2 s). Mesmo apiGuard (Host/Origin) das demais rotas de /api.

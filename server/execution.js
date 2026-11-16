@@ -140,7 +140,8 @@ export function setupExecution(app, { db, executor, verifier = null, orphanTools
     const profile = profileOf(workspace) === 'bypass' && profileOf(find(db.workspaces, mission.workspaceId)) === 'bypass' ? 'bypass' : 'default';
     let profileArgs;
     // Sem `agent` (tarefa manual) e perfil padrão: valem os argumentos do próprio executor (que já são os do perfil padrão); em bypass a tarefa manual também recebe os do perfil.
-    if (task?.agent !== undefined || profile === 'bypass') { try { profileArgs = agentArgs(task.agent ?? DEFAULT_AGENT, { profile }); } catch (e) { return { ok: false, reason: e.message }; } }
+    // `task.route` (nível de modelo/esforço resolvido pelo ciclo) também força os argumentos do perfil, mesmo no padrão; agentArgs recusa um par fora da tabela de níveis.
+    if (task?.agent !== undefined || task?.route || profile === 'bypass') { try { profileArgs = agentArgs(task.agent ?? DEFAULT_AGENT, { profile, ...(task.route ? { route: task.route } : {}) }); } catch (e) { return { ok: false, reason: e.message }; } }
     let handle;
     try {
       handle = executor.start({

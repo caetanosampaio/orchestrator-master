@@ -16,7 +16,10 @@ const FAKE_ARGV = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fake-
 const { default: express } = await import('express');
 const store = await import('../store.js');
 const { createExecutor } = await import('../executor/index.js');
-const { executorArgs } = await import('../exec-profile.js');
+const { executorArgs, BASE_ARGS } = await import('../exec-profile.js');
+const { routeArgs, TIERS } = await import('../tiers.js');
+// Toda rodada do ciclo agora leva o nível de modelo (padrão `padrao` sem tier/pin): `--model/--effort` entram logo depois de BASE_ARGS; a tarefa MANUAL continua sem eles.
+const cycleArgs = (profile) => { const a = executorArgs(profile); a.splice(BASE_ARGS.length, 0, ...routeArgs(TIERS.padrao)); return a; };
 const { setupExecution } = await import('../execution.js');
 const { createCycle } = await import('../cycle.js');
 const { createRouter } = await import('../routing.js');
@@ -60,25 +63,25 @@ test('sem `agent` na resposta: a tarefa usa `code`, a CLI recebe exatamente os a
   const r = await run([cont('A'), done()]);
   assert.equal(r.c.status, 'completed', r.c.blockedReason); assert.equal(r.c.assurance, 'verified');
   assert.equal(r.m.tasks[0].agent, 'code'); assert.equal(r.c.rounds[0].agent, 'code'); assert.ok(!('agent' in r.c.rounds[0].plan), 'o plano guarda só o que o Planner enviou');
-  assert.deepEqual(argvOf(r.m.tasks[0]), executorArgs('default'), 'o perfil, não os argumentos do runner de teste, definiu a chamada'); assert.equal(r.m.tasks[0].permissionProfile, 'default', 'o perfil de permissão com que a execução rodou fica na tarefa');
+  assert.deepEqual(argvOf(r.m.tasks[0]), cycleArgs('default'), 'o perfil, não os argumentos do runner de teste, definiu a chamada'); assert.equal(r.m.tasks[0].permissionProfile, 'default', 'o perfil de permissão com que a execução rodou fica na tarefa');
   const saved = JSON.parse(JSON.stringify(r.m)); assert.equal(saved.tasks[0].agent, 'code'); assert.equal(saved.cycle.rounds[0].agent, 'code');
   assert.equal(store.validateDb({ ...structuredClone(db), missions: [saved] }), null);
 });
 
 test('`agent: "code"` explícito: mesmo resultado, e o plano registra o que o Planner pediu', async () => {
   const r = await run([cont('A', { agent: 'code' }), done()]);
-  assert.equal(r.c.status, 'completed', r.c.blockedReason); assert.equal(r.c.rounds[0].plan.agent, 'code'); assert.equal(r.m.tasks[0].agent, 'code'); assert.deepEqual(argvOf(r.m.tasks[0]), executorArgs('default'));
+  assert.equal(r.c.status, 'completed', r.c.blockedReason); assert.equal(r.c.rounds[0].plan.agent, 'code'); assert.equal(r.m.tasks[0].agent, 'code'); assert.deepEqual(argvOf(r.m.tasks[0]), cycleArgs('default'));
 });
 
 test('workspace em modo sem confirmação (bypass): a CLI recebe bypassPermissions, sem allowedTools nem --tools, e a tarefa grava o perfil; o Planner não escolhe isso', async () => {
   const r = await run([cont('A'), done()], { ws: 'wsb' });
   assert.equal(r.c.status, 'completed', r.c.blockedReason); assert.equal(r.m.tasks[0].permissionProfile, 'bypass');
-  const argv = argvOf(r.m.tasks[0]); assert.deepEqual(argv, executorArgs('bypass'), 'o argv é o do perfil sem confirmação');
+  const argv = argvOf(r.m.tasks[0]); assert.deepEqual(argv, cycleArgs('bypass'), 'o argv é o do perfil sem confirmação');
   assert.equal(argv[argv.indexOf('--permission-mode') + 1], 'bypassPermissions'); assert.ok(!argv.includes('--allowedTools') && !argv.includes('--tools') && !argv.some((a) => /dangerously/i.test(a)));
   // o perfil vem SÓ do workspace: um campo `permissionProfile`/`profile` na decisão do Planner é rejeitado pelo esquema e a CLI não inicia
   const bad = await run([cont('A', { permissionProfile: 'bypass' }), cont('B'), done()]); assert.equal(bad.starts(), 1); assert.match(bad.c.rejections[0].problem, /permissionProfile/); assert.equal(bad.m.tasks[0].permissionProfile, 'default');
   // valor malformado no cadastro (outra caixa) = padrão (fail-safe)
-  const odd = await run([cont('A'), done()], { ws: 'wsx' }); assert.equal(odd.m.tasks[0].permissionProfile, 'default'); assert.deepEqual(argvOf(odd.m.tasks[0]), executorArgs('default'));
+  const odd = await run([cont('A'), done()], { ws: 'wsx' }); assert.equal(odd.m.tasks[0].permissionProfile, 'default'); assert.deepEqual(argvOf(odd.m.tasks[0]), cycleArgs('default'));
 });
 
 test('perfil desconhecido ou tipo inválido: rejeitado pelo mecanismo existente, a CLI NÃO inicia e a nova tentativa segue o fluxo de sempre', async () => {
@@ -127,7 +130,7 @@ test('compatibilidade: ciclo/tarefas/rodadas ANTIGOS (sem `agent`) continuam vá
 
 test('mecanismos preservados com perfis: roteamento ligado, limite de chamadas, orçamento e "complete" com verificação reprovada', async () => {
   const on = await run([cont('A', { agent: 'code' }), done()], { router: createRouter() });
-  assert.equal(on.c.status, 'completed', on.c.blockedReason); assert.ok(on.planner.calls.every((x) => x.keys.includes('tier'))); assert.deepEqual(argvOf(on.m.tasks[0]), executorArgs('default'));
+  assert.equal(on.c.status, 'completed', on.c.blockedReason); assert.ok(on.planner.calls.every((x) => x.keys.includes('tier'))); assert.deepEqual(argvOf(on.m.tasks[0]), cycleArgs('default'));
   const cap = await run([cont('A'), cont('B'), done()], { limits: { maxPlannerCalls: 1, maxEstimatedCostUsd: null } });
   assert.equal(cap.c.blockedCode, 'planner_call_cap'); assert.equal(cap.starts(), 1, 'nenhuma execução depois do bloqueio'); assert.equal((await cap.cy.resume(cap.m.id)).status, 409);
   const budget = await run([cont('A'), done()], { limits: { maxPlannerCalls: null, maxEstimatedCostUsd: 0.01 } });

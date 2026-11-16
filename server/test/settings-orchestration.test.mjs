@@ -44,8 +44,9 @@ async function call(b, p, { method = 'GET', body, origin = method === 'GET' ? un
   return { status: res.status, json: await res.json().catch(() => null) };
 }
 const put = (b, body, o) => call(b, '/api/settings', { method: 'PUT', body, ...o });
-const orch = async (b) => (await call(b, '/api/state')).json.orchestration;
-const DEFAULTS = { planMode: false, stepRetries: 0, maxStepAttempts: 3, hardMaxIterations: 10, source: { planMode: 'default', stepRetries: 'default' } };
+const orchFull = async (b) => (await call(b, '/api/state')).json.orchestration;
+const orch = async (b) => { const { tiers, ...o } = await orchFull(b); return o; }; // `tiers` (tabela de níveis, somente leitura) tem teste próprio; aqui só a configuração de orquestração
+const DEFAULTS = { planMode: true, stepRetries: 1, autoClose: true, maxStepAttempts: 3, hardMaxIterations: 10, source: { planMode: 'default', stepRetries: 'default', autoClose: 'default' } };
 const TERMINAL = ['completed', 'blocked', 'cancelled', 'limit_reached'];
 async function until(b, id, ms = 60000) {
   const t0 = Date.now();
@@ -57,12 +58,13 @@ async function until(b, id, ms = 60000) {
   }
 }
 
-test('padrão: plano e retentativas desligados, origem "default"; as chaves antigas de /api/state.settings continuam e não ganham planMode/stepRetries', async () => {
+test('padrão: plano ligado e 1 retentativa, origem "default" (e a tabela de níveis em orchestration.tiers); as chaves antigas de /api/state.settings continuam e não ganham planMode/stepRetries', async () => {
   const { data } = world(), realBefore = stat(), b = await up(data);
   try {
     assert.deepEqual(await orch(b), DEFAULTS);
+    assert.deepEqual(Object.keys((await orchFull(b)).tiers), ['leve', 'padrao', 'profunda'], 'a tabela efetiva de níveis acompanha a orquestração');
     const s = (await call(b, '/api/state')).json.settings; assert.equal(s.cycleHardMax, 10); assert.equal(s.cycleMaxIterations, 5); assert.ok(!('planMode' in s) && !('stepRetries' in s), 'nada é gravado sem o usuário pedir');
-    assert.equal((await call(b, '/api/chat')).json.planMode, false, 'o chat também enxerga o padrão');
+    assert.equal((await call(b, '/api/chat')).json.planMode, true, 'o chat também enxerga o padrão');
   } finally { await stop(b); }
   assert.equal(stat(), realBefore, 'o banco real não foi tocado');
 });
@@ -75,10 +77,10 @@ test('PUT /api/settings: entradas inválidas são recusadas (400) e NADA é apli
     }
     assert.deepEqual(await orch(b), DEFAULTS, 'nenhuma entrada inválida mudou a configuração');
     assert.equal((await call(b, '/api/state')).json.settings.showDemoData, false, 'showDemoData enviado junto com um valor inválido também não foi aplicado');
-    for (const [body, want] of [[{ planMode: true }, { planMode: true, stepRetries: 0 }], [{ stepRetries: 2 }, { planMode: true, stepRetries: 2 }], [{ planMode: false, stepRetries: 1 }, { planMode: false, stepRetries: 1 }], [{ stepRetries: 0 }, { planMode: false, stepRetries: 0 }]]) {
+    for (const [body, want] of [[{ planMode: true }, { planMode: true, stepRetries: 1 }], [{ stepRetries: 2 }, { planMode: true, stepRetries: 2 }], [{ planMode: false, stepRetries: 1 }, { planMode: false, stepRetries: 1 }], [{ stepRetries: 0 }, { planMode: false, stepRetries: 0 }]]) {
       const r = await put(b, body); assert.equal(r.status, 200, JSON.stringify(r.json)); const o = await orch(b); assert.deepEqual([o.planMode, o.stepRetries], [want.planMode, want.stepRetries]);
     }
-    assert.deepEqual((await orch(b)).source, { planMode: 'settings', stepRetries: 'settings' }, 'valores gravados explicitamente (inclusive false e 0) têm origem "settings"');
+    assert.deepEqual((await orch(b)).source, { planMode: 'settings', stepRetries: 'settings', autoClose: 'default' }, 'valores gravados explicitamente (inclusive false e 0) têm origem "settings"');
   } finally { await stop(b); }
 });
 
@@ -97,7 +99,7 @@ test('persistência: a configuração gravada sobrevive ao reinício do servidor
   try {
     assert.equal((await put(b, { planMode: true, stepRetries: 2 })).status, 200); await stop(b);
     b = await up(data);
-    assert.deepEqual(await orch(b), { planMode: true, stepRetries: 2, maxStepAttempts: 3, hardMaxIterations: 10, source: { planMode: 'settings', stepRetries: 'settings' } });
+    assert.deepEqual(await orch(b), { planMode: true, stepRetries: 2, autoClose: true, maxStepAttempts: 3, hardMaxIterations: 10, source: { planMode: 'settings', stepRetries: 'settings', autoClose: 'default' } });
     assert.equal((await call(b, '/api/chat')).json.planMode, true, 'o chat lê a configuração persistida');
   } finally { await stop(b); }
   const disk = JSON.parse(fs.readFileSync(path.join(data, 'db.json'), 'utf8')); assert.deepEqual([disk.settings.planMode, disk.settings.stepRetries], [true, 2]);
@@ -108,16 +110,16 @@ test('ambiente > configurações: valores do ambiente travam o campo (409 com o 
   try {
     assert.equal((await put(b, { planMode: false, stepRetries: 2 })).status, 200); await stop(b);
     b = await up(data, { ORCH_CYCLE_PLAN: 'on' }); // só o plano vem do ambiente
-    assert.deepEqual(await orch(b), { planMode: true, stepRetries: 2, maxStepAttempts: 3, hardMaxIterations: 10, source: { planMode: 'env', stepRetries: 'settings' } }, 'o ambiente vence só no campo que define');
+    assert.deepEqual(await orch(b), { planMode: true, stepRetries: 2, autoClose: true, maxStepAttempts: 3, hardMaxIterations: 10, source: { planMode: 'env', stepRetries: 'settings', autoClose: 'default' } }, 'o ambiente vence só no campo que define');
     const locked = await put(b, { planMode: false }); assert.equal(locked.status, 409); assert.match(locked.json.error, /planMode é definido pelo ambiente/); assert.match(locked.json.error, /ORCH_CYCLE_PLAN/);
     const mixed = await put(b, { planMode: false, stepRetries: 1 }); assert.equal(mixed.status, 409, 'um campo travado recusa o pedido inteiro'); assert.equal((await orch(b)).stepRetries, 2, 'o campo livre enviado junto também não mudou');
     assert.equal((await put(b, { stepRetries: 1 })).status, 200, 'o campo livre continua editável'); assert.equal((await orch(b)).stepRetries, 1);
     assert.equal((await put(b, { planMode: 'x' })).status, 400, 'a validação vem antes do bloqueio por ambiente'); await stop(b);
     b = await up(data, { ORCH_CYCLE_PLAN: 'off', ORCH_CYCLE_MAX_STEP_RETRIES: '0' });
-    assert.deepEqual(await orch(b), { planMode: false, stepRetries: 0, maxStepAttempts: 3, hardMaxIterations: 10, source: { planMode: 'env', stepRetries: 'env' } }, '"off" e "0" também travam');
+    assert.deepEqual(await orch(b), { planMode: false, stepRetries: 0, autoClose: true, maxStepAttempts: 3, hardMaxIterations: 10, source: { planMode: 'env', stepRetries: 'env', autoClose: 'default' } }, '"off" e "0" também travam');
     assert.equal((await put(b, { stepRetries: 2 })).status, 409); await stop(b);
     b = await up(data); // sem ambiente: a configuração gravada (plano=false, retentativas=1) volta a valer
-    assert.deepEqual(await orch(b), { planMode: false, stepRetries: 1, maxStepAttempts: 3, hardMaxIterations: 10, source: { planMode: 'settings', stepRetries: 'settings' } });
+    assert.deepEqual(await orch(b), { planMode: false, stepRetries: 1, autoClose: true, maxStepAttempts: 3, hardMaxIterations: 10, source: { planMode: 'settings', stepRetries: 'settings', autoClose: 'default' } });
   } finally { await stop(b); }
 });
 
@@ -135,10 +137,11 @@ test('INTEGRAÇÃO: sem nenhuma variável de ambiente, configurar pela API (plan
     assert.deepEqual(await orch(b), DEFAULTS);
     const w = await call(b, '/api/workspaces', { method: 'POST', body: { path: ws } }); assert.equal(w.status, 201);
     assert.equal((await call(b, `/api/workspaces/${w.json.id}/verifications`, { method: 'PUT', body: { items: [{ script: 'test', required: true }] } })).status, 200);
-    // com o plano desligado o Planner simulado devolve "plan", que o chat RECUSA: a configuração padrão de fato vale
+    // o padrão agora é plano LIGADO: para provar que a configuração vale, desliga-se o plano pela API (settings) e o Planner simulado devolve "plan", que o chat RECUSA
+    assert.equal((await put(b, { planMode: false })).status, 200); assert.equal((await orch(b)).planMode, false);
     const off = await call(b, '/api/chat/message', { method: 'POST', body: { text: 'LANDING page para uma barbearia' } }); assert.equal(off.status, 502, 'plano desligado: a resposta "plan" é recusada');
     assert.equal((await put(b, { planMode: true, stepRetries: 1 })).status, 200);
-    assert.deepEqual(await orch(b), { planMode: true, stepRetries: 1, maxStepAttempts: 3, hardMaxIterations: 10, source: { planMode: 'settings', stepRetries: 'settings' } });
+    assert.deepEqual(await orch(b), { planMode: true, stepRetries: 1, autoClose: true, maxStepAttempts: 3, hardMaxIterations: 10, source: { planMode: 'settings', stepRetries: 'settings', autoClose: 'default' } });
     // a mudança vale na PRÓXIMA mensagem
     const msg = await call(b, '/api/chat/message', { method: 'POST', body: { text: 'LANDING page para uma barbearia' } }); assert.equal(msg.status, 200, JSON.stringify(msg.json));
     const p = msg.json.proposal; assert.deepEqual(p.steps.map((s) => s.id), ['s1', 's2']);
@@ -165,7 +168,7 @@ test('persistência atômica: se o banco não pode ser gravado, o PUT responde 5
     fs.mkdirSync(blocker); // um DIRETÓRIO no lugar do arquivo temporário: a gravação falha com erro real (EISDIR)
     const r = await put(b, { planMode: true, stepRetries: 1, showDemoData: true, cycleMaxIterations: 7 });
     assert.equal(r.status, 500); assert.match(r.json.error, /NÃO foram salvas/);
-    const o = await orch(b); assert.deepEqual([o.planMode, o.stepRetries, o.source.planMode, o.source.stepRetries], [false, 2, 'default', 'settings'], 'a memória voltou ao estado anterior');
+    const o = await orch(b); assert.deepEqual([o.planMode, o.stepRetries, o.source.planMode, o.source.stepRetries], [true, 2, 'default', 'settings'], 'a memória voltou ao estado anterior');
     const s = (await call(b, '/api/state')).json.settings; assert.equal(s.showDemoData, false); assert.equal(s.cycleMaxIterations, 5); assert.ok(!('planMode' in s), 'a chave que não existia antes foi removida, não deixada como undefined');
     fs.rmSync(blocker, { recursive: true, force: true });
     assert.equal((await put(b, { planMode: true, stepRetries: 1 })).status, 200); assert.deepEqual([(await orch(b)).planMode, (await orch(b)).stepRetries], [true, 1]);

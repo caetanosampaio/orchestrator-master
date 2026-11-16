@@ -31,24 +31,24 @@ before(() => {
 after(async () => { await sleep(500); fs.rmSync(tmp, { recursive: true, force: true }); });
 
 // ---------- 1. precedência ----------
-test('resolveOrchestration: padrão tudo desligado; configurações valem sem ambiente; o ambiente vence; origem por campo', () => {
-  assert.deepEqual(resolveOrchestration({ env: {}, settings: {} }), { planMode: false, stepRetries: 0, source: { planMode: 'default', stepRetries: 'default' } });
-  assert.deepEqual(resolveOrchestration({ env: {} }), { planMode: false, stepRetries: 0, source: { planMode: 'default', stepRetries: 'default' } }, 'sem settings');
-  assert.deepEqual(resolveOrchestration({ env: {}, settings: { planMode: true, stepRetries: 2 } }), { planMode: true, stepRetries: 2, source: { planMode: 'settings', stepRetries: 'settings' } });
-  assert.deepEqual(resolveOrchestration({ env: {}, settings: { planMode: false, stepRetries: 0 } }).source, { planMode: 'settings', stepRetries: 'settings' }, 'false e 0 gravados são "settings", não "default"');
+test('resolveOrchestration: padrão: plano ligado e 1 retentativa; configurações valem sem ambiente; o ambiente vence; origem por campo', () => {
+  assert.deepEqual(resolveOrchestration({ env: {}, settings: {} }), { planMode: true, stepRetries: 1, autoClose: true, source: { planMode: 'default', stepRetries: 'default', autoClose: 'default' } });
+  assert.deepEqual(resolveOrchestration({ env: {} }), { planMode: true, stepRetries: 1, autoClose: true, source: { planMode: 'default', stepRetries: 'default', autoClose: 'default' } }, 'sem settings');
+  assert.deepEqual(resolveOrchestration({ env: {}, settings: { planMode: true, stepRetries: 2 } }), { planMode: true, stepRetries: 2, autoClose: true, source: { planMode: 'settings', stepRetries: 'settings', autoClose: 'default' } });
+  assert.deepEqual(resolveOrchestration({ env: {}, settings: { planMode: false, stepRetries: 0 } }).source, { planMode: 'settings', stepRetries: 'settings', autoClose: 'default' }, 'false e 0 gravados são "settings", não "default"');
   // ambiente > configurações, campo a campo
-  assert.deepEqual(resolveOrchestration({ env: { ORCH_CYCLE_PLAN: 'off' }, settings: { planMode: true, stepRetries: 2 } }), { planMode: false, stepRetries: 2, source: { planMode: 'env', stepRetries: 'settings' } });
-  assert.deepEqual(resolveOrchestration({ env: { ORCH_CYCLE_MAX_STEP_RETRIES: '0' }, settings: { planMode: true, stepRetries: 2 } }), { planMode: true, stepRetries: 0, source: { planMode: 'settings', stepRetries: 'env' } }, '"0" no ambiente também é ambiente');
-  assert.deepEqual(resolveOrchestration({ env: { ORCH_CYCLE_PLAN: 'on', ORCH_CYCLE_MAX_STEP_RETRIES: '1' }, settings: { planMode: false, stepRetries: 2 } }), { planMode: true, stepRetries: 1, source: { planMode: 'env', stepRetries: 'env' } });
-  assert.deepEqual(resolveOrchestration({ env: { ORCH_CYCLE_MAX_STEP_RETRIES: 'off' } }).source, { planMode: 'default', stepRetries: 'env' }, '"off" também é ambiente');
+  assert.deepEqual(resolveOrchestration({ env: { ORCH_CYCLE_PLAN: 'off' }, settings: { planMode: true, stepRetries: 2 } }), { planMode: false, stepRetries: 2, autoClose: true, source: { planMode: 'env', stepRetries: 'settings', autoClose: 'default' } });
+  assert.deepEqual(resolveOrchestration({ env: { ORCH_CYCLE_MAX_STEP_RETRIES: '0' }, settings: { planMode: true, stepRetries: 2 } }), { planMode: true, stepRetries: 0, autoClose: true, source: { planMode: 'settings', stepRetries: 'env', autoClose: 'default' } }, '"0" no ambiente também é ambiente');
+  assert.deepEqual(resolveOrchestration({ env: { ORCH_CYCLE_PLAN: 'on', ORCH_CYCLE_MAX_STEP_RETRIES: '1' }, settings: { planMode: false, stepRetries: 2 } }), { planMode: true, stepRetries: 1, autoClose: true, source: { planMode: 'env', stepRetries: 'env', autoClose: 'default' } });
+  assert.deepEqual(resolveOrchestration({ env: { ORCH_CYCLE_MAX_STEP_RETRIES: 'off' } }).source, { planMode: 'default', stepRetries: 'env', autoClose: 'default' }, '"off" também é ambiente');
   // variável vazia = ausente
-  assert.deepEqual(resolveOrchestration({ env: { ORCH_CYCLE_PLAN: '  ', ORCH_CYCLE_MAX_STEP_RETRIES: '' }, settings: { planMode: true } }), { planMode: true, stepRetries: 0, source: { planMode: 'settings', stepRetries: 'default' } });
+  assert.deepEqual(resolveOrchestration({ env: { ORCH_CYCLE_PLAN: '  ', ORCH_CYCLE_MAX_STEP_RETRIES: '' }, settings: { planMode: true } }), { planMode: true, stepRetries: 1, autoClose: true, source: { planMode: 'settings', stepRetries: 'default', autoClose: 'default' } });
 });
 
 test('resolveOrchestration: ambiente inválido lança Error; configuração persistida inválida (banco editado) é ignorada e vale o padrão', () => {
   for (const env of [{ ORCH_CYCLE_PLAN: 'talvez' }, { ORCH_CYCLE_MAX_STEP_RETRIES: '3' }, { ORCH_CYCLE_MAX_STEP_RETRIES: '-1' }, { ORCH_CYCLE_MAX_STEP_RETRIES: 'x' }]) assert.throws(() => resolveOrchestration({ env, settings: { planMode: true, stepRetries: 1 } }), /ORCH_CYCLE_/, JSON.stringify(env));
   for (const settings of [{ planMode: 'true', stepRetries: 3 }, { planMode: 1, stepRetries: -1 }, { planMode: null, stepRetries: 1.5 }, { stepRetries: '1' }, null, 'x', []]) {
-    assert.deepEqual(resolveOrchestration({ env: {}, settings }), { planMode: false, stepRetries: 0, source: { planMode: 'default', stepRetries: 'default' } }, JSON.stringify(settings));
+    assert.deepEqual(resolveOrchestration({ env: {}, settings }), { planMode: true, stepRetries: 1, autoClose: true, source: { planMode: 'default', stepRetries: 'default', autoClose: 'default' } }, JSON.stringify(settings));
   }
   assert.equal(MAX_STEP_RETRIES, 2);
 });

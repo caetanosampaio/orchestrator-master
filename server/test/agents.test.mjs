@@ -62,3 +62,36 @@ test('validateDecision: perfis desconhecidos e tipos inválidos são rejeitados 
   assert.equal(validateDecision(dec({ title: '' })).ok, false); assert.equal(validateDecision(dec({ acceptance: [] })).ok, false);
   assert.match(validateDecision(JSON.stringify({ decision: 'complete', rationale: 'r', evidence: ['e'], task: { agent: 'code' } })).error, /não aceita "task"/);
 });
+
+// ---------- Níveis de modelo (tiers.js): opts.route ----------
+const { BASE_ARGS } = await import('../exec-profile.js');
+const ROUTE = { model: 'claude-haiku-5-5', effort: 'low' }, ROUTE_ARGS = ['--model', 'claude-haiku-5-5', '--effort', 'low'];
+
+test('route: sem `route` (ausente, null, undefined) o argv é IDÊNTICO ao de sempre, nos dois perfis (igualdade profunda)', () => {
+  for (const profile of ['default', 'bypass']) {
+    for (const o of [{ profile }, { profile, route: undefined }, { profile, route: null }]) assert.deepEqual(agentArgs('code', o), executorArgs(profile));
+    assert.ok(!agentArgs('code', { profile }).includes('--model') && !agentArgs('code', { profile }).includes('--effort'));
+  }
+  assert.deepEqual(agentArgs('code'), executorArgs('default'));
+});
+
+test('route: --model/--effort entram logo depois de BASE_ARGS e antes de --permission-mode; --allowedTools continua por último (default); bypass também', () => {
+  const d = agentArgs('code', { profile: 'default', route: ROUTE });
+  assert.deepEqual(d.slice(0, BASE_ARGS.length), [...BASE_ARGS]); assert.deepEqual(d.slice(BASE_ARGS.length, BASE_ARGS.length + 4), ROUTE_ARGS);
+  assert.equal(d.indexOf('--permission-mode'), BASE_ARGS.length + 4, '--permission-mode vem logo depois da rota');
+  assert.deepEqual(d.slice(BASE_ARGS.length + 4), executorArgs('default').slice(BASE_ARGS.length), 'o resto do perfil é o mesmo, na mesma ordem');
+  assert.deepEqual(d.slice(d.indexOf('--allowedTools') + 1), [...DEFAULT_ALLOW], '--allowedTools continua por último e só com a lista pré-aprovada');
+  const b = agentArgs('code', { profile: 'bypass', route: ROUTE });
+  assert.deepEqual(b.slice(BASE_ARGS.length, BASE_ARGS.length + 4), ROUTE_ARGS); assert.deepEqual(b, [...BASE_ARGS, ...ROUTE_ARGS, '--permission-mode', 'bypassPermissions']);
+  assert.deepEqual(agentArgs('code', { route: ROUTE }), d, 'sem profile = default'); assert.deepEqual(agentArgs(undefined, { route: ROUTE }), d);
+  assert.deepEqual(executorArgs('default'), agentArgs('code'), 'a tabela do agente não foi alterada pela chamada com route');
+});
+
+test('route: par fora da tabela de níveis lança e nenhum argv é devolvido; perfil desconhecido continua lançando', () => {
+  for (const route of [{ model: 'qualquer', effort: 'low' }, { model: 'claude-haiku-5-5', effort: 'max' }, {}, 'claude-haiku-5-5', 5, []]) {
+    assert.throws(() => agentArgs('code', { route }), /Rota de modelo inválida/, JSON.stringify(route));
+    assert.throws(() => agentArgs('code', { profile: 'bypass', route }), /Rota de modelo inválida/);
+  }
+  assert.throws(() => agentArgs('review', { route: ROUTE }), /Perfil de agente desconhecido/); assert.throws(() => agentArgs('__proto__', { profile: 'bypass', route: ROUTE }), /Perfil de agente desconhecido/);
+  const a = agentArgs('code', { route: ROUTE }); a.push('--x'); a[0] = 'mudou'; assert.deepEqual(agentArgs('code', { route: ROUTE }).slice(BASE_ARGS.length, BASE_ARGS.length + 4), ROUTE_ARGS, 'cópia nova a cada chamada');
+});

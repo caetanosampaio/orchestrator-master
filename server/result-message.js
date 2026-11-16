@@ -38,7 +38,7 @@ export function resultMessageOf(report, mission) {
   if (lastVs.length) lines.push(`Verificações reais da última rodada: ${lastVs.map((v) => `${clip(v.script, 30)} ${v.status === 'pass' ? 'passou' : v.status === 'fail' ? 'falhou' : clip(v.status, 20)}`).join(', ')}.`);
   else if (code === 'completed') lines.push('Nenhuma verificação real (teste/build/lint) rodou na última rodada.');
   const declared = report.declared?.plannerSummary;
-  if (isObj(declared) && declared.text) lines.push(`Resumo do Planner (declaração, não prova): ${clip(declared.text, 600)}`);
+  if (isObj(declared) && declared.text) lines.push(declared.origin === 'system' ? `Fechamento automático do servidor (todas as etapas com evidência verificada): ${clip(declared.text, 600)}` : `Resumo do Planner (declaração, não prova): ${clip(declared.text, 600)}`); // origin 'system': a frase é do servidor, não do Planner
   else if (isObj(report.acceptance) && report.acceptance.recorded && typeof mission?.cycle?.finalSummary === 'string') lines.push(`Decisão registrada pela pessoa: ${clip(mission.cycle.finalSummary, 600)}`);
 
   const pending = [];

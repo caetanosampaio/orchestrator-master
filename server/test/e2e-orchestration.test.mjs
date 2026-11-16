@@ -65,6 +65,8 @@ async function runMission(b, ws) {
   return { id: ap.json.missionId, mission: await until(b, ap.json.missionId) };
 }
 const strip = (r) => { const { generatedAt, ...rest } = r; return rest; };
+// `orchestration.tiers` (tabela de níveis, somente leitura) tem teste próprio; aqui só a configuração de planejamento/retentativas
+const orchOf = (state) => { const { tiers, ...o } = state.orchestration; assert.deepEqual(Object.keys(tiers), ['leve', 'padrao', 'profunda']); return o; };
 
 test('A — falha recuperável da verificação, UMA retentativa e conclusão verificada, pelo fluxo real da API; C — configuração e relatório coerentes; D — persistem após reinício; E — Origin', async () => {
   const realBefore = stat(), { data, ws } = world(), port = await freePort();
@@ -85,7 +87,7 @@ test('A — falha recuperável da verificação, UMA retentativa e conclusão ve
     assert.ok(fs.existsSync(path.join(ws, 'index.html')) && fs.existsSync(path.join(ws, 'style.css')), 'os arquivos esperados existem no workspace');
     // C — a configuração publicada e o relatório contam a mesma história
     state = (await call(a, '/api/state')).json;
-    assert.deepEqual(state.orchestration, { planMode: true, stepRetries: 1, maxStepAttempts: 3, hardMaxIterations: 10, source: { planMode: 'env', stepRetries: 'env' } });
+    assert.deepEqual(orchOf(state), { planMode: true, stepRetries: 1, autoClose: true, maxStepAttempts: 3, hardMaxIterations: 10, source: { planMode: 'env', stepRetries: 'env', autoClose: 'default' } });
     assert.equal(report.observed.retriesUsed, state.orchestration.stepRetries, 'o orçamento de 1 retentativa foi usado por inteiro');
     assert.ok(report.observed.steps.every((s) => s.attempts <= state.orchestration.maxStepAttempts)); assert.ok(report.cycle.rounds <= state.orchestration.hardMaxIterations); assert.ok(report.cycle.rounds <= report.cycle.maxIterations);
     assert.equal(report.observed.rounds.filter((r) => r.stepId === 's1').length, report.observed.steps.find((s) => s.id === 's1').attempts, 'attempts = rodadas da etapa no relatório');
@@ -110,8 +112,8 @@ test('A — falha recuperável da verificação, UMA retentativa e conclusão ve
   assert.equal(stat(), realBefore, 'o banco real (data/db.json) não foi tocado');
 });
 
-test('B — retentativas desligadas (padrão): a mesma falha NÃO é repetida, o ciclo bloqueia e a garantia não é verificada; a configuração publicada diz isso', async () => {
-  const realBefore = stat(), { data, ws } = world(), b = boot(await freePort(), data, { ORCH_CYCLE_PLAN: 'on', E2E_VERIFY_FAILS: '1' }); // sem ORCH_CYCLE_MAX_STEP_RETRIES
+test('B — retentativas desligadas (ORCH_CYCLE_MAX_STEP_RETRIES=0; o padrão agora é 1): a mesma falha NÃO é repetida, o ciclo bloqueia e a garantia não é verificada; a configuração publicada diz isso', async () => {
+  const realBefore = stat(), { data, ws } = world(), b = boot(await freePort(), data, { ORCH_CYCLE_PLAN: 'on', ORCH_CYCLE_MAX_STEP_RETRIES: '0', E2E_VERIFY_FAILS: '1' }); // o padrão passou a ser 1 retentativa: o fluxo SEM retentativa é fixado pelo ambiente
   try {
     const { id, mission } = await runMission(b, ws);
     assert.equal(mission.cycle.status, 'blocked'); assert.equal(mission.cycle.blockedCode, 'planner_blocked'); assert.equal(mission.cycle.rounds.length, 1, 'uma única rodada: nada foi repetido');
@@ -122,7 +124,7 @@ test('B — retentativas desligadas (padrão): a mesma falha NÃO é repetida, o
     assert.match(report.state.reasons.join(' '), /planner_blocked/);
     assert.ok(!fs.existsSync(path.join(ws, 'style.css')), 'a etapa seguinte não rodou');
     const st = (await call(b, '/api/state')).json;
-    assert.deepEqual(st.orchestration, { planMode: true, stepRetries: 0, maxStepAttempts: 3, hardMaxIterations: 10, source: { planMode: 'env', stepRetries: 'default' } }); assert.equal(report.observed.retriesUsed, st.orchestration.stepRetries);
+    assert.deepEqual(orchOf(st), { planMode: true, stepRetries: 0, autoClose: true, maxStepAttempts: 3, hardMaxIterations: 10, source: { planMode: 'env', stepRetries: 'env', autoClose: 'default' } }); assert.equal(report.observed.retriesUsed, st.orchestration.stepRetries);
   } finally { await stop(b); }
   assert.equal(stat(), realBefore, 'o banco real (data/db.json) não foi tocado');
 });

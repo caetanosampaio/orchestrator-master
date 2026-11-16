@@ -226,7 +226,7 @@ function timelineOf({ mission, c, rounds, worktreesOf, tasks, squadItems }, R, n
       add(r.startedAt, 'round', `Rodada ${n} iniciada: ${title || 'sem título'}${ag}`);
       const v = verificationOf(r), lv = ['verified', 'inconclusive', 'failed'].includes(r.report?.evidence?.level) ? r.report.evidence.level : null;
       add(r.finishedAt, 'round', `Rodada ${n} ${ROUND_PT[r.status] ?? R.text(r.status, 20) ?? ''}${v ? `; verificações: ${v}` : ''}${lv ? `; evidência: ${lv}` : ''}`);
-      if (isObj(r.decision)) add(r.decision.at, 'decision', `Planner decidiu "${R.text(r.decision.decision, 40)}" depois da rodada ${n}${r.decision.rationale ? `: ${R.text(r.decision.rationale, 160)}` : ''}`);
+      if (isObj(r.decision)) add(r.decision.at, 'decision', `${r.decision.by === 'system' ? 'O servidor fechou o ciclo automaticamente' : `Planner decidiu "${R.text(r.decision.decision, 40)}"`} depois da rodada ${n}${r.decision.rationale ? `: ${R.text(r.decision.rationale, 160)}` : ''}`);
       if (lv) add(r.report.evidence.at, 'evidence', `Parecer de evidência da rodada ${n}: ${lv}`);
     }
     for (const a of objs(c.approvals)) {

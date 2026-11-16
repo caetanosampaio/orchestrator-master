@@ -1,11 +1,12 @@
 // Plano persistido de múltiplas etapas (M4), executado de forma SEQUENCIAL: uma etapa por vez, sem paralelismo e sem scheduler.
 //
 // O plano vive em `mission.cycle.plan` (mesmo banco, mesma gravação do ciclo; nada de segundo sistema de persistência):
-//   { id, createdAt, rationale, steps: [{ id, title, instructions, acceptance, dependsOn, agent?, status, round, taskId }] }
+//   { id, createdAt, rationale, pins?, steps: [{ id, title, instructions, acceptance, dependsOn, agent?, role?, tier?, status, round, taskId, wave, route }] }
+// `role`/`tier` vêm do Planner (rótulo e nível de modelo); `wave` e `route` são DERIVADOS (como o estado); `pins` ({ idDaEtapa: nível }) é escolha do usuário, fora das definições das etapas.
 // A DEFINIÇÃO das etapas (id, título, instruções, critérios, dependências, agente) vem do Planner e é validada por validatePlanSteps (cycle-schema.js).
 // O ESTADO de cada etapa (status, round, taskId) é DERIVADO das rodadas gravadas (`round.planId` + `round.stepId`): é uma cópia gravada por
 // syncPlan() a cada emit() do ciclo, nunca uma segunda fonte de verdade. Por isso uma etapa concluída não se repete por causa de um reinício:
-// o que decide é a rodada gravada, e uma etapa só é elegível enquanto não tem rodada (eligibleSteps). Exceção controlada (Marco A, v1; desligada por padrão): uma etapa que falhou
+// o que decide é a rodada gravada, e uma etapa só é elegível enquanto não tem rodada (eligibleSteps). Exceção controlada (Marco A, v1; 1 retentativa por padrão, 0/off desliga): uma etapa que falhou
 // por uma causa objetiva e recuperável (retryClass: R1/R2) pode ter ATÉ MAX_STEP_ATTEMPTS tentativas, ou seja, várias rodadas com o mesmo planId/stepId, em sequência, e só pelo
 // caminho de retryCandidate (orçamento POR CICLO, retriesUsed). A tentativa é derivada da posição da rodada; planProblem valida a sequência.
 //
@@ -22,10 +23,11 @@
 //   interrupted : a execução foi interrompida (cancelamento, queda do servidor); NUNCA é refeita automaticamente
 import { roundVerification } from './cycle.js';
 import { validatePlanSteps } from './cycle-schema.js';
+import { resolveRoute, tiersFromEnv, isTier, TIERS } from './tiers.js';
 
 export const PLAN_ENV = 'ORCH_CYCLE_PLAN';
 
-/** ORCH_CYCLE_PLAN: `on` liga a decisão "plan" do Planner; ausente, vazio ou `off` = desligado (fluxo de sempre). Qualquer outro valor lança Error. */
+/** ORCH_CYCLE_PLAN: `on` liga a decisão "plan" do Planner; `off` desliga; ausente/vazio = desligado AQUI (o padrão efetivo, ligado, é o de resolveOrchestration). Qualquer outro valor lança Error. */
 export function planModeFromEnv(env = process.env) {
   const v = String(env[PLAN_ENV] ?? '').trim().toLowerCase();
   if (v === '' || v === 'off') return false;
@@ -35,10 +37,19 @@ export function planModeFromEnv(env = process.env) {
 
 // ---------- Reparo limitado de etapas (Marco A, v1) ----------
 // Uma etapa cuja execução TERMINOU normalmente e cuja falha é objetivamente recuperável (classes R1 e R2, ver retryClass) pode ser refeita automaticamente, no MESMO drive,
-// até ORCH_CYCLE_MAX_STEP_RETRIES vezes POR CICLO (somando todos os planos do ciclo). Desligado por padrão. Nada disto é persistido à parte: a tentativa se deriva da posição da rodada
+// até ORCH_CYCLE_MAX_STEP_RETRIES vezes POR CICLO (somando todos os planos do ciclo). Padrão efetivo: 1 (resolveOrchestration); 0 ou off desliga. Nada disto é persistido à parte: a tentativa se deriva da posição da rodada
 // entre as rodadas de mesmo planId e stepId, e o orçamento de retentativas se deriva de cycle.rounds (retriesUsed).
 export const STEP_RETRIES_ENV = 'ORCH_CYCLE_MAX_STEP_RETRIES';
 export const MAX_STEP_RETRIES = 2;
+export const AUTO_CLOSE_ENV = 'ORCH_CYCLE_AUTO_CLOSE';
+/** ORCH_CYCLE_AUTO_CLOSE: `on`/`off`; ausente ou vazio = NÃO definido (undefined: vale o padrão de resolveOrchestration). Qualquer outro valor lança Error (o servidor não sobe). */
+export function autoCloseFromEnv(env = process.env) {
+  const v = String(env[AUTO_CLOSE_ENV] ?? '').trim().toLowerCase();
+  if (v === '') return undefined;
+  if (v === 'on') return true;
+  if (v === 'off') return false;
+  throw new Error(`${AUTO_CLOSE_ENV} inválido: use "on" para o servidor fechar o ciclo sozinho quando todas as etapas estiverem verificadas, ou "off" para sempre consultar o Planner (ou deixe vazio para o padrão).`);
+}
 export const MAX_STEP_ATTEMPTS = 3; // limite ESTRUTURAL (planProblem): independente do ambiente, para que baixar o limite depois não invalide um plano já gravado
 
 /** ORCH_CYCLE_MAX_STEP_RETRIES: ausente, vazio, `off` ou `0` = desligado; `1` ou `2` = retentativas automáticas por ciclo. Qualquer outro valor lança Error (o servidor não sobe). */
@@ -50,23 +61,48 @@ export function stepRetriesFromEnv(env = process.env) {
 }
 
 /**
- * Configuração EFETIVA de orquestração (I4). Precedência por campo: variável de ambiente (definida e não vazia; inclui `off`/`0`) > configuração persistida (settings) > padrão (tudo desligado).
+ * Configuração EFETIVA de orquestração (I4). Precedência por campo: variável de ambiente (definida e não vazia; inclui `off`/`0`) > configuração persistida (settings) > padrão (plano LIGADO e 1 retentativa por ciclo).
  * Ambiente inválido lança Error (o servidor não sobe); configuração persistida inválida (banco editado à mão) é IGNORADA e vale o padrão. `source` diz de onde veio cada valor.
- * @returns {{planMode:boolean, stepRetries:0|1|2, source:{planMode:'env'|'settings'|'default', stepRetries:'env'|'settings'|'default'}}}
+ * @returns {{planMode:boolean, stepRetries:0|1|2, autoClose:boolean, source:{planMode:'env'|'settings'|'default', stepRetries:'env'|'settings'|'default', autoClose:'env'|'settings'|'default'}}}
  */
 export function resolveOrchestration({ env = process.env, settings = {} } = {}) {
   const s = settings && typeof settings === 'object' ? settings : {};
   const envPlan = String(env[PLAN_ENV] ?? '').trim() !== '', envRetries = String(env[STEP_RETRIES_ENV] ?? '').trim() !== '';
   const setPlan = typeof s.planMode === 'boolean', setRetries = Number.isInteger(s.stepRetries) && s.stepRetries >= 0 && s.stepRetries <= MAX_STEP_RETRIES;
+  const envClose = autoCloseFromEnv(env), setClose = typeof s.autoClose === 'boolean'; // autoClose: fechamento pelo servidor (sem Planner) quando todas as etapas têm evidência verificada
   return {
-    planMode: envPlan ? planModeFromEnv(env) : setPlan ? s.planMode : false,
-    stepRetries: envRetries ? stepRetriesFromEnv(env) : setRetries ? s.stepRetries : 0,
-    source: { planMode: envPlan ? 'env' : setPlan ? 'settings' : 'default', stepRetries: envRetries ? 'env' : setRetries ? 'settings' : 'default' },
+    planMode: envPlan ? planModeFromEnv(env) : setPlan ? s.planMode : true,
+    stepRetries: envRetries ? stepRetriesFromEnv(env) : setRetries ? s.stepRetries : 1,
+    autoClose: envClose !== undefined ? envClose : setClose ? s.autoClose : true,
+    source: { planMode: envPlan ? 'env' : setPlan ? 'settings' : 'default', stepRetries: envRetries ? 'env' : setRetries ? 'settings' : 'default', autoClose: envClose !== undefined ? 'env' : setClose ? 'settings' : 'default' },
   };
 }
 
 /** Plano gravado no ciclo a partir de etapas JÁ validadas (validatePlanSteps): todas começam "queued", sem rodada. Único ponto que cria a forma de cycle.plan. */
 export const newPlan = ({ id, at, rationale, steps }) => ({ id, createdAt: at, rationale, steps: steps.map((st) => ({ ...st, status: 'queued', round: null, taskId: null })) });
+
+/** Tabela EFETIVA de níveis (com ORCH_TIER_*); se o ambiente ficou inválido depois do boot, cai na tabela protegida (nunca lança aqui). */
+const effectiveTable = () => { try { return tiersFromEnv(); } catch { return TIERS; } };
+/** Rota (nível, modelo, esforço, origem) de uma etapa: pin do plano > nível do Planner > padrão; `attempt` > 1 sobe um nível (tiers.js; o pin nunca sobe). */
+export const stepRoute = (plan, step, attempt = 1) => {
+  const pins = plan?.pins, pin = pins && typeof pins === 'object' && typeof step?.id === 'string' && Object.hasOwn(pins, step.id) ? pins[step.id] : undefined; // só chave PRÓPRIA (nada herdado do protótipo)
+  return resolveRoute({ tier: step?.tier, pin, attempt, table: effectiveTable() });
+};
+
+/** Onda de cada etapa: 1 + a maior onda das dependências (1 = sem dependências). Dependência desconhecida é ignorada e um ciclo não trava nem lança (o nó em visita vale 0): quem rejeita ambos é validatePlanSteps/planProblem. */
+export function wavesOf(list) {
+  const byId = new Map(list.filter((s) => s && typeof s === 'object').map((s) => [s.id, s])), memo = new Map(), visiting = new Set();
+  const depth = (id) => {
+    if (memo.has(id)) return memo.get(id);
+    if (visiting.has(id) || !byId.has(id)) return 0;
+    visiting.add(id);
+    const deps = Array.isArray(byId.get(id).dependsOn) ? byId.get(id).dependsOn : [];
+    const w = 1 + Math.max(0, ...deps.map((d) => (typeof d === 'string' ? depth(d) : 0)));
+    visiting.delete(id); memo.set(id, w);
+    return w;
+  };
+  return new Map([...byId.keys()].map((id) => [id, depth(id)]));
+}
 
 const steps = (c) => (Array.isArray(c?.plan?.steps) ? c.plan.steps.filter((s) => s && typeof s === 'object') : []);
 const roundsOf = (c, stepId, planId = c.plan?.id) => (Array.isArray(c.rounds) ? c.rounds : []).filter((r) => r?.planId === planId && r.stepId === stepId);
@@ -87,13 +123,17 @@ export function stepStatusFromRound(round) {
   return ev.level === 'verified' ? 'completed' : ev.level === 'failed' ? 'failed' : 'unverified';
 }
 
-/** Atualiza (idempotente) status/round/taskId de cada etapa do plano a partir das rodadas. Chamada a cada emit() do ciclo, antes de gravar. */
+/** Atualiza (idempotente) status/round/taskId/wave/route de cada etapa do plano a partir das rodadas. Chamada a cada emit() do ciclo, antes de gravar. */
 export function syncPlan(c, plan = c?.plan) {
   if (!Array.isArray(plan?.steps)) return;
+  const waves = wavesOf(plan.steps);
   for (const s of plan.steps) {
     if (!s || typeof s !== 'object') continue;
     const r = roundsOf(c, s.id, plan.id).at(-1);
     s.status = stepStatusFromRound(r); s.round = r?.n ?? null; s.taskId = r?.taskId ?? null;
+    s.wave = waves.get(s.id) ?? 1;
+    // a rota USADA na última rodada; sem rodada, a que será usada (pin > nível do Planner > padrão). Rodada SEM rota gravada (ciclo antigo, recusa da política): nunca se inventa modelo, a etapa fica sem `route`.
+    if (r) { if (r.route && typeof r.route === 'object') s.route = { ...r.route }; else delete s.route; } else s.route = stepRoute(plan, s);
     if (r?.report?.outcomeUncertain) s.uncertain = true; else delete s.uncertain; // M7: interrompida sem relatório final; os efeitos no workspace são desconhecidos
   }
 }
@@ -110,6 +150,41 @@ export const nextStep = (c) => eligibleSteps(c)[0] ?? null;
 
 /** Etapas do plano que ainda não estão concluídas. */
 export const openSteps = (c) => { syncPlan(c); return steps(c).filter((s) => s.status !== 'completed'); };
+
+export const AUTO_CLOSE_RATIONALE = 'Fechamento automático: todas as etapas concluídas com evidência verificada.';
+/**
+ * Fechamento automático (sem Planner): PURO, só sobre dados gravados. Só é candidato um plano em que TODAS as etapas estão `completed` E a última rodada de cada uma é `succeeded`
+ * com evidência do SISTEMA de nível "verified". Rodada antiga SEM evidência (anterior ao M8) conta como concluída para o plano, mas NUNCA como verificada aqui: nesse caso não há candidato (o Planner decide).
+ * Devolve a decisão "complete" sintetizada (1 a 10 itens de evidência, até 500 caracteres cada, sem caracteres de controle) ou o motivo de não haver candidato. O gate de conclusão (semanticProblem) é de quem chama.
+ * @returns {{ok:true, decision:{decision:'complete', rationale:string, evidence:string[]}} | {ok:false, reason:string}}
+ */
+export function autoCloseCandidate(c) {
+  const no = (reason) => ({ ok: false, reason });
+  if (!c?.plan || !Array.isArray(c.plan.steps)) return no('não há plano gravado');
+  syncPlan(c);
+  const all = steps(c);
+  if (!all.length) return no('o plano não tem etapas');
+  // eslint-disable-next-line no-control-regex
+  const one = (s, max = 500) => {
+    const t = String(s).replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim();
+    return t.length > max ? `${t.slice(0, max - 1)}…` : t;
+  };
+  const done = [];
+  for (const s of all) {
+    const r = roundsOf(c, s.id, c.plan.id).at(-1);
+    if (s.status !== 'completed') return no(`a etapa "${s.id}" está "${s.status}"`);
+    if (!r || r.status !== 'succeeded' || r.report?.evidence?.level !== 'verified') return no(`a etapa "${s.id}" não tem evidência do sistema de nível "verified"`);
+    // Sem o Planner como segunda barreira, só se fecha com verificação REAL aprovada; `expected_files` sozinho (e o "pass" autodeclarado do Executor) segue para o Planner decidir.
+    if (!String(r.report.evidence.basis ?? '').startsWith('real_verification')) return no(`a etapa "${s.id}" não tem verificação real aprovada (base: ${String(r.report.evidence.basis ?? 'ausente').slice(0, 40)})`);
+    const vs = (Array.isArray(r.report.verifications) ? r.report.verifications : []).filter((v) => v && v.status === 'pass').map((v) => v.script).filter((x) => typeof x === 'string');
+    const files = (Array.isArray(r.report.evidence?.system?.expectedFiles) ? r.report.evidence.system.expectedFiles : []).filter((f) => f?.ok === true).map((f) => f.path).filter((x) => typeof x === 'string');
+    const proof = [vs.length ? `verificações reais aprovadas: ${vs.slice(0, 5).join(', ')}` : '', files.length ? `arquivos esperados conferidos: ${files.slice(0, 5).join(', ')}` : ''].filter(Boolean).join('; ') || 'evidência do sistema verificada';
+    done.push({ s, text: `Etapa ${s.id}, rodada ${r.n}: ${proof}.` }); // sem o título (autoria do Planner): esta lista é rotulada como do servidor
+  }
+  const MAX = 10, evidence = done.slice(0, MAX).map((x) => one(x.text));
+  if (done.length > MAX) evidence[MAX - 1] = one(`Demais ${done.length - MAX + 1} etapas (${done.slice(MAX - 1).map((x) => x.s.id).slice(0, 8).join(', ')}${done.length - MAX + 1 > 8 ? ', …' : ''}) concluídas com evidência do sistema verificada.`); // mais de 10 etapas: o último item resume as restantes
+  return { ok: true, decision: { decision: 'complete', rationale: AUTO_CLOSE_RATIONALE, evidence } };
+}
 
 /** Retentativas já usadas no ciclo: por grupo (planId, stepId) de TODOS os planos do ciclo, cada rodada além da primeira é uma retentativa. Substituir o plano não zera isto (cycle.rounds é o histórico completo). */
 export function retriesUsed(c) {
@@ -205,8 +280,16 @@ export function planProblem(c) {
   if (c?.plan === undefined || c.plan === null) return null;
   const p = c.plan;
   if (typeof p !== 'object' || Array.isArray(p) || typeof p.id !== 'string' || !Array.isArray(p.steps)) return 'o plano gravado não tem a estrutura esperada';
-  const v = validatePlanSteps(p.steps.map((s) => { if (!s || typeof s !== 'object' || Array.isArray(s)) return s; const { status, round, taskId, uncertain, ...def } = s; return def; })); // item que não é objeto: a validação o rejeita (não lança)
+  const v = validatePlanSteps(p.steps.map((s) => { if (!s || typeof s !== 'object' || Array.isArray(s)) return s; const { status, round, taskId, uncertain, wave, route, ...def } = s; return def; })); // item que não é objeto: a validação o rejeita (não lança)
   if (!v.ok) return `o plano gravado é inválido: ${v.error}`;
+  if (p.pins !== undefined) { // escolhas de nível do usuário: opcional (planos antigos não têm), objeto simples, só ids de etapas existentes e só nomes de nível válidos
+    if (p.pins === null || typeof p.pins !== 'object' || Array.isArray(p.pins)) return 'o plano gravado é inválido: "pins" deve ser um objeto { idDaEtapa: nível }';
+    const ids = new Set(p.steps.map((s) => s.id));
+    for (const [k, t] of Object.entries(p.pins)) {
+      if (!ids.has(k)) return `o plano gravado é inválido: "pins" cita a etapa "${k.slice(0, 40)}", que não existe no plano`;
+      if (!isTier(t)) return `o plano gravado é inválido: "pins.${k.slice(0, 40)}" não é um nível válido`;
+    }
+  }
   syncPlan(c);
   const byId = new Map(p.steps.map((s) => [s.id, s]));
   const own = (Array.isArray(c.rounds) ? c.rounds : []).filter((r) => r?.planId === p.id);

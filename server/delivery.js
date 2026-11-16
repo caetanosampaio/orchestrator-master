@@ -227,7 +227,7 @@ export function buildDelivery(mission, workspace = null, { now = () => new Date(
   const declared = {
     note: 'Declarações de agentes. Não são prova de conclusão.',
     // Com aceitação humana registrada, `finalSummary` é o texto da DECISÃO DA PESSOA (cycle.acceptance), nunca uma declaração do Planner.
-    plannerSummary: c && c.finalSummary && !isObj(c.acceptance) ? { text: clip(c.finalSummary, 1500), evidence: arr(c.evidence).filter((x) => typeof x === 'string').map((x) => clip(x, 500)), origin: 'planner', label: 'declaração do Planner' } : null,
+    plannerSummary: c && c.finalSummary && !isObj(c.acceptance) ? { text: clip(c.finalSummary, 1500), evidence: arr(c.evidence).filter((x) => typeof x === 'string').map((x) => clip(x, 500)), ...(c.closedBy === 'system' ? { origin: 'system', label: 'fechamento automático do servidor' } : { origin: 'planner', label: 'declaração do Planner' }) } : null, // closedBy 'system': o texto é a frase fixa do servidor (não do Planner); ciclos antigos sem o campo seguem como declaração do Planner
     cycleAssuranceLabel: c?.assurance ?? null, // rótulo gravado pelo próprio ciclo; NÃO é usado para calcular `assurance` abaixo
     executorReports: rounds.map((r) => ({
       round: r.n, origin: 'executor', summary: clip(r.report?.summary, 600), reportedStatus: r.report?.status ?? null,
