@@ -3,7 +3,7 @@ import Dialog from './Dialog.jsx';
 import { ActionButton } from './MissionPanel.jsx';
 import { api } from '../api.js';
 
-/** Nova missão: título e objetivo (o que o Planner recebe) e o workspace. Criar não executa nada: o ciclo só começa no botão "Iniciar ciclo" (ou marcando a opção). */
+/** Criar missão SEM plano prévio (caminho secundário ao briefing da página): título, objetivo (o que o Planner recebe) e workspace. Criar não executa nada: o ciclo só começa no botão "Iniciar" (ou marcando a opção). */
 export default function NewMissionDialog({ workspaces, activeWorkspaceId, onClose, onCreated }) {
   const [title, setTitle] = useState(''), [objective, setObjective] = useState('');
   const [workspaceId, setWorkspaceId] = useState(activeWorkspaceId && workspaces.some((w) => w.id === activeWorkspaceId) ? activeWorkspaceId : workspaces[0]?.id ?? '');
@@ -21,8 +21,9 @@ export default function NewMissionDialog({ workspaces, activeWorkspaceId, onClos
     } catch (err) { setError(err.message); setBusy(false); }
   };
   return (
-    <Dialog title="Nova missão" onClose={onClose} id="new-mission">
+    <Dialog title="Criar missão sem plano" onClose={onClose} id="new-mission">
       <form className="mi-form" onSubmit={submit}>
+        <p className="dim mi-form-lead">Atalho para quem já sabe o que quer: sem a conversa do briefing, você escreve o objetivo e o Planner monta o plano quando o ciclo começar. Para revisar as etapas, o modelo e o esforço de cada agente antes de iniciar, descreva o pedido no briefing.</p>
         <label>Nome<input data-autofocus value={title} maxLength={120} onChange={(e) => setTitle(e.target.value)} placeholder="Ex.: Corrigir o login com Google" required /></label>
         <label>Objetivo e contexto<textarea value={objective} maxLength={2000} rows={5} onChange={(e) => setObjective(e.target.value)} placeholder="O que deve ficar pronto, restrições, arquivos ou áreas envolvidas e como saber que terminou." /><span className="dim">{objective.length}/2000 · o Planner usa este texto para dividir o trabalho em etapas verificáveis.</span></label>
         <label>Workspace

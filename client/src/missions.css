@@ -102,7 +102,7 @@
 .mi-objective { margin: 0; max-width: 88ch; color: #b6b7c0; font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }
 .mi-ctx { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0; padding: 2px 0 2px 14px; border-left: 1px solid var(--brand); font-size: 12px; }
 .mi-ctx dt { color: var(--mute); } .mi-ctx dd { margin: 0; color: #d4d4d8; overflow-wrap: anywhere; }
-.mi-live { align-self: center; width: 6px; height: 6px; border-radius: 50%; background: var(--s-working); animation: mi-blink 1.2s ease-in-out infinite; }
+/* (o ponto "ao vivo" do cabeçalho antigo usava `.mi-live`, classe que colidia com a seção do Mission Live em mission-live.css; a tela nova usa `.mb-live-dot`) */
 
 /* faixa de pipeline: um segmento por etapa */
 .mi-pipe { display: flex; align-items: center; gap: 14px; }

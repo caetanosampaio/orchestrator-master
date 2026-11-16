@@ -154,5 +154,5 @@ test('componente e página: montagem mínima, URL só em memória, sem console/l
   const page = src('pages/Missions.jsx');
   assert.match(page, /import MissionLiveButton from '\.\.\/components\/MissionLiveButton\.jsx'/);
   assert.match(page, /<MissionLiveButton key=\{mission\.id\} mission=\{mission\} \/>/);
-  assert.ok(page.indexOf('<MissionPanel ') < page.indexOf('<MissionLiveButton') && page.indexOf('<MissionLiveButton') < page.indexOf('<ControlBar '), 'entre MissionPanel e ControlBar');
+  assert.ok(page.indexOf('<MissionPanel ') < page.indexOf('<MissionLiveButton') && page.indexOf('<MissionLiveButton') < page.indexOf('<MissionAttention '), 'entre MissionPanel e a faixa de atenção (a tela nova de cima para baixo não usa mais o ControlBar)');
 });

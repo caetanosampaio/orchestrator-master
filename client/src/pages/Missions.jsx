@@ -1,46 +1,49 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import '../mission-board.css';
 import { api } from '../api.js';
 import { useStore } from '../store.jsx';
-import { paneState } from '../env-view.js';
-import { buildWorkflow, missionState, nodeDetail, parallelInfo } from '../missions-view.js';
+import { missionState } from '../missions-view.js';
+import { buildBoard, drawerModel, pinBody, pinUrl, TIER_LABEL } from '../mission-board.js';
 import MissionSidebar from '../components/MissionSidebar.jsx';
-import MissionPanel, { MissionMeters, MissionTeam } from '../components/MissionPanel.jsx';
+import MissionPanel from '../components/MissionPanel.jsx';
 import MissionLiveButton from '../components/MissionLiveButton.jsx';
-import MissionWorkflow from '../components/MissionWorkflow.jsx';
-import MissionNodeDetail from '../components/MissionNodeDetail.jsx';
-import MissionActivity, { ControlBar } from '../components/MissionActivity.jsx';
+import MissionBriefing from '../components/MissionBriefing.jsx';
+import MissionBoard, { MissionAttention } from '../components/MissionBoard.jsx';
+import MissionProgress from '../components/MissionProgress.jsx';
+import MissionDelivery from '../components/MissionDelivery.jsx';
+import MissionAgentDrawer from '../components/MissionAgentDrawer.jsx';
 import NewMissionDialog from '../components/NewMissionDialog.jsx';
 
 const SEL_KEY = 'forge.missions.selected';
 const readSel = () => { try { return localStorage.getItem(SEL_KEY) || null; } catch { return null; } };
 
-/** Seção recolhida (fechada por padrão): informação complementar que não precisa ficar sempre à vista. */
-const More = ({ title, hint, children }) => (
-  <details className="mi-more">
-    <summary><span>{title}</span>{hint ? <span className="mi-more-h">{hint}</span> : null}</summary>
-    <div className="mi-more-b">{children}</div>
-  </details>
-);
-
 /**
- * Central de missões: sidebar à esquerda; no centro um cabeçalho compacto e o WORKFLOW como protagonista; a etapa selecionada abre num painel lateral (drawer).
- * Atividade geral, custo/tokens e equipe ficam em seções recolhidas. Tudo vem do servidor (/api/missions, ciclo autônomo, /api/state.usage, terminais, Maestro, atividade): nada é simulado.
+ * Central de missões, de CIMA PARA BAIXO: sidebar à esquerda; no centro, uma coluna com o cabeçalho, o briefing, o plano por ondas, o progresso e a entrega.
+ * Clicar numa etapa abre a gaveta do agente (modelo, esforço, contexto; logs só em "Detalhes técnicos"). Tudo vem do servidor (/api/missions, /api/chat,
+ * /api/state): nada é simulado; o que o servidor não informa aparece como "não informado". Sem missão selecionada (ou em "Nova missão") a coluna é o briefing.
  */
 export default function Missions({ onOpenCockpit, data }) {
   const { missions, failed, refresh } = data; // lido uma vez no App (também alimenta o indicador do botão Missions)
-  const { workspaces, state, terminals, maestro, workingIds, activity, notify, refresh: refreshStore } = useStore();
-  const [selectedId, setSelectedId] = useState(readSel), [nodeId, setNodeId] = useState(null), [newOpen, setNewOpen] = useState(false), [busy, setBusy] = useState(null);
+  const { workspaces, state, notify, refresh: refreshStore } = useStore();
+  const [selectedId, setSelectedId] = useState(readSel), [stepId, setStepId] = useState(null), [composing, setComposing] = useState(false);
+  const [newOpen, setNewOpen] = useState(false), [busy, setBusy] = useState(null), [pendingId, setPendingId] = useState(null);
   const [now, setNow] = useState(() => Date.now());
 
   const list = missions ?? [];
-  // Sem seleção válida: a missão que mais pede você (aprovação > atenção > trabalhando), senão a primeira.
+  // Sem seleção válida: a missão que mais pede você (aprovação > atenção > trabalhando), senão a primeira. Uma missão recém-criada pelo briefing ainda pode não estar na lista.
   useEffect(() => {
     if (missions === null) return;
-    if (selectedId && list.some((m) => m.id === selectedId)) return;
+    if (pendingId && list.some((m) => m.id === pendingId)) setPendingId(null);
+    if (selectedId && (list.some((m) => m.id === selectedId) || selectedId === pendingId)) return;
     const pick = ['approval', 'attention', 'working'].map((s) => list.find((m) => missionState(m) === s)).find(Boolean) ?? list[0] ?? null;
-    setSelectedId(pick?.id ?? null); setNodeId(null); // outra missão: o detalhe da etapa anterior não "gruda"
-  }, [missions, selectedId]); // eslint-disable-line react-hooks/exhaustive-deps
-  const select = useCallback((id) => { setSelectedId(id); setNodeId(null); try { localStorage.setItem(SEL_KEY, id); } catch { /* só conveniência */ } }, []);
+    setSelectedId(pick?.id ?? null); setStepId(null); // outra missão: o detalhe da etapa anterior não "gruda"
+  }, [missions, selectedId, pendingId]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { // a missão criada pelo briefing pode não aparecer na lista (falha persistente do refresh): não deixa "Abrindo a missão criada…" preso
+    if (!pendingId) return undefined;
+    const t = setTimeout(() => setPendingId(null), 20000);
+    return () => clearTimeout(t);
+  }, [pendingId]);
+  const select = useCallback((id) => { setSelectedId(id); setStepId(null); setComposing(false); try { localStorage.setItem(SEL_KEY, id); } catch { /* só conveniência */ } }, []);
 
   const mission = list.find((m) => m.id === selectedId) ?? null;
   const mstate = mission ? missionState(mission) : 'idle';
@@ -51,13 +54,16 @@ export default function Missions({ onOpenCockpit, data }) {
   }, [mstate, selectedId]);
 
   const workspace = mission ? workspaces.find((w) => w.id === mission.workspaceId) ?? null : null;
-  const sessions = terminals?.sessions ?? [];
-  const wf = useMemo(() => (mission ? buildWorkflow(mission, { sessions, maestro }) : null), [mission, sessions, maestro]);
-  const detail = useMemo(() => (mission && nodeId ? nodeDetail(mission, nodeId, { sessions, maestro, activity }) : null), [mission, nodeId, sessions, maestro, activity]);
-  const par = wf ? parallelInfo(wf) : null;
-  const stateOf = useCallback((s) => paneState(s, workingIds), [workingIds]);
-  useEffect(() => { if (nodeId && wf && !wf.nodes.some((n) => n.id === nodeId)) setNodeId(null); }, [wf, nodeId]);
-  const closeDetail = useCallback(() => setNodeId(null), []);
+  const tiers = state?.orchestration?.tiers ?? null; // tabela EFETIVA do servidor (somente leitura); ausente = modelo "não informado"
+  const board = useMemo(() => (mission ? buildBoard(mission, { tiers, usage: state?.usage }) : null), [mission, tiers, state?.usage]);
+  const drawer = useMemo(() => (mission && board && stepId ? drawerModel(mission, board, stepId) : null), [mission, board, stepId]);
+  useEffect(() => { if (stepId && board && !board.steps.some((s) => s.id === stepId)) setStepId(null); }, [board, stepId]);
+  const pickStep = useCallback((id) => setStepId((cur) => (cur === id ? null : id)), []);
+  const stepRef = useRef(null); stepRef.current = stepId;
+  const closeDrawer = useCallback(() => { // devolve o foco ao cartão que abriu a gaveta (teclado e leitor de tela)
+    const id = stepRef.current; setStepId(null);
+    if (id) setTimeout(() => document.querySelector(`.mb-card-btn[data-sid="${CSS.escape(id)}"]`)?.focus({ preventScroll: true }), 0);
+  }, []);
 
   const run = useCallback(async (key, fn, ok) => {
     setBusy(key);
@@ -65,7 +71,7 @@ export default function Missions({ onOpenCockpit, data }) {
   }, [notify, refresh, refreshStore]);
 
   const onAction = (what) => {
-    if (!mission) return;
+    if (!mission) return undefined;
     const id = mission.id;
     if (what === 'start') return run('start', () => api.post(`/api/missions/${id}/cycle/start`, {}), 'Ciclo iniciado.');
     if (what === 'resume') return run('resume', () => api.post(`/api/missions/${id}/cycle/resume`, {}), 'Ciclo retomado.');
@@ -79,51 +85,54 @@ export default function Missions({ onOpenCockpit, data }) {
     if (scope === 'task') return run(`${decision}:${id}`, () => api.post(`/api/missions/${mission.id}/tasks/${id}/${decision}`, {}), `${verb}.`);
     return run(`${decision}:${id}`, () => api.post(`/api/missions/${mission.id}/cycle/approvals/${id}`, { decision, digest }), `${verb}.`);
   };
+  // Fixar o nível de uma etapa na fila (o servidor só aceita enquanto ela está `queued`; só o NOME do nível vai no corpo, nunca um modelo).
+  const onPin = (id, value) => {
+    const body = pinBody(value);
+    if (!mission || !body) return undefined;
+    return run(`pin:${id}`, () => api.post(pinUrl(mission.id, id), body), value === 'auto' ? 'Nível devolvido ao Planner.' : `Nível fixado: ${TIER_LABEL[value]}.`);
+  };
+  // Aceitação humana de uma conclusão SEM evidência verificada: nunca automática (o corpo já traz o motivo e a confirmação explícita).
+  const onAccept = (body) => (mission ? run('accept', () => api.post(`/api/missions/${mission.id}/cycle/accept-unverified`, body), 'Conclusão aceita sem evidência verificada.') : undefined);
   // Abre o Cockpit no workspace da missão. O terminal só vai junto quando é um id (os botões podem repassar o evento de clique, que não conta).
   const openTerminals = (terminalId) => onOpenCockpit(mission?.workspaceId ?? null, typeof terminalId === 'string' ? terminalId : null);
+  // Briefing aprovado: o servidor criou a missão e iniciou o ciclo (202 { missionId }); seleciona-a mesmo antes de ela chegar na lista.
+  const onApproved = (id) => {
+    if (id) { setPendingId(id); select(id); }
+    setComposing(false); refresh(); refreshStore();
+  };
+
+  const startNew = () => { setComposing(true); setStepId(null); };
+  const showBriefing = missions !== null && (composing || (!mission && !pendingId));
+  const opening = !mission && !!pendingId && !composing;
 
   return (
-    <div className={`mi-page${detail ? ' has-drawer' : ''}`}>
-      <MissionSidebar missions={missions} workspaces={workspaces} selectedId={selectedId} onPick={select} onNew={() => setNewOpen(true)} failed={failed} />
+    <div className={`mi-page${drawer ? ' has-drawer' : ''}`}>
+      <MissionSidebar missions={missions} workspaces={workspaces} selectedId={composing ? null : selectedId} onPick={select} onNew={startNew} failed={failed} />
       <div className="mi-main">
-        {!mission ? (
-          <div className="mi-blank">
-            <p className="mi-kicker"><i aria-hidden="true" /><span>Missions</span></p>
-            <h2>Central de missões</h2>
-            <p>{missions === null ? 'Carregando…' : 'Escolha uma missão na lista ou crie uma nova. Aqui você acompanha o workflow, aprova o que pede decisão e vê os agentes trabalhando.'}</p>
-            {missions !== null && (
-              <ol className="mi-how">
-                <li><b>01</b><span>Objetivo</span><p>Você descreve o que deve ficar pronto e em qual workspace.</p></li>
-                <li><b>02</b><span>Ciclo</span><p>O Planner divide em etapas, o Executor faz uma por vez e o sistema verifica.</p></li>
-                <li><b>03</b><span>Entrega</span><p>Só conclui com evidência verificada. O que precisar de você para aqui.</p></li>
-              </ol>
-            )}
-            {missions !== null && <button type="button" className="mi-btn mi-btn-primary" onClick={() => setNewOpen(true)}>Nova missão</button>}
+        {missions === null ? (
+          <div className="mi-center mb-center"><p className="mi-note" role="status">Carregando…</p></div>
+        ) : showBriefing ? (
+          <div className="mi-center mb-center">
+            <MissionBriefing mission={mission} composing tiers={tiers} notify={notify} onApproved={onApproved} onManual={() => setNewOpen(true)} onCancel={() => setComposing(false)} />
           </div>
-        ) : (
-          <div className="mi-center">
-            <MissionPanel mission={mission} workspace={workspace} now={now} workflow={wf} selectedNode={nodeId} onSelectNode={setNodeId} onAction={onAction} onOpenTerminals={openTerminals} busyAction={busy} />
+        ) : opening ? (
+          <div className="mi-center mb-center"><p className="mi-note" role="status">Abrindo a missão criada…</p></div>
+        ) : mission && board ? (
+          <div className="mi-center mb-center">
+            <MissionPanel mission={mission} workspace={workspace} now={now} usage={state?.usage ?? null} onAction={onAction} onOpenTerminals={openTerminals} busyAction={busy} />
             <MissionLiveButton key={mission.id} mission={mission} />
-            <ControlBar mission={mission} workflow={wf} onDecide={onDecide} busyAction={busy} onSelectNode={setNodeId} />
-            <section className={`mi-flow st-${mstate}`} aria-label="Workflow da missão">
-              <header className="mi-flow-head">
-                <h3 className="mi-kicker"><i aria-hidden="true" /><span>Workflow</span></h3>
-                {par && <span className="mi-flow-sum">{par.phases} {par.phases === 1 ? 'fase' : 'fases'} · {par.steps} {par.steps === 1 ? 'etapa' : 'etapas'}{par.running > 0 ? ` · ${par.running} em execução` : ''}{par.queued > 0 ? ` · ${par.queued} na fila` : ''}</span>}
-              </header>
-              <MissionWorkflow key={mission.id} workflow={wf} selectedId={nodeId} onSelect={(id) => setNodeId((cur) => (cur === id ? cur : id))} now={now} />
-            </section>
-            <div className="mi-extras">
-              <More title="Atividade geral" hint="linha do tempo, tarefas e terminais"><MissionActivity mission={mission} workflow={wf} activity={activity} sessions={sessions} stateOf={stateOf} onSelectNode={setNodeId} onOpenTerminals={openTerminals} /></More>
-              <More title="Custo e tokens" hint="rodadas e consumo estimado"><MissionMeters mission={mission} usage={state?.usage} /></More>
-              <More title="Equipe" hint="agentes, provedor e modelo"><MissionTeam mission={mission} sessions={sessions} working={mstate === 'working'} /></More>
-            </div>
+            <MissionAttention items={board.attention} onDecide={onDecide} busyAction={busy} />
+            <MissionBriefing mission={mission} />
+            <MissionBoard key={mission.id} board={board} selectedId={stepId} onSelect={pickStep} onDecide={onDecide} busyAction={busy} />
+            <MissionProgress progress={board.progress} onSelect={pickStep} />
+            <MissionDelivery delivery={board.delivery} onAccept={onAccept} busyAction={busy} />
           </div>
-        )}
+        ) : null}
       </div>
-      {detail && <MissionNodeDetail detail={detail} onClose={closeDetail} onDecide={onDecide} busyAction={busy} onOpenTerminals={openTerminals} />}
+      {drawer && <MissionAgentDrawer model={drawer} onClose={closeDrawer} onDecide={onDecide} onPin={onPin} busyAction={busy} />}
       {newOpen && (
         <NewMissionDialog workspaces={workspaces} activeWorkspaceId={state?.activeWorkspace?.id ?? null} onClose={() => setNewOpen(false)}
-          onCreated={(m, note) => { setNewOpen(false); select(m.id); notify(note ?? 'Missão criada.', note ? 'error' : 'info'); refresh(); refreshStore(); }} />
+          onCreated={(m, note) => { setNewOpen(false); setPendingId(m.id); select(m.id); notify(note ?? 'Missão criada.', note ? 'error' : 'info'); refresh(); refreshStore(); }} />
       )}
     </div>
   );

@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React from 'react';
+import '../mission-board.css';
 import { Icon } from './ui.jsx';
 import ProviderLogo from './ProviderLogo.jsx';
-import { STATE_META, NODE_STATE_LABEL, missionState, missionProgress, missionDuration, fmtDuration, missionUsage, missionTeam, cycleActions, DASH } from '../missions-view.js';
+import { STATE_META, missionState, missionDuration, fmtDuration, missionUsage, missionTeam, cycleActions, DASH } from '../missions-view.js';
 import { fmtUsd, fmtTokens } from '../usage-view.js';
 import { executorSeal } from '../permission-profile.js';
 
@@ -17,30 +18,9 @@ export function ActionButton({ kind = '', icon, busy, onClick, children, disable
   );
 }
 
-/**
- * Faixa de pipeline: um segmento por etapa REAL do workflow, na cor do estado (o que roda agora pisca). Clicar num segmento seleciona a etapa no workflow.
- * Sem etapas ainda, a faixa fica vazia (não se inventa progresso).
- */
-function Pipeline({ steps, progress, selectedNode, onSelectNode }) {
-  return (
-    <div className="mi-pipe">
-      <div className="mi-pipe-bar" role="group" aria-label="Etapas da missão">
-        {steps.length === 0 ? <span className="mi-seg st-idle empty" aria-hidden="true" /> : steps.map((n, i) => (
-          <button key={n.id} type="button" tabIndex={-1} className={`mi-seg st-${n.state}${n.id === selectedNode ? ' on' : ''}`} onClick={() => onSelectNode(n.id)}
-            aria-label={`Etapa ${i + 1}: ${n.title}, ${NODE_STATE_LABEL[n.state]}`} title={`${i + 1}. ${n.title} · ${NODE_STATE_LABEL[n.state]}`} />
-        ))}
-      </div>
-      <span className="mi-pipe-t">
-        {progress.basis ? <><b>{progress.done}{progress.total ? `/${progress.total}` : ''}</b> {progress.basis}</> : 'sem etapas ainda'}
-        {progress.pct !== null && <> · <b>{progress.pct}%</b></>}
-      </span>
-    </div>
-  );
-}
-
 const Meter = ({ label, hint, children }) => <div className="mi-meter-c" title={hint}><dt>{label}</dt><dd>{children}</dd></div>;
 
-/** Rodadas, custo e tokens da missão: informação complementar (vai num <details> fechado da página). */
+/** Rodadas, custo e tokens da missão (detalhe; a página nova mostra só o chip de custo no cabeçalho, mas o bloco continua disponível). */
 export function MissionMeters({ mission, usage }) {
   const u = missionUsage(usage, mission.id), c = mission.cycle;
   return (
@@ -52,7 +32,7 @@ export function MissionMeters({ mission, usage }) {
   );
 }
 
-/** Equipe responsável (provedor e modelo reais; sem leitura = "modelo não informado"). */
+/** Equipe responsável (provedor e modelo reais; sem leitura = "modelo não informado"). Não é mais renderizada na página Missões (o modelo de cada etapa está na gaveta). */
 export function MissionTeam({ mission, sessions, working }) {
   const team = missionTeam(mission, sessions);
   if (!team.length) return <p className="dim mi-none">Sem agentes ainda.</p>;
@@ -68,16 +48,17 @@ export function MissionTeam({ mission, sessions, working }) {
   );
 }
 
-/** Cabeçalho COMPACTO da missão: nome e estado, ações discretas, objetivo resumido, progresso e duração. Custo, tokens e equipe ficam em seções recolhidas. */
-export default function MissionPanel({ mission, workspace, now, workflow, selectedNode, onSelectNode, onAction, onOpenTerminals, busyAction }) {
-  const [ctxOpen, setCtxOpen] = useState(false);
-  const state = missionState(mission), meta = STATE_META[state], progress = missionProgress(mission), dur = missionDuration(mission, now);
-  const act = cycleActions(mission), c = mission.cycle;
-  const steps = (workflow?.nodes ?? []).filter((n) => n.kind === 'step' || n.kind === 'task'); // etapa do ciclo ou tarefa do Maestro (squad)
+/**
+ * Cabeçalho COMPACTO da missão (uma coluna, de cima para baixo): título, estado, ações (Iniciar/Retomar/Cancelar/Remover), custo/tokens e uma linha de metadados.
+ * O objetivo vive no bloco "Briefing" e o progresso no bloco "Progresso": aqui não se repete nada. Custo ausente = "—" (nunca US$ 0 inventado).
+ */
+export default function MissionPanel({ mission, workspace, now, usage, onAction, onOpenTerminals, busyAction }) {
+  const state = missionState(mission), meta = STATE_META[state], dur = missionDuration(mission, now);
+  const act = cycleActions(mission), c = mission.cycle, u = usage !== undefined ? missionUsage(usage, mission.id) : null;
   const working = state === 'working';
   const seal = executorSeal(mission, workspace); // perfil do Executor (rodada gravada ou, sem rodada, o atual do workspace)
   return (
-    <header className={`mi-head st-${state}`} aria-label={`Missão ${mission.title}`}>
+    <header className={`mi-head mb-head st-${state}`} aria-label={`Missão ${mission.title}`}>
       <div className="mi-head-row">
         <div className="mi-head-id">
           <h2 className="mi-title">{mission.title}</h2>
@@ -91,27 +72,18 @@ export default function MissionPanel({ mission, workspace, now, workflow, select
           {act.remove && <ActionButton kind="ghost" busy={busyAction === 'remove'} onClick={() => onAction('remove')} title="Remover a missão">Remover</ActionButton>}
         </div>
       </div>
-
       <p className="mi-meta">
         <span title={workspace?.path}>{workspace ? (workspace.displayName || workspace.name) : 'sem workspace'}</span>
         {c && <span>ciclo {CYCLE_LABEL[c.status] ?? c.status}</span>}
         {seal && <span className={`pp-seal pp-seal-${seal.tone}`} title={seal.title} aria-label={`${seal.label}. ${seal.title}`}>{seal.glyph && <b aria-hidden="true">{seal.glyph}</b>}{seal.label}</span>}
         <span>criada {fmtDate(mission.createdAt)}</span>
-        <span className="mi-meta-dur">{fmtDuration(dur)}{working && dur !== null && <i className="mi-live" aria-hidden="true" />}</span>
+        <span className="mi-meta-dur">{fmtDuration(dur)}{working && dur !== null && <i className="mb-live-dot" aria-hidden="true" />}</span>
+        {u && (
+          <span className="mb-cost" title={`Estimativa da CLI, não é cobrança. Sem relato = —${u.partial ? '. Parcial: há consumo ainda não fechado.' : ''}`}>
+            custo {fmtUsd(u.costUsd)}{u.partial ? ' (parcial)' : ''} · {fmtTokens(u.tokens)} tokens
+          </span>
+        )}
       </p>
-
-      <p className="mi-objective">{mission.objective || <span className="dim">Sem objetivo descrito.</span>}{' '}
-        <button type="button" className="mi-link" onClick={() => setCtxOpen((v) => !v)} aria-expanded={ctxOpen}>{ctxOpen ? 'ocultar contexto' : 'contexto'}</button></p>
-      {ctxOpen && (
-        <dl className="mi-ctx">
-          <dt>Workspace</dt><dd className="mono">{workspace?.path ?? DASH}</dd>
-          {c?.plan?.rationale && <><dt>Raciocínio do plano</dt><dd>{c.plan.rationale}</dd></>}
-          {c?.finalSummary && <><dt>Resumo final</dt><dd>{c.finalSummary}</dd></>}
-          <dt>Identificador</dt><dd className="mono">{mission.id}</dd>
-        </dl>
-      )}
-
-      <Pipeline steps={steps} progress={progress} selectedNode={selectedNode} onSelectNode={onSelectNode} />
     </header>
   );
 }
