@@ -5,10 +5,10 @@
 .mi-page {
   /* os ícones de estado (WsIcon) leem --ws-*, definidos para a sidebar do Cockpit: repetidos aqui */
   --ws-idle: var(--led-idle); --ws-work: var(--led-run); --ws-err: var(--led-err); --ws-wait: var(--led-warn); --ws-done: var(--led-ok); --ws-ok: #22c55e; --ws-attn-text: var(--danger-text);
-  --s-idle: #6b7280; --s-working: var(--ws-claude, #e08060); --s-completed: #22c55e; --s-attention: #8c242a; --s-approval: #f59e0b; --s-cancelled: #6b7280;
+  --s-idle: #6b7280; --s-working: var(--ws-claude, #e08060); --s-completed: #22c55e; --s-attention: var(--st-err); --s-approval: #f59e0b; --s-cancelled: #6b7280;
   --hair: rgba(255, 255, 255, .08); --hair-2: rgba(255, 255, 255, .14); --mute: #7c8494; --mute-2: #9ca3af; /* --mute = 5,2:1 sobre o preto (texto pequeno precisa de 4,5:1) */
   --red-t: #c2555c; /* vermelho de texto de menor intensidade (≈5:1 sobre o preto), no lugar do vermelho vivo */
-  position: relative; flex: 1; min-height: 0; display: grid; grid-template-columns: 272px minmax(0, 1fr); background: #000; color: var(--text);
+  position: relative; flex: 1; min-height: 0; display: grid; grid-template-columns: 272px minmax(0, 1fr); background: var(--surface); color: var(--text);
 }
 .mi-page.has-drawer { grid-template-columns: 272px minmax(0, 1fr) 400px; } /* a etapa selecionada abre numa coluna à direita: o workflow cede espaço, nada fica coberto */
 .mi-page .st-idle { --st: var(--s-idle); } .mi-page .st-working { --st: var(--s-working); } .mi-page .st-completed { --st: var(--s-completed); }
@@ -36,9 +36,9 @@
 .mi-btn:active:not(:disabled) { transform: translateY(1px); }
 .mi-btn:disabled { opacity: .5; cursor: not-allowed; }
 .mi-btn:focus-visible, .mi-row:focus-visible, .mi-link:focus-visible, .mi-tabs button:focus-visible, .mi-plus:focus-visible, .mi-fold-h:focus-visible, .mi-seg:focus-visible { outline: 1px dashed var(--brand); outline-offset: 2px; }
-.mi-btn-primary { border-color: var(--bone); background: var(--bone); color: #fff; font-weight: 700; } /* #7a1d23 + branco = 4,8:1 */
-.mi-btn-primary:hover:not(:disabled) { border-color: #6e151b; background: #6e151b; color: #fff; }
-.mi-btn-danger { border-color: rgba(140, 36, 42, .45); color: var(--red-t); } .mi-btn-danger:hover:not(:disabled) { border-color: var(--brand); background: rgba(140, 36, 42, .08); color: #fca5a5; }
+.mi-btn-primary { border-color: var(--bone); background: var(--bone); color: var(--ink); font-weight: 700; } /* #7a1d23 + branco = 4,8:1 */
+.mi-btn-primary:hover:not(:disabled) { border-color: var(--bone-hover); background: var(--bone-hover); color: var(--ink); }
+.mi-btn-danger { border-color: rgba(255, 255, 255, .12); color: var(--red-t); } .mi-btn-danger:hover:not(:disabled) { border-color: var(--brand); background: rgba(255, 255, 255, .06); color: #fca5a5; }
 .mi-btn-ghost { border-color: transparent; color: var(--mute-2); } .mi-btn-ghost:hover:not(:disabled) { border-color: var(--hair-2); }
 .mi-btn.is-busy { cursor: progress; }
 .mi-spin { width: 11px; height: 11px; border: 1.5px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: mi-rot .7s linear infinite; }
@@ -46,7 +46,7 @@
 .mi-link:hover { color: #fff; text-decoration-color: var(--brand); }
 
 /* ---------- sidebar (como a lista "MISSÕES +" do Overclock) ---------- */
-.mi-side { display: flex; flex-direction: column; min-height: 0; background: #000; border-right: 1px solid var(--hair); }
+.mi-side { display: flex; flex-direction: column; min-height: 0; background: var(--surface); border-right: 1px solid var(--hair); }
 .mi-side-h { flex: none; display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 10px 0 16px; border-bottom: 1px solid var(--hair); }
 .mi-plus { margin-left: auto; display: inline-grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 1px solid transparent; border-radius: 4px; background: none; color: var(--mute-2); cursor: pointer; transition: color 120ms ease, border-color 120ms ease; }
 .mi-plus:hover { color: #fff; border-color: var(--hair-2); }
@@ -58,7 +58,7 @@
 .mi-group-h, .mi-fold-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0; padding: 12px 8px 6px; color: var(--mute); font: 600 10.5px var(--mono); letter-spacing: .18em; text-transform: uppercase; }
 .mi-row { position: relative; width: 100%; display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 6px 8px; border: 0; border-radius: 4px; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; overflow: hidden; transition: background-color 120ms ease; }
 .mi-row:hover { background: rgba(255, 255, 255, .04); }
-.mi-row.on { background: rgba(140, 36, 42, .10); } /* selecionada: só o fundo tingido, como a linha ativa do Overclock */
+.mi-row.on { background: rgba(255, 255, 255, .06); } /* selecionada: só o fundo tingido, como a linha ativa do Overclock */
 .mi-row .wsi { flex: none; }
 .mi-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .mi-row-title { color: #e4e4e7; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -75,13 +75,13 @@
 .mi-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 16px 8px; font-size: 13px; } .mi-empty p { margin: 0; }
 
 /* ---------- área principal ---------- */
-.mi-main { min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; background: #000; scrollbar-width: thin; scrollbar-color: #27272a transparent; }
+.mi-main { min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; background: var(--surface); scrollbar-width: thin; scrollbar-color: #27272a transparent; }
 .mi-main > * { flex: none; padding-left: 28px; padding-right: 28px; }
 .mi-center { width: 100%; max-width: 1056px; margin: 0 auto; box-sizing: border-box; } /* ~1000px úteis centralizados; o workflow é o centro da página */
 .mi-blank { margin: auto; max-width: 720px; display: flex; flex-direction: column; align-items: flex-start; gap: 14px; padding-top: 40px; padding-bottom: 40px; color: var(--mute-2); font-size: 14px; }
 .mi-blank h2 { margin: 0; color: #fff; font-size: 34px; line-height: 1.1; font-weight: 700; letter-spacing: -.02em; } .mi-blank p { margin: 0; max-width: 60ch; line-height: 1.6; }
 .mi-how { list-style: none; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; width: 100%; margin: 10px 0; padding: 0; }
-.mi-how li { display: flex; flex-direction: column; gap: 8px; padding: 18px; border: 1px solid var(--hair-2); border-radius: 8px; background: #050505; animation: mi-spawn 360ms cubic-bezier(.23, 1, .32, 1) both; }
+.mi-how li { display: flex; flex-direction: column; gap: 8px; padding: 18px; border: 1px solid var(--hair-2); border-radius: 8px; background: var(--card); animation: mi-spawn 360ms cubic-bezier(.23, 1, .32, 1) both; }
 .mi-how li:nth-child(2) { animation-delay: 60ms; } .mi-how li:nth-child(3) { animation-delay: 120ms; }
 .mi-how b { color: var(--brand-soft); font-size: 11px; letter-spacing: .18em; } .mi-how span { color: #fff; font-size: 14px; font-weight: 700; } .mi-how p { font-size: 13px; line-height: 1.55; }
 
@@ -157,7 +157,7 @@
 .mi-agent.live { border-color: color-mix(in srgb, var(--s-working) 55%, transparent); } .mi-agent.live b { color: var(--s-working); }
 
 /* ---------- painel lateral (drawer à direita): ocupa uma coluna, sem sombra ---------- */
-.mi-drawer { display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--hair-2); background: #000; animation: mi-slide 200ms cubic-bezier(.23, 1, .32, 1) both; }
+.mi-drawer { display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--hair-2); background: var(--surface); animation: mi-slide 200ms cubic-bezier(.23, 1, .32, 1) both; }
 .mi-drawer-head { flex: none; display: flex; flex-direction: column; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--hair); }
 .mi-drawer-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .mi-drawer-head h3 { margin: 0; color: #fff; font-size: 15px; line-height: 1.35; font-weight: 700; overflow-wrap: anywhere; }
@@ -172,7 +172,7 @@
 .mi-sec h4 { margin: 0 0 8px; color: var(--mute); font-size: 10.5px; font-weight: 600; letter-spacing: .18em; text-transform: uppercase; } .mi-sec p { margin: 0; font-size: 12px; }
 .mi-sec .mi-context { color: #d4d4d8; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 180px; overflow-y: auto; }
 .mi-errors { padding: 2px 0 2px 12px; border-left: 2px solid var(--s-attention); font-size: 12px; } .mi-errors strong { display: flex; align-items: center; gap: 6px; color: var(--red-t); } .mi-errors ul { margin: 6px 0 0; padding-left: 16px; color: #d4d4d8; overflow-wrap: anywhere; }
-.mi-log { margin: 0; max-height: 240px; overflow: auto; padding: 10px 12px; border: 1px solid var(--hair); border-radius: 4px; background: #000; color: #d4d4d8; font: 12px/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; scrollbar-width: thin; scrollbar-color: #27272a transparent; }
+.mi-log { margin: 0; max-height: 240px; overflow: auto; padding: 10px 12px; border: 1px solid var(--hair); border-radius: 4px; background: var(--surface); color: #d4d4d8; font: 12px/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; scrollbar-width: thin; scrollbar-color: #27272a transparent; }
 .mi-log:focus-visible { outline: 1px dashed var(--brand); outline-offset: 2px; }
 .mi-log.live::after { content: '▍'; margin-left: 2px; color: var(--s-working); animation: mi-caret 1s steps(1) infinite; }
 .mi-evlevel { display: flex; align-items: center; gap: 7px; margin: 0 0 6px; color: var(--st); font-size: 12px; font-weight: 600; } .mi-evlevel.st-attention { color: var(--red-t); }
@@ -209,7 +209,7 @@
 .mi-form { display: flex; flex-direction: column; gap: 16px; }
 .mi-form label { display: flex; flex-direction: column; gap: 6px; color: var(--mute-2, #9ca3af); font-size: 11px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; }
 .mi-form label .dim { color: #7c8494; font-weight: 400; letter-spacing: 0; text-transform: none; font-size: 12px; }
-.mi-form input:not([type="checkbox"]), .mi-form textarea, .mi-form select { width: 100%; padding: 9px 11px; border: 1px solid rgba(255, 255, 255, .18); border-radius: 6px; background: #000; color: #fff; font: 400 14px var(--mono); letter-spacing: 0; text-transform: none; }
+.mi-form input:not([type="checkbox"]), .mi-form textarea, .mi-form select { width: 100%; padding: 9px 11px; border: 1px solid rgba(255, 255, 255, .18); border-radius: 6px; background: var(--surface); color: #fff; font: 400 14px var(--mono); letter-spacing: 0; text-transform: none; }
 .mi-form textarea { min-height: 104px; resize: vertical; line-height: 1.5; }
 .mi-form input:focus, .mi-form textarea:focus, .mi-form select:focus { outline: none; border-color: var(--brand); }
 .mi-check { flex-direction: row !important; align-items: flex-start; gap: 9px !important; color: #d4d4d8 !important; font-size: 13px !important; font-weight: 400 !important; letter-spacing: 0 !important; text-transform: none !important; } .mi-check input { margin-top: 3px; accent-color: var(--brand); }

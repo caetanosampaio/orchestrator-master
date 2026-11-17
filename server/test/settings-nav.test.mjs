@@ -50,19 +50,17 @@ test('página: cada seção da navegação tem um componente, a busca e o cartã
   assert.match(src('components/settings/MascotsSection.jsx'), /Ainda não integrado ao FORGE/);
 });
 
-test('Cockpit na estrutura das Configurações: sem busca na barra lateral, o nome FORGE no topo com as abas logo ao lado (mesmo lugar em todas as páginas), Arquivos e Sessões no rodapé, um em cima do outro, sem o cartão de nome e perfil e os ícones do cabeçalho dos terminais intactos', () => {
-  const sb = src('components/Sidebar.jsx'), grid = src('components/TerminalGrid.jsx'), css = src('cockpit-ui.css'), tb = src('components/Topbar.jsx'), app = src('App.jsx');
-  assert.ok(!/oc-side-search|Buscar workspaces|shownEnvs/.test(sb), 'a busca saiu da barra lateral'); assert.match(sb, /onPick=\{pick\}/, 'abrir workspace continua como antes');
-  assert.ok(!/MascotLogo/.test(sb), 'o elmo saiu da barra lateral'); assert.ok(!/oc-brand-name/.test(sb.slice(0, sb.indexOf('{modal && ('))), 'a marca não fica mais na barra lateral aberta');
-  assert.ok(!/oc-brand-name|tb-brand|>FORGE</.test(tb), 'o nome FORGE não fica mais na barra superior');
-  assert.ok(app.indexOf('<Topbar ') < app.indexOf('<div className="oc-body">'), 'o topo ocupa a largura toda, acima da barra lateral'); assert.match(app, /oc-app oc-app-col/);
-  assert.ok(!/oc-side-user|oc-avatar|prefs\.name/.test(sb), 'o cartão de nome e perfil saiu da barra lateral'); assert.ok(sb.indexOf('<Icon name="folderOpen"') < sb.indexOf('<Icon name="clock"'), 'Arquivos em cima e Sessões logo abaixo'); assert.match(sb, /oc-side-sessions" onClick=\{onOpenSessions\}/); assert.ok(sb.indexOf('oc-side-sessions') > sb.indexOf('<nav className="oc-envs"'), 'no rodapé');
-  assert.ok(!/onOpenSettings/.test(sb), 'a barra lateral não abre Configurações');
-  assert.match(grid, /<ProviderLogo id=\{session\.provider \|\| 'claude'\} size=\{20\} variant="mascot" \/>/, 'o ícone do cabeçalho do terminal é o de sempre');
-  assert.ok(!/ProviderMascot/.test(grid)); assert.ok(!/\.px-|oc-pmark/.test(css), 'sem regras do mascote novo nem do ícone do cabeçalho');
-  assert.match(src('main.jsx'), /import '\.\/cockpit-ui\.css'/);
-  assert.ok(!/oc-collapse|Recolher a barra lateral/.test(sb), 'sem o botão de recolher a barra lateral'); assert.ok(!/<Sidebar [^>]*collapsed=/.test(app), 'a barra nunca é aberta recolhida, nem com o estado antigo gravado');
-  assert.match(css, /border-radius: 0/, 'caixas quadradas na barra lateral'); assert.match(css, /\.oc-side \.oc-env\.on[^{]*\{[^}]*border-radius: 0/);
+test('barra lateral no formato do Orca: marca Forge no topo (com recolher), busca ⌘K, navegação, workspaces em cartões e, no rodapé, Configurações, Arquivos e Sessões; o terminal leva a logo do agente', () => {
+  const sb = src('components/Sidebar.jsx'), grid = src('components/TerminalGrid.jsx'), app = src('App.jsx');
+  assert.match(sb, /className="fx-brand">Forge</, 'a marca mora no topo da barra lateral'); assert.match(sb, /aria-label="Recolher a barra lateral"/); assert.match(app, /onCollapse=\{toggleSide\}/);
+  assert.match(sb, /placeholder="Buscar"/); assert.match(sb, /e\.metaKey \|\| e\.ctrlKey/, '⌘K / Ctrl+K foca a busca'); assert.match(sb, /onPick=\{pick\}/, 'abrir workspace continua como antes');
+  assert.ok(!/MascotLogo|ForgeMascot|PixelMascot/.test(sb), 'sem mascote na barra lateral (eles moram nas Configurações)');
+  assert.ok(sb.indexOf('<nav className="fx-wslist"') < sb.indexOf('className="fx-side-foot"'), 'o rodapé vem depois dos workspaces');
+  const foot = sb.slice(sb.indexOf('className="fx-side-foot"'));
+  assert.match(foot, /aria-label="Configurações"/); assert.match(foot, /onClick=\{onOpenWorkspaces\} aria-label="Arquivos: abrir, trocar ou adicionar workspace"/); assert.match(foot, /onOpenSessions\?\.\(\)/);
+  assert.match(grid, /<ProviderLogo id=\{session\.provider \|\| 'claude'\} size=\{13\}/, 'o cabeçalho do terminal usa a logo do agente'); assert.ok(!/variant="mascot"|ProviderMascot/.test(grid));
+  assert.ok(!/<Sidebar [^>]*collapsed=/.test(app), 'a barra nunca abre no modo antigo de recolhida');
+  assert.match(src('main.jsx'), /import '\.\/forge\.css'/);
 });
 
 test('Cockpit compacto: textos pequenos na barra lateral, no topo, na barra de controles e nos terminais; o texto dentro do terminal segue a preferência de fonte', () => {
@@ -87,21 +85,22 @@ test('vermelhos mais escuros e terminais sem cor por papel: nenhum vermelho vivo
   assert.ok(!/\.oc-app \.oc-prole[^}]*--role/.test(css), 'a etiqueta do papel não usa a cor do papel');
 });
 
-test('barra superior no formato da referência: só os recursos (forge-app, com Missions em ícone à esquerda), sem abas de workspace nem "+", sem a faixa de atividade no Cockpit e o círculo do perfil abre as Configurações', () => {
-  const tb = src('components/Topbar.jsx'), app = src('App.jsx'), css = src('cockpit-ui.css'), ui = src('components/ui.jsx');
-  assert.ok(!/WorkspaceTabs|openTabs|onOpenWorkspaces|tb-tabs/.test(tb), 'os workspaces moram só na barra lateral'); assert.ok(!fs.existsSync(new URL('../../client/src/components/WorkspaceTabs.jsx', import.meta.url)));
-  assert.ok(!/ActivityDrawer/.test(app) && !fs.existsSync(new URL('../../client/src/components/ActivityDrawer.jsx', import.meta.url)), 'a faixa de atividade saiu do Cockpit');
-  assert.match(tb, /<span>forge-app<\/span>/); assert.ok(tb.indexOf('name="briefcase"') < tb.indexOf('<span>forge-app</span>'), 'o ícone de Missions fica à esquerda de forge-app'); assert.match(tb, /onClick=\{\(\) => onView\('missions'\)\}/); assert.match(tb, /onClick=\{\(\) => onView\('cockpit'\)\}/);
-  assert.match(tb, /<b className="tb-bang" aria-hidden="true">!<\/b>/, 'missão esperando você: "!" vermelho'); assert.match(ui, /briefcase: 'M4 8h16/);
-  assert.match(tb, /className=\{`tb-avatar\$\{view === 'settings' \? ' on' : ''\}`\}[^>]*aria-label="Configurações" aria-pressed=\{view === 'settings'\}/); assert.match(tb, /<SystemStatus \/>/);
-  assert.match(css, /\.oc-app \.tb-view \{ text-transform: none; letter-spacing: 0;/, 'abas em minúsculas'); assert.match(css, /\.oc-app \.tb-view\.on \{ color: #fff; font-weight: 700; \}/); assert.match(css, /\.oc-app \.tb \{ border-bottom: 1px solid var\(--line\); \}/, 'sem a linha vermelha de ponta a ponta'); assert.ok(!/#4a1a1a/.test(css)); assert.match(css, /\.oc-app \.tb-view::after \{ height: 2px; \}/, 'o vermelho fica só no sublinhado da aba selecionada');
+test('sem barra superior: a navegação (Início, Missões, Terminais, Sessões) mora na barra lateral, com o indicador de missão esperando você e de terminais trabalhando', () => {
+  const sb = src('components/Sidebar.jsx'), app = src('App.jsx'), ui = src('components/ui.jsx');
+  assert.ok(!fs.existsSync(new URL('../../client/src/components/Topbar.jsx', import.meta.url)), 'a Topbar saiu'); assert.ok(!/Topbar|tb-row/.test(app));
+  assert.ok(!fs.existsSync(new URL('../../client/src/components/WorkspaceTabs.jsx', import.meta.url))); assert.ok(!/ActivityDrawer/.test(app) && !fs.existsSync(new URL('../../client/src/components/ActivityDrawer.jsx', import.meta.url)));
+  assert.match(sb, /onClick=\{\(\) => \{ onView\('home'\);/); assert.match(sb, /onClick=\{\(\) => \{ onView\('missions'\);/); assert.match(sb, /onClick=\{\(\) => \{ onView\('cockpit'\);/);
+  assert.ok(sb.indexOf('label="Início"') < sb.indexOf('label="Missões"') && sb.indexOf('label="Missões"') < sb.indexOf('label="Terminais"'), 'Início, Missões e Terminais, nessa ordem');
+  assert.match(sb, /waitingMissions > 0 \? <span className="fx-chip warn"/, 'missão esperando aprovação: contador em destaque'); assert.match(ui, /briefcase: 'M4 8h16/);
+  assert.match(app, /view, onView: goView, missions: missionsData\.missions/);
 });
 
-test('FORGE + versão só na janela do app: a faixa do macOS leva o nome e a versão ao lado dos botões da janela; fora do app (navegador) e no Windows nada é desenhado; o preload só expõe plataforma e versão', async () => {
-  const bar = src('components/DesktopTitleBar.jsx'), css = src('cockpit-ui.css'), app = src('App.jsx');
-  assert.match(app, /<DesktopTitleBar \/>/); assert.ok(app.indexOf('<DesktopTitleBar />') < app.indexOf('<Topbar '), 'a faixa vem acima da barra superior');
+test('janela do app no macOS: sem barra nativa, a marca Forge fica no topo da barra lateral com espaço para os botões da janela e área de arrastar; nas Configurações a faixa própria faz esse papel; o preload só expõe plataforma e versão', async () => {
+  const bar = src('components/DesktopTitleBar.jsx'), css = src('cockpit-ui.css'), app = src('App.jsx'), fx = src('forge.css'), sb = src('components/Sidebar.jsx');
+  assert.match(app, /\{settings && <DesktopTitleBar \/>\}/); assert.match(app, /desktopInfo\(\)\?\.platform === 'darwin'/);
   assert.match(bar, /d\.platform !== 'darwin'\) return null/); assert.match(bar, /<b>FORGE<\/b>\{d\.version\}/);
-  assert.match(css, /\.oc-titlebar \{[^}]*padding: 0 12px 0 82px[^}]*-webkit-app-region: drag/, 'espaço para os botões da janela à esquerda e área de arrastar');
+  assert.match(css, /\.oc-titlebar \{[^}]*padding: 0 12px 0 82px[^}]*-webkit-app-region: drag/);
+  assert.match(sb, /fx-side-top\$\{desktop \? ' desktop' : ''\}/); assert.match(fx, /\.fx-side-top\.desktop \{ padding-left: 80px; -webkit-app-region: drag; \}/); assert.match(fx, /\.fx-side-top\.desktop button \{ -webkit-app-region: no-drag; \}/);
   const main = fs.readFileSync(new URL('../../desktop/main.cjs', import.meta.url), 'utf8'), pre = fs.readFileSync(new URL('../../desktop/preload.cjs', import.meta.url), 'utf8');
   assert.match(main, /const title = `FORGE \$\{app\.getVersion\(\)\}`/); assert.match(main, /titleBarStyle: 'hidden', trafficLightPosition: \{ x: 14, y: 9 \}/); assert.match(main, /preload: path\.join\(__dirname, 'preload\.cjs'\)/); assert.match(main, /additionalArguments: \[`--forge-version=\$\{app\.getVersion\(\)\}`\]/);
   assert.match(main, /contextIsolation: true, sandbox: true, nodeIntegration: false/, 'a página continua sem acesso ao sistema'); assert.match(main, /page-title-updated', \(e\) => e\.preventDefault\(\)/);
@@ -109,13 +108,10 @@ test('FORGE + versão só na janela do app: a faixa do macOS leva o nome e a ver
   const { version } = JSON.parse(fs.readFileSync(new URL('../../desktop/package.json', import.meta.url), 'utf8')); assert.match(version, /^\d+\.\d+\.\d+/);
 });
 
-test('trabalho em segundo plano: terminais trabalhando mostram um mini "!" amarelo-escuro ao lado de forge-app, em qualquer página (inclusive Missions), sem etiqueta', () => {
-  const tb = src('components/Topbar.jsx'), css = src('cockpit-ui.css');
-  assert.match(tb, /workingTerms > 0 && <b className="tb-work" role="status"[^>]*>!<\/b>/); assert.ok(!/<i aria-hidden="true" \/>work/.test(tb), 'não é mais uma etiqueta com a palavra work');
-  assert.match(tb, /em segundo plano/); assert.ok(!/view === 'cockpit' && workingTerms/.test(tb), 'não depende da página aberta');
-  const rule = /\.oc-app \.tb-work \{([^}]*)\}/.exec(css)[1]; const size = parseFloat(/font: 700 ([\d.]+)px/.exec(rule)[1]); assert.ok(size >= 10 && size <= 12, 'um pouco maior que o mini-"!" antigo (8.5px), na altura do nome forge-app (11px)');
-  assert.ok(parseFloat(/tb-work-bob ([\d.]+)s/.exec(css)[1]) < 1.3, 'animação mais rápida que a original (1,3 s), mas ainda de leve');
-  assert.match(tb, /workingCount\(terminals\?\.sessions, workingIds, maestro\?\.tasks/, 'mesma regra da sidebar (hooks), não só a saída crescendo'); assert.match(tb, /HOLD_MS/, 'não pisca entre duas leituras');
-  const hex = /color: (#[0-9a-f]{6})/i.exec(rule)[1], [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)); assert.ok(r > g && g > b && r < 200, 'amarelado e escuro, não claro');
-  assert.match(css, /@keyframes tb-work-bob \{[\s\S]*?translateY\(1px\)[\s\S]*?translateY\(-2px\)/, 'sobe e desce de leve'); assert.match(css, /prefers-reduced-motion: reduce\) \{ \.oc-app \.tb-work \{ animation: none; \} \}/);
+test('trabalho em segundo plano: o item Terminais da barra lateral mostra o arco girando e quantos terminais trabalham, em qualquer página, pela mesma regra dos indicadores', () => {
+  const sb = src('components/Sidebar.jsx'), fx = src('forge.css');
+  assert.match(sb, /const working = sessions\.filter\(\(s\) => s\.status === 'running' && paneState\(s, workingIds, pending\) === 'working'\)\.length/, 'mesma regra dos hooks, não só a saída crescendo');
+  assert.match(sb, /working > 0 \? <span className="fx-nav-run" role="status"[^>]*><StatusGlyph state="working" size=\{12\} \/><b>\{working\}<\/b>/);
+  assert.match(fx, /\.fx-glyph\.g-work, \.fx-glyph\.g-boot \{ transform-origin: 50% 50%; animation: fx-spin \.9s linear infinite; \}/, 'o arco gira');
+  assert.match(fx, /@media \(prefers-reduced-motion: reduce\)/); assert.match(fx, /html\[data-motion="reduced"\] \.fx-app \*/);
 });

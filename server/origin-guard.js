@@ -40,9 +40,17 @@ export function isMutatingMethod(method) {
   return MUTATING.has(String(method ?? '').toUpperCase());
 }
 
-/** Middleware de `/api`: Host válido sempre; Origin, se enviado, tem de ser permitido; em métodos mutáveis o Origin é OBRIGATÓRIO. */
+/**
+ * `Sec-Fetch-Site` (enviado pelo navegador e pelo Electron, impossível de forjar a partir de uma página): a interface chama a API sempre da MESMA origem
+ * (no desenvolvimento, pelo proxy do Vite). `cross-site`/`same-site` = outra página pedindo (ex.: o dev server mostrado no iframe do painel Live, que no app
+ * desktop receberia o token de sessão injetado pelo Electron). Ausente (curl, testes, CLIs) segue para as demais checagens.
+ */
+export const isForeignFetch = (site) => site === 'cross-site' || site === 'same-site';
+
+/** Middleware de `/api`: Host válido sempre; nenhuma requisição vinda de outra página; Origin, se enviado, tem de ser permitido; em métodos mutáveis o Origin é OBRIGATÓRIO. */
 export function apiGuard(req, res, next) {
   if (!isAllowedHost(req.get('host'))) return res.status(403).json({ error: 'Host não permitido.' });
+  if (isForeignFetch(String(req.get('sec-fetch-site') ?? '').toLowerCase())) return res.status(403).json({ error: 'Requisição de outra página não é aceita: a API só atende a interface do FORGE.' });
   const origin = req.get('origin');
   if (origin !== undefined) {
     if (!isAllowedOrigin(origin, originPorts(req.get('host')))) return res.status(403).json({ error: 'Origem não permitida.' });

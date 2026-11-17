@@ -14,7 +14,7 @@ const GROUPS = [['failed', 'Com falha', 'err'], ['waiting', 'Aguardando você', 
  * o "N ativos" da barra de terminais e o do rodapé da sidebar. O painel só traz o que não está visível em outro lugar: quem está executando, aguardando ou com falha (e em qual workspace),
  * as vagas de terminal e os providers. É um popover fixo na janela: encaixa na tela e fecha com clique fora ou Esc.
  */
-export default function SystemStatus() {
+export default function SystemStatus({ limits: withLimits = true, label = null }) {
   const { terminals, maestro, workingIds, workspaces } = useStore();
   const s = useMemo(() => systemStatus({ sessions: terminals?.sessions, workingIds, tasks: maestro?.tasks, workspaces, max: terminals?.maxSessions, providers: terminals?.providers }), [terminals, workingIds, maestro, workspaces]);
   const [open, setOpen] = useState(false), [pos, setPos] = useState(null);
@@ -26,7 +26,8 @@ export default function SystemStatus() {
     const place = () => {
       const r = btn.current?.getBoundingClientRect(); if (!r) return;
       const w = Math.min(W, window.innerWidth - EDGE * 2), left = Math.max(EDGE, Math.min(r.right - w, window.innerWidth - w - EDGE));
-      setPos({ left, width: w, top: r.bottom + GAP, maxHeight: Math.min(window.innerHeight * 0.6, window.innerHeight - r.bottom - GAP - EDGE) }); // nunca passa de 60% da altura: os terminais continuam à vista
+      const up = r.top > window.innerHeight / 2; // na barra de status (embaixo) o painel abre para cima
+      setPos(up ? { left, width: w, bottom: window.innerHeight - r.top + GAP, maxHeight: Math.min(window.innerHeight * 0.6, r.top - GAP - EDGE) } : { left, width: w, top: r.bottom + GAP, maxHeight: Math.min(window.innerHeight * 0.6, window.innerHeight - r.bottom - GAP - EDGE) }); // nunca passa de 60% da altura: os terminais continuam à vista
     };
     place(); window.addEventListener('resize', place);
     return () => window.removeEventListener('resize', place);
@@ -44,11 +45,10 @@ export default function SystemStatus() {
       <button type="button" ref={btn} className={`ss-btn tone-${s.tone}`} aria-haspopup="dialog" aria-expanded={open} aria-controls="ss-panel" title={`${statusLine(s)}
 ${limitsSummary(limits, now)}
 Clique para detalhes`} onClick={() => setOpen((o) => !o)}>
-        <i className="ss-led" aria-hidden="true" />
-        <span className="ss-c has live"><b>{s.ativos}</b></span>
+        {label ?? <><i className="ss-led" aria-hidden="true" /><span className="ss-c has live"><b>{s.ativos}</b></span></>}
         <span className="sr">{statusLine(s)}. {limitsSummary(limits, now)}</span>
       </button>
-      <LimitsBars limits={limits} now={now} refresh={refresh} />
+      {withLimits && <LimitsBars limits={limits} now={now} refresh={refresh} />}
       {open && (
         <div id="ss-panel" ref={pop} className="ss-panel" role="dialog" aria-label="Status do sistema" style={pos ?? { visibility: 'hidden' }}>
           <p className="ss-h"><b>Status</b><span>{statusLine(s)}</span></p>

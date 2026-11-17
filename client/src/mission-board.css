@@ -30,12 +30,12 @@
 .mb-msg p { margin: 0; color: #e4e4e7; font-size: 13px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
 .mb-msg ul { margin: 2px 0 0; padding-left: 18px; color: #d4d4d8; font-size: 12.5px; line-height: 1.6; overflow-wrap: anywhere; }
 .mb-typing i::after { content: '▍'; margin-left: 2px; color: var(--s-working); }
-.mb-proposal { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border: 1px solid var(--hair-2); border-radius: 8px; background: var(--raise, #050505); }
+.mb-proposal { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border: 1px solid var(--hair-2); border-radius: 8px; background: var(--card); }
 .mb-prop-t { margin: 0; color: #fff; font-size: 16px; line-height: 1.3; font-weight: 700; overflow-wrap: anywhere; }
 .mb-prop-o { margin: 0; max-width: 80ch; color: #b6b7c0; font-size: 12.5px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
 .mb-compose { display: flex; flex-direction: column; gap: 8px; }
 .mb-compose-l { color: var(--mute-2); font-size: 11px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; }
-.mb-compose textarea { width: 100%; box-sizing: border-box; min-height: 88px; padding: 10px 12px; border: 1px solid rgba(255, 255, 255, .18); border-radius: 6px; background: #000; color: #fff; font: 400 14px/1.5 var(--mono); resize: vertical; }
+.mb-compose textarea { width: 100%; box-sizing: border-box; min-height: 88px; padding: 10px 12px; border: 1px solid rgba(255, 255, 255, .18); border-radius: 6px; background: var(--surface); color: #fff; font: 400 14px/1.5 var(--mono); resize: vertical; }
 .mb-compose textarea:focus-visible { outline: 2px solid var(--focus, #a8353d); outline-offset: 1px; }
 .mb-compose textarea:disabled { opacity: .55; cursor: not-allowed; }
 .mb-compose-f { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
@@ -58,7 +58,7 @@
 .mb-waves { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .mb-wave { display: grid; grid-template-columns: 26px minmax(0, 1fr); column-gap: 16px; }
 .mb-rail { display: flex; flex-direction: column; align-items: center; min-height: 0; }
-.mb-wave-node { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border: 1px solid var(--hair-2); border-radius: 50%; background: #000; color: var(--mute-2); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; z-index: 1; }
+.mb-wave-node { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border: 1px solid var(--hair-2); border-radius: 50%; background: var(--surface); color: var(--mute-2); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; z-index: 1; }
 .mb-wave.w-active .mb-wave-node { border-color: var(--s-working); color: var(--s-working); }
 .mb-wave.w-done .mb-wave-node { border-color: var(--s-completed); color: #4ade80; }
 .mb-wave.w-attention .mb-wave-node { border-color: var(--s-attention); color: var(--red-t); }
@@ -75,8 +75,8 @@
 .mb-wave.w-active .mb-par { border-color: color-mix(in srgb, var(--s-working) 55%, transparent); color: var(--s-working); }
 .mb-cards { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 270px), 1fr)); gap: 10px; align-items: stretch; }
 
-.mb-card { position: relative; display: flex; flex-direction: column; min-width: 0; border: 1px solid var(--hair-2); border-left: 2px solid var(--st); border-radius: 6px; background: var(--raise, #050505); transition: border-color 240ms ease, background-color 240ms ease; }
-.mb-card.on { border-color: var(--brand); border-left-color: var(--st); background: rgba(140, 36, 42, .10); }
+.mb-card { position: relative; display: flex; flex-direction: column; min-width: 0; border: 1px solid var(--hair-2); border-left: 2px solid var(--st); border-radius: 6px; background: var(--card); transition: border-color 240ms ease, background-color 240ms ease; }
+.mb-card.on { border-color: var(--brand); border-left-color: var(--st); background: rgba(255, 255, 255, .06); }
 .mb-card.st-cancelled { opacity: .75; }
 .mb-card-btn, .mb-card-static { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; width: 100%; box-sizing: border-box; padding: 12px 14px; border: 0; border-radius: inherit; background: none; color: inherit; font: inherit; text-align: left; }
 .mb-card-btn { cursor: pointer; transition: background-color 120ms ease; } .mb-card-btn:hover { background: rgba(255, 255, 255, .04); }
@@ -126,7 +126,7 @@
 .mb-files ul { max-height: 220px; overflow: auto; margin: 6px 0 0; padding-left: 18px; font-size: 12px; } .mb-files li { overflow-wrap: anywhere; }
 .mb-accept { margin-top: 6px; } .mb-accept-b { display: flex; flex-direction: column; gap: 8px; padding: 8px 0 0 12px; border-left: 2px solid var(--s-approval); } .mb-accept-b p { margin: 0; }
 .mb-field { display: flex; flex-direction: column; gap: 4px; color: var(--mute-2); font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; }
-.mb-field textarea { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid rgba(255, 255, 255, .18); border-radius: 6px; background: #000; color: #fff; font: 400 13px/1.5 var(--mono); letter-spacing: 0; text-transform: none; resize: vertical; }
+.mb-field textarea { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid rgba(255, 255, 255, .18); border-radius: 6px; background: var(--surface); color: #fff; font: 400 13px/1.5 var(--mono); letter-spacing: 0; text-transform: none; resize: vertical; }
 .mb-field textarea:focus-visible, .mb-check-l input:focus-visible { outline: 2px solid var(--focus, #a8353d); outline-offset: 1px; }
 .mb-check-l { display: flex; align-items: flex-start; gap: 9px; color: #d4d4d8; font-size: 12px; line-height: 1.5; } .mb-check-l input { margin-top: 3px; accent-color: var(--brand); }
 

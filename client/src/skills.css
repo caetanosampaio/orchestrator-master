@@ -1,6 +1,6 @@
 /* Configurações > Skills: o resumo, o catálogo com o texto de cada skill e o servidor MCP. Mesma linguagem das outras seções: preto, cartões #050505, contornos de 1px, caixas quadradas, sem brilho. */
 .sk-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-3); }
-.sk-stat { display: flex; flex-direction: column; gap: 2px; padding: 14px 18px; background: #050505; border: 1px solid var(--line); border-top: 2px solid var(--line-strong); }
+.sk-stat { display: flex; flex-direction: column; gap: 2px; padding: 14px 18px; background: var(--card); border: 1px solid var(--line); border-top: 2px solid var(--line-strong); }
 .sk-stat b { font-size: 24px; font-weight: 600; line-height: 1.1; color: var(--strong); font-variant-numeric: tabular-nums; } .sk-stat span { font-size: 11.5px; color: var(--dim); }
 
 .sk-role { display: inline-flex; align-items: center; gap: 6px; padding: 1px 8px 1px 6px; font: 500 11px var(--mono); color: var(--text); box-shadow: inset 0 0 0 1px var(--line-strong); white-space: nowrap; }
@@ -13,7 +13,7 @@
 .sk-group-sec { display: flex; flex-direction: column; gap: var(--sp-2); } .sk-group-sec + .sk-group-sec { margin-top: var(--sp-4); }
 .sk-group-h { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin: 0; font: 600 11.5px var(--mono); color: var(--strong); } .sk-group-h .dim { font-weight: 400; font-size: 11px; }
 .sk-origin { overflow-wrap: anywhere; color: var(--text); }
-.sk-card { background: #050505; border: 1px solid var(--line); animation: tc-in .3s steps(6, end) both; }
+.sk-card { background: var(--card); border: 1px solid var(--line); animation: tc-in .3s steps(6, end) both; }
 .sk-card.open { border-color: var(--line-strong); }
 .sk-main { display: flex; flex-direction: column; gap: 8px; padding: 14px 18px 12px; }
 .sk-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; }
@@ -29,9 +29,9 @@
 .sk-toggle { display: flex; align-items: center; gap: 8px; width: 100%; padding: 9px 18px; border: 0; border-top: 1px solid var(--line); background: transparent; color: var(--dim); font: inherit; font-size: 11.5px; text-align: left; cursor: pointer; transition: color 140ms ease, background-color 140ms ease; }
 .sk-toggle:hover, .sk-toggle:focus-visible { color: var(--strong); background: var(--raise2); outline: none; }
 .sk-toggle .hz-caret { transform: rotate(-45deg); } .sk-card.open .sk-toggle .hz-caret { transform: rotate(45deg); }
-.sk-body { padding: 4px 18px 16px; background: #000; border-top: 1px solid var(--line); }
+.sk-body { padding: 4px 18px 16px; background: var(--surface); border-top: 1px solid var(--line); }
 .sk-body p { margin: 12px 0 8px; max-width: 78ch; line-height: 1.5; }
-.sk-body pre { margin: 0; padding: 14px 16px; max-height: 360px; overflow: auto; background: #050505; border: 1px solid var(--line); color: var(--text); font: 400 11.5px/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.sk-body pre { margin: 0; padding: 14px 16px; max-height: 360px; overflow: auto; background: var(--card); border: 1px solid var(--line); color: var(--text); font: 400 11.5px/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 
 .sk-mcp { padding: 14px 18px; gap: 6px; }
 .sk-mcp-h { display: flex; align-items: center; gap: 8px; } .sk-mcp-h b { font-size: 13px; color: var(--strong); }

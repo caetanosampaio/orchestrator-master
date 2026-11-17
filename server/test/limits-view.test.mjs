@@ -58,13 +58,15 @@ test('textos: motivo da falta de leitura e resumo para leitor de tela', () => {
   assert.deepEqual(WINDOWS.map((w) => w.key), ['session', 'week']);
 });
 
-test('interface: a faixa de limites mora no canto superior direito (botão do status global), com um ícone por provedor e o painel traz os detalhes', () => {
-  const ss = src('components/SystemStatus.jsx'), ls = src('components/LimitsStrip.jsx'), tb = src('components/Topbar.jsx');
-  assert.match(tb, /<SystemStatus \/>/); assert.match(ss, /<LimitsBars limits=\{limits\} now=\{now\} refresh=\{refresh\} \/>/); assert.match(ss, /useLimits\(\)/);
-  assert.doesNotMatch(ss, /cell\(s\.ativos/, 'os contadores saíram do botão (estão no cabeçalho do painel e no tooltip)'); assert.match(ss, /statusLine\(s\)/);
-  assert.match(ls, /<ProviderLogo id=\{sum\.provider\} size=\{14\} \/><Bars source=\{sum\} \/>/, 'cada provedor: o ícone e as SUAS 2 barras'); assert.match(ls, /sums\.map\(\(s, i\) =>/, 'um botão por provedor, separados'); assert.match(ls, /function ProviderPanel/, 'clicar nas barras do provedor abre os limites das contas dele'); assert.match(ls, /win\.label/); assert.match(ls, /WINDOWS\.map/); assert.match(ls, /role="progressbar"/);
+test('interface: os limites moram na barra de status (rodapé), um item por provedor com a barra fina e "5 h · semana", e o painel traz os detalhes abrindo para cima', () => {
+  const ss = src('components/SystemStatus.jsx'), ls = src('components/LimitsStrip.jsx'), bar = src('components/StatusBar.jsx');
+  assert.match(bar, /const \{ limits, now, refresh \} = useLimits\(\)/); assert.match(bar, /sums\.map\(\(x\) => <ProviderItem key=\{x\.provider\}/, 'um item por provedor');
+  assert.match(bar, /<ProviderLogo id=\{sum\.provider\} size=\{12\} \/>/); assert.match(bar, /<i className="fx-sb-bar" aria-hidden="true">/); assert.match(bar, /`\$\{win\(sum\.session, now\)\} · \$\{win\(sum\.week, now\)\}`/);
+  assert.match(bar, /<ProviderPanel sum=\{sum\} now=\{now\} anchor=\{btn\}/, 'clicar no provedor abre os limites das contas dele'); assert.match(ls, /export function ProviderPanel/);
+  assert.match(ls, /const up = r\.top > window\.innerHeight \/ 2/, 'âncora embaixo: o painel abre para cima'); assert.match(ls, /win\.label/); assert.match(ls, /WINDOWS\.map/); assert.match(ls, /role="progressbar"/);
+  assert.match(ss, /\{withLimits && <LimitsBars limits=\{limits\} now=\{now\} refresh=\{refresh\} \/>\}/); assert.match(ss, /useLimits\(\)/); assert.match(ss, /statusLine\(s\)/); assert.doesNotMatch(ss, /cell\(s\.ativos/);
   assert.match(src('use-limits.js'), /\/api\/limits/); assert.match(src('use-limits.js'), /document\.hidden/, 'não consulta com a aba escondida');
-  assert.match(src('limits.css'), /\.lm-bar u \{[^}]*transition/, 'a barra anima ao mudar'); assert.match(src('limits.css'), /prefers-reduced-motion/);
+  assert.match(src('forge.css'), /\.fx-sb-bar u \{[^}]*transition: width/, 'a barra anima ao mudar'); assert.match(src('limits.css'), /prefers-reduced-motion/);
 });
 
 test('uma dupla de barras por PROVEDOR: vale a conta mais perto do limite em cada janela e o painel lista as contas do provedor', () => {

@@ -25,6 +25,7 @@ import './skills.css'; // Configurações > Skills
 import './home.css'; // página Início (atividade de tokens, workspaces recentes)
 import './cockpit-ui.css'; // Cockpit na estrutura das Configurações (barra lateral e topo dos terminais): a última camada
 import './permission-profile.css'; // perfil de permissão do workspace (selo, diálogo, atalhos): só classes `pp-`
+import './forge.css'; // identidade visual no formato do Orca (sidebar, abas, painel Live, barra de status, glifos animados): a ÚLTIMA camada, vence todas as anteriores
 
 getLayouts().start(); // layout da grade por workspace (db.settings.layouts)
 getUi().start(); // preferências: cache local já aplicado; o servidor (db.settings.ui) é lido e vence o cache

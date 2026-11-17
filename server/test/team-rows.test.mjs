@@ -79,14 +79,14 @@ test('bonequinhos: cada IA tem a sua cor (a das telas de referência); desconhec
   assert.ok(!/Mascot3D|mascot-3d/.test(logo), 'o boneco não é mais 3D: as telas de referência são pixel art plano');
 });
 
-test('Configurações é uma PÁGINA (não um diálogo) e a engrenagem abre e fecha; a seção Times prontos desenha o próprio cabeçalho', () => {
-  const app = src('App.jsx'), page = src('pages/Settings.jsx'), tb = src('components/Topbar.jsx');
+test('Configurações é uma PÁGINA (não um diálogo): a engrenagem da barra lateral abre e o "Voltar" fecha; a seção Times prontos desenha o próprio cabeçalho', () => {
+  const app = src('App.jsx'), page = src('pages/Settings.jsx'), sb = src('components/Sidebar.jsx');
   assert.ok(!fs.existsSync(new URL('../../client/src/components/SettingsDialog.jsx', import.meta.url)), 'o diálogo antigo saiu');
   assert.ok(!/Dialog/.test(page.replace(/Workspace/g, '')), 'a página não usa o componente Dialog');
-  assert.match(app, /view === 'settings'/); assert.match(app, /onOpenSettings=\{view === 'settings' \? closeSettings : openSettings\}/); assert.match(app, /#\/settings/);
+  assert.match(app, /view === 'settings'/); assert.match(app, /onOpenSettings: openSettings/); assert.match(app, /#\/settings/);
   assert.match(app, /suspended=\{!!dialog \|\| view === 'settings'\}/, 'o aviso de pré-requisitos continua se afastando das Configurações');
   assert.match(page, /data-testid="settings-page"/); assert.match(page, /onClick=\{onClose\}/);
-  assert.match(tb, /aria-pressed=\{view === 'settings'\}/);
+  assert.match(sb, /onClick=\{\(\) => onOpenSettings\?\.\(\)\} aria-label="Configurações"/);
   assert.match(src('main.jsx'), /import '\.\/teams\.css'/);
 });
 

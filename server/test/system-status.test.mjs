@@ -51,14 +51,14 @@ test('listas do painel são limitadas e informam quantos ficaram de fora; agente
   assert.equal(systemStatus({ sessions: [run('x', 'a', null)], workspaces: W }).executando, 0);
 });
 
-test('a interface tem UM componente de status: as caixas antigas saíram da barra superior, da barra de terminais e da sidebar', () => {
+test('a interface tem UM componente de status: mora na barra de status (rodapé), sem as caixas antigas na barra de terminais e na sidebar', () => {
   const src = (f) => fs.readFileSync(new URL(`../../client/src/${f}`, import.meta.url), 'utf8');
-  assert.match(src('components/Topbar.jsx'), /<SystemStatus \/>/); assert.doesNotMatch(src('components/Topbar.jsx'), /tb-counts|AgentsPopover|agentes? ativos?/);
+  assert.match(src('components/StatusBar.jsx'), /<SystemStatus limits=\{false\} label=\{label\} \/>/); assert.doesNotMatch(src('components/StatusBar.jsx'), /tb-counts|AgentsPopover/);
   assert.doesNotMatch(src('components/TerminalGrid.jsx'), /AgentsPopover/); assert.doesNotMatch(src('components/Sidebar.jsx'), /AgentsPopover|oc-sum/);
 });
 
-test('barra superior sem o bloco "nome do workspace + estado": o nome já está na sidebar, na aba e na barra de terminais', () => {
-  const t = fs.readFileSync(new URL('../../client/src/components/Topbar.jsx', import.meta.url), 'utf8');
+test('barra de status sem o bloco "nome do workspace + estado": o nome já está na sidebar, na aba e na barra de caminho do Cockpit', () => {
+  const t = fs.readFileSync(new URL('../../client/src/components/StatusBar.jsx', import.meta.url), 'utf8');
   assert.doesNotMatch(t, /tb-now|tb-ws|tb-run|environments\(/);
-  assert.match(t, /<SystemStatus \/>/, 'o status global continua; o estado do workspace segue na sidebar, na aba e na barra de terminais');
+  assert.match(t, /<SystemStatus limits=\{false\}/, 'o status global continua; o estado do workspace segue na sidebar, nas abas e no painel Live');
 });

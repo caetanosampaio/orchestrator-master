@@ -15,7 +15,7 @@ html:not([data-motion="reduced"]) .fm-spark.b { animation: fm-bob 1.6s steps(2, 
 @keyframes fm-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
 
 /* ---------- introdução ---------- */
-.hz-intro { display: flex; align-items: center; gap: var(--sp-6, 28px); padding: 18px 24px; background: #050505; border: 1px solid var(--line); }
+.hz-intro { display: flex; align-items: center; gap: var(--sp-6, 28px); padding: 18px 24px; background: var(--card); border: 1px solid var(--line); }
 .hz-steps { list-style: none; margin: 0; padding: 0; flex: 1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-4); position: relative; }
 .hz-steps li { position: relative; display: flex; flex-direction: column; gap: 4px; padding-top: 16px; font-size: 11px; line-height: 1.45; color: var(--dim); }
 .hz-steps li b { font-size: 12px; font-weight: 600; color: var(--strong); }
@@ -62,7 +62,7 @@ code { font: 500 10.5px var(--mono); padding: 1px 6px; background: var(--raise3)
 .hz-none { margin: 0; padding: 18px; }
 
 /* ---------- agentes ---------- */
-.hz-agents { display: flex; flex-direction: column; gap: 0; border-top: 1px solid var(--line); background: #000; }
+.hz-agents { display: flex; flex-direction: column; gap: 0; border-top: 1px solid var(--line); background: var(--surface); }
 .hz-agent { display: flex; flex-direction: column; gap: 4px; padding: 12px 18px; border-bottom: 1px solid var(--line); } .hz-agent b { font-size: 12.5px; color: var(--strong); }
 .hz-agent p { margin: 0; max-width: 78ch; font-size: 11.5px; line-height: 1.5; color: var(--dim); } .hz-agent-h { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; } .hz-agent-act { margin-left: auto; display: inline-flex; gap: 4px; }
 .hz-agents > .tc-btn { margin: 12px 18px; align-self: flex-start; }

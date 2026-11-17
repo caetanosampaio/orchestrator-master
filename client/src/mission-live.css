@@ -14,7 +14,7 @@
 .mi-live-state.is-expired .mi-live-dot { background: transparent; border: 1px solid #6b7280; box-sizing: border-box; }
 .mi-live-state.is-expired { color: var(--mute-2, #9ca3af); }
 .mi-live-lab { color: var(--mute-2, #9ca3af); font-size: 10.5px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; }
-.mi-live-url { width: 100%; box-sizing: border-box; height: 30px; padding: 0 9px; border: 1px solid var(--hair-2, rgba(255, 255, 255, .14)); border-radius: 6px; background: #000; color: #d4d4d8; font: 12px var(--mono, monospace); text-overflow: ellipsis; }
+.mi-live-url { width: 100%; box-sizing: border-box; height: 30px; padding: 0 9px; border: 1px solid var(--hair-2, rgba(255, 255, 255, .14)); border-radius: 6px; background: var(--surface); color: #d4d4d8; font: 12px var(--mono, monospace); text-overflow: ellipsis; }
 .mi-live-url:focus-visible, .mi-live .mi-btn:focus-visible { outline: 1px dashed var(--brand, #c2555c); outline-offset: 2px; }
 
 .mi-live-msg { margin: 0; min-height: 0; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }

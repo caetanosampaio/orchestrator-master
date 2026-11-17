@@ -150,12 +150,12 @@ test('CONTINUAR: o workspace mais recente, o tópico (ativo, senão o mais novo)
   assert.equal(continueTarget({ workspaces: [] }), null); assert.equal(continueTarget({}), null);
 });
 
-test('integração: Início é a página de abertura, o Cockpit segue sempre montado e a Topbar tem o ícone de casa antes de Missions', () => {
-  const app = src('App.jsx'), tb = src('components/Topbar.jsx'), home = src('pages/Home.jsx'), hook = src('use-provider-activity.js');
-  assert.match(app, /import Home from '\.\/pages\/Home\.jsx'/); assert.match(app, /: 'home'\)\)/, 'padrão: Início'); assert.match(app, /view === 'home' && <Home /); assert.match(app, /onOpenWorkspace=\{openCockpit\}/);
-  assert.match(app, /<div className="oc-view" hidden=\{view !== 'cockpit'\}><Cockpit /); assert.match(app, /#\/cockpit/); assert.match(app, /backTo = useRef\(view === 'settings' \? 'home' : view\)/);
+test('integração: Início é a página de abertura, o Cockpit segue sempre montado e a barra lateral tem Início antes de Missões', () => {
+  const app = src('App.jsx'), sb = src('components/Sidebar.jsx'), home = src('pages/Home.jsx'), hook = src('use-provider-activity.js');
+  assert.match(app, /import Home from '\.\/pages\/Home\.jsx'/); assert.match(app, /: 'home'\)\)/, 'padrão: Início'); assert.match(app, /view === 'home' && <div className="fx-view fx-page"><Home /); assert.match(app, /onOpenWorkspace=\{openCockpit\}/);
+  assert.match(app, /<div className="oc-view fx-view" hidden=\{view !== 'cockpit'\}><Cockpit /); assert.match(app, /#\/cockpit/); assert.match(app, /backTo = useRef\(view === 'settings' \? 'home' : view\)/);
   assert.ok(!/view === 'cockpit' \? 'cockpit' : view/.test(app));
-  assert.match(tb, /aria-label="Início"/); assert.match(tb, /onClick=\{\(\) => onView\('home'\)\}/); assert.ok(tb.indexOf("onView('home')") < tb.indexOf('name="briefcase"'), 'a casa fica à esquerda de Missions');
+  assert.match(sb, /label="Início"/); assert.match(sb, /onView\('home'\)/); assert.ok(sb.indexOf("onView('home')") < sb.indexOf('name="briefcase"'), 'Início vem antes de Missões');
   assert.match(src('main.jsx'), /import '\.\/home\.css'/); assert.match(hook, /\/api\/provider-activity\?days=\$\{days\}/); assert.match(hook, /document\.hidden/, 'só consulta com a aba visível'); assert.match(hook, /intervalMs = 5000/);
   assert.match(home, /Nenhum consumo encontrado nas contas conectadas/); assert.match(home, /lendo o histórico das contas/); assert.match(home, /somar o cache/); assert.match(home, /role="switch"/); assert.match(home, /aria-pressed=\{value === it\.id\}/);
   assert.ok(!/Math\.random|SSH/.test(home + src('home-view.js')), 'nada simulado e sem Servidores SSH (não existe no FORGE)');

@@ -57,8 +57,8 @@ test('interface: Configurações > Times prontos e Arquivos, e o chip do Cockpit
   assert.match(grid, /templateId && Number\.isInteger\(slotIndexes\?\.\[i\]\) \? \{ templateId, slotIndex: slotIndexes\[i\] \} : \{\}/, 'cada POST /api/terminals leva templateId e slotIndex juntos (ou nenhum)');
   assert.match(grid, /templateId: plan\.templateId, slotIndexes: plan\.slotIndexes/);
   const sb = src('components/Sidebar.jsx');
-  assert.match(sb, /className="oc-side-files"[^>]*onClick=\{onOpenWorkspaces\}/); assert.match(sb, /<Icon name="folderOpen"[^>]*\/><span className="side-label">Arquivos<\/span>/);
-  assert.ok(sb.indexOf('oc-side-files') < sb.indexOf('oc-side-sessions'), 'Arquivos fica acima de Sessões');
+  assert.match(sb, /onClick=\{onOpenWorkspaces\} aria-label="Arquivos: abrir, trocar ou adicionar workspace"[^>]*><Icon name="folderOpen"/, 'Arquivos no rodapé da barra lateral');
+  assert.ok(sb.indexOf('aria-label="Arquivos:') < sb.indexOf('aria-label="Sessões:'), 'Arquivos vem antes de Sessões');
   assert.match(src('App.jsx'), /<Settings key=\{settingsKey\} initial=\{settingsTab\} onClose=\{closeSettings\} onOpenWorkspaces=\{openWorkspaces\} \/>/);
   assert.match(src('tokens.css'), /--w-side: 188px;/);
   assert.match(src('use-squads.js'), /options/); assert.match(src('use-squads.js'), /forge:team-templates-changed/, 'o Cockpit recarrega a lista quando as Configurações a mudam');

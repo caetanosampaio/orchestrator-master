@@ -5,11 +5,11 @@
 .mwf-root {
   --mwf-idle: #4b5563; --mwf-idle-t: #9ca3af;
   --mwf-work: var(--ws-claude, #e08060);
-  --mwf-ok: #22c55e; --mwf-warn: #f59e0b; --mwf-err: #8c242a; --mwf-cancel: #6b7280;
+  --mwf-ok: #22c55e; --mwf-warn: #f59e0b; --mwf-err: var(--st-err); --mwf-cancel: #6b7280;
   --mwf-accent: var(--brand, #8c242a);
   --mwf-hair: rgba(255, 255, 255, .08); --mwf-hair-2: rgba(255, 255, 255, .14);
   --st: var(--mwf-idle); --st-t: var(--mwf-idle-t);
-  display: flex; min-width: 0; width: 100%; max-width: 1000px; margin: 0 auto; background: #000; font-family: var(--mono); color: var(--text, #f4f4f5);
+  display: flex; min-width: 0; width: 100%; max-width: 1000px; margin: 0 auto; background: var(--surface); font-family: var(--mono); color: var(--text, #f4f4f5);
 }
 .mwf-empty { align-items: center; justify-content: center; min-height: 200px; color: #7c8494; font-size: 12px; } .mwf-empty p { margin: 0; }
 /* centrado, tamanho equilibrado: 320 a 480px de altura; passou disso, rola por dentro (nunca a página) */
@@ -32,7 +32,7 @@
 /* ---------- nó compacto: hairline fina, sem borda grossa nem cartão pesado ---------- */
 .mwf-node { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 3px; width: 100%; padding: 8px 10px 8px 10px; border: 1px solid var(--mwf-hair); border-left: 1px solid var(--st); border-radius: 4px; background: #030303; color: inherit; font: inherit; text-align: left; cursor: pointer; overflow: hidden;
   transition: border-color 140ms ease, background-color 140ms ease; }
-.mwf-node:hover { border-color: var(--mwf-hair-2); border-left-color: var(--st); background: #080808; }
+.mwf-node:hover { border-color: var(--mwf-hair-2); border-left-color: var(--st); background: var(--raise); }
 .mwf-node.on { border-color: var(--mwf-accent); background: #0b0404; } /* selecionado: contorno vermelho discreto */
 .mwf-node:focus-visible { outline: 1px dashed var(--mwf-accent); outline-offset: 2px; }
 .mwf-s-idle { --st: var(--mwf-idle); --st-t: var(--mwf-idle-t); }
@@ -68,7 +68,7 @@
 .mwf-e-done path { stroke: rgba(34, 197, 94, .5); stroke-dasharray: none; } .mwf-e-done .mwf-arrow { fill: rgba(34, 197, 94, .75); }
 .mwf-e-active path { stroke: var(--mwf-work); stroke-dasharray: 4 4; } .mwf-e-active .mwf-arrow { fill: var(--mwf-work); }
 .mwf-e-wait path { stroke: rgba(245, 158, 11, .7); stroke-dasharray: 4 4; } .mwf-e-wait .mwf-arrow { fill: var(--mwf-warn); }
-.mwf-e-err path { stroke: rgba(140, 36, 42, .85); stroke-dasharray: none; } .mwf-e-err .mwf-arrow { fill: var(--mwf-err); }
+.mwf-e-err path { stroke: rgba(255, 255, 255, .12); stroke-dasharray: none; } .mwf-e-err .mwf-arrow { fill: var(--mwf-err); }
 
 /* ---------- movimento (só com movimento permitido; respeita html[data-motion="reduced"] e prefers-reduced-motion) ---------- */
 @keyframes mwf-spawn { 0% { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }

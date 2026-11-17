@@ -5,8 +5,8 @@
 .fl-page {
   --fl-hair: rgba(255, 255, 255, .08); --fl-hair-2: rgba(255, 255, 255, .14); --fl-mute: #7c8494; --fl-mute-2: #9ca3af; /* --fl-mute = 5,2:1 sobre o preto */
   --fl-red-t: #c2555c; /* vermelho de texto de menor intensidade (~5:1 sobre o preto) */
-  --fl-wait: #f59e0b; --fl-ok: #22c55e; --fl-work: var(--ws-claude, #e08060); --fl-err: #8c242a; --fl-err-t: #ee5a5a;
-  position: relative; flex: 1; min-height: 0; display: grid; grid-template-columns: 272px minmax(0, 1fr); background: #000; color: var(--text, #f4f4f5); font-family: var(--mono);
+  --fl-wait: #f59e0b; --fl-ok: #22c55e; --fl-work: var(--ws-claude, #e08060); --fl-err: var(--st-err); --fl-err-t: #ee5a5a;
+  position: relative; flex: 1; min-height: 0; display: grid; grid-template-columns: 272px minmax(0, 1fr); background: var(--surface); color: var(--text, #f4f4f5); font-family: var(--mono);
 }
 .fl-page.has-panel { grid-template-columns: 272px minmax(0, 1fr) 400px; } /* o nó selecionado abre numa coluna à direita: o workflow cede espaço, nada fica coberto */
 .fl-page .dim { color: var(--fl-mute); }
@@ -29,9 +29,9 @@
 .fl-btn:active:not(:disabled) { transform: translateY(1px); }
 .fl-btn:disabled { opacity: .5; cursor: not-allowed; }
 .fl-btn:focus-visible, .fl-row:focus-visible, .fl-plus:focus-visible, .fl-seg:focus-visible, .fl-runs summary:focus-visible, .fl-search input:focus-visible { outline: 1px dashed var(--brand, #8c242a); outline-offset: 2px; }
-.fl-btn-primary { border-color: var(--bone, #7a1d23); background: var(--bone, #7a1d23); color: #fff; font-weight: 700; } /* #7a1d23 + branco = 11:1 */
-.fl-btn-primary:hover:not(:disabled) { border-color: #6e151b; background: #6e151b; color: #fff; }
-.fl-btn-danger { border-color: rgba(140, 36, 42, .45); color: var(--fl-red-t); } .fl-btn-danger:hover:not(:disabled) { border-color: var(--brand, #8c242a); background: rgba(140, 36, 42, .08); color: #fca5a5; }
+.fl-btn-primary { border-color: var(--bone, #7a1d23); background: var(--bone, #7a1d23); color: var(--ink, #141414); font-weight: 700; } /* #7a1d23 + branco = 11:1 */
+.fl-btn-primary:hover:not(:disabled) { border-color: var(--bone-hover, #fff); background: var(--bone-hover, #fff); color: var(--ink, #141414); }
+.fl-btn-danger { border-color: rgba(255, 255, 255, .12); color: var(--fl-red-t); } .fl-btn-danger:hover:not(:disabled) { border-color: var(--brand, #8c242a); background: rgba(255, 255, 255, .06); color: #fca5a5; }
 .fl-btn-ghost { border-color: transparent; color: var(--fl-mute-2); } .fl-btn-ghost:hover:not(:disabled) { border-color: var(--fl-hair-2); }
 .fl-btn.is-busy { cursor: progress; }
 .fl-spin { width: 11px; height: 11px; border: 1.5px solid currentColor; border-right-color: transparent; border-radius: 50%; }
@@ -47,7 +47,7 @@
 .fl-chip.warn { border-color: rgba(245, 158, 11, .6); color: #fbbf24; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
 
 /* ---------- lista ---------- */
-.fl-side { display: flex; flex-direction: column; min-height: 0; background: #000; border-right: 1px solid var(--fl-hair); }
+.fl-side { display: flex; flex-direction: column; min-height: 0; background: var(--surface); border-right: 1px solid var(--fl-hair); }
 .fl-side-h { flex: none; display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 10px 0 16px; border-bottom: 1px solid var(--fl-hair); }
 .fl-search { flex: none; display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 16px; border-bottom: 1px solid var(--fl-hair); color: var(--fl-mute); font-size: 12px; }
 .fl-search input { flex: 1; min-width: 0; border: 0; background: none; color: #fff; font: inherit; outline: none; } .fl-search input::placeholder { color: var(--fl-mute); }
@@ -57,7 +57,7 @@
 .fl-group-h > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fl-row { position: relative; width: 100%; display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 6px 8px; border: 0; border-radius: 4px; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; overflow: hidden; transition: background-color 120ms ease; }
 .fl-row:hover { background: rgba(255, 255, 255, .04); }
-.fl-row.on { background: rgba(140, 36, 42, .10); } /* selecionada: só o fundo tingido */
+.fl-row.on { background: rgba(255, 255, 255, .06); } /* selecionada: só o fundo tingido */
 .fl-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--st); }
 .fl-row.fl-t-cancel .fl-dot, .fl-row.fl-t-idle .fl-dot { background: transparent; border: 1px solid var(--st); box-sizing: border-box; }
 .fl-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
@@ -72,7 +72,7 @@
 .fl-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 16px 8px; font-size: 13px; line-height: 1.55; } .fl-empty p { margin: 0; }
 
 /* ---------- área principal ---------- */
-.fl-main { min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; background: #000; scrollbar-width: thin; scrollbar-color: #27272a transparent; }
+.fl-main { min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; background: var(--surface); scrollbar-width: thin; scrollbar-color: #27272a transparent; }
 .fl-center { flex: none; width: 100%; max-width: 1056px; margin: 0 auto; box-sizing: border-box; padding: 0 28px 28px; }
 .fl-blank { margin: auto; max-width: 640px; display: flex; flex-direction: column; align-items: flex-start; gap: 14px; padding: 40px 28px; color: var(--fl-mute-2); font-size: 14px; }
 .fl-blank h1 { margin: 0; color: #fff; font-size: 30px; line-height: 1.1; font-weight: 700; letter-spacing: -.02em; } .fl-blank p { margin: 0; line-height: 1.6; }
@@ -121,7 +121,7 @@
 .fl-runs-t td { padding: 6px 10px 6px 0; border-top: 1px solid var(--fl-hair); color: #d4d4d8; vertical-align: top; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 
 /* ---------- painel lateral ---------- */
-.fl-panel { min-width: 0; min-height: 0; display: flex; flex-direction: column; border-left: 1px solid var(--fl-hair); background: #000; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #27272a transparent; }
+.fl-panel { min-width: 0; min-height: 0; display: flex; flex-direction: column; border-left: 1px solid var(--fl-hair); background: var(--surface); overflow-y: auto; scrollbar-width: thin; scrollbar-color: #27272a transparent; }
 .fl-panel-h { flex: none; display: flex; align-items: flex-start; gap: 10px; padding: 16px 16px 12px; border-bottom: 1px solid var(--fl-hair); }
 .fl-panel-id { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
 .fl-panel-h h2 { margin: 0; color: #fff; font-size: 16px; line-height: 1.3; font-weight: 700; overflow-wrap: anywhere; } .fl-panel-h h2:focus { outline: none; } .fl-panel-h h2:focus-visible { outline: 1px dashed var(--brand, #8c242a); outline-offset: 3px; }
@@ -141,7 +141,7 @@
 .fl-form-lead { margin: 0; font-size: 12.5px; line-height: 1.55; }
 .fl-form label { display: flex; flex-direction: column; gap: 6px; color: var(--fl-mute-2, #9ca3af); font-size: 11px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; }
 .fl-form label .dim { color: #7c8494; font-weight: 400; letter-spacing: 0; text-transform: none; font-size: 12px; }
-.fl-form input:not([type="checkbox"]), .fl-form textarea, .fl-form select { width: 100%; box-sizing: border-box; padding: 9px 11px; border: 1px solid rgba(255, 255, 255, .18); border-radius: 6px; background: #000; color: #fff; font: 400 13px var(--mono); letter-spacing: 0; text-transform: none; }
+.fl-form input:not([type="checkbox"]), .fl-form textarea, .fl-form select { width: 100%; box-sizing: border-box; padding: 9px 11px; border: 1px solid rgba(255, 255, 255, .18); border-radius: 6px; background: var(--surface); color: #fff; font: 400 13px var(--mono); letter-spacing: 0; text-transform: none; }
 .fl-form textarea { min-height: 84px; resize: vertical; line-height: 1.5; }
 .fl-form input:focus-visible, .fl-form textarea:focus-visible, .fl-form select:focus-visible { outline: 1px dashed var(--brand, #8c242a); outline-offset: 2px; border-color: var(--brand, #8c242a); }
 .fl-form [aria-invalid="true"] { border-color: var(--fl-err); }

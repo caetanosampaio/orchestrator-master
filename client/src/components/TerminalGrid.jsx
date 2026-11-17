@@ -12,6 +12,8 @@ import { Btn, Icon } from './ui.jsx';
 import { paneUsage, squadUsage } from '../usage-view.js';
 import { createTerminalStream, isOld } from '../terminal-stream.js';
 import ProviderLogo from './ProviderLogo.jsx';
+import StatusGlyph from './StatusGlyph.jsx';
+import { elapsed, shortPath as shortCwd } from '../forge-shell.js';
 import { paneState, pendingByPane, paneName, shapeFor, focusPlacement, evenTracks, dragTracks, dividerAt } from '../env-view.js';
 import MaestroPopover from './MaestroPopover.jsx';
 import SquadGallery from './SquadGallery.jsx';
@@ -23,9 +25,9 @@ import { PRESETS } from '../team-view.js';
 export const SQUADS = PRESETS.filter((p) => p.id !== 'builder');
 const MAX_CHUNK = 60_000; // o servidor aceita até 64 KB por entrada
 const FONT_FAMILY = "'Geist Mono Variable', 'Geist Mono', 'Cascadia Mono', Consolas, monospace";
-const THEME = { background: '#000000', foreground: '#d2d2d2', cursor: '#c94a4a', cursorAccent: '#000000', selectionBackground: 'rgba(168, 58, 58, .35)', red: '#b84646', brightRed: '#c94a4a', green: '#5fa377', brightGreen: '#7fb592', yellow: '#92713e', brightYellow: '#c9a46a' };
+// Tema do xterm no tom do editor do shell (forge.css: --term-bg): grafite neutro, cursor claro, seleção discreta e ANSI dessaturado.
+const THEME = { background: '#1c1c1c', foreground: '#d6d6d6', cursor: '#e8e8e8', cursorAccent: '#1c1c1c', selectionBackground: 'rgba(255, 255, 255, .16)', black: '#2a2a2a', brightBlack: '#6e6e6e', red: '#e06c6c', brightRed: '#f08080', green: '#7cc48a', brightGreen: '#98d4a3', yellow: '#d9b45a', brightYellow: '#e8c878', blue: '#7aa2e0', brightBlue: '#9ab9ea', magenta: '#c08bd8', brightMagenta: '#d2a6e4', cyan: '#6fc1c8', brightCyan: '#8fd2d8', white: '#d6d6d6', brightWhite: '#f4f4f4' };
 const STATE_LABEL = { working: 'executando', idle: 'ocioso', done: 'concluído', waiting: 'aguardando', exited: 'encerrado', failed: 'falhou', boot: 'iniciando' };
-const shortPath = (p) => { const parts = String(p ?? '').split(/[\\/]+/).filter(Boolean); return parts.length > 2 ? `…/${parts.slice(-2).join('/')}` : parts.join('/') || String(p ?? ''); };
 
 /** Um pane = um terminal xterm ligado ao PTY do servidor: saída por SSE, entrada e tamanho por POST (nunca WebSocket: passa pela checagem de Host/Origin). */
 function TerminalPane({ session, role, state, waiting, maximized, fontSize, stream, onClose, onMaximize, onFocus }) {
@@ -117,24 +119,26 @@ function TerminalPane({ session, role, state, waiting, maximized, fontSize, stre
   const wait = waiting?.[0], waitText = wait ? String(wait.text ?? wait.note ?? '').replace(/\s+/g, ' ').trim() : '';
   const waitTitle = waiting?.length ? `Aguardando a sua decisão: ${waiting.map((t) => t.text || t.note || t.id).join(' | ')}\nAprove ou recuse no painel do Maestro.` : '';
   return (
-    <section className={`oc-pane st-${state}${waiting?.length ? ' has-wait' : ''}${maximized ? ' max' : ''}`} aria-label={`Terminal ${session.title}, ${label}${waiting?.length ? ', aguardando a sua decisão' : ''}`} onMouseDownCapture={() => noteInteraction(id)} onFocusCapture={() => noteInteraction(id)} onBlurCapture={() => noteInteraction(id)}>
-      <header className="oc-ph">
-        <span className={`oc-pstate st-${shown} pv-${session.provider || 'claude'}`} role="status">{shown === 'working' && (session.provider || 'claude') === 'claude' ? <ProviderLogo id="claude" size={14} className="pv-work" /> : <i className={`oc-pdot st-${shown}`} aria-hidden="true" />}{label}</span>
-        {nm.role && <b className="oc-prole">{nm.role}</b>}
-        <b className={`oc-ptitle${nm.role ? ' sub' : ''}`} title={session.title}>{nm.name}</b>
-        {waiting?.length > 0 && <span className="oc-pwait" role="status" title={waitTitle}><Icon name="clock" size={12} /><span className="oc-pwait-t">{waiting.length > 1 ? `${waiting.length} tarefas aguardando você` : waitText ? `Aguardando você: ${waitText}` : 'Aguardando você'}</span></span>}
+    <section className={`oc-pane fx-pane st-${state}${waiting?.length ? ' has-wait' : ''}${maximized ? ' max' : ''}`} aria-label={`Terminal ${session.title}, ${label}${waiting?.length ? ', aguardando a sua decisão' : ''}`} onMouseDownCapture={() => noteInteraction(id)} onFocusCapture={() => noteInteraction(id)} onBlurCapture={() => noteInteraction(id)}>
+      <header className="oc-ph fx-ph" onDoubleClick={(e) => { if (!e.target.closest('button')) onMaximize(); }} title={`${session.title}\n${session.cwd}${session.branch ? `\nBranch ${session.branch}` : ''}\npid ${session.pid}`}>
+        <span className={`fx-pstate st-${shown}`} role="status" aria-label={label}><StatusGlyph state={shown} size={13} /></span>
+        <ProviderLogo id={session.provider || 'claude'} size={13} title={session.providerLabel || 'Claude Code'} />
+        <b className="fx-ptitle">{nm.name}</b>
+        {nm.role && <span className="fx-chip">{nm.role}</span>}
+        <span className="fx-pmeta">{[label, session.model, elapsed(session.startedAt)].filter(Boolean).join(' · ')}</span>
+        {waiting?.length > 0 && <span className="fx-chip warn fx-pwait" role="status" title={waitTitle}>{waiting.length > 1 ? `${waiting.length} tarefas aguardando você` : waitText ? `Aguardando você: ${waitText}` : 'Aguardando você'}</span>}
         <span className="oc-pgrow" />
-        {conn === 'reconnecting' && <span className="oc-reconn" role="status" title="A conexão com os terminais caiu; tentando de novo automaticamente.">reconectando…</span>}
-        <span className={`oc-pmark${shown === 'working' ? ' working' : ''}`} role="img" aria-label={`Agente: ${session.providerLabel || 'Claude Code'}`} title={session.providerLabel || 'Claude Code'}><ProviderLogo id={session.provider || 'claude'} size={20} variant="mascot" /></span>
-        {accTag && <span className="oc-ptag acc" title={`Conta: ${accTag}`}><span className="sr">Conta: </span>{accTag}</span>}
-        {session.worktreeId && <span className="oc-ptag wt" title="Roda num worktree próprio">worktree</span>}
-        {hasUse && <span className="oc-pusage" title={use.title}><span className="sr">Consumo: </span>{use.tokens} tok<span aria-hidden="true"> · </span><span className="sr">custo </span>{use.cost}</span>}
-        {onFocus && <button type="button" className="oc-pbtn" onClick={onFocus} aria-label="Colocar este terminal em foco" title="Colocar em foco"><Icon name="fit" size={14} /></button>}
-        <button type="button" className="oc-pbtn" onClick={onMaximize} aria-label={maximized ? 'Restaurar o terminal' : 'Ampliar o terminal'} title={maximized ? 'Restaurar' : 'Ampliar'}><Icon name={maximized ? 'restore' : 'fit'} size={14} /></button>
-        <button type="button" className="oc-pbtn close" onClick={onClose} aria-label={running ? 'Encerrar o terminal' : 'Remover o terminal'} title={running ? 'Encerrar' : 'Remover'}><Icon name="close" size={14} /></button>
+        {conn === 'reconnecting' && <span className="fx-pmeta warn" role="status" title="A conexão com os terminais caiu; tentando de novo automaticamente.">reconectando…</span>}
+        {accTag && <span className="fx-chip" title={`Conta: ${accTag}`}><span className="sr">Conta: </span>{accTag}</span>}
+        {session.worktreeId && <span className="fx-chip" title={session.branch ? `Worktree próprio na branch ${session.branch}` : 'Roda num worktree próprio'}>{session.branch ? shortCwd(session.branch) : 'worktree'}</span>}
+        {hasUse && <span className="fx-pmeta" title={use.title}><span className="sr">Consumo: </span>{use.tokens} tok<span aria-hidden="true"> · </span><span className="sr">custo </span>{use.cost}</span>}
+        <span className="fx-pacts">
+          {onFocus && <button type="button" className="fx-ibtn sm" onClick={onFocus} aria-label="Colocar este terminal em foco" title="Colocar em foco"><Icon name="fit" size={13} /></button>}
+          <button type="button" className="fx-ibtn sm" onClick={onMaximize} aria-label={maximized ? 'Restaurar o terminal' : 'Ampliar o terminal'} title={maximized ? 'Restaurar (duplo clique no cabeçalho)' : 'Ampliar (duplo clique no cabeçalho)'}><Icon name={maximized ? 'restore' : 'fit'} size={13} /></button>
+          <button type="button" className="fx-ibtn sm close" onClick={onClose} aria-label={running ? 'Encerrar o terminal' : 'Remover o terminal'} title={running ? 'Encerrar' : 'Remover'}><Icon name="close" size={13} /></button>
+        </span>
       </header>
-      <div className="oc-pbody" ref={hostRef}>{running && !started && <div className="oc-boot" role="status"><span className="oc-boot-bar" aria-hidden="true" />Iniciando o Claude Code…</div>}</div>
-      <footer className="oc-pf"><span className="mono" title={session.cwd}>{shortPath(session.cwd)}</span><span className="mono dim">pid {session.pid}</span></footer>
+      <div className="oc-pbody" ref={hostRef}>{running && !started && <div className="oc-boot fx-boot" role="status"><StatusGlyph state="boot" size={14} />Iniciando {session.providerLabel || 'o agente'}…</div>}</div>
     </section>
   );
 }
@@ -160,7 +164,19 @@ function Gutter({ axis, index, tracks, onTracks, gridRef, style, label }) {
 }
 
 
-export default function TerminalGrid({ onOpenWorkspaces, onOpenSettings, onOpenSessions }) {
+/** Aba de um terminal na faixa de abas (como as abas de arquivo do Orca): glifo de estado, logo do agente e nome; a ativa é o terminal ampliado. */
+function TermTab({ s, state, on, onPick, onClose }) {
+  return (
+    <div className={`fx-tab${on ? ' on' : ''} st-${state}`} role="presentation">
+      <button type="button" role="tab" aria-selected={on} className="fx-tab-b" onClick={onPick} title={`${s.title}${s.model ? ` · ${s.model}` : ''}`}>
+        <StatusGlyph state={state} size={12} /><ProviderLogo id={s.provider || 'claude'} size={12} /><span>{s.title}</span>
+      </button>
+      <button type="button" className="fx-tab-x" onClick={onClose} aria-label={`${s.status === 'running' ? 'Encerrar' : 'Remover'} o terminal ${s.title}`} title={s.status === 'running' ? 'Encerrar' : 'Remover'}><Icon name="close" size={11} /></button>
+    </div>
+  );
+}
+
+export default function TerminalGrid({ onOpenWorkspaces, onOpenSettings, onOpenSessions, stream: shared = null, liveOpen = false, onToggleLive = null, narrow = false, onMenu = null, menuIcon = 'menu', focusRequest = null, onFocusHandled = null }) {
   const { state, notify, terminals, maestro, setMaestro, workingIds, loadTerminals } = useStore();
   const [prefs, setPref] = usePrefs();
   const [busy, setBusy] = useState(false);
@@ -172,8 +188,9 @@ export default function TerminalGrid({ onOpenWorkspaces, onOpenSettings, onOpenS
   const attempted = useRef(new Set()), autoBusy = useRef(false); // 'já tentei' por registro+instante: uma sessão não é reaberta em laço nem notificada duas vezes
   const [focusBy, setFocusBy] = useState({}); // workspaceId -> id do terminal em foco (modo Foco)
   const ws = state?.activeWorkspace;
-  const stream = useMemo(() => createTerminalStream(), []); // uma conexão SSE para todos os terminais
-  useEffect(() => () => stream.close(), [stream]);
+  const own = useMemo(() => (shared ? null : createTerminalStream()), [shared]); // uma conexão SSE para todos os terminais (o Cockpit a compartilha com o painel Live)
+  useEffect(() => () => own?.close(), [own]);
+  const stream = shared ?? own;
   const waitingBy = useMemo(() => pendingByPane(maestro?.tasks), [maestro]);
   const pendingIds = useMemo(() => new Set(waitingBy.keys()), [waitingBy]);
 
@@ -321,12 +338,38 @@ export default function TerminalGrid({ onOpenWorkspaces, onOpenSettings, onOpenS
   const showGutters = !maxId && !focusPlan && mine.length > 1;
   const vBottom = shape.spanLast ? `${100 - dividerAt(cur.rows, cur.rows.length - 2)}%` : 0;
 
+  // pedido de abrir um terminal em destaque (clique na sidebar): amplia quando a sessão já é deste workspace
+  useEffect(() => {
+    if (!focusRequest || !ws) return;
+    const s = mine.find((x) => x.id === focusRequest.id);
+    if (!s) return;
+    if (s.recordId && L.maximized !== s.recordId) layoutActions.setMaximized(ws.id, s.recordId);
+    onFocusHandled?.();
+  }, [focusRequest, ws?.id, mine.map((x) => x.id).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
+  const closeTab = (s) => { if (s.status === 'running' && !window.confirm(`Encerrar o terminal "${s.title}"? O agente em andamento será interrompido.`)) return; close(s); };
+  const solo = () => open(['builder'], { squad: false });
+
   return (
-    <div className={`tg${maxId ? ' tg-full' : ''}`}>
-      {ws && <div className="oc-bar tbx" role="toolbar" aria-label={`Terminais de ${where}`}>
+    <div className={`tg fx-cockpit${maxId ? ' tg-full' : ''}`}>
+      {/* faixa de abas (como as abas de arquivo do Orca): "Todos" mostra a grade; uma aba por terminal amplia aquele; "+" abre um terminal avulso */}
+      <div className="fx-tabs" role="tablist" aria-label={ws ? `Terminais de ${where}` : 'Terminais'}>
+        {narrow && onMenu && <button type="button" className="fx-ibtn fx-tabs-menu" onClick={onMenu} aria-label={menuIcon === 'menu' ? 'Abrir a navegação' : 'Mostrar a barra lateral'} title={menuIcon === 'menu' ? 'Navegação' : 'Mostrar a barra lateral'} {...(menuIcon === 'menu' ? { 'aria-haspopup': 'dialog', 'aria-controls': 'nav-drawer' } : {})}><Icon name={menuIcon} size={16} /></button>}
+        {ws && mine.length > 0 && (
+          <div className={`fx-tab all${!maxId ? ' on' : ''}`} role="presentation">
+            <button type="button" role="tab" aria-selected={!maxId} className="fx-tab-b" onClick={() => maxId && layoutActions.setMaximized(ws.id, null)} title="Todos os terminais lado a lado"><Icon name="cockpit" size={13} /><span>Todos</span><span className="fx-n">{mine.length}</span></button>
+          </div>
+        )}
+        {ws && mine.map((s) => <TermTab key={s.id} s={s} state={paneState(s, workingIds, pendingIds)} on={maxId === s.id} onPick={() => layoutActions.setMaximized(ws.id, maxId === s.id ? null : (s.recordId ?? null))} onClose={() => closeTab(s)} />)}
+        {ws && <button type="button" className="fx-ibtn fx-tab-add" onClick={solo} disabled={busy || room <= 0} aria-label="Abrir um terminal" title={room <= 0 ? 'Limite de terminais atingido' : `Abrir um terminal (${providers.find((p) => p.id === provider)?.label ?? 'Claude Code'})`}><Icon name="plus" size={14} /></button>}
+        <span className="grow" />
+        {onToggleLive && <button type="button" className={`fx-ibtn${liveOpen ? ' on' : ''}`} onClick={onToggleLive} aria-pressed={liveOpen} aria-label={liveOpen ? 'Fechar o painel Live' : 'Abrir o painel Live'} title={liveOpen ? 'Fechar o painel Live' : 'Painel Live: preview do localhost e a equipe em tempo real'}><Icon name="panel" size={15} /></button>}
+      </div>
+
+      {ws && <div className="oc-bar tbx fx-path" role="toolbar" aria-label={`Controles dos terminais de ${where}`}>
+        <span className="fx-crumb" title={ws.path}><b>{where}</b><span className="fx-crumb-sep" aria-hidden="true">/</span><span className="fx-crumb-p">{shortCwd(ws.path)}</span></span>
         {/* Controles operacionais (à direita). O workspace ("Arquivos") fica na sidebar; equipes, visualização e histórico, em Configurações */}
         <div className="tbx-g tbx-end">
-            <label className="oc-iso" title="Desligado (automático): cada agente que edita ganha um worktree Git próprio assim que há mais de um no workspace, sem conflito de arquivos (sem Git, abre na pasta normal e avisa). Ligado: sempre worktree, e um squad inteiro compartilha UM (os terminais do squad editam os mesmos arquivos). Exige repositório Git.">
+            <label className="oc-iso fx-switch" title="Desligado (automático): cada agente que edita ganha um worktree Git próprio assim que há mais de um no workspace, sem conflito de arquivos (sem Git, abre na pasta normal e avisa). Ligado: sempre worktree, e um squad inteiro compartilha UM (os terminais do squad editam os mesmos arquivos). Exige repositório Git.">
               <input type="checkbox" role="switch" checked={isolate} onChange={(e) => setPref('isolate', e.target.checked)} /><span className="oc-switch-track" aria-hidden="true"><i /></span>Worktree
             </label>
             {total.panes > 0 && <span className="oc-total" title={total.partialCost ? 'Há panes sem custo conhecido: o total em dólares não é exibido. Crie data/pricing.json com os preços por modelo (USD por milhão de tokens) para ver o custo.' : total.cost === '—' ? 'Custo indisponível: crie data/pricing.json com os preços por modelo (USD por milhão de tokens).' : 'Soma dos terminais deste workspace'}>{total.tokens} tok · {total.cost}</span>}

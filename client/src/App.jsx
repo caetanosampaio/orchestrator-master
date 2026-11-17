@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Sidebar from './components/Sidebar.jsx';
-import Topbar from './components/Topbar.jsx';
-import DesktopTitleBar from './components/DesktopTitleBar.jsx';
+import StatusBar from './components/StatusBar.jsx';
+import DesktopTitleBar, { desktopInfo } from './components/DesktopTitleBar.jsx';
 import Home from './pages/Home.jsx';
 import Cockpit from './pages/Cockpit.jsx';
 import Missions from './pages/Missions.jsx';
@@ -31,6 +31,13 @@ function useNarrow() {
 
 export default function App() {
   const [navOpen, setNavOpen] = useState(false);
+  // conveniências por navegador (o servidor não precisa saber): painel Live aberto e barra lateral recolhida
+  const [liveOpen, setLiveOpen] = useState(() => { try { return localStorage.getItem('forge.live.open') !== '0'; } catch { return true; } });
+  const [sideHidden, setSideHidden] = useState(() => { try { return localStorage.getItem('forge.side.hidden') === '1'; } catch { return false; } });
+  const toggleLive = useCallback(() => setLiveOpen((o) => { try { localStorage.setItem('forge.live.open', o ? '0' : '1'); } catch { /* local */ } return !o; }), []);
+  const toggleSide = useCallback(() => { setSideHidden((h) => { try { localStorage.setItem('forge.side.hidden', h ? '0' : '1'); } catch { /* local */ } return !h; }); setTimeout(() => window.dispatchEvent(new Event('resize')), 220); }, []);
+  const [focusReq, setFocusReq] = useState(null); // terminal clicado na sidebar: o Cockpit o amplia assim que ele é do workspace aberto
+  const desktop = desktopInfo()?.platform === 'darwin';
   const [dialog, setDialog] = useState(null); // 'workspaces' | 'sessions' | null (as Configurações são uma página: view 'settings')
   const [settingsTab, setSettingsTab] = useState(() => /^#\/settings\/([a-z-]+)/.exec(location.hash)?.[1] ?? 'perfil'), [settingsKey, setSettingsKey] = useState(0); // #/settings/<seção> abre direto na seção (ex.: #/settings/mascotes) // a chave refaz a página para ela abrir na aba pedida
   const [ui] = useUi();
@@ -60,33 +67,37 @@ export default function App() {
   const closeSettings = useCallback(() => goView(backTo.current === 'settings' ? 'cockpit' : backTo.current), [goView]);
 
   const openSessions = useCallback(() => { setNavOpen(false); setDialog('sessions'); }, []);
-  const side = { onOpenWorkspaces: openWorkspaces, onOpenSessions: openSessions };
+  const side = { onOpenWorkspaces: openWorkspaces, onOpenSessions: openSessions, onOpenSettings: openSettings, view, onView: goView, missions: missionsData.missions, onOpenTerminal: (t) => setFocusReq({ id: t.id, at: Date.now() }), desktop };
+  const settings = view === 'settings';
+  const showSide = !settings && !narrow && !sideHidden;
+  const menu = narrow ? () => setNavOpen(true) : sideHidden ? toggleSide : null; // telas estreitas: gaveta; barra recolhida: reabre
   return (
-    <div className="oc-app oc-app-col">
+    <div className={`oc-app fx-app${desktop ? ' is-desktop' : ''}${settings ? ' in-settings' : ''}`}>
       <button type="button" className="skip" onClick={() => document.getElementById('main')?.focus()}>Pular para o conteúdo</button>
-      <DesktopTitleBar />
-      <Topbar narrow={narrow} onMenu={() => setNavOpen(true)} menuRef={menuRef} navOpen={navOpen} onOpenSettings={view === 'settings' ? closeSettings : openSettings} view={view} onView={goView} missions={missionsData.missions} />
-      <div className="oc-body">
-        {!narrow && view === 'cockpit' && <Sidebar {...side} />}
-        {narrow && navOpen && view === 'cockpit' && <><div className="oc-scrim" onClick={closeNav} aria-hidden="true" /><Sidebar modal onClose={closeNav} {...side} /></>}
-      <div className="oc-main">
-        {error && <div className="banner err" role="alert">{error}</div>}
-        {(ui.status.state === 'offline' || ui.status.state === 'error') && <div className="banner err" role="status" data-testid="ui-sync-note">{ui.status.message}</div>}
-        {state?.persistence && !state.persistence.ok && (
-          <div className="banner err" role="alert">
-            O banco não está sendo gravado em disco (erro {state.persistence.error}): o estado só existe em memória. <PersistenceNote incident={state.persistenceIncident} />
-          </div>
-        )}
-        <main id="main" tabIndex={-1} className="oc-content">
-          {/* O Cockpit fica SEMPRE montado (só escondido nas outras páginas): os terminais não são recriados ao voltar, então rolagem e texto digitado se mantêm.
-              Escondido, o contêiner mede 0 e o terminal não se reajusta (TerminalGrid só ajusta acima de 40px): nenhum redimensionamento vai ao servidor. */}
-          <div className="oc-view" hidden={view !== 'cockpit'}><Cockpit onOpenWorkspaces={openWorkspaces} onOpenSettings={openSettings} onOpenSessions={openSessions} /></div>
-          {view === 'home' && <Home onOpenWorkspaces={openWorkspaces} onOpenWorkspace={openCockpit} missions={missionsData.missions} />}
-          {view === 'missions' && <Missions onOpenCockpit={openCockpit} data={missionsData} />}
-          {view === 'settings' && <Settings key={settingsKey} initial={settingsTab} onClose={closeSettings} onOpenWorkspaces={openWorkspaces} />}
-        </main>
+      {settings && <DesktopTitleBar />}
+      <div className="fx-body">
+        {showSide && <Sidebar {...side} onCollapse={toggleSide} />}
+        {narrow && navOpen && !settings && <><div className="oc-scrim fx-scrim" onClick={closeNav} aria-hidden="true" /><Sidebar modal onClose={closeNav} {...side} /></>}
+        <div className="fx-main">
+          {menu && view !== 'cockpit' && !settings && <button type="button" ref={menuRef} className="fx-ibtn fx-reopen" onClick={menu} aria-label={narrow ? 'Abrir a navegação' : 'Mostrar a barra lateral'} title={narrow ? 'Navegação' : 'Mostrar a barra lateral'}><Icon name={narrow ? 'menu' : 'panel'} size={15} /></button>}
+          {error && <div className="banner err" role="alert">{error}</div>}
+          {(ui.status.state === 'offline' || ui.status.state === 'error') && <div className="banner err" role="status" data-testid="ui-sync-note">{ui.status.message}</div>}
+          {state?.persistence && !state.persistence.ok && (
+            <div className="banner err" role="alert">
+              O banco não está sendo gravado em disco (erro {state.persistence.error}): o estado só existe em memória. <PersistenceNote incident={state.persistenceIncident} />
+            </div>
+          )}
+          <main id="main" tabIndex={-1} className="oc-content fx-content">
+            {/* O Cockpit fica SEMPRE montado (só escondido nas outras páginas): os terminais não são recriados ao voltar, então rolagem e texto digitado se mantêm.
+                Escondido, o contêiner mede 0 e o terminal não se reajusta (TerminalGrid só ajusta acima de 40px): nenhum redimensionamento vai ao servidor. */}
+            <div className="oc-view fx-view" hidden={view !== 'cockpit'}><Cockpit onOpenWorkspaces={openWorkspaces} onOpenSettings={openSettings} onOpenSessions={openSessions} liveOpen={liveOpen} onToggleLive={toggleLive} narrow={narrow || sideHidden} onMenu={menu} menuIcon={narrow ? 'menu' : 'panel'} focusRequest={focusReq} onFocusHandled={() => setFocusReq(null)} /></div>
+            {view === 'home' && <div className="fx-view fx-page"><Home onOpenWorkspaces={openWorkspaces} onOpenWorkspace={openCockpit} missions={missionsData.missions} /></div>}
+            {view === 'missions' && <div className="fx-view fx-page"><Missions onOpenCockpit={openCockpit} data={missionsData} /></div>}
+            {settings && <Settings key={settingsKey} initial={settingsTab} onClose={closeSettings} onOpenWorkspaces={openWorkspaces} />}
+          </main>
+        </div>
       </div>
-      </div>
+      <StatusBar liveOpen={liveOpen} onToggleLive={view === 'cockpit' ? toggleLive : null} />
       {toast && (
         <div className={`toast ${toast.kind}`} role="status">
           <span className="toast-ico"><Icon name={toast.kind === 'error' ? 'xCircle' : 'checkCircle'} size={20} /></span>

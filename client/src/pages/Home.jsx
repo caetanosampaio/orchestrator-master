@@ -6,7 +6,6 @@ import {
   PERIODS, MODES, periodById, modeById, windowOf, providerTotals, peakDay, buildSeries, axisTicks, totalCaption, longDate,
   fmtTokens, fmtExact, fmtPct, recentWorkspaces, continueTarget,
 } from '../home-view.js';
-import { ForgeMascot } from '../components/ForgeMascot.jsx';
 import { WsIcon } from '../components/Sidebar.jsx';
 import { Icon } from '../components/ui.jsx';
 
@@ -203,7 +202,6 @@ export default function Home({ onOpenWorkspaces, onOpenWorkspace, missions = nul
     <div className="hm-scroll" data-testid="home-page">
       <div className="hm">
         <header className="hm-head">
-          <ForgeMascot size={54} />
           <div className="hm-title">
             <h1>Início</h1>
             <p>{plural(workspaces.length, 'workspace', 'workspaces')}</p>

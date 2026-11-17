@@ -51,6 +51,7 @@ import { setupChat } from './chat.js';
 import { summarizeUsage } from './usage.js';
 import { createVerifier, setupVerification } from './verify.js';
 import { acquireInstanceLock, pidAlive } from './instance-lock.js';
+import { UI_CSP } from './csp.js';
 import { createChildRegistry } from './child-registry.js';
 import { installShutdown } from './shutdown.js';
 import { apiGuard } from './origin-guard.js';
@@ -426,8 +427,7 @@ const missionLive = setupMissionLive(app, {
 // ---------- Frontend buildado (opcional) ----------
 const dist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'client', 'dist');
 if (fs.existsSync(dist)) {
-  // CSP restritiva na interface (a UI renderiza saída de terminal e texto de agentes; um XSS alcançaria a API local sem autenticação). O bundle não usa eval, script inline nem hosts externos; 'unsafe-inline' só em estilos (atributos style do React).
-  const CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
+  const CSP = UI_CSP; // csp.js: restritiva; o iframe do painel Live só aceita loopback
   app.use((req, res, next) => {
     if (req.path === '/api' || req.path.startsWith('/api/') || req.path === '/mcp' || req.path.startsWith('/mcp/')) return next();
     res.setHeader('Content-Security-Policy', CSP); res.setHeader('X-Content-Type-Options', 'nosniff'); res.setHeader('X-Frame-Options', 'DENY'); res.setHeader('Referrer-Policy', 'no-referrer');

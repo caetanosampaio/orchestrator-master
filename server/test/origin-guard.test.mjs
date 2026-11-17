@@ -9,7 +9,7 @@ import net from 'node:net';
 import http from 'node:http';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { isAllowedHost, isAllowedOrigin, isMutatingMethod, apiGuard } from '../origin-guard.js';
+import { isAllowedHost, isAllowedOrigin, isMutatingMethod, apiGuard, isForeignFetch } from '../origin-guard.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const BOOT = path.join(here, 'chat-boot.mjs');
@@ -141,4 +141,22 @@ test('index.js real: Origin obrigatório em POST/PUT/PATCH/DELETE (403 sem alter
     assert.equal((await call('/api/workspaces/validate', { raw: '{', headers: { origin: legit } })).status, 400, 'origem legítima com JSON malformado continua 400');
   } finally { b.child.kill('SIGKILL'); await b.exited; }
   assert.equal(stat(), realBefore, 'o db.json real não foi tocado');
+});
+
+test('apiGuard: requisição de OUTRA página (Sec-Fetch-Site cross-site/same-site) dá 403 mesmo com Origin aceito, inclusive GET; a mesma origem, a navegação direta e clientes sem o cabeçalho seguem', () => {
+  const run = ({ site, origin = 'http://localhost:5173', method = 'POST' }) => {
+    const out = { status: 200, next: false };
+    const res = { status(c) { out.status = c; return this; }, json(b) { out.body = b; return this; } };
+    const headers = { host: '127.0.0.1:4317', origin, ...(site === undefined ? {} : { 'sec-fetch-site': site }) };
+    apiGuard({ method, get: (k) => headers[k.toLowerCase()] }, res, () => { out.next = true; }); return out;
+  };
+  // o dev server em localhost:5173 dentro do iframe do painel Live: a porta do Vite passaria no Origin, mas o navegador marca a requisição como de outro site
+  for (const site of ['cross-site', 'same-site', 'CROSS-SITE']) for (const method of ['POST', 'GET']) {
+    const r = run({ site, method }); assert.equal(r.status, 403, `${site} ${method}`); assert.equal(r.next, false); assert.match(r.body.error, /outra página/);
+  }
+  assert.equal(run({ site: 'same-origin', origin: 'http://127.0.0.1:4317' }).next, true, 'a interface (mesma origem) segue');
+  assert.equal(run({ site: 'same-origin' }).next, true, 'no desenvolvimento, o proxy do Vite repassa same-origin');
+  assert.equal(run({ site: 'none', method: 'GET', origin: undefined }).next, true, 'navegação digitada pelo usuário');
+  assert.equal(run({ site: undefined, origin: 'http://127.0.0.1:4317' }).next, true, 'cliente sem o cabeçalho (curl, testes) cai nas checagens de sempre');
+  assert.equal(isForeignFetch('cross-site'), true); assert.equal(isForeignFetch('same-origin'), false); assert.equal(isForeignFetch(''), false);
 });

@@ -58,7 +58,7 @@ test('cliente: sanitizeLayout mantém só equipe válida; setTeam grava por work
 
 test('toolbar: só os controles operacionais (sem chip de workspace nem menu de equipe); equipes e workspace moraram fora do Cockpit; sem seletor de agente solto, Visualização e Histórico fora da barra', () => {
   const g = src('components/TerminalGrid.jsx');
-  assert.match(g, /className="oc-bar tbx"/); assert.equal((g.match(/className="tbx-g/g) ?? []).length, 1, 'um grupo só: controles operacionais');
+  assert.match(g, /className="oc-bar tbx fx-path"/); assert.equal((g.match(/className="tbx-g/g) ?? []).length, 1, 'um grupo só: controles operacionais');
   assert.doesNotMatch(g, /oc-wschip|TeamMenu|TeamComposer|name="workspace"/, 'o chip do workspace e a gestão de equipe saíram da barra do Cockpit');
   assert.doesNotMatch(g, /tbx-presets|oc-prov-sel/, 'sem presets nem seletor de agente soltos na barra');
   assert.match(g, /<SquadGallery /); assert.match(g, /onManage=\{\(\) => onOpenSettings\?\.\('equipes'\)\}/, 'o estado vazio leva a Configurações > Equipes');
@@ -75,7 +75,7 @@ test('Visualização mora nas Configurações e as Sessões (histórico) moram n
   assert.match(st, /item\('visualizacao', 'Visualização'/); assert.match(st, /LAYOUT_MODES\.map/); assert.match(st, /useLayoutMode\(openWs\?\.id\)/);
   assert.doesNotMatch(st, /item\('historico'|SessionHistoryBody|HistorySection/, 'o histórico de sessões saiu das Configurações');
   const dlg = src('components/SessionsDialog.jsx'); assert.match(dlg, /<SessionHistoryBody ws=\{ws\}/); assert.match(dlg, /onAutoRestore=\{setAutoRestore\}/, 'o interruptor da restauração automática continua no histórico');
-  assert.match(src('App.jsx'), /dialog === 'sessions' && <SessionsDialog onClose=\{closeDialog\} \/>/); assert.match(src('components/Sidebar.jsx'), /onClick=\{onOpenSessions\}/);
+  assert.match(src('App.jsx'), /dialog === 'sessions' && <SessionsDialog onClose=\{closeDialog\} \/>/); assert.match(src('components/Sidebar.jsx'), /onOpenSessions\?\.\(\)/);
   assert.match(src('components/TerminalGrid.jsx'), /useLayoutMode\(ws\?\.id\)/, 'o cockpit lê o mesmo modo que as Configurações gravam');
   assert.match(src('components/TerminalGrid.jsx'), /onOpenSessions\?\.\(\)/, 'o botão "Restaurar sessões" do estado vazio abre as Sessões'); assert.doesNotMatch(src('components/TerminalGrid.jsx'), /onOpenSettings\?\.\('historico'\)/);
 });

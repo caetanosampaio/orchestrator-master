@@ -33,13 +33,14 @@ function WindowBlock({ win, data, now }) {
 }
 
 /** Painel de UM provedor: as contas conectadas dele, cada uma com o limite diário e o semanal (% e reset), ou o motivo de não haver leitura. */
-function ProviderPanel({ sum, now, anchor, onClose }) {
+export function ProviderPanel({ sum, now, anchor, onClose }) {
   const box = useRef(null), [pos, setPos] = useState(null);
   useLayoutEffect(() => {
     const place = () => {
       const r = anchor.current?.getBoundingClientRect(); if (!r) return;
       const w = Math.min(W, window.innerWidth - EDGE * 2), left = Math.max(EDGE, Math.min(r.right - w, window.innerWidth - w - EDGE));
-      setPos({ left, width: w, top: r.bottom + GAP, maxHeight: Math.min(window.innerHeight * 0.7, window.innerHeight - r.bottom - GAP - EDGE) });
+      const up = r.top > window.innerHeight / 2; // âncora na barra de status (embaixo): o painel abre para cima
+      setPos(up ? { left, width: w, bottom: window.innerHeight - r.top + GAP, maxHeight: Math.min(window.innerHeight * 0.7, r.top - GAP - EDGE) } : { left, width: w, top: r.bottom + GAP, maxHeight: Math.min(window.innerHeight * 0.7, window.innerHeight - r.bottom - GAP - EDGE) });
     };
     place(); window.addEventListener('resize', place); return () => window.removeEventListener('resize', place);
   }, [anchor]);
