@@ -421,7 +421,37 @@ export function createMaestro({ getTerminals, harness = null, mcpDir, url, serve
     const r = deliver(t, 'user'); return r.ok ? { ok: true, status: 200 } : { ok: false, status: 409, error: r.error };
   }
 
-  return { serverName, issue, revoke, authenticate, rpc, snapshot, setAutonomous, decide, isAutonomous: () => autonomous };
+  /**
+   * API INTERNA (nunca exposta por MCP nem por rota): entrega uma tarefa a um pane SEM passar pela aprovação por tarefa, para o runner de missões (flows.js), em que o usuário já autorizou a execução inteira ao
+   * iniciar o run. Usa o MESMO caminho de entrega do Maestro (`deliver` -> `typeLine`, com o Enter confirmado depois) e as mesmas regras de segurança de digitação (`busyReason`: estado do agente conhecido e
+   * diferente de `waiting`, sem trabalho em curso nem saída recente). Devolve { ok: true, taskId } ou { ok: false, error, transient? }: `transient` = tente de novo depois (terminal ocupado, aguardando permissão
+   * ou recebendo outra mensagem); nesse caso NENHUMA tarefa fica registrada. O texto passa pelo mesmo saneamento e limite (MAX_TASK_TEXT) do send_task; acima do limite é recusado, nunca cortado.
+   * `from`: terminal do maestro que avisar do resultado (null = ninguém é avisado, o caso do runner); só vale um id de terminal em formato válido.
+   */
+  function dispatch({ to, text, from = null, source = 'flow' } = {}) {
+    sweep();
+    const target = paneOf(to);
+    if (!target) return { ok: false, error: 'Terminal de destino inválido.' };
+    if (target.status !== 'running') return { ok: false, error: 'Esse terminal já terminou.' };
+    if (target.role === 'maestro') return { ok: false, error: 'Não é possível enviar tarefas a um maestro.' };
+    const line = cleanLine(text, MAX_TASK_TEXT + 1);
+    if (!line) return { ok: false, error: 'A tarefa está vazia.' };
+    if (line.length > MAX_TASK_TEXT) return { ok: false, error: `A tarefa passa de ${MAX_TASK_TEXT} caracteres e NÃO foi enviada (seria cortada).` };
+    const busy = busyReason(to, target); if (busy) return { ok: false, transient: true, error: `O terminal de destino ainda não está pronto: ${busy}.` };
+    const origin = cleanLine(source, 20) || 'flow';
+    const task = { id: uid('task'), from: typeof from === 'string' && TERM_ID_RE.test(from) && from !== to ? from : null, to: target.id, toRole: target.role, toTitle: target.title, text: line, taskType: null, hint: '', status: 'pending', createdAt: now(), decidedAt: null, decidedBy: null, doneAt: null, summary: null, note: null, source: origin };
+    tasks.push(task); // antes de entregar: o vigia (watch) olha esta lista
+    const r = deliver(task, origin);
+    if (!r.ok) { const i = tasks.indexOf(task); if (i >= 0) tasks.splice(i, 1); return { ok: false, error: r.error, ...(r.transient ? { transient: true } : {}) }; }
+    return { ok: true, taskId: task.id };
+  }
+  /** Estado leve de uma tarefa (para o runner de missões): { status, summary, note, doneAt } ou null se ela não existe (nunca existiu ou já saiu da lista). `summary` só vem com a tarefa concluída. Texto de agente: dado não confiável. */
+  function taskState(id) {
+    sweep(); const t = taskById(id); if (!t) return null;
+    return { status: t.status, summary: t.status === 'done' ? t.summary ?? null : null, note: t.note ?? null, doneAt: t.doneAt ?? null };
+  }
+
+  return { serverName, issue, revoke, authenticate, rpc, snapshot, setAutonomous, decide, isAutonomous: () => autonomous, dispatch, taskState };
 }
 
 export function setupMaestro(app, { maestro, onAutonomy = null }) {

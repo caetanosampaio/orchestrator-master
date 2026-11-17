@@ -279,6 +279,9 @@ test('bypass: push/deploy/publicar/docker push/kubectl/terraform apply = externa
     const pa = preAuthProblem(r.v); assert.equal(pa.ok, false, t); assert.match(pa.reason, /external_effect/, t);
   }
   assert.equal(classifyB('Ok, não faça git push').d, 'allow', 'negação respeitada');
+  for (const t of ['Publique o pacote no registro', 'Publicar o pacote no npm registry']) assert.equal(classifyB(t).d, 'approval_required', t); // imperativo e infinitivo
+  assert.equal(classifyB('Não publique o pacote no registro').d, 'allow', 'negação respeitada na forma imperativa');
+  assert.equal(classifyB('Documente a publicação do pacote').d, 'allow', 'substantivo "publicação" não é um pedido de publicar');
 });
 
 test('bypass: git reset/clean/checkout/rebase/merge/stash = destructive_vcs (aprovação individual); git commit passa', () => {

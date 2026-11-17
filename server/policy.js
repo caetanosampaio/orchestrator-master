@@ -61,7 +61,7 @@ const writes = (clause) => [...clause.matchAll(WRITE_VERB)].some((v) => !NEG_CTX
 const RE_INSTALL = /\b(?:npm|pnpm|yarn|bun|pip3?|poetry|cargo)\s+(?:install|add|i|ci)\b|\binstal(?:e|ar|ação|acao)\b[^.\n]{0,30}\b(?:depend[eê]ncias?|pacotes?|packages?|dependencies)\b/i;
 const RE_VCS_DESTRUCTIVE = /\bgit\s+(?:reset|clean|rebase|merge|checkout|stash)\b/i;
 const RE_COMMIT = /\bgit\s+commit\b|\b(?:fazer|realizar|executar|rodar)\s+(?:o\s+|um\s+)?commit\b/i;
-const RE_EXTERNAL = /\bgit\s+push\b|\bnpm\s+publish\b|\bdocker\s+push\b|\bkubectl\b|\bterraform\s+apply\b|\b(?:fazer|realizar|executar|rodar)\s+(?:o\s+|um\s+)?(?:deploy|push)\b|\bdeploy(?:ar)?\s+(?:em|para|na|no)\b|\bpublicar\b[^.\n]{0,30}\b(?:site|app|pacote|package|produ[cç][aã]o)\b|\bpublish\b/i;
+const RE_EXTERNAL = /\bgit\s+push\b|\bnpm\s+publish\b|\bdocker\s+push\b|\bkubectl\b|\bterraform\s+apply\b|\b(?:fazer|realizar|executar|rodar)\s+(?:o\s+|um\s+)?(?:deploy|push)\b|\bdeploy(?:ar)?\s+(?:em|para|na|no)\b|\bpubli(?:car|que|quem|cando)\b[^.\n]{0,30}\b(?:site|app|pacote|package|produ[cç][aã]o|registro|registry)\b|\bpublish\b/i;
 const RE_SHELL_DANGER = /\b(?:curl|wget|sudo|Invoke-WebRequest|Remove-Item)\b|\brm\s+-[a-z]*[rf]|\brmdir\b|\bdel\s+\//i;
 const RE_NETWORK = /\b(?:baix(?:ar|e)|download|acessar|acesse|fetch)\b[^.\n]{0,60}https?:\/\//i;
 const RE_DELETE = /\b(?:apag(?:ar|ue|ando)|exclu(?:ir|a|indo)|delet(?:ar|e)|deleting)\b[^.\n]{0,25}\b(?:arquivos?|pastas?|diret[oó]rios?|files?|folders?|director(?:y|ies))\b/i;

@@ -133,9 +133,10 @@ export const codexProvider = Object.freeze({
    * `quote: false` é para wrapper .cmd. As ferramentas do Maestro são pré-aprovadas só nesse servidor (default_tools_approval_mode), como o --allowedTools do Claude;
    * a aprovação humana das TAREFAS continua no próprio Maestro (send_task fica pendente até o usuário decidir).
    */
-  paneArgs({ mode = 'new', prompt, mcp = null, quote = true, trustDir = null, model = null, effort = null }) {
+  paneArgs({ mode = 'new', prompt, mcp = null, quote = true, trustDir = null, model = null, effort = null, fullAccess = false }) {
     if (mode !== 'new') throw new Error('O Codex CLI não oferece retomada nem bifurcação neste adaptador.');
-    const args = ['--no-alt-screen', '--no-daemon', '-s', 'workspace-write', '-a', 'on-request'];
+    // `fullAccess` (acesso total da missão): SÓ o booleano true estrito troca o sandbox + aprovação padrão pelo modo sem confirmação e sem sandbox. A flag é exclusiva de -s/-a na CLI, por isso substitui os dois.
+    const args = ['--no-alt-screen', '--no-daemon', ...(fullAccess === true ? ['--dangerously-bypass-approvals-and-sandbox'] : ['-s', 'workspace-write', '-a', 'on-request'])];
     // Confiança da pasta SÓ para este processo (o Codex não pergunta "confiar nesta pasta?"): nada é gravado no config do usuário. O caminho vai como CHAVE de uma tabela inline (`projects={'<pasta>'={trust_level='trusted'}}`) e não como
     // `projects.'<pasta>'.trust_level=...`: o parser do -c do Codex quebra a chave no PONTO mesmo entre aspas, e uma pasta com ponto (ex.: `C:\proj.orch-worktrees\wt_x`, a dos worktrees do FORGE) tinha a confiança IGNORADA, com o aviso
     // "Codex is ignoring 1 unrecognized configuration setting" e a pergunta de confiança na tela (verificado no 0.167.0). A tabela inline é mesclada ao config: as pastas que o usuário já confiou continuam valendo. Aspas simples (literal TOML) valem até no cmd.exe;

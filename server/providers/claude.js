@@ -43,12 +43,13 @@ export const claudeProvider = Object.freeze({
    * `pluginDir` = plugin de sessão com as skills do papel (loadouts.js); vale também na retomada, porque o plugin não faz parte da sessão gravada.
    *   Vem ANTES dos argumentos de MCP: `--mcp-config` e `--allowedTools` aceitam vários valores e um argumento depois deles seria lido como valor.
    */
-  paneArgs({ mode, prompt, label, sessionId, resumeSessionId, mcp = null, pluginDir = null, settingsFile = null, model = null, effort = null }) {
+  paneArgs({ mode, prompt, label, sessionId, resumeSessionId, mcp = null, pluginDir = null, settingsFile = null, model = null, effort = null, fullAccess = false }) {
     // `settingsFile` = arquivo JSON com a status line do FORGE (rate-limits.js), que grava o limite real da conta. Vale nos três modos, junto do plugin e ANTES do MCP; sem ele, nenhum argumento.
     const pluginArgs = [...(pluginDir ? ['--plugin-dir', pluginDir] : []), ...(settingsFile ? ['--settings', settingsFile] : [])];
     const mcpArgs = mcp ? ['--mcp-config', mcp.configPath, '--allowedTools', `mcp__${mcp.serverName ?? 'forge'}`] : [];
     // `model`/`effort` (já validados contra as listas fechadas, ver providers/index.js) só valem na sessão NOVA: retomada e fork herdam o modelo da sessão gravada. Vão ANTES de plugin/MCP (que aceitam vários valores).
-    const modelArgs = [...(model ? ['--model', model] : []), ...(effort ? ['--effort', effort] : [])];
+    // `fullAccess` ("acesso total" da missão): SÓ o booleano true estrito liga o modo sem confirmação de permissão, e só na sessão NOVA (a retomada restaura o modo da sessão gravada). Flag sem valor: não engole o argumento seguinte.
+    const modelArgs = [...(fullAccess === true ? ['--dangerously-skip-permissions'] : []), ...(model ? ['--model', model] : []), ...(effort ? ['--effort', effort] : [])];
     if (mode === 'new') return ['--append-system-prompt', prompt, '--name', label, '--session-id', sessionId, ...modelArgs, ...pluginArgs, ...mcpArgs];
     return ['--resume', resumeSessionId, ...(mode === 'fork' ? ['--fork-session', '--session-id', sessionId] : []), ...pluginArgs, ...mcpArgs];
   },

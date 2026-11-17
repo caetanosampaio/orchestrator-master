@@ -36,6 +36,7 @@ import { planModeFromEnv, stepRetriesFromEnv, autoCloseFromEnv, resolveOrchestra
 import { resolveSupervision, supervisionMs, MAX_MINUTES_LIMIT, STALL_MINUTES_LIMIT, MAX_AUTO_RESUMES } from './supervisor.js';
 import { resolveWorktreeIsolation, createWorktreeManager, setupWorktrees } from './worktrees.js';
 import { createTerminalManager, setupTerminals } from './terminals.js';
+import { setupFlows } from './flows.js';
 import { createAccounts, setupAccounts } from './accounts.js';
 import { createLoginManager } from './account-login.js';
 import { setClaudeEnvProvider } from './claude-cli.js';
@@ -456,6 +457,7 @@ setupStepTier(app, { db }); // POST /api/missions/:id/cycle/steps/:stepId/tier: 
 const cycle = setupCycle(app, { db, executor: claudeCodeExecutor, planner, startTaskRun, verifier, router, limits: cycleLimits, multiStep: () => orchestration().planMode, stepRetries: () => orchestration().stepRetries, autoClose: () => orchestration().autoClose, supervision: () => supervisionMs(supervision()), worktrees, worktreeIsolation: () => worktreeIsolation().enabled });
 setupWorktrees(app, { db, manager: worktrees });
 setupTerminals(app, { manager: terminals });
+setupFlows(app, { db, terminals, maestro }); // Missions v2: /api/flows (missões em etapas com agentes em terminais reais; recover() converte run órfão de um boot anterior em `failed`)
 // Limite real de uso por conta (5 h e semana), somente leitura, sem caminhos/ids/e-mails; a interface consulta a cada ~15-30 s (memo de 2 s). Mesmo apiGuard (Host/Origin) das demais rotas de /api.
 app.get('/api/limits', (req, res) => { try { res.set('Cache-Control', 'no-store').json(rateLimits.view()); } catch { bad(res, 'Não foi possível ler os limites de uso.', 500); } });
 // Tokens por provider e por dia (Claude Code de TODAS as contas + Codex), lidos dos transcripts/rollouts em disco: só contagens, somente leitura, varredura incremental em segundo plano (provider-activity.js). ?days=30|90|0 (0 = desde o início).

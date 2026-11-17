@@ -22,6 +22,8 @@ function initial() {
     topics: [],
     missions: buildDemoMissions(),
     activity: [],
+    flows: [], // Missions v2 (flows.js): definições de missão e execuções; o db.missions legado não é tocado
+    flowRuns: [],
   };
 }
 

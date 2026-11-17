@@ -63,7 +63,7 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
   const sessions = new Map();
   const allSubs = new Set(); // UMA conexão SSE leva a saída de TODOS os terminais: o navegador só abre ~6 conexões por origem; com uma por pane, 7+ terminais travavam a tela e até o botão de fechar
   const live = () => [...sessions.values()].filter((s) => s.status === 'running');
-  const describe = (s) => ({ id: s.id, role: s.role, provider: s.provider ?? provider.id, providerLabel: provOf(s.provider).label, roleLabel: ROLES[s.role]?.label ?? s.role, color: ROLES[s.role]?.color ?? null, title: s.title, workspaceId: s.workspaceId, topicId: s.topicId ?? null, cwd: s.cwd, worktreeId: s.worktreeId, branch: branchOf(s.worktreeId), recordId: s.recordId ?? null, accountId: s.accountId ?? 'system', model: s.model ?? null, effort: s.effort ?? null,
+  const describe = (s) => ({ id: s.id, role: s.role, provider: s.provider ?? provider.id, providerLabel: provOf(s.provider).label, roleLabel: ROLES[s.role]?.label ?? s.role, color: ROLES[s.role]?.color ?? null, title: s.title, workspaceId: s.workspaceId, topicId: s.topicId ?? null, cwd: s.cwd, worktreeId: s.worktreeId, branch: branchOf(s.worktreeId), recordId: s.recordId ?? null, accountId: s.accountId ?? 'system', model: s.model ?? null, effort: s.effort ?? null, fullAccess: s.fullAccess === true,
     usage: safeUsage(s), status: s.status, pid: s.pid, cols: s.cols, rows: s.rows, startedAt: s.startedAt, endedAt: s.endedAt, exitCode: s.exitCode, lastOutputAt: s.lastOutputAt, bytes: s.bytes, agent: s.status === 'running' ? safeAgent(s) : null, squadId: s.squadKey ?? null,
     skills: [...(s.skills ?? [])], templateId: s.templateId ?? null, slotIndex: s.slotIndex ?? null }); // skills EFETIVAS do pane (o que o plugin dele recebeu; [] no Codex) e o time/vaga de onde ele veio
   /**
@@ -163,6 +163,8 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
   async function create(opts = {}) {
     if (!ROLES[opts?.role ?? 'builder']) return fail(400, `Papel inválido. Use um destes: ${roleIds().join(', ')}.`);
     if (opts?.provider !== undefined && opts?.provider !== null && !isProvider(opts.provider)) return fail(400, 'Provedor inválido.', { code: 'provider_invalid' });
+    // acesso total (sem confirmação de permissão): opção interna de quem monta a missão (flows.js), nunca de texto livre; só o booleano true liga, qualquer outro valor que não seja booleano é recusado
+    if (opts?.fullAccess !== undefined && opts?.fullAccess !== null && typeof opts.fullAccess !== 'boolean') return fail(400, 'fullAccess deve ser verdadeiro ou falso.', { code: 'fullAccess_invalid' });
     // modelo/esforço opcionais: só ids das listas FECHADAS do provedor (providers/index.js); qualquer outra coisa é 400 e nada chega à linha de comando
     if ((opts?.model ?? opts?.effort ?? null) !== null) {
       const choice = validateChoice(provOf(opts?.provider ?? undefined).id, { model: opts.model, effort: opts.effort });
@@ -213,7 +215,7 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
   function markShared(wtId) { try { for (const r of records()) if (r && r.worktreeId === wtId) r.sharedWorktree = true; persistLoose(); } catch { /* informativo */ } }
   /** Só o ÚLTIMO terminal a sair devolve o worktree ao estado "execução terminada". */
   function releaseWorktree(wtId, exceptId) { if (!wtId || worktreeUsers(wtId, exceptId).length) return; try { worktrees?.release?.(wtId, 'terminal_ended'); } catch { /* informativo */ } }
-  async function createReserved({ workspaceId, topicId, role = 'builder', title, cols, rows, isolate = false, squadId = null, acknowledgeProjectConfig = false, accountId, provider: providerId = null, isolateAuto = false, model = null, effort = null, team = null } = {}) {
+  async function createReserved({ workspaceId, topicId, role = 'builder', title, cols, rows, isolate = false, squadId = null, acknowledgeProjectConfig = false, accountId, provider: providerId = null, isolateAuto = false, model = null, effort = null, team = null, fullAccess = false } = {}) {
     const prov = provOf(providerId ?? undefined);
     // Padrões da tabela "Quem faz cada tarefa" (harness.js): o Maestro novo abre com o modelo e o esforço do piloto e a instrução do agente dele; nunca sobrescreve o que foi escolhido nem vale na retomada.
     let extraPrompt = ''; try { const d = defaults?.(role, prov.id) ?? {}; if (model === null && d.model) model = d.model; if (effort === null && d.effort) effort = d.effort; if (typeof d.extraPrompt === 'string') extraPrompt = d.extraPrompt; } catch { /* sem padrões: abre como sempre */ }
@@ -270,7 +272,7 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
         if (gone()) { try { worktrees.release?.(wt.id, 'terminal_ended'); } catch { /* informativo */ } return fail(409, 'O espaço de trabalho foi removido enquanto o terminal era preparado.', { code: 'workspace_not_found' }); }
       }
     }
-    const launched = launch({ prov, id, ws, role, label, cwd, wt, cols, rows, claudeSessionId: newSessionId(), mode: 'new', topicId: tp.topicId, accountId: account, model, effort, extraPrompt, team, cmd, pty, squadKey: wt ? (peer?.squadKey ?? uid('sq')) : null });
+    const launched = launch({ prov, id, ws, role, label, cwd, wt, cols, rows, claudeSessionId: newSessionId(), mode: 'new', topicId: tp.topicId, accountId: account, model, effort, extraPrompt, team, fullAccess: fullAccess === true, cmd, pty, squadKey: wt ? (peer?.squadKey ?? uid('sq')) : null });
     if (warning && launched.ok) launched.warning = warning;
     return launched;
   }
@@ -280,8 +282,9 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
    * Na retomada o Claude Code restaura histórico, prompt de sistema, nome e permission mode: NÃO se repassa nada disso. O MCP não é restaurado: credencial NOVA a cada retomada.
    * Falha ao gravar o histórico desfaz tudo (processo, credencial, registro): nunca fica um pane vivo sem registro.
    */
-  function launch({ prov = provider, id, ws, role, label, cwd, wt, cols, rows, claudeSessionId, mode, topicId = null, rec = null, cmd, pty, squadKey = null, accountId = 'system', model = null, effort = null, extraPrompt = '', team = null }) {
+  function launch({ prov = provider, id, ws, role, label, cwd, wt, cols, rows, claudeSessionId, mode, topicId = null, rec = null, cmd, pty, squadKey = null, accountId = 'system', model = null, effort = null, extraPrompt = '', team = null, fullAccess = false }) {
     const resumed = mode !== 'new';
+    const full = fullAccess === true && !resumed; // só em sessão nova: retomada, fork e reabertura nunca herdam o acesso total
     if (!accountOk(accountId)) return fail(409, 'A conta deste terminal não existe mais (ou está sendo removida); o terminal não foi aberto.', { code: 'account_missing' }); // conferido aqui, síncrono, imediatamente antes do spawn
     const env = { ...(prov.envFor ? prov.envFor(process.env) : envForAccount(process.env, accounts?.configDirOf(accountId) ?? null)), TERM: 'xterm-256color', COLORTERM: 'truecolor' }; delete env.ELECTRON_RUN_AS_NODE; delete env.NODE_OPTIONS;
     for (const [k, v] of Object.entries(prov.paneEnv ?? {})) if (env[k] === undefined) env[k] = v; // ex.: renderer em tela cheia do Claude Code (providers/claude.js)
@@ -308,11 +311,11 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
     if (typeof trustFolders === 'function') { try { trustFolders({ provider: prov.id, cwd, configDir: prov.id === 'claude' ? accounts?.configDirOf(accountId) ?? null : null }); } catch { /* melhor esforço: a pergunta aparece normalmente */ } }
     const rolePrompt = extraPrompt ? `${ROLES[role].prompt} Instrucao do agente escolhido pelo usuario para este papel: ${extraPrompt}` : ROLES[role].prompt;
     const prompt = team?.instruction ? `${rolePrompt} Instrucao do time escolhido pelo usuario: ${team.instruction}` : rolePrompt; // a do time vem por último: vale para todas as vagas dele
-    const args = prov.paneArgs({ mode, prompt, label, sessionId: claudeSessionId, resumeSessionId: rec?.claudeSessionId, mcp: mcpArg, pluginDir, settingsFile, model, effort, quote: !cmd.viaShell, trustDir: typeof trustFolders === 'function' ? cwd : null });
+    const args = prov.paneArgs({ mode, prompt, label, sessionId: claudeSessionId, resumeSessionId: rec?.claudeSessionId, mcp: mcpArg, pluginDir, settingsFile, model, effort, fullAccess: full, quote: !cmd.viaShell, trustDir: typeof trustFolders === 'function' ? cwd : null });
     let p;
     try { p = pty.spawn(cmd.file, [...cmd.args, ...args], { name: 'xterm-256color', cols: c, rows: r, cwd, env, useConpty: true }); }
     catch (e) { revokeMcp(id); return fail(500, `Não foi possível iniciar o terminal: ${String(e?.message ?? e).slice(0, 160)}`); }
-    const s = { id, role, provider: prov.id, accountId, model, effort, squadKey, claudeSessionId, recordId: null, skills, templateId: team?.templateId ?? null, slotIndex: team?.slotIndex ?? null, holdInput: resumed, title: label, workspaceId: ws.id, topicId, cwd, worktreeId: wt?.id ?? null, status: 'running', pid: p.pid, cols: c, rows: r, startedAt: now(), endedAt: null, exitCode: null, lastOutputAt: null, bytes: 0, chunks: [], chunkBytes: 0, subs: new Set(), tracked: null, p };
+    const s = { id, role, provider: prov.id, accountId, model, effort, fullAccess: full, squadKey, claudeSessionId, recordId: null, skills, templateId: team?.templateId ?? null, slotIndex: team?.slotIndex ?? null, holdInput: resumed, title: label, workspaceId: ws.id, topicId, cwd, worktreeId: wt?.id ?? null, status: 'running', pid: p.pid, cols: c, rows: r, startedAt: now(), endedAt: null, exitCode: null, lastOutputAt: null, bytes: 0, chunks: [], chunkBytes: 0, subs: new Set(), tracked: null, p };
     try { s.tracked = track?.('terminal', p.pid, { terminalId: id, workspaceId: ws.id }) ?? null; } // processo sem registro não pode ficar vivo (o próximo boot não o acharia)
     catch (e) { const gone = abortLaunch(s, wt); return fail(503, `O terminal não pôde ser registrado (${e?.code || e?.message || 'erro'}); ${gone ? 'ele foi encerrado.' : UNCONFIRMED}`, gone ? {} : { code: 'exit_unconfirmed' }); }
     // histórico: retomada normal reaproveita o registro (é a mesma sessão do Claude Code); novo e fork criam um registro
