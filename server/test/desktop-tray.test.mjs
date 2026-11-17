@@ -55,6 +55,7 @@ test('captura: nome ordenável sem colisão, poda só os arquivos do FORGE, ferr
   const pre = read('capture-preload.cjs'); assert.match(pre, /exposeInMainWorld\('forgeCapture'/); assert.ok(!/require\('node:|child_process|\bfs\b/.test(pre));
   const main = read('main.cjs'); assert.match(main, /globalShortcut\.register\('CommandOrControl\+Shift\+2'/); assert.match(main, /globalShortcut\.unregisterAll\(\)/); assert.match(main, /'x-orch-token': API_TOKEN/);
   assert.match(main, /\/\^#\\\/\[a-z\]\+\$\/\.test\(hash\)/, 'a bandeja só navega para rotas fixas da interface');
+  assert.match(main, /getMediaAccessStatus\('screen'\)/); assert.match(main, /Privacy_ScreenCapture/, 'sem a permissão de Gravação de Tela, explica e abre os Ajustes em vez de entregar só o papel de parede');
 });
 
 test('soltar arquivos num terminal: caminho com espaço entre aspas (simples no macOS/Linux, duplas no Windows) e o preload só revela o caminho do que foi solto', () => {
@@ -106,4 +107,11 @@ test('setup do primeiro uso: aparece só depois de ler as preferências do servi
   assert.match(setup, /<AccountsPanel \/>/, 'a conta conecta pelo fluxo real de Configurações > Contas');
   assert.match(src('components/settings/AppSections.jsx'), /setPref\('setupDone', false\)/);
   assert.match(app, /window\.addEventListener\('hashchange', on\)/, 'o menu da bandeja troca a página');
+});
+
+test('galeria de times do Cockpit: um ícone por agente, sem a cor do papel; "Gerenciar times" centralizado', () => {
+  const g = src('components/SquadGallery.jsx'), css = src('forge.css');
+  assert.ok(!/'--c'/.test(g), 'nenhuma cor de papel nos selos'); assert.match(g, /<ProviderLogo id=\{s\.provider\} size=\{16\} \/>/);
+  assert.match(g, /<div className="sq-manage"><button type="button" className="sq-manage-btn" onClick=\{onManage\}>/);
+  assert.match(css, /\.fx-app \.sq-pip::after \{ display: none !important; \}/); assert.match(css, /\.fx-app \.sq-manage \{ display: flex; justify-content: center; width: 100%;/);
 });

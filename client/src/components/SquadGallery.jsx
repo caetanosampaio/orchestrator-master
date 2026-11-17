@@ -4,7 +4,7 @@ import ProviderLogo from './ProviderLogo.jsx';
 import { squadSummary } from '../squads.js';
 
 /**
- * Galeria de equipes (tela sem terminais): cartões com as vagas da equipe (um selo por vaga: a cor é a do papel e o logo é o do agente), abrem tudo com um clique.
+ * Galeria de equipes (tela sem terminais): cartões com as vagas da equipe (um ícone por vaga: o logo do agente, sem cor por papel), abrem tudo com um clique.
  * No Cockpit só aparecem os times de Configurações > Times prontos (os instalados e os seus); `empty` é o que mostrar quando não há nenhum. A gestão (editar, excluir, criar) mora em Configurações > Equipes: sem `onEdit`/`onDuplicate`/`onDelete`/`onNew` os cartões
  * só abrem, e `onManage` mostra o link "Gerenciar equipes". Animações só com CSS (retro.css, .sq-*), desligadas pelas regras globais de "Animações reduzidas". Nada aqui abre terminal: quem abre é o cockpit (onOpen).
  */
@@ -12,8 +12,8 @@ function Pips({ slots, byRole, labelOf }) {
   return (
     <span className="sq-pips" aria-hidden="true">
       {slots.map((s, k) => (
-        <span key={k} className="sq-pip" style={{ '--k': k, '--c': byRole[s.role]?.color || 'var(--brand)' }} title={`${byRole[s.role]?.label ?? s.role} · ${labelOf(s.provider)}`}>
-          <ProviderLogo id={s.provider} size={13} />
+        <span key={k} className="sq-pip" style={{ '--k': k }} title={`${byRole[s.role]?.label ?? s.role} · ${labelOf(s.provider)}`}>
+          <ProviderLogo id={s.provider} size={16} />
         </span>
       ))}
     </span>
@@ -68,7 +68,7 @@ export default function SquadGallery({ builtins = [], mine = [], byRole = {}, pr
         </button>}
       </div>}
       {mine.length === 0 && !onNew && empty}
-      {onManage && mine.length > 0 && <p className="sq-manage small"><button type="button" className="oc-link" onClick={onManage}>Gerenciar times</button></p>}
+      {onManage && mine.length > 0 && <div className="sq-manage"><button type="button" className="sq-manage-btn" onClick={onManage}><Icon name="sliders" size={13} />Gerenciar times</button></div>}
     </section>
   );
 }

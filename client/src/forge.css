@@ -382,6 +382,32 @@ button.fx-sb-i:hover { background: rgba(255, 255, 255, .07); color: var(--strong
 .set-page :where(h1, h2, h3, h4, h5, p, span, b, strong, em, small, button, label, li, dt, dd, a, div, th, td, input, select, textarea, summary, legend, time):not(.mono):not(code):not(pre):not(kbd),
 .oc-modal :where(h1, h2, h3, h4, p, span, b, small, button, label, li, a, div, input, select, textarea):not(.mono):not(code):not(pre):not(kbd) { font-family: var(--sans); letter-spacing: normal; }
 .fx-page :where(h1, h2, h3), .set-page :where(h1, h2, h3) { letter-spacing: -.015em; }
+/* galeria de times (Cockpit vazio): um ícone por agente, sem caixa nem cor por papel; títulos na fonte do app; "Gerenciar times" centralizado */
+.fx-app .sq-gallery { width: min(980px, 100%); margin-top: 18px; }
+.fx-app .sq-h { font: 600 12px var(--sans) !important; letter-spacing: 0 !important; text-transform: none !important; color: var(--text); margin: 0 0 12px; }
+.fx-app .sq-h .dim { font: 400 12px var(--sans); color: var(--faint); opacity: 1; }
+.fx-app .sq-grid { gap: 12px; }
+.fx-app .sq-card { flex: 0 0 236px; width: 236px; }
+.fx-app .sq-main { gap: 10px; padding: 14px; }
+.fx-app .sq-head { flex-wrap: nowrap; padding-right: 0; min-width: 0; font: 600 13.5px var(--sans); }
+.fx-app .sq-head b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.fx-app .sq-tag, .fx-app .sq-card.builtin .sq-tag { margin-left: auto; padding: 0 6px; border-radius: 5px; background: rgba(255, 255, 255, .07); box-shadow: none; color: var(--dim); font: 500 10.5px var(--sans); letter-spacing: 0; text-transform: none; }
+.fx-app .sq-card:hover .sq-tag { opacity: 0; } /* no hover dá lugar às ações (editar, duplicar, excluir) */
+.fx-app .sq-pips { gap: 8px; min-height: 18px; align-items: center; }
+.fx-app .sq-pip { width: auto; height: auto; background: none !important; box-shadow: none !important; border-radius: 0; }
+.fx-app .sq-pip::after { display: none !important; }
+@keyframes fx-pip-hop { 40% { transform: translateY(-3px); } }
+.fx-app .sq-card:hover:not(.launching) .sq-pip { animation: fx-pip-hop .45s var(--ease) both; animation-delay: calc(var(--k, 0) * 50ms); }
+.fx-app .sq-card.launching .sq-pip { animation: fx-breathe 1s var(--ease-in-out) infinite; animation-delay: calc(var(--k, 0) * 120ms); }
+.fx-app .sq-sum { font: 500 12.5px var(--sans); color: var(--text); }
+.fx-app .sq-sub { font: 400 11.5px var(--sans); color: var(--faint); }
+.fx-app .sq-act { border-radius: 5px; background: var(--raise2); box-shadow: none !important; }
+.fx-app .sq-act:hover { background: var(--raise3); color: var(--strong); }
+.fx-app .sq-manage { display: flex; justify-content: center; width: 100%; margin: 16px 0 0; }
+.fx-app .sq-manage-btn { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: var(--r-2); background: transparent; color: var(--dim); font: 500 12.5px var(--sans); cursor: pointer; transition: var(--t-color), transform var(--dur-1) var(--ease); }
+.fx-app .sq-manage-btn:hover { background: rgba(255, 255, 255, .06); color: var(--strong); border-color: rgba(255, 255, 255, .2); }
+.fx-app .sq-manage-btn:active { transform: scale(.97); }
+.fx-app .fx-cockpit .oc-empty.has-squads > p.oc-foot { max-width: 520px; margin-top: 18px; color: var(--faint); }
 /* configurações: a página continua com a própria barra lateral; só os planos e cantos */
 .fx-app .set-page { background: var(--surface); font-family: var(--sans); }
 .fx-app .set-side { background: var(--side) !important; border-right: 1px solid var(--line) !important; }

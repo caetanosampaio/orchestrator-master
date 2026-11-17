@@ -3,7 +3,7 @@
 //   - o banco fica em %APPDATA%\FORGE\data (ORCH_DATA_DIR; na primeira execução os dados de %APPDATA%\AI Dev Orchestrator\data são COPIADOS para cá, ver migrate-userdata.cjs); nunca em uma pasta de código e nunca no `data\` do repositório;
 //   - o Node é o do pacote (resources\node\node.exe, com o npm ao lado: as verificações reais procuram o npm junto do node.exe);
 //   - o Claude Code continua sendo exigido no PATH da máquina (o orquestrador o executa, não o inclui).
-const { app, BrowserWindow, Menu, dialog, shell, session, clipboard, Tray, nativeImage, ipcMain, desktopCapturer, screen, globalShortcut } = require('electron');
+const { app, BrowserWindow, Menu, dialog, shell, session, clipboard, Tray, nativeImage, ipcMain, desktopCapturer, screen, globalShortcut, systemPreferences } = require('electron');
 const { randomBytes } = require('node:crypto');
 const { spawn, execFileSync } = require('node:child_process');
 const fs = require('node:fs');
@@ -53,8 +53,16 @@ function showWindow(hash) {
   if (win.isMinimized()) win.restore(); win.show(); win.focus();
   if (hash && /^#\/[a-z]+$/.test(hash)) win.webContents.executeJavaScript(`location.hash = ${JSON.stringify(hash)}`).catch(() => {});
 }
+/** macOS: sem a permissão "Gravação de Tela" o sistema entrega a captura só com o papel de parede (nenhuma janela aparece). Nos outros sistemas não há essa trava. */
+const screenAccess = () => { try { return process.platform === 'darwin' ? systemPreferences.getMediaAccessStatus('screen') : 'granted'; } catch { return 'granted'; } };
+async function askScreenPermission() {
+  const r = await dialog.showMessageBox(win || undefined, { type: 'info', buttons: ['Abrir os Ajustes', 'Agora não'], defaultId: 0, cancelId: 1, message: 'O Forge precisa da permissão "Gravação de Tela"',
+    detail: 'Sem ela, o macOS entrega a captura só com o papel de parede. Ative o FORGE em Ajustes do Sistema > Privacidade e Segurança > Gravação de Tela e abra o Forge de novo.' });
+  if (r.response === 0) shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
+}
 /** Captura ('area' | 'screen'): salva em <dados>/captures e abre a miniatura arrastável no canto da tela. */
 async function capture(kind) {
+  if (screenAccess() === 'denied' || screenAccess() === 'restricted') { await askScreenPermission(); return; } // negada: explica e leva aos Ajustes, em vez de entregar uma imagem vazia
   try {
     const file = kind === 'screen' ? await captureScreen({ dir: CAPTURES, desktopCapturer, screen }) : await captureArea({ dir: CAPTURES, clipboard, shell });
     if (!file) return;
