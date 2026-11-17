@@ -52,7 +52,7 @@ test('página: cada seção da navegação tem um componente, a busca e o cartã
 
 test('barra lateral no formato do Orca: marca Forge no topo (com recolher), busca ⌘K, navegação, workspaces em cartões e, no rodapé, Configurações, Arquivos e Sessões; o terminal leva a logo do agente', () => {
   const sb = src('components/Sidebar.jsx'), grid = src('components/TerminalGrid.jsx'), app = src('App.jsx');
-  assert.match(sb, /className="fx-brand">Forge</, 'a marca mora no topo da barra lateral'); assert.match(sb, /aria-label="Recolher a barra lateral"/); assert.match(app, /onCollapse=\{toggleSide\}/);
+  assert.match(sb, /className="fx-brand"><span className="fx-brand-mark" aria-hidden="true" dangerouslySetInnerHTML=\{\{ __html: BRAND \}\} \/>Forge</, 'a marca mora no topo da barra lateral'); assert.match(sb, /aria-label="Recolher a barra lateral"/); assert.match(app, /onCollapse=\{toggleSide\}/);
   assert.match(sb, /placeholder="Buscar"/); assert.match(sb, /e\.metaKey \|\| e\.ctrlKey/, '⌘K / Ctrl+K foca a busca'); assert.match(sb, /onPick=\{pick\}/, 'abrir workspace continua como antes');
   assert.ok(!/MascotLogo|ForgeMascot|PixelMascot/.test(sb), 'sem mascote na barra lateral (eles moram nas Configurações)');
   assert.ok(sb.indexOf('<nav className="fx-wslist"') < sb.indexOf('className="fx-side-foot"'), 'o rodapé vem depois dos workspaces');
@@ -104,7 +104,7 @@ test('janela do app no macOS: sem barra nativa, a marca Forge fica no topo da ba
   const main = fs.readFileSync(new URL('../../desktop/main.cjs', import.meta.url), 'utf8'), pre = fs.readFileSync(new URL('../../desktop/preload.cjs', import.meta.url), 'utf8');
   assert.match(main, /const title = `FORGE \$\{app\.getVersion\(\)\}`/); assert.match(main, /titleBarStyle: 'hidden', trafficLightPosition: \{ x: 14, y: 9 \}/); assert.match(main, /preload: path\.join\(__dirname, 'preload\.cjs'\)/); assert.match(main, /additionalArguments: \[`--forge-version=\$\{app\.getVersion\(\)\}`\]/);
   assert.match(main, /contextIsolation: true, sandbox: true, nodeIntegration: false/, 'a página continua sem acesso ao sistema'); assert.match(main, /page-title-updated', \(e\) => e\.preventDefault\(\)/);
-  assert.match(pre, /exposeInMainWorld\('forgeDesktop', Object\.freeze\(\{ platform: process\.platform, version \}\)\)/); assert.ok(!/ipcRenderer|require\('node:|child_process|fs\b/.test(pre.replace(/\/\/[^\n]*/g, '')), 'o preload não expõe Node nem ipc');
+  assert.match(pre, /exposeInMainWorld\('forgeDesktop', Object\.freeze\(\{ platform: process\.platform, version, pathForFile \}\)\)/); assert.match(pre, /webUtils\.getPathForFile\(file\)/, 'a única função: o caminho de um arquivo que o usuário soltou'); assert.ok(!/ipcRenderer|require\('node:|child_process|fs\b/.test(pre.replace(/\/\/[^\n]*/g, '')), 'o preload não expõe Node nem ipc');
   const { version } = JSON.parse(fs.readFileSync(new URL('../../desktop/package.json', import.meta.url), 'utf8')); assert.match(version, /^\d+\.\d+\.\d+/);
 });
 

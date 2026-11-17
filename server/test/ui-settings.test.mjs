@@ -43,10 +43,20 @@ before(async () => {
 after(async () => { server.close(); server.closeAllConnections?.(); await sleep(600); fs.rmSync(root, { recursive: true, force: true }); });
 
 // ---------- 1. rotas ----------
+
+test('setupDone (setup animado do 1º uso): sem workspace começa falso; com workspace e sem o campo, conta como feito; o valor gravado vence; o PUT só aceita booleano', () => {
+  assert.equal(U.readUi({ workspaces: [], settings: {} }).setupDone, false, 'instalação nova: mostra o setup');
+  assert.equal(U.readUi({ workspaces: [{ id: 'ws_aaaaaaaa' }], settings: {} }).setupDone, true, 'quem já usava o app não vê o setup de novo');
+  assert.equal(U.readUi({ workspaces: [{ id: 'ws_aaaaaaaa' }], settings: { ui: { setupDone: false } } }).setupDone, false, '"Refazer o setup" grava falso e vale');
+  assert.equal(U.readUi({ workspaces: [], settings: { ui: { setupDone: true } } }).setupDone, true);
+  assert.deepEqual(U.validateUiPatch({ setupDone: true }), { patch: { setupDone: true } });
+  assert.match(U.validateUiPatch({ setupDone: 'sim' }).error, /setupDone/);
+  assert.equal(P.sanitizePrefs({ setupDone: 1 }).setupDone, false, 'no cliente só o booleano true conta');
+});
 test('banco sem settings.ui: GET devolve o padrão com persisted=false e NÃO grava nada', async () => {
   assert.equal(Object.hasOwn(db.settings, 'ui'), false);
   const r = await call('/api/ui'); assert.equal(r.status, 200);
-  assert.deepEqual(await r.json(), { ui: U.DEFAULT_UI, persisted: false });
+  assert.deepEqual(await r.json(), { ui: { ...U.DEFAULT_UI, setupDone: true }, persisted: false }, 'banco com workspaces: o setup do 1º uso já conta como feito');
   assert.equal(Object.hasOwn(disk().settings, 'ui'), false, 'ler não grava');
 });
 
@@ -56,7 +66,7 @@ test('PUT grava (parcial) e GET devolve; o disco tem settings.ui', async () => {
   r = await put({ expandedWorkspaces: { ws_aaaaaaaa: true } }); assert.equal(r.status, 200);
   r = await put({ expandedWorkspaces: { ws_bbbbbbbb: false } }); assert.equal(r.status, 200);
   const g = await (await call('/api/ui')).json();
-  assert.deepEqual(g, { ui: { name: 'Ana', isolate: true, role: 'reviewer', provider: 'claude', autoRestore: true, fontSize: 16, motion: 'reduced', sidebarCollapsed: true, expandedWorkspaces: { ws_aaaaaaaa: true, ws_bbbbbbbb: false } }, persisted: true }, 'campos não enviados ficam; expandidos são mesclados por chave');
+  assert.deepEqual(g, { ui: { name: 'Ana', isolate: true, role: 'reviewer', provider: 'claude', autoRestore: true, fontSize: 16, motion: 'reduced', setupDone: true, sidebarCollapsed: true, expandedWorkspaces: { ws_aaaaaaaa: true, ws_bbbbbbbb: false } }, persisted: true }, 'campos não enviados ficam; expandidos são mesclados por chave');
   assert.deepEqual(disk().settings.ui, g.ui);
 });
 
@@ -88,8 +98,8 @@ test('exige Origin válido (mesma checagem das demais rotas) e workspace removid
 test('banco com settings.ui corrompido à mão não derruba nada: GET devolve o que for válido', async () => {
   const keep = db.settings.ui;
   db.settings.ui = { fontSize: 'enorme', motion: 7, role: 'X', name: 3, expandedWorkspaces: 'x', sidebarCollapsed: 'sim' };
-  const j = await (await call('/api/ui')).json(); assert.deepEqual(j.ui, U.DEFAULT_UI); assert.equal(j.persisted, true);
-  db.settings.ui = 'texto'; assert.deepEqual((await (await call('/api/ui')).json()).ui, U.DEFAULT_UI);
+  const j = await (await call('/api/ui')).json(); assert.deepEqual(j.ui, { ...U.DEFAULT_UI, setupDone: true }); assert.equal(j.persisted, true);
+  db.settings.ui = 'texto'; assert.deepEqual((await (await call('/api/ui')).json()).ui, { ...U.DEFAULT_UI, setupDone: true });
   db.settings.ui = keep;
 });
 

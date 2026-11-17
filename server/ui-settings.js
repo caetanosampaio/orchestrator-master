@@ -6,7 +6,7 @@ import { now } from './store.js';
 export const FONT_RANGE = Object.freeze({ min: 11, max: 18 });
 export const MAX_NAME = 40;
 export const MAX_EXPANDED = 200;
-export const DEFAULT_UI = Object.freeze({ name: '', isolate: false, role: 'builder', provider: 'claude', autoRestore: true, fontSize: 13, motion: 'auto', sidebarCollapsed: false, expandedWorkspaces: {} });
+export const DEFAULT_UI = Object.freeze({ name: '', isolate: false, role: 'builder', provider: 'claude', autoRestore: true, fontSize: 13, motion: 'auto', setupDone: false, sidebarCollapsed: false, expandedWorkspaces: {} });
 const KEYS = Object.keys(DEFAULT_UI);
 const ID_RE = /^(?!__proto__$)[A-Za-z0-9_-]{1,64}$/; // __proto__ fora: defesa em profundidade (hoje já não seria explorável)
 const isObj = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
@@ -33,6 +33,7 @@ export function readUi(db) {
     autoRestore: r.autoRestore === false ? false : true, // padrão LIGADO: só um valor explícito `false` desliga
     fontSize: Number.isFinite(fs) ? Math.min(FONT_RANGE.max, Math.max(FONT_RANGE.min, Math.round(fs))) : DEFAULT_UI.fontSize,
     motion: r.motion === 'reduced' ? 'reduced' : 'auto',
+    setupDone: r.setupDone === true || (r.setupDone === undefined && (db.workspaces ?? []).length > 0), // setup animado do 1º uso: quem já tem workspace (instalação anterior ao setup) não o vê de novo
     sidebarCollapsed: r.sidebarCollapsed === true,
     expandedWorkspaces: pruneExpanded(expanded, db),
   };
@@ -45,7 +46,7 @@ export function validateUiPatch(b) {
   if (extra.length) return { error: `Propriedades não permitidas: ${extra.join(', ')}.` };
   const p = {};
   if (b.name !== undefined) { if (typeof b.name !== 'string' || cleanName(b.name).length > MAX_NAME) return { error: `name deve ser um texto de até ${MAX_NAME} caracteres.` }; p.name = cleanName(b.name); }
-  for (const k of ['isolate', 'sidebarCollapsed', 'autoRestore']) if (b[k] !== undefined) { if (typeof b[k] !== 'boolean') return { error: `${k} deve ser verdadeiro ou falso.` }; p[k] = b[k]; }
+  for (const k of ['isolate', 'sidebarCollapsed', 'autoRestore', 'setupDone']) if (b[k] !== undefined) { if (typeof b[k] !== 'boolean') return { error: `${k} deve ser verdadeiro ou falso.` }; p[k] = b[k]; }
   if (b.role !== undefined) { if (typeof b.role !== 'string' || !/^[a-z]{1,20}$/.test(b.role)) return { error: 'role deve ter de 1 a 20 letras minúsculas.' }; p.role = b.role; }
   if (b.provider !== undefined) { if (typeof b.provider !== 'string' || !/^[a-z]{1,20}$/.test(b.provider)) return { error: 'provider deve ter de 1 a 20 letras minúsculas.' }; p.provider = b.provider; }
   if (b.fontSize !== undefined) { if (!Number.isInteger(b.fontSize) || b.fontSize < FONT_RANGE.min || b.fontSize > FONT_RANGE.max) return { error: `fontSize deve ser um inteiro de ${FONT_RANGE.min} a ${FONT_RANGE.max}.` }; p.fontSize = b.fontSize; }

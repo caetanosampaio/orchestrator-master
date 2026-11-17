@@ -12,7 +12,9 @@
     "dir:mac": "npm run stage && electron-builder --mac dir",
     "dist:mac": "npm run stage && electron-builder --mac dmg",
     "update:mac": "bash scripts/update-mac.sh",
-    "update:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/update-win.ps1"
+    "update:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/update-win.ps1",
+    "art": "node scripts/make-icon.mjs",
+    "dist:linux": "npm run stage && electron-builder --linux AppImage deb"
   },
   "devDependencies": {
     "electron": "^43.8.7",

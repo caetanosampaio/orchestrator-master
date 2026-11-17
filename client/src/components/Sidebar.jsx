@@ -9,6 +9,9 @@ import StatusGlyph from './StatusGlyph.jsx';
 import PermissionProfileDialog, { ProfileSeal } from './PermissionProfileDialog.jsx';
 import { elapsed, shortPath } from '../forge-shell.js';
 import { missionState } from '../missions-view.js';
+import { logoSvg } from '../forge-logo.mjs';
+
+const BRAND = logoSvg({ variant: 'mark', ink: 'currentColor', stroke: 3 }); // SVG fixo gerado do código (nenhum dado externo entra nele)
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 const TONE_LABEL = { idle: 'sem atividade', work: 'executando', wait: 'aguardando você', done: 'concluído', err: 'com falha', cancel: 'cancelada' };
@@ -175,7 +178,7 @@ export default function Sidebar({ modal = false, onClose, onOpenWorkspaces, onOp
   return (
     <aside id="nav-drawer" ref={box} className={`fx-side${modal ? ' modal' : ''}`} {...(modal ? { role: 'dialog', 'aria-modal': true, 'aria-label': 'Navegação e workspaces' } : { 'aria-label': 'Navegação e workspaces' })}>
       <div className={`fx-side-top${desktop ? ' desktop' : ''}`}>
-        <span className="fx-brand">Forge</span>
+        <span className="fx-brand"><span className="fx-brand-mark" aria-hidden="true" dangerouslySetInnerHTML={{ __html: BRAND }} />Forge</span>
         <span className="grow" />
         {modal
           ? <button type="button" className="fx-ibtn" onClick={onClose} aria-label="Fechar a navegação"><Icon name="close" size={15} /></button>

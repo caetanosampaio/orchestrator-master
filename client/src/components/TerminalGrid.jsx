@@ -13,7 +13,7 @@ import { paneUsage, squadUsage } from '../usage-view.js';
 import { createTerminalStream, isOld } from '../terminal-stream.js';
 import ProviderLogo from './ProviderLogo.jsx';
 import StatusGlyph from './StatusGlyph.jsx';
-import { elapsed, shortPath as shortCwd } from '../forge-shell.js';
+import { elapsed, shortPath as shortCwd, dropText } from '../forge-shell.js';
 import { paneState, pendingByPane, paneName, shapeFor, focusPlacement, evenTracks, dragTracks, dividerAt } from '../env-view.js';
 import MaestroPopover from './MaestroPopover.jsx';
 import SquadGallery from './SquadGallery.jsx';
@@ -111,6 +111,21 @@ function TerminalPane({ session, role, state, waiting, maximized, fontSize, stre
   // ao maximizar/restaurar o espaço muda: reajusta depois do layout
   useEffect(() => { const t = setTimeout(() => window.dispatchEvent(new Event('resize')), 60); return () => clearTimeout(t); }, [maximized]);
 
+  // Soltar arquivos (do Finder/Explorer ou a miniatura da captura de tela) no terminal: o caminho vai para a entrada do agente. Só no app desktop
+  // (o navegador não revela o caminho do arquivo); no navegador avisa em vez de falhar calado.
+  const [dropping, setDropping] = useState(false);
+  const hasFiles = (e) => [...(e.dataTransfer?.types ?? [])].includes('Files');
+  const onDragOver = (e) => { if (!hasFiles(e) || !running) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; if (!dropping) setDropping(true); };
+  const onDragLeave = (e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDropping(false); };
+  const onDrop = (e) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault(); setDropping(false);
+    if (!running) return;
+    const desk = window.forgeDesktop, paths = [...e.dataTransfer.files].map((f) => desk?.pathForFile?.(f) || '').filter(Boolean);
+    if (!paths.length) { notify(desk ? 'Não foi possível ler o caminho do arquivo solto.' : 'Soltar arquivos num terminal funciona no app desktop do Forge (o navegador não revela o caminho).', 'error'); return; }
+    noteInteraction(id);
+    api.post(`/api/terminals/${id}/input`, { data: dropText(paths, desk?.platform) }).then(() => termRef.current?.focus()).catch((err) => notify(`O arquivo não foi enviado para "${session.title}": ${err?.message || 'erro'}.`, 'error'));
+  };
   const use = paneUsage(session.usage);
   const boot = running && !started; // ainda sem a primeira saída: o processo existe, mas o Claude Code não terminou de iniciar
   const shown = boot ? 'boot' : state;
@@ -119,7 +134,8 @@ function TerminalPane({ session, role, state, waiting, maximized, fontSize, stre
   const wait = waiting?.[0], waitText = wait ? String(wait.text ?? wait.note ?? '').replace(/\s+/g, ' ').trim() : '';
   const waitTitle = waiting?.length ? `Aguardando a sua decisão: ${waiting.map((t) => t.text || t.note || t.id).join(' | ')}\nAprove ou recuse no painel do Maestro.` : '';
   return (
-    <section className={`oc-pane fx-pane st-${state}${waiting?.length ? ' has-wait' : ''}${maximized ? ' max' : ''}`} aria-label={`Terminal ${session.title}, ${label}${waiting?.length ? ', aguardando a sua decisão' : ''}`} onMouseDownCapture={() => noteInteraction(id)} onFocusCapture={() => noteInteraction(id)} onBlurCapture={() => noteInteraction(id)}>
+    <section className={`oc-pane fx-pane st-${state}${waiting?.length ? ' has-wait' : ''}${maximized ? ' max' : ''}`} aria-label={`Terminal ${session.title}, ${label}${waiting?.length ? ', aguardando a sua decisão' : ''}`} onMouseDownCapture={() => noteInteraction(id)} onFocusCapture={() => noteInteraction(id)} onBlurCapture={() => noteInteraction(id)} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
+      {dropping && <div className="fx-drop" aria-hidden="true"><span>Solte para enviar a {session.title}</span></div>}
       <header className="oc-ph fx-ph" onDoubleClick={(e) => { if (!e.target.closest('button')) onMaximize(); }} title={`${session.title}\n${session.cwd}${session.branch ? `\nBranch ${session.branch}` : ''}\npid ${session.pid}`}>
         <span className={`fx-pstate st-${shown}`} role="status" aria-label={label}><StatusGlyph state={shown} size={13} /></span>
         <ProviderLogo id={session.provider || 'claude'} size={13} title={session.providerLabel || 'Claude Code'} />

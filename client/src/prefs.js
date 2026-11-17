@@ -1,7 +1,7 @@
 // Preferências da interface (nome exibido, isolamento padrão, papel padrão, fonte dos terminais, movimento). A fonte principal é o servidor (db.settings.ui, ver ui-state.js); aqui fica o cache no localStorage:
 // (localStorage; vale por origem, e o Electron muda de porta a cada abertura). Núcleo puro (sem React): o hook usePrefs está em hooks.js. Valores inválidos voltam ao padrão, nunca quebram a tela.
 const KEY = 'orch.prefs.v1';
-export const DEFAULT_PREFS = Object.freeze({ name: '', isolate: false, role: 'builder', provider: 'claude', autoRestore: true, fontSize: 13, motion: 'auto' });
+export const DEFAULT_PREFS = Object.freeze({ name: '', isolate: false, role: 'builder', provider: 'claude', autoRestore: true, fontSize: 13, motion: 'auto', setupDone: false });
 export const FONT_RANGE = Object.freeze({ min: 11, max: 18 });
 
 /** Aceita qualquer coisa; devolve sempre um objeto completo e válido. */
@@ -16,6 +16,7 @@ export function sanitizePrefs(raw) {
     autoRestore: r.autoRestore !== false,
     fontSize: Number.isFinite(fs) ? Math.min(FONT_RANGE.max, Math.max(FONT_RANGE.min, Math.round(fs))) : DEFAULT_PREFS.fontSize,
     motion: r.motion === 'reduced' ? 'reduced' : 'auto',
+    setupDone: r.setupDone === true,
   };
 }
 

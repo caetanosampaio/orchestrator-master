@@ -15,7 +15,11 @@
     "log-rotate.cjs",
     "restart-policy.cjs",
     "menu.cjs",
-    "package.json"
+    "package.json",
+    "tray.cjs",
+    "metrics.cjs",
+    "capture.cjs",
+    "capture-preload.cjs"
   ],
   "extraResources": [
     {
@@ -25,6 +29,10 @@
     {
       "from": "stage/node",
       "to": "node"
+    },
+    {
+      "from": "build/tray",
+      "to": "tray"
     }
   ],
   "asar": true,
@@ -54,7 +62,16 @@
     "perMachine": false,
     "allowToChangeInstallationDirectory": true,
     "deleteAppDataOnUninstall": false,
-    "shortcutName": "FORGE"
+    "shortcutName": "FORGE",
+    "installerIcon": "build/icon.ico",
+    "uninstallerIcon": "build/icon.ico",
+    "installerSidebar": "build/installerSidebar.bmp",
+    "uninstallerSidebar": "build/uninstallerSidebar.bmp",
+    "installerHeader": "build/installerHeader.bmp",
+    "installerHeaderIcon": "build/icon.ico",
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "runAfterFinish": true
   },
   "mac": {
     "icon": "build/icon-mac.png",
@@ -75,5 +92,65 @@
     ],
     "identity": null
   },
-  "afterPack": "scripts/after-pack.cjs"
+  "afterPack": "scripts/after-pack.cjs",
+  "dmg": {
+    "title": "Forge ${version}",
+    "icon": "build/icon-mac.png",
+    "background": "build/dmg-background.png",
+    "iconSize": 112,
+    "window": {
+      "width": 660,
+      "height": 400
+    },
+    "contents": [
+      {
+        "x": 180,
+        "y": 130,
+        "type": "file"
+      },
+      {
+        "x": 480,
+        "y": 130,
+        "type": "link",
+        "path": "/Applications"
+      }
+    ]
+  },
+  "linux": {
+    "icon": "build/icons",
+    "category": "Development",
+    "synopsis": "Agentes de IA trabalhando juntos, cada um no seu terminal",
+    "description": "Forge: central local para coordenar agentes de IA (Claude Code, Codex) em terminais reais.",
+    "target": [
+      {
+        "target": "AppImage",
+        "arch": [
+          "x64"
+        ]
+      },
+      {
+        "target": "deb",
+        "arch": [
+          "x64"
+        ]
+      }
+    ],
+    "executableName": "forge",
+    "desktop": {
+      "entry": {
+        "StartupWMClass": "Forge"
+      }
+    }
+  },
+  "appImage": {
+    "artifactName": "Forge-${version}.${ext}"
+  },
+  "deb": {
+    "artifactName": "forge_${version}_${arch}.${ext}",
+    "depends": [
+      "libnotify4",
+      "libxtst6",
+      "libnss3"
+    ]
+  }
 }

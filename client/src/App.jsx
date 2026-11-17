@@ -6,6 +6,7 @@ import Home from './pages/Home.jsx';
 import Cockpit from './pages/Cockpit.jsx';
 import Missions from './pages/Missions.jsx';
 import Settings from './pages/Settings.jsx';
+import Setup from './pages/Setup.jsx';
 import WorkspaceDialog from './components/WorkspaceDialog.jsx';
 import SessionsDialog from './components/SessionsDialog.jsx';
 import { useStore } from './store.jsx';
@@ -44,7 +45,7 @@ export default function App() {
   const narrow = useNarrow();
   const menuRef = useRef(null);
   const [prefs] = usePrefs();
-  const { error, toast, state, openWorkspaceIds, act } = useStore();
+  const { error, toast, state, openWorkspaceIds, act, workspaces } = useStore();
   const [view, setView] = useState(() => (location.hash.startsWith('#/settings') ? 'settings' : location.hash.startsWith('#/missions') ? 'missions' : location.hash.startsWith('#/cockpit') ? 'cockpit' : 'home')); // página: 'home' (Início, a de abertura: #/ ou #/home) | 'cockpit' (terminais) | 'missions' (central de missões) | 'settings' (Configurações; #/settings: link antigo)
   const backTo = useRef(view === 'settings' ? 'home' : view); // de onde as Configurações foram abertas: o "Voltar" retorna para lá
   const missionsData = useMissions({ intervalMs: view === 'missions' ? 2500 : 6000 }); // mais devagar fora da página: só alimenta o indicador do botão Missions
@@ -62,6 +63,12 @@ export default function App() {
   useEffect(() => { if (view !== 'cockpit') return undefined; const t = setTimeout(() => window.dispatchEvent(new Event('resize')), 60); return () => clearTimeout(t); }, [view]);
   const closeNav = useCallback(() => { setNavOpen(false); setTimeout(() => menuRef.current?.focus(), 0); }, []);
   const openSettings = useCallback((tab) => { setNavOpen(false); setSettingsTab(typeof tab === 'string' ? tab : 'perfil'); setSettingsKey((k) => k + 1); if (view !== 'settings') backTo.current = view; goView('settings'); }, [view, goView]); // o botão da engrenagem chama com o evento: só texto vale como aba
+  // #/rota vinda de fora (menu da bandeja / barra de menus do app desktop): troca de página sem recarregar
+  useEffect(() => {
+    const on = () => { const h = location.hash; if (h.startsWith('#/settings')) openSettings(/^#\/settings\/([a-z-]+)/.exec(h)?.[1]); else if (h.startsWith('#/missions')) goView('missions'); else if (h.startsWith('#/cockpit')) goView('cockpit'); else if (h === '#/home') goView('home'); };
+    window.addEventListener('hashchange', on);
+    return () => window.removeEventListener('hashchange', on);
+  }, [goView, openSettings]);
   const openWorkspaces = useCallback(() => { setNavOpen(false); setDialog('workspaces'); }, []);
   const closeDialog = useCallback(() => setDialog(null), []);
   const closeSettings = useCallback(() => goView(backTo.current === 'settings' ? 'cockpit' : backTo.current), [goView]);
@@ -69,6 +76,7 @@ export default function App() {
   const openSessions = useCallback(() => { setNavOpen(false); setDialog('sessions'); }, []);
   const side = { onOpenWorkspaces: openWorkspaces, onOpenSessions: openSessions, onOpenSettings: openSettings, view, onView: goView, missions: missionsData.missions, onOpenTerminal: (t) => setFocusReq({ id: t.id, at: Date.now() }), desktop };
   const settings = view === 'settings';
+  const showSetup = prefs.setupDone !== true && ui.status.state !== 'loading';
   const showSide = !settings && !narrow && !sideHidden;
   const menu = narrow ? () => setNavOpen(true) : sideHidden ? toggleSide : null; // telas estreitas: gaveta; barra recolhida: reabre
   return (
@@ -104,7 +112,8 @@ export default function App() {
           <span className="toast-text">{toast.text}</span>
         </div>
       )}
-      <PrereqModal suspended={!!dialog || view === 'settings'} onOpenAccounts={() => openSettings('accounts')} /> {/* se afasta enquanto um diálogo (ex.: Configurações > Contas) está aberto */}
+      {showSetup && <Setup onFinish={() => goView(workspaces?.length ? 'cockpit' : 'home')} />} {/* setup animado do 1º uso: só depois de ler as preferências do servidor (sem piscar para quem já usa) */}
+      <PrereqModal suspended={!!dialog || view === 'settings' || showSetup} onOpenAccounts={() => openSettings('accounts')} /> {/* se afasta enquanto um diálogo (ex.: Configurações > Contas) está aberto */}
       {dialog === 'workspaces' && <WorkspaceDialog onClose={closeDialog} onPicked={view === 'home' ? () => goView('cockpit') : undefined} />} {/* aberto no Início: escolher ou criar um workspace segue para o Cockpit */}
       {dialog === 'sessions' && <SessionsDialog onClose={closeDialog} />}
     </div>

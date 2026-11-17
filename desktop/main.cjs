@@ -3,7 +3,7 @@
 //   - o banco fica em %APPDATA%\FORGE\data (ORCH_DATA_DIR; na primeira execução os dados de %APPDATA%\AI Dev Orchestrator\data são COPIADOS para cá, ver migrate-userdata.cjs); nunca em uma pasta de código e nunca no `data\` do repositório;
 //   - o Node é o do pacote (resources\node\node.exe, com o npm ao lado: as verificações reais procuram o npm junto do node.exe);
 //   - o Claude Code continua sendo exigido no PATH da máquina (o orquestrador o executa, não o inclui).
-const { app, BrowserWindow, Menu, dialog, shell, session, clipboard } = require('electron');
+const { app, BrowserWindow, Menu, dialog, shell, session, clipboard, Tray, nativeImage, ipcMain, desktopCapturer, screen, globalShortcut } = require('electron');
 const { randomBytes } = require('node:crypto');
 const { spawn, execFileSync } = require('node:child_process');
 const fs = require('node:fs');
@@ -15,6 +15,9 @@ const { removeLockIfOwned } = require('./lock-cleanup.cjs');
 const { createLogWriter } = require('./log-rotate.cjs');
 const { createRestartPolicy, shouldFailRestart } = require('./restart-policy.cjs');
 const { buildMenuTemplate } = require('./menu.cjs');
+const { createForgeTray } = require('./tray.cjs');
+const { createSampler } = require('./metrics.cjs');
+const { captureArea, captureScreen, showCaptureCard, prune } = require('./capture.cjs');
 
 app.setName('FORGE');
 app.setPath('userData', path.join(app.getPath('appData'), 'FORGE')); // explícito: a pasta de dados não depende de como o Electron deriva o nome
@@ -35,6 +38,42 @@ const API_TOKEN = randomBytes(32).toString('hex');
 const freePort = () => new Promise((resolve, reject) => { const s = net.createServer(); s.once('error', reject); s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => resolve(p)); }); });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const get = async (p) => { const r = await fetch(`http://127.0.0.1:${port}${p}`); return { status: r.status, text: await r.text() }; };
+/** Chamada da bandeja ao servidor local: mesma origem e o token de sessão do boot (como a janela). Devolve o JSON ou lança. */
+const api = async (p, { method = 'GET' } = {}) => {
+  const r = await fetch(`http://127.0.0.1:${port}${p}`, { method, headers: { origin: `http://127.0.0.1:${port}`, 'x-orch-token': API_TOKEN, ...(method === 'GET' ? {} : { 'content-type': 'application/json' }) }, body: method === 'GET' ? undefined : '{}', signal: AbortSignal.timeout(4000) });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json();
+};
+const ART = app.isPackaged ? process.resourcesPath : path.join(__dirname, 'build'); // ícones da bandeja: resources/tray no pacote, build/tray no desenvolvimento
+const CAPTURES = path.join(DATA_DIR, 'captures');
+let tray = null;
+
+/** Mostra a janela principal e, com `hash`, leva a interface à página (#/cockpit, #/missions, #/settings). */
+function showWindow(hash) {
+  if (!win) return;
+  if (win.isMinimized()) win.restore(); win.show(); win.focus();
+  if (hash && /^#\/[a-z]+$/.test(hash)) win.webContents.executeJavaScript(`location.hash = ${JSON.stringify(hash)}`).catch(() => {});
+}
+/** Captura ('area' | 'screen'): salva em <dados>/captures e abre a miniatura arrastável no canto da tela. */
+async function capture(kind) {
+  try {
+    const file = kind === 'screen' ? await captureScreen({ dir: CAPTURES, desktopCapturer, screen }) : await captureArea({ dir: CAPTURES, clipboard, shell });
+    if (!file) return;
+    prune(CAPTURES);
+    showCaptureCard({ file, BrowserWindow, ipcMain, nativeImage, clipboard, shell, screen, preload: path.join(__dirname, 'capture-preload.cjs') });
+  } catch (e) { log(`--- captura falhou: ${e?.message || e}`); }
+}
+function setupTray() {
+  try {
+    tray = createForgeTray({ Tray, Menu, nativeImage, iconsDir: path.join(ART, 'tray'), prefsFile: path.join(app.getPath('userData'), 'desktop-prefs.json'), api, showWindow, capture, getWindow: () => win,
+      sampler: (onSample) => createSampler({ onSample, memInfo: () => process.getSystemMemoryInfo() }), quit: () => app.quit() });
+  } catch (e) { log(`--- bandeja indisponível: ${e?.message || e}`); } // Linux sem área de notificação: o app segue sem ela
+  try { globalShortcut.register('CommandOrControl+Shift+2', () => capture('area')); } catch { /* atalho em uso por outro app */ }
+  if (process.platform === 'darwin' && app.dock) app.dock.setMenu(Menu.buildFromTemplate([{ label: 'Capturar área da tela…', click: () => capture('area') }, { label: 'Capturar tela inteira', click: () => capture('screen') }]));
+  if (IS_WIN && win) { // botões na miniatura da janela na barra de tarefas
+    const icon = nativeImage.createFromPath(path.join(ART, 'tray', 'tray.png'));
+    if (!icon.isEmpty()) win.setThumbarButtons([{ tooltip: 'Capturar área da tela', icon, click: () => capture('area') }]);
+  }
+}
 
 function log(line) {
   tail.push(line); if (tail.length > 40) tail.shift();
@@ -161,9 +200,10 @@ if (!lock) { app.quit(); } else {
         fs.writeFileSync(SMOKE, JSON.stringify({ ok: index.status === 200 && /<div id="root">/.test(index.text) && state.status === 200 && ws.status === 200 && terms.status === 200 && mcp.status === 405, port, indexStatus: index.status, stateStatus: state.status, terminalsStatus: terms.status, mcpStatus: mcp.status, dataDir: DATA_DIR, node: NODE_EXE, system: JSON.parse(state.text).system }));
         quitting = true; await gracefulStop(); app.exit(0); return;
       }
-      createWindow();
+      createWindow(); setupTray();
     } catch (e) { fail(e.message || String(e)); }
   });
   app.on('window-all-closed', () => app.quit());
-  app.on('before-quit', (e) => { if (quitting) return; quitting = true; e.preventDefault(); gracefulStop().finally(() => app.exit(0)); });
+  app.on('will-quit', () => { try { globalShortcut.unregisterAll(); } catch { /* sem atalhos */ } });
+  app.on('before-quit', (e) => { tray?.destroy(); tray = null; if (quitting) return; quitting = true; e.preventDefault(); gracefulStop().finally(() => app.exit(0)); });
 }

@@ -72,7 +72,7 @@ test('shell: barra lateral com marca, busca, navegação e workspaces com termin
   const app = src('App.jsx'), sb = src('components/Sidebar.jsx'), cockpit = src('pages/Cockpit.jsx'), grid = src('components/TerminalGrid.jsx'), live = src('components/LivePanel.jsx'), bar = src('components/StatusBar.jsx');
   assert.match(app, /<StatusBar /); assert.match(app, /<Sidebar \{\.\.\.side\}/); assert.ok(!/Topbar/.test(app), 'sem a barra superior antiga: a navegação mora na barra lateral');
   assert.ok(!fs.existsSync(new URL('../../client/src/components/Topbar.jsx', import.meta.url)));
-  assert.match(sb, /className="fx-brand">Forge</); assert.match(sb, /placeholder="Buscar"/); assert.match(sb, /⌘K/);
+  assert.match(sb, /className="fx-brand"><span className="fx-brand-mark" aria-hidden="true" dangerouslySetInnerHTML=\{\{ __html: BRAND \}\} \/>Forge</); assert.match(sb, /placeholder="Buscar"/); assert.match(sb, /⌘K/);
   for (const label of ['Início', 'Missões', 'Terminais', 'Sessões']) assert.match(sb, new RegExp(`label="${label}"`));
   assert.match(sb, /<TermRow /, 'os terminais aparecem dentro do cartão do workspace'); assert.match(sb, /onPick=\{pick\}/);
   assert.match(cockpit, /<LivePanel stream=\{stream\}/); assert.match(cockpit, /createTerminalStream\(\)/, 'uma conexão SSE para a grade e o painel');

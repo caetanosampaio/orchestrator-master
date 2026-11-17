@@ -29,6 +29,9 @@ export function GeneralSection() {
       <Row title="Isolar novos terminais em worktree" hint="Cada terminal trabalha numa branch Git própria, sem pisar nos arquivos dos outros. Exige repositório Git.">
         <Switch checked={prefs.isolate} onChange={(v) => setPref('isolate', v)} label="Isolar novos terminais em worktree" />
       </Row>
+      <Row title="Setup do primeiro uso" hint="Mostra de novo a forja animada com os passos de ferramentas, conta e primeiro workspace.">
+        <button type="button" className="btn" onClick={() => setPref('setupDone', false)} disabled={!prefs.setupDone}>{prefs.setupDone ? 'Refazer o setup' : 'Setup aberto'}</button>
+      </Row>
     </Card>
   );
 }

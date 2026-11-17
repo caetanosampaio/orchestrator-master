@@ -100,3 +100,18 @@ export const urlLabel = (href) => { try { const u = new URL(href); return `${u.h
 /** O que o hook do agente diz que ele está fazendo, em português (o texto da saída complementa). */
 const EVENTS = { PreToolUse: 'usando uma ferramenta', PostToolUse: 'processando o resultado', UserPromptSubmit: 'lendo o pedido', Notification: 'pediu sua atenção', Stop: 'terminou a vez', SubagentStop: 'subagente terminou', SessionStart: 'iniciando' };
 export const eventLabel = (ev) => EVENTS[ev] ?? '';
+
+// ---------- soltar arquivos num terminal ----------
+
+/**
+ * Caminho pronto para digitar no terminal: sem espaço nem caractere especial vai como está; senão entre aspas (simples no macOS/Linux, com ' escapado;
+ * duplas no Windows, onde " não é válido em nome de arquivo). O Claude Code reconhece o caminho de uma imagem e a anexa à conversa.
+ */
+export function quotePath(p, platform = 'darwin') {
+  const s = String(p ?? '');
+  if (!s) return '';
+  if (/^[\w@%+=:,./\\-]+$/.test(s)) return s;
+  return platform === 'win32' ? `"${s}"` : `'${s.replace(/'/g, `'\\''`)}'`;
+}
+/** Texto enviado ao terminal ao soltar arquivos: os caminhos separados por espaço, com um espaço no fim (o usuário continua digitando a mensagem). */
+export const dropText = (paths, platform) => { const list = (Array.isArray(paths) ? paths : []).map((p) => quotePath(p, platform)).filter(Boolean); return list.length ? `${list.join(' ')} ` : ''; };

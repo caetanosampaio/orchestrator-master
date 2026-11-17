@@ -84,7 +84,7 @@ test('Configurações é uma PÁGINA (não um diálogo): a engrenagem da barra l
   assert.ok(!fs.existsSync(new URL('../../client/src/components/SettingsDialog.jsx', import.meta.url)), 'o diálogo antigo saiu');
   assert.ok(!/Dialog/.test(page.replace(/Workspace/g, '')), 'a página não usa o componente Dialog');
   assert.match(app, /view === 'settings'/); assert.match(app, /onOpenSettings: openSettings/); assert.match(app, /#\/settings/);
-  assert.match(app, /suspended=\{!!dialog \|\| view === 'settings'\}/, 'o aviso de pré-requisitos continua se afastando das Configurações');
+  assert.match(app, /suspended=\{!!dialog \|\| view === 'settings'( \|\| showSetup)?\}/, 'o aviso de pré-requisitos continua se afastando das Configurações (e do setup do 1º uso)');
   assert.match(page, /data-testid="settings-page"/); assert.match(page, /onClick=\{onClose\}/);
   assert.match(sb, /onClick=\{\(\) => onOpenSettings\?\.\(\)\} aria-label="Configurações"/);
   assert.match(src('main.jsx'), /import '\.\/teams\.css'/);
