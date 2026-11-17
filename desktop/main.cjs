@@ -37,7 +37,7 @@ const API_TOKEN = randomBytes(32).toString('hex');
 
 const freePort = () => new Promise((resolve, reject) => { const s = net.createServer(); s.once('error', reject); s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => resolve(p)); }); });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const get = async (p) => { const r = await fetch(`http://127.0.0.1:${port}${p}`); return { status: r.status, text: await r.text() }; };
+const get = async (p) => { const r = await fetch(`http://127.0.0.1:${port}${p}`, { headers: { 'x-orch-token': API_TOKEN } }); return { status: r.status, text: await r.text() }; }; // com o token do boot, como a janela: /api/terminals é leitura protegida
 /** Chamada da bandeja ao servidor local: mesma origem e o token de sessão do boot (como a janela). Devolve o JSON ou lança. */
 const api = async (p, { method = 'GET' } = {}) => {
   const r = await fetch(`http://127.0.0.1:${port}${p}`, { method, headers: { origin: `http://127.0.0.1:${port}`, 'x-orch-token': API_TOKEN, ...(method === 'GET' ? {} : { 'content-type': 'application/json' }) }, body: method === 'GET' ? undefined : '{}', signal: AbortSignal.timeout(4000) });
