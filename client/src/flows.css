@@ -186,3 +186,39 @@
   .fl-center { padding: 0 16px 24px; } .fl-actions { margin-left: 0; } .fl-title { font-size: 18px; }
   .fl-grid2, .fl-grid4 { grid-template-columns: minmax(0, 1fr); } .fl-form { padding: 16px; }
 }
+
+/* ---------- dock de terminais da missão (abaixo do workflow, dentro da página) ---------- */
+.fl-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #27272a transparent; }
+.fl-main.has-dock { overflow: hidden; }
+.fl-dock { flex: none; display: flex; flex-direction: column; min-height: 0; border-top: 1px solid var(--fl-hair); background: var(--surface); }
+.fl-dock.open { position: relative; max-height: calc(100% - 140px); }
+.fl-dock.open.max { flex: 1 1 auto; height: auto; max-height: none; }
+.fl-dock-gutter { position: absolute; left: 0; right: 0; top: -3px; height: 7px; cursor: row-resize; z-index: 2; touch-action: none; }
+.fl-dock-gutter:hover, .fl-dock-gutter:focus-visible, body.fx-resizing .fl-dock-gutter { background: rgba(255, 255, 255, .16); outline: 0; }
+.fl-dock-bar { display: flex; align-items: center; gap: 9px; width: 100%; height: 34px; padding: 0 14px; border: 0; background: transparent; color: var(--fl-mute, #9a9a9a); font: 500 12px var(--sans); cursor: pointer; text-align: left; }
+.fl-dock-bar:hover { background: rgba(255, 255, 255, .04); color: #fff; }
+.fl-dock-bar:focus-visible { outline: 1px dashed var(--brand, #8c242a); outline-offset: -3px; }
+.fl-dock-t { font-weight: 600; letter-spacing: .02em; }
+.fl-dock-dots { display: inline-flex; align-items: center; gap: 6px; }
+.fl-dock-dot { display: inline-flex; }
+.fl-dock-head { display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 8px 0 6px; border-bottom: 1px solid var(--fl-hair); flex: none; }
+.fl-dock-tabs { display: flex; align-items: stretch; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; height: 100%; }
+.fl-dock-tab { display: inline-flex; align-items: center; gap: 7px; max-width: 220px; padding: 0 12px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--fl-mute, #9a9a9a); font: 500 12px var(--sans); cursor: pointer; white-space: nowrap; }
+.fl-dock-tab > span { overflow: hidden; text-overflow: ellipsis; }
+.fl-dock-tab:hover { color: #fff; background: rgba(255, 255, 255, .04); }
+.fl-dock-tab.on { color: #fff; border-bottom-color: var(--bone, #7a1d23); }
+.fl-dock-tab:focus-visible { outline: 1px dashed var(--brand, #8c242a); outline-offset: -3px; }
+.fl-dock-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; background: var(--term-bg, #1c1c1c); }
+.fl-dock-body > .fl-note { margin: 16px; }
+@media (max-width: 860px) { .fl-dock.open { max-height: 70vh; } .fl-dock-tab { max-width: 150px; } }
+
+/* ---------- workflow de CIMA PARA BAIXO: cada fase é uma linha (ramos paralelos lado a lado), os conectores descem de uma fase à seguinte ---------- */
+.fl-wf .mwf-viewport { min-height: 0; max-height: none; overflow-x: auto; overflow-y: visible; }
+.fl-wf .mwf-stage { flex-direction: column; align-items: center; gap: 44px; width: max-content; min-width: 100%; box-sizing: border-box; margin: 0 auto; padding: 8px 12px 20px; } /* gap = GAP de FlowWorkflow.jsx */
+.fl-wf .fl-phase { display: grid; grid-template-columns: 64px auto 64px; column-gap: 12px; align-items: start; width: auto; } /* rótulo | nós | espaço igual: os nós ficam centrados em todas as fases */
+.fl-wf .fl-phase::after { content: ''; }
+.fl-wf .fl-phase-h { height: auto; flex-direction: column; align-items: flex-start; gap: 3px; padding-top: 7px; border-bottom: 0; }
+.fl-wf .fl-phase-h .mwf-par { margin-left: 0; }
+.fl-wf .fl-phase-nodes { display: flex; flex-wrap: nowrap; justify-content: center; align-items: flex-start; gap: 16px; }
+.fl-wf .fl-phase-nodes .mwf-node { width: 212px; flex: none; } /* ramos paralelos sempre lado a lado (rolagem horizontal se não couber): quebrar em outra linha embaralharia os conectores */
+@media (max-width: 860px) { .fl-wf .fl-phase { grid-template-columns: auto; justify-items: center; } .fl-wf .fl-phase::after { display: none; } .fl-wf .fl-phase-h { flex-direction: row; align-items: center; padding-top: 0; } }

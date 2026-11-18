@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import '../flows.css';
 import { useStore } from '../store.jsx';
-import { useFlows } from '../use-flows.js';
 import { buildWorkflow, currentRun, describeFailure, nodeDetail, pickFlowId, waitingSteps } from '../flows-view.js';
 import FlowSidebar from '../components/FlowSidebar.jsx';
 import FlowHeader, { FlowAttention } from '../components/FlowHeader.jsx';
@@ -9,6 +8,8 @@ import FlowWorkflow from '../components/FlowWorkflow.jsx';
 import FlowSidePanel from '../components/FlowSidePanel.jsx';
 import FlowRuns from '../components/FlowRuns.jsx';
 import FlowForm from '../components/FlowForm.jsx';
+import FlowTerminals from '../components/FlowTerminals.jsx';
+import { flowTerminalTabs } from '../flow-terminals.js';
 import { Icon } from '../components/ui.jsx';
 
 const SEL_KEY = 'forge.flows.selected';
@@ -17,10 +18,10 @@ const readSel = () => { try { return localStorage.getItem(SEL_KEY) || null; } ca
 /**
  * Missões v2: lista por workspace à esquerda; no centro o cabeçalho e o WORKFLOW (um nó por etapa, cada uma executada por um agente num terminal real do Cockpit);
  * à direita, o painel do nó selecionado. Tudo vem de /api/flows (polling ~2,5 s): nada é simulado; o que o servidor não informa aparece como "não informado".
- * O ciclo Planner/Executor antigo não é mais usado aqui (o código do servidor fica dormente). `data` (as missões antigas) chega do App e é ignorado.
+ * O ciclo Planner/Executor antigo não é mais usado aqui (o código do servidor fica dormente). `data` = o resultado de useFlows, que o App mantém (um só polling para a página e para a barra lateral).
  */
-export default function Missions({ onOpenCockpit }) {
-  const { flows, failure, refresh, actions } = useFlows();
+export default function Missions({ onOpenCockpit, data, stream = null }) {
+  const { flows, failure, refresh, actions } = data; // o App mantém um único polling de /api/flows (também usado pelo indicador da barra lateral)
   const { workspaces, state, terminals, notify } = useStore();
   const [selectedId, setSelectedId] = useState(readSel), [nodeId, setNodeId] = useState(null);
   const [form, setForm] = useState(null); // null | { mode: 'create' } | { mode: 'edit', flow }
@@ -77,8 +78,11 @@ export default function Missions({ onOpenCockpit }) {
     if (!flow || !window.confirm(`Excluir a missão “${flow.title}”? O histórico de execuções dela também sai.`)) return undefined;
     return run_('remove', () => actions.remove(flow.id), 'Missão excluída.').then(() => { setNodeId(null); });
   };
-  // Abre o Cockpit no workspace da missão; o terminal vai junto quando há um id.
-  const openTerminal = (terminalId) => onOpenCockpit(flow?.workspaceId ?? null, typeof terminalId === 'string' ? terminalId : null);
+  // Terminais da missão: abrem num dock aqui mesmo (abaixo do workflow), separados dos terminais do Cockpit.
+  const [dockOpen, setDockOpen] = useState(false), [dockWanted, setDockWanted] = useState(null);
+  const tabs = useMemo(() => (flow ? flowTerminalTabs(flow, terminals?.sessions) : []), [flow, terminals?.sessions]);
+  useEffect(() => { setDockOpen(false); setDockWanted(null); }, [selectedId]); // cada missão começa com o dock recolhido
+  const openTerminal = (terminalId) => { setDockWanted(typeof terminalId === 'string' ? terminalId : null); setDockOpen(true); };
 
   const submitForm = async (body) => {
     if (form?.mode === 'edit') { await actions.update(form.flow.id, body); notify('Missão atualizada.'); }
@@ -90,7 +94,7 @@ export default function Missions({ onOpenCockpit }) {
   return (
     <div className={`fl-page${detail ? ' has-panel' : ''}`}>
       <FlowSidebar flows={flows} workspaces={workspaces ?? []} selectedId={selectedId} onPick={select} onNew={() => setForm({ mode: 'create' })} failure={failure} />
-      <div className="fl-main">
+      <div className={`fl-main${flow && stream && tabs.length > 0 ? ' has-dock' : ''}`}>
         {flows === null ? (
           <div className="fl-center"><p className={`fl-note${unavailable ? ' err' : ''}`} role="status">{unavailable ? failure.message : 'Carregando…'}</p></div>
         ) : !flow ? (
@@ -101,13 +105,16 @@ export default function Missions({ onOpenCockpit }) {
             <button type="button" className="fl-btn fl-btn-primary" onClick={() => setForm({ mode: 'create' })}><Icon name="plus" size={13} /><span>Nova missão</span></button>
           </div>
         ) : (
-          <div className="fl-center">
+          <>
+          <div className="fl-scroll"><div className="fl-center">
             {failure && <p className="fl-note err" role="status">{failure.message}</p>}
             <FlowHeader flow={flow} workspaceName={workspaceName} now={now} busy={busy} onStart={onStart} onCancel={onCancel} onEdit={() => setForm({ mode: 'edit', flow })} onRemove={onRemove} onPickStep={pickNode} />
             <FlowAttention items={waiting} onOpenTerminal={openTerminal} />
             <FlowWorkflow key={flow.id} workflow={workflow} selectedId={nodeId} onSelect={pickNode} />
             <FlowRuns key={`runs-${flow.id}`} flow={flow} now={now} />
-          </div>
+          </div></div>
+          {stream && <FlowTerminals tabs={tabs} open={dockOpen && tabs.length > 0} wanted={dockWanted} onWanted={setDockWanted} onOpen={openTerminal} onClose={() => setDockOpen(false)} stream={stream} />}
+          </>
         )}
       </div>
       {detail && <FlowSidePanel key={flow.id} detail={detail} onClose={closePanel} onOpenTerminal={openTerminal} />}

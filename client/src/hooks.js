@@ -49,3 +49,9 @@ export function useAutoRestore() {
   const prefs = useSyncExternalStore(subscribePrefs, getPrefs, () => DEFAULT_PREFS);
   return [prefs.autoRestore !== false, (v) => setPref('autoRestore', !!v)];
 }
+
+// Abrir o painel Live sozinho quando a equipe começa a trabalhar: preferência (padrão ligada) guardada no servidor como as demais; ligada nas Configurações, lida pelo App.
+export function useAutoOpenPref() {
+  const prefs = useSyncExternalStore(subscribePrefs, getPrefs, () => DEFAULT_PREFS);
+  return [prefs.liveAutoOpen !== false, (v) => setPref('liveAutoOpen', !!v)];
+}

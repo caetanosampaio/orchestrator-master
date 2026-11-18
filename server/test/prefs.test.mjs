@@ -9,7 +9,17 @@ test('sanitizePrefs: qualquer entrada vira um objeto completo e válido', () => 
   assert.equal(p.name.length <= 40, true); assert.ok(!/[‮\u0007]/.test(p.name), 'sem controles nem bidi'); assert.match(p.name, /^Ana/);
   assert.equal(p.isolate, false, 'só o booleano true liga'); assert.equal(p.role, DEFAULT_PREFS.role, 'papel fora do padrão ^[a-z]{1,20}$'); assert.equal(p.fontSize, FONT_RANGE.max); assert.equal(p.motion, 'auto');
   assert.equal(sanitizePrefs({ fontSize: 3 }).fontSize, FONT_RANGE.min); assert.equal(sanitizePrefs({ fontSize: 14.6 }).fontSize, 15); assert.equal(sanitizePrefs({ fontSize: 'abc' }).fontSize, DEFAULT_PREFS.fontSize);
-  assert.deepEqual(sanitizePrefs({ isolate: true, role: 'reviewer', motion: 'reduced', fontSize: 16, name: 'Bia' }), { name: 'Bia', isolate: true, role: 'reviewer', provider: 'claude', autoRestore: true, fontSize: 16, motion: 'reduced', setupDone: false });
+  assert.deepEqual(sanitizePrefs({ isolate: true, role: 'reviewer', motion: 'reduced', fontSize: 16, name: 'Bia' }), { name: 'Bia', isolate: true, role: 'reviewer', provider: 'claude', autoRestore: true, liveAutoOpen: true, fontSize: 16, motion: 'reduced', setupDone: false });
+});
+
+test('liveAutoOpen: padrão ligado; só um false explícito desliga; chave existe nas preferências sincronizadas', () => {
+  assert.equal(DEFAULT_PREFS.liveAutoOpen, true);
+  assert.equal(sanitizePrefs({}).liveAutoOpen, true);
+  assert.equal(sanitizePrefs({ liveAutoOpen: false }).liveAutoOpen, false);
+  for (const v of ['false', 0, null, 'sim', undefined, {}]) assert.equal(sanitizePrefs({ liveAutoOpen: v }).liveAutoOpen, true, `valor fora do tipo (${JSON.stringify(v)}) volta ao padrão`);
+  setPref('liveAutoOpen', false); assert.equal(getPrefs().liveAutoOpen, false);
+  setPref('liveAutoOpen', 'qualquer'); assert.equal(getPrefs().liveAutoOpen, true, 'não booleano volta ao padrão (sanitizado)');
+  setPref('liveAutoOpen', true); assert.equal(getPrefs().liveAutoOpen, true);
 });
 
 test('setPref: valida, notifica quem escuta e ignora chaves desconhecidas (funciona sem localStorage)', () => {

@@ -91,8 +91,8 @@ test('sem barra superior: a navegação (Início, Missões, Terminais, Sessões)
   assert.ok(!fs.existsSync(new URL('../../client/src/components/WorkspaceTabs.jsx', import.meta.url))); assert.ok(!/ActivityDrawer/.test(app) && !fs.existsSync(new URL('../../client/src/components/ActivityDrawer.jsx', import.meta.url)));
   assert.match(sb, /onClick=\{\(\) => \{ onView\('home'\);/); assert.match(sb, /onClick=\{\(\) => \{ onView\('missions'\);/); assert.match(sb, /onClick=\{\(\) => \{ onView\('cockpit'\);/);
   assert.ok(sb.indexOf('label="Início"') < sb.indexOf('label="Missões"') && sb.indexOf('label="Missões"') < sb.indexOf('label="Terminais"'), 'Início, Missões e Terminais, nessa ordem');
-  assert.match(sb, /waitingMissions > 0 \? <span className="fx-chip warn"/, 'missão esperando aprovação: contador em destaque'); assert.match(ui, /briefcase: 'M4 8h16/);
-  assert.match(app, /view, onView: goView, missions: missionsData\.missions/);
+  assert.match(sb, /flowsActivity\(flows, \{ seenAt: view === 'missions' \? Infinity : flowsSeenAt \}\)/, 'o indicador de Missões vem do estado real das missões (flows)'); assert.match(sb, /<StatusGlyph state=\{fa\.state\} size=\{12\} \/>/, 'missão trabalhando, aguardando você, falhou ou concluída: glifo de estado em tempo real'); assert.match(ui, /briefcase: 'M4 8h16/);
+  assert.match(app, /view, onView: goView, flows: flowsData\.flows, flowsSeenAt/); // a sidebar recebe o estado real das missões (flows), não mais as missões do ciclo antigo
 });
 
 test('janela do app no macOS: sem barra nativa, a marca Forge fica no topo da barra lateral com espaço para os botões da janela e área de arrastar; nas Configurações a faixa própria faz esse papel; o preload só expõe plataforma e versão', async () => {

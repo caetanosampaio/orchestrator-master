@@ -1,13 +1,12 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { edgePath } from './MissionWorkflow.jsx';
-import { NOT_INFORMED } from '../flows-view.js';
+import { edgePathDown, NOT_INFORMED } from '../flows-view.js';
 
-// Workflow da missão v2: pipeline em fases (esquerda -> direita) de nós compactos, um por etapa, mais o nó de ENTREGA. Reaproveita o desenho do MissionWorkflow
-// (classes mwf-*, conectores ortogonais medidos a partir dos nós reais); aqui a entrada é `buildWorkflow(flow, run)` de flows-view.js. Nada é simulado.
-// Ramos paralelos = nós na mesma coluna. `waiting` ("aguardando você") ganha destaque próprio (classe fl-wait) além do âmbar do estado.
+// Workflow da missão v2: pipeline em fases de CIMA PARA BAIXO, com nós compactos, um por etapa, mais o nó de ENTREGA. Reaproveita o estilo do MissionWorkflow
+// (classes mwf-*); os conectores saem da base de cada nó e descem até o topo dos que dependem dele, medidos a partir dos nós reais. A entrada é `buildWorkflow(flow, run)`
+// de flows-view.js. Nada é simulado. Ramos paralelos = nós lado a lado na mesma fase (mesma linha). `waiting` ("aguardando você") ganha destaque próprio (classe fl-wait) além do âmbar do estado.
 
 const TONE_CLASS = { idle: 'idle', work: 'working', wait: 'approval', ok: 'completed', err: 'attention', skip: 'idle', cancel: 'cancelled' };
-const GAP = 48, ANCHOR = 16;
+const GAP = 44; // altura do corredor entre fases (igual ao `gap` de .fl-wf .mwf-stage em flows.css): o conector anda na horizontal no meio dele
 const reducedMotion = () => document.documentElement.dataset.motion === 'reduced' || !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 const pad2 = (n) => String(n).padStart(2, '0');
 
@@ -65,23 +64,18 @@ export default function FlowWorkflow({ workflow, selectedId, onSelect }) {
     return () => ro?.disconnect();
   }, [workflow]);
 
-  // Mantém à vista o nó que espera você (ou o que trabalha), rolando só o viewport do workflow (nunca a página).
+  // Mantém à vista o nó que espera você (ou o que trabalha): rola só o mínimo necessário, e só quando esse nó muda.
   const activeId = useMemo(() => (nodes.find((n) => n.state === 'waiting') ?? nodes.find((n) => n.state === 'running'))?.id ?? null, [nodes]);
   useEffect(() => {
-    const vp = viewport.current, el = activeId ? els.current.get(activeId) : null;
-    if (!vp || !el || vp.scrollWidth <= vp.clientWidth) return;
-    const start = el.offsetLeft, end = el.offsetLeft + el.offsetWidth, view = vp.clientWidth;
-    let left = vp.scrollLeft;
-    if (end + GAP > left + view) left = end + GAP - view;
-    if (start < left) left = Math.max(0, start - 16);
-    if (left !== vp.scrollLeft) vp.scrollTo({ left, behavior: reducedMotion() ? 'auto' : 'smooth' });
+    const el = activeId ? els.current.get(activeId) : null;
+    if (el) el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: reducedMotion() ? 'auto' : 'smooth' });
   }, [activeId]);
 
   const paths = useMemo(() => edges.map((e) => {
     const a = geom.rects[e.from], b = geom.rects[e.to];
     if (!a || !b) return null;
-    const x1 = a.x + a.w, y1 = a.y + ANCHOR, x2 = b.x, y2 = b.y + ANCHOR, mx = Math.round(x2 - GAP / 2) + 0.5;
-    return { ...e, d: edgePath(x1, y1, x2 - 5, y2, mx), x2, y2 };
+    const x1 = Math.round(a.x + a.w / 2) + 0.5, y1 = a.y + a.h, x2 = Math.round(b.x + b.w / 2) + 0.5, y2 = b.y, my = Math.round(y2 - GAP / 2) + 0.5;
+    return { ...e, d: edgePathDown(x1, y1, x2, y2 - 5, my), x2, y2 };
   }).filter(Boolean), [edges, geom]);
 
   if (!nodes.length) return <div className="mwf-root mwf-empty" role="group" aria-label="Workflow da missão"><p>Esta missão não tem etapas.</p></div>;
@@ -94,18 +88,20 @@ export default function FlowWorkflow({ workflow, selectedId, onSelect }) {
             {paths.map((p) => (
               <g key={p.id} className={`mwf-edge mwf-e-${p.state}${p.reuse ? ' fl-reuse' : ''}`}>
                 <path d={p.d} />
-                <path className="mwf-arrow" d={`M ${p.x2} ${p.y2} l -5 -3 v 6 z`} />
+                <path className="mwf-arrow" d={`M ${p.x2} ${p.y2} l -3 -5 h 6 z`} />
               </g>
             ))}
           </svg>
           {columns.map((c) => (
-            <section key={c.col} className="mwf-col" aria-label={c.label}>
-              <header className="mwf-col-h">
+            <section key={c.col} className="mwf-col fl-phase" aria-label={c.label}>
+              <header className="mwf-col-h fl-phase-h">
                 <span className="mwf-col-n">{pad2(c.index)}</span>
                 <span className="mwf-col-l">{c.label}</span>
                 {c.parallel > 1 && <span className={`mwf-chip mwf-par${c.live > 1 ? ' live' : ''}`} title={`${c.parallel} etapas sem dependência entre si${c.live > 1 ? `; ${c.live} ativas agora` : ''}`}>×{c.parallel}</span>}
               </header>
-              {c.list.map((n) => <Node key={n.id} node={n} selected={n.id === selectedId} onSelect={onSelect} register={register} delay={(c.index - 1) * 40} />)}
+              <div className="fl-phase-nodes">
+                {c.list.map((n) => <Node key={n.id} node={n} selected={n.id === selectedId} onSelect={onSelect} register={register} delay={(c.index - 1) * 40} />)}
+              </div>
             </section>
           ))}
         </div>

@@ -7,7 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   NOT_INFORMED, FLOW_STATES, FLOW_STATE_META, STEP_STATE_META, currentRun, flowState, flowProgress, waitingSteps, flowRows, groupFlows, pickFlowId,
-  buildWorkflow, workflowColumns, nodeDetail, historyRows, fmtDuration, fmtWhen, spanMs, runDuration, describeFailure, roleLabel, providerLabel,
+  flowsActivity, edgePathDown, buildWorkflow, workflowColumns, nodeDetail, historyRows, fmtDuration, fmtWhen, spanMs, runDuration, describeFailure, roleLabel, providerLabel,
   emptyDraft, addStep, removeStep, patchStep, toggleDependency, ancestorKeys, flowToDraft, validateDraft, draftToBody, MAX_STEPS,
 } from '../../client/src/flows-view.js';
 
@@ -307,4 +307,49 @@ test('estilo e componentes: sem brilho, movimento respeita data-motion e o aviso
   assert.match(form, /aria-describedby="fl-access-warn"/);
   const panel = fs.readFileSync(path.join(here, '../../client/src/components/FlowSidePanel.jsx'), 'utf8');
   assert.match(panel, /'Escape'/);
+});
+
+test('indicador da barra lateral: aguardando > trabalhando > falhou/concluída (só depois de seenAt); arquivada e sem run não contam', () => {
+  const T1 = '2026-11-16T11:00:00.000Z', seen = Date.parse(T0);
+  const working = flow({ id: 'a', activeRun: run([rs('s1', 'running')]) });
+  const waiting = flow({ id: 'b', activeRun: run([rs('s1', 'waiting')]) });
+  const done = flow({ id: 'c', lastRun: run([rs('s1', 'completed')], { status: 'completed', finishedAt: T1 }) });
+  const failed = flow({ id: 'd', lastRun: run([rs('s1', 'failed')], { status: 'failed', finishedAt: T1 }) });
+  assert.deepEqual(flowsActivity(null), { state: null, count: 0, working: 0, waiting: 0, failed: 0, done: 0, title: '' });
+  assert.equal(flowsActivity([flow()]).state, null, 'sem run = nada a mostrar');
+  const a = flowsActivity([working], { seenAt: seen });
+  assert.equal(a.state, 'working'); assert.equal(a.count, 1); assert.equal(a.title, '1 missão em execução');
+  const b = flowsActivity([working, waiting, done], { seenAt: seen });
+  assert.equal(b.state, 'waiting', 'quem pede você vence'); assert.equal(b.title, '1 missão aguardando você · 1 missão em execução · 1 missão concluída');
+  assert.equal(flowsActivity([done], { seenAt: seen }).state, 'done');
+  assert.equal(flowsActivity([done, failed], { seenAt: seen }).state, 'failed', 'falha vence a conclusão');
+  assert.equal(flowsActivity([done, failed], { seenAt: Date.parse(T1) }).state, null, 'já vista (seenAt >= fim do run): some');
+  assert.equal(flowsActivity([done, failed], { seenAt: Infinity }).state, null, 'na página Missões nada é pendente');
+  assert.equal(flowsActivity([flow({ archived: true, activeRun: run([rs('s1', 'running')]) })]).state, null, 'arquivada não conta');
+  assert.equal(flowsActivity([working], { seenAt: Infinity }).state, 'working', 'trabalhando aparece sempre, mesmo na página');
+  assert.equal(flowsActivity([working, flow({ id: 'e', activeRun: run([rs('s1', 'running')]) })]).title, '2 missões em execução');
+});
+
+test('a barra lateral mostra o estado das Missões (flows) em qualquer página; um só polling serve a página e a sidebar', () => {
+  const src = (f) => fs.readFileSync(path.join(here, '../../client/src', f), 'utf8');
+  const app = src('App.jsx'), sb = src('components/Sidebar.jsx'), page = src('pages/Missions.jsx');
+  for (const t of ['const flowsData = useFlows({ intervalMs: 2500 })', 'flows: flowsData.flows, flowsSeenAt', '<Missions onOpenCockpit={openCockpit} data={flowsData} stream={termStream} />']) assert.ok(app.includes(t), t);
+  for (const t of ["flowsActivity(flows, { seenAt: view === 'missions' ? Infinity : flowsSeenAt })", '<StatusGlyph state={fa.state}', 'role="status" aria-label={fa.title}']) assert.ok(sb.includes(t), t);
+  assert.ok(!page.includes("from '../use-flows.js'") && !page.includes('useFlows('), 'a página recebe os dados do App (sem um segundo polling)');
+});
+
+test('conector do workflow: desce da base do pai, anda na horizontal no corredor e desce ao topo do filho (nunca sai de lado)', () => {
+  assert.equal(edgePathDown(100, 50, 100, 120, 100), 'M 100 50 V 120', 'mesmo eixo: reta vertical');
+  const d = edgePathDown(100, 50, 300, 120, 98);
+  assert.ok(d.startsWith('M 100 50 V '), 'começa descendo da base do pai'); assert.ok(d.includes(' H '), 'anda na horizontal no corredor'); assert.ok(d.endsWith('V 120'), 'termina descendo até o topo do filho');
+  assert.ok(!/H 100 /.test(d.slice(0, 12)), 'não sai na horizontal logo na origem');
+  const left = edgePathDown(300, 50, 100, 120, 98);
+  assert.ok(left.includes(' H ') && left.endsWith('V 120'), 'filho à esquerda também desce');
+  assert.ok(!d.includes('NaN') && !left.includes('NaN') && !edgePathDown(100, 50, 101, 52, 51).includes('NaN'), 'sem NaN mesmo com pouco espaço');
+});
+
+test('FlowWorkflow desenha as fases uma abaixo da outra (sem rolagem lateral nem conector saindo do lado direito do nó)', () => {
+  const w = fs.readFileSync(path.join(here, '../../client/src/components/FlowWorkflow.jsx'), 'utf8'), css = fs.readFileSync(path.join(here, '../../client/src/flows.css'), 'utf8');
+  assert.ok(w.includes('edgePathDown(') && w.includes('y1 = a.y + a.h') && !w.includes('scrollLeft') && !w.includes("from './MissionWorkflow.jsx'"));
+  assert.ok(/.fl-wf .mwf-stage { flex-direction: column;/.test(css) && css.includes('.fl-phase-nodes'));
 });

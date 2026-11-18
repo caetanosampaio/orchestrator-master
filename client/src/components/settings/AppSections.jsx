@@ -29,6 +29,9 @@ export function GeneralSection() {
       <Row title="Isolar novos terminais em worktree" hint="Cada terminal trabalha numa branch Git própria, sem pisar nos arquivos dos outros. Exige repositório Git.">
         <Switch checked={prefs.isolate} onChange={(v) => setPref('isolate', v)} label="Isolar novos terminais em worktree" />
       </Row>
+      <Row title="Abrir o painel Live sozinho" hint="Quando uma missão ou a equipe do workspace começa a trabalhar, o painel Live abre sozinho (com o preview e os arquivos em construção). Não abre se você o fechou durante o mesmo trabalho.">
+        <Switch checked={prefs.liveAutoOpen !== false} onChange={(v) => setPref('liveAutoOpen', v)} label="Abrir o painel Live quando a equipe começar a trabalhar" />
+      </Row>
       <Row title="Setup do primeiro uso" hint="Mostra de novo a forja animada com os passos de ferramentas, conta e primeiro workspace.">
         <button type="button" className="btn" onClick={() => setPref('setupDone', false)} disabled={!prefs.setupDone}>{prefs.setupDone ? 'Refazer o setup' : 'Setup aberto'}</button>
       </Row>

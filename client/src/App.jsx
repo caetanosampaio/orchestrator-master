@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Sidebar from './components/Sidebar.jsx';
 import StatusBar from './components/StatusBar.jsx';
 import DesktopTitleBar, { desktopInfo } from './components/DesktopTitleBar.jsx';
@@ -12,6 +12,10 @@ import SessionsDialog from './components/SessionsDialog.jsx';
 import { useStore } from './store.jsx';
 import { nav } from './api.js';
 import { useMissions } from './use-missions.js';
+import { useFlows } from './use-flows.js';
+import { createTerminalStream } from './terminal-stream.js';
+import { flowTerminalIds } from './flow-terminals.js';
+import { useLiveAutoOpen } from './use-live.js';
 import { usePrefs, useUi } from './hooks.js';
 import PrereqModal from './components/PrereqModal.jsx';
 import { Icon, PersistenceNote } from './components/ui.jsx';
@@ -35,7 +39,8 @@ export default function App() {
   // conveniências por navegador (o servidor não precisa saber): painel Live aberto e barra lateral recolhida
   const [liveOpen, setLiveOpen] = useState(() => { try { return localStorage.getItem('forge.live.open') !== '0'; } catch { return true; } });
   const [sideHidden, setSideHidden] = useState(() => { try { return localStorage.getItem('forge.side.hidden') === '1'; } catch { return false; } });
-  const toggleLive = useCallback(() => setLiveOpen((o) => { try { localStorage.setItem('forge.live.open', o ? '0' : '1'); } catch { /* local */ } return !o; }), []);
+  const [liveHint, setLiveHint] = useState(null); // 'build' = o painel abriu sozinho por causa de uma missão (abre na aba Construção); some assim que o usuário abre/fecha o painel
+  const toggleLive = useCallback(() => { setLiveHint(null); setLiveOpen((o) => { try { localStorage.setItem('forge.live.open', o ? '0' : '1'); } catch { /* local */ } return !o; }); }, []);
   const toggleSide = useCallback(() => { setSideHidden((h) => { try { localStorage.setItem('forge.side.hidden', h ? '0' : '1'); } catch { /* local */ } return !h; }); setTimeout(() => window.dispatchEvent(new Event('resize')), 220); }, []);
   const [focusReq, setFocusReq] = useState(null); // terminal clicado na sidebar: o Cockpit o amplia assim que ele é do workspace aberto
   const desktop = desktopInfo()?.platform === 'darwin';
@@ -45,10 +50,20 @@ export default function App() {
   const narrow = useNarrow();
   const menuRef = useRef(null);
   const [prefs] = usePrefs();
-  const { error, toast, state, openWorkspaceIds, act, workspaces } = useStore();
+  const { error, toast, state, openWorkspaceIds, act, workspaces, terminals, workingIds } = useStore();
   const [view, setView] = useState(() => (location.hash.startsWith('#/settings') ? 'settings' : location.hash.startsWith('#/missions') ? 'missions' : location.hash.startsWith('#/cockpit') ? 'cockpit' : 'home')); // página: 'home' (Início, a de abertura: #/ ou #/home) | 'cockpit' (terminais) | 'missions' (central de missões) | 'settings' (Configurações; #/settings: link antigo)
   const backTo = useRef(view === 'settings' ? 'home' : view); // de onde as Configurações foram abertas: o "Voltar" retorna para lá
   const missionsData = useMissions({ intervalMs: view === 'missions' ? 2500 : 6000 }); // mais devagar fora da página: só alimenta o indicador do botão Missions
+  // Missões v2 (flows): um único polling serve a página Missões e o indicador da barra lateral (visível em qualquer página). `flowsSeenAt` = quando você viu Missões pela última vez: run que termina depois disso aparece como "concluída/falhou" na sidebar até você abrir a página.
+  const flowsData = useFlows({ intervalMs: 2500 });
+  const [flowsSeenAt, setFlowsSeenAt] = useState(() => Date.now());
+  useEffect(() => { if (view === 'missions') setFlowsSeenAt(Date.now()); }, [view, flowsData.flows]);
+  const flowTermIds = useMemo(() => flowTerminalIds(flowsData.flows), [flowsData.flows]); // terminais das missões: só aparecem na página Missões
+  // Painel Live abre sozinho quando a equipe do workspace aberto começa a trabalhar (preferência liveAutoOpen). Só setLiveOpen: NÃO grava forge.live.open, não usa focus() nem rola a página.
+  const autoOpenLive = useCallback(({ mission }) => { setLiveHint(mission ? 'build' : null); setLiveOpen(true); }, []);
+  useLiveAutoOpen({ wsId: state?.activeWorkspace?.id ?? null, flows: flowsData.flows, sessions: terminals?.sessions, workingIds, liveOpen, open: autoOpenLive });
+  const termStream = useMemo(() => createTerminalStream(), []); // UMA conexão SSE de terminais para o Cockpit e para o dock da página Missões (o servidor limita as conexões)
+  useEffect(() => () => termStream.close(), [termStream]);
   const goView = useCallback((v) => { setView(v); setNavOpen(false); history.replaceState(null, '', v === 'missions' ? '#/missions' : v === 'settings' ? '#/settings' : v === 'cockpit' ? '#/cockpit' : location.pathname + location.search); }, []); // Início = sem hash (é o padrão)
   /** "Terminais" de uma missão: abre e ativa o workspace dela e volta ao Cockpit. */
   const openCockpit = useCallback(async (workspaceId) => {
@@ -74,7 +89,7 @@ export default function App() {
   const closeSettings = useCallback(() => goView(backTo.current === 'settings' ? 'cockpit' : backTo.current), [goView]);
 
   const openSessions = useCallback(() => { setNavOpen(false); setDialog('sessions'); }, []);
-  const side = { onOpenWorkspaces: openWorkspaces, onOpenSessions: openSessions, onOpenSettings: openSettings, view, onView: goView, missions: missionsData.missions, onOpenTerminal: (t) => setFocusReq({ id: t.id, at: Date.now() }), desktop };
+  const side = { onOpenWorkspaces: openWorkspaces, onOpenSessions: openSessions, onOpenSettings: openSettings, view, onView: goView, flows: flowsData.flows, flowsSeenAt, hiddenIds: flowTermIds, onOpenTerminal: (t) => setFocusReq({ id: t.id, at: Date.now() }), desktop };
   const settings = view === 'settings';
   const showSetup = prefs.setupDone !== true && ui.status.state !== 'loading';
   const showSide = !settings && !narrow && !sideHidden;
@@ -98,9 +113,9 @@ export default function App() {
           <main id="main" tabIndex={-1} className="oc-content fx-content">
             {/* O Cockpit fica SEMPRE montado (só escondido nas outras páginas): os terminais não são recriados ao voltar, então rolagem e texto digitado se mantêm.
                 Escondido, o contêiner mede 0 e o terminal não se reajusta (TerminalGrid só ajusta acima de 40px): nenhum redimensionamento vai ao servidor. */}
-            <div className="oc-view fx-view" hidden={view !== 'cockpit'}><Cockpit onOpenWorkspaces={openWorkspaces} onOpenSettings={openSettings} onOpenSessions={openSessions} liveOpen={liveOpen} onToggleLive={toggleLive} narrow={narrow || sideHidden} onMenu={menu} menuIcon={narrow ? 'menu' : 'panel'} focusRequest={focusReq} onFocusHandled={() => setFocusReq(null)} /></div>
+            <div className="oc-view fx-view" hidden={view !== 'cockpit'}><Cockpit stream={termStream} hiddenIds={flowTermIds} flows={flowsData.flows} liveHint={liveHint} liveVisible={view === 'cockpit'} onOpenWorkspaces={openWorkspaces} onOpenSettings={openSettings} onOpenSessions={openSessions} liveOpen={liveOpen} onToggleLive={toggleLive} narrow={narrow || sideHidden} onMenu={menu} menuIcon={narrow ? 'menu' : 'panel'} focusRequest={focusReq} onFocusHandled={() => setFocusReq(null)} /></div>
             {view === 'home' && <div className="fx-view fx-page"><Home onOpenWorkspaces={openWorkspaces} onOpenWorkspace={openCockpit} missions={missionsData.missions} /></div>}
-            {view === 'missions' && <div className="fx-view fx-page"><Missions onOpenCockpit={openCockpit} data={missionsData} /></div>}
+            {view === 'missions' && <div className="fx-view fx-page"><Missions onOpenCockpit={openCockpit} data={flowsData} stream={termStream} /></div>}
             {settings && <Settings key={settingsKey} initial={settingsTab} onClose={closeSettings} onOpenWorkspaces={openWorkspaces} />}
           </main>
         </div>

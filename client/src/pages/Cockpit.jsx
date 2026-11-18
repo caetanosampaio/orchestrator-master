@@ -10,9 +10,10 @@ const readW = () => { try { const n = Number(localStorage.getItem(W_KEY)); retur
  * Cockpit: os terminais dos agentes no centro (abas + grade) e, à direita, o painel Live (preview do localhost e a equipe ao vivo), redimensionável pela borda.
  * UMA conexão SSE de terminais serve os dois: a grade desenha a tela, o painel lê a cauda (URLs locais e última linha de cada agente).
  */
-export default function Cockpit({ liveOpen = false, onToggleLive = null, ...props }) {
-  const stream = useMemo(() => createTerminalStream(), []);
-  useEffect(() => () => stream.close(), [stream]);
+export default function Cockpit({ liveOpen = false, onToggleLive = null, stream: shared = null, flows = null, liveHint = null, liveVisible = true, ...props }) {
+  const own = useMemo(() => (shared ? null : createTerminalStream()), [shared]); // o App passa a conexão compartilhada com a página Missões; sem ela o Cockpit abre a sua
+  useEffect(() => () => own?.close(), [own]);
+  const stream = shared ?? own;
   const [w, setW] = useState(readW);
   const drag = useRef(null);
   // abrir/fechar ou redimensionar o painel muda a largura dos terminais: avisa o xterm para se reajustar
@@ -42,7 +43,7 @@ export default function Cockpit({ liveOpen = false, onToggleLive = null, ...prop
       <div className="fx-center"><TerminalGrid {...props} stream={stream} liveOpen={liveOpen} onToggleLive={onToggleLive} /></div>
       {liveOpen && <>
         <div className="fx-live-gutter" role="separator" aria-orientation="vertical" aria-label="Redimensionar o painel Live" tabIndex={0} onPointerDown={onDown} onKeyDown={onKey} onDoubleClick={() => { setW(W_DEF); try { localStorage.removeItem(W_KEY); } catch { /* local */ } }} title="Arraste para redimensionar (duplo clique restaura)" />
-        <LivePanel stream={stream} onClose={onToggleLive} />
+        <LivePanel stream={stream} onClose={onToggleLive} flows={flows} openHint={liveHint} visible={liveVisible} />
       </>}
     </div>
   );

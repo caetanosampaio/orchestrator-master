@@ -20,6 +20,7 @@ import SquadGallery from './SquadGallery.jsx';
 import { useSquads } from '../use-squads.js';
 import { launchPlan } from '../squads.js';
 import { PRESETS } from '../team-view.js';
+import { withoutFlowTerminals } from '../flow-terminals.js';
 
 // Presets de equipe (team-view.js): o mesmo fluxo abre 2, 4 ou 6 terminais do Claude Code em paralelo, cada um com o seu papel. Os ids gravados continuam duo/squad/full; só o rótulo do squad de quatro virou "Squad".
 export const SQUADS = PRESETS.filter((p) => p.id !== 'builder');
@@ -30,7 +31,7 @@ const THEME = { background: '#1c1c1c', foreground: '#d6d6d6', cursor: '#e8e8e8',
 const STATE_LABEL = { working: 'executando', idle: 'ocioso', done: 'concluído', waiting: 'aguardando', exited: 'encerrado', failed: 'falhou', boot: 'iniciando' };
 
 /** Um pane = um terminal xterm ligado ao PTY do servidor: saída por SSE, entrada e tamanho por POST (nunca WebSocket: passa pela checagem de Host/Origin). */
-function TerminalPane({ session, role, state, waiting, maximized, fontSize, stream, onClose, onMaximize, onFocus }) {
+export function TerminalPane({ session, role, state, waiting, maximized, fontSize, stream, onClose, onMaximize, onFocus }) {
   const { noteInteraction, notify, accounts } = useStore();
   const accTag = accountTagName(session.accountId, accounts); // só contas que não são a Sistema
   const hostRef = useRef(null), termRef = useRef(null), fitRef = useRef(null);
@@ -146,12 +147,13 @@ function TerminalPane({ session, role, state, waiting, maximized, fontSize, stre
         <span className="oc-pgrow" />
         {conn === 'reconnecting' && <span className="fx-pmeta warn" role="status" title="A conexão com os terminais caiu; tentando de novo automaticamente.">reconectando…</span>}
         {accTag && <span className="fx-chip" title={`Conta: ${accTag}`}><span className="sr">Conta: </span>{accTag}</span>}
+        {session.fullAccess === true && <span className="fx-chip warn" title="Acesso total: este agente executa sem pedir confirmação de permissão">acesso total</span>}
         {session.worktreeId && <span className="fx-chip" title={session.branch ? `Worktree próprio na branch ${session.branch}` : 'Roda num worktree próprio'}>{session.branch ? shortCwd(session.branch) : 'worktree'}</span>}
         {hasUse && <span className="fx-pmeta" title={use.title}><span className="sr">Consumo: </span>{use.tokens} tok<span aria-hidden="true"> · </span><span className="sr">custo </span>{use.cost}</span>}
         <span className="fx-pacts">
           {onFocus && <button type="button" className="fx-ibtn sm" onClick={onFocus} aria-label="Colocar este terminal em foco" title="Colocar em foco"><Icon name="fit" size={13} /></button>}
           <button type="button" className="fx-ibtn sm" onClick={onMaximize} aria-label={maximized ? 'Restaurar o terminal' : 'Ampliar o terminal'} title={maximized ? 'Restaurar (duplo clique no cabeçalho)' : 'Ampliar (duplo clique no cabeçalho)'}><Icon name={maximized ? 'restore' : 'fit'} size={13} /></button>
-          <button type="button" className="fx-ibtn sm close" onClick={onClose} aria-label={running ? 'Encerrar o terminal' : 'Remover o terminal'} title={running ? 'Encerrar' : 'Remover'}><Icon name="close" size={13} /></button>
+          {onClose && <button type="button" className="fx-ibtn sm close" onClick={onClose} aria-label={running ? 'Encerrar o terminal' : 'Remover o terminal'} title={running ? 'Encerrar' : 'Remover'}><Icon name="close" size={13} /></button>}
         </span>
       </header>
       <div className="oc-pbody" ref={hostRef}>{running && !started && <div className="oc-boot fx-boot" role="status"><StatusGlyph state="boot" size={14} />Iniciando {session.providerLabel || 'o agente'}…</div>}</div>
@@ -192,7 +194,7 @@ function TermTab({ s, state, on, onPick, onClose }) {
   );
 }
 
-export default function TerminalGrid({ onOpenWorkspaces, onOpenSettings, onOpenSessions, stream: shared = null, liveOpen = false, onToggleLive = null, narrow = false, onMenu = null, menuIcon = 'menu', focusRequest = null, onFocusHandled = null }) {
+export default function TerminalGrid({ onOpenWorkspaces, onOpenSettings, onOpenSessions, stream: shared = null, liveOpen = false, onToggleLive = null, narrow = false, onMenu = null, menuIcon = 'menu', focusRequest = null, onFocusHandled = null, hiddenIds = null }) {
   const { state, notify, terminals, maestro, setMaestro, workingIds, loadTerminals } = useStore();
   const [prefs, setPref] = usePrefs();
   const [busy, setBusy] = useState(false);
@@ -214,7 +216,7 @@ export default function TerminalGrid({ onOpenWorkspaces, onOpenSettings, onOpenS
   const isolate = prefs.isolate;
   const providers = terminals?.providers ?? [];
   const provider = providers.find((p) => p.id === prefs.provider && p.available) ? prefs.provider : 'claude'; // agente padrão ao abrir um terminal sem escolha da vaga (os times de Configurações trazem o agente de cada vaga)
-  const sessions = terminals?.sessions ?? [];
+  const sessions = useMemo(() => withoutFlowTerminals(terminals?.sessions, hiddenIds), [terminals?.sessions, hiddenIds]); // terminais de missões ficam na página Missões, fora desta grade
   // Sessões do workspace + tópico ativos. As demais seguem rodando e MONTADAS (ocultas): trocar de aba ou de tópico nunca encerra nem remonta terminal.
   const topicId = null; // a interface não usa mais tópicos: o workspace mostra todos os terminais dele e os novos nascem sem tópico
   const where = ws?.displayName || ws?.name || '';

@@ -1,0 +1,67 @@
+/* Painel Live: aba Construção (missão, agentes, arquivos) e a fonte "arquivos do projeto" do Preview. Só classes `lv-`; sem brilho.
+   As animações param com "Animações reduzidas" e prefers-reduced-motion (a regra geral de forge.css já cobre .fx-app; aqui só o que é nosso). */
+
+/* ---------- Preview: fonte e estado ---------- */
+.fx-pv-src { margin: -2px 10px 6px; color: var(--dim); font: 400 11.5px/1.4 var(--sans); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fx-pv-src b { color: var(--text); font-weight: 550; }
+.fx-pv-empty .lv-hint { color: var(--faint); font-size: 11.5px; }
+
+/* ---------- Construção ---------- */
+.lv { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 4px 0 12px; }
+.lv-sec { padding: 6px 10px 8px; }
+.lv-sec + .lv-sec { border-top: 1px solid var(--line); }
+.lv-h { display: flex; align-items: center; gap: 6px; min-height: 26px; margin: 0; color: var(--dim); font: 550 11.5px var(--sans); letter-spacing: .02em; text-transform: uppercase; }
+.lv-n { color: var(--faint); font: 500 11px var(--mono); font-variant-numeric: tabular-nums; margin-left: auto; text-transform: none; letter-spacing: 0; }
+.lv-br { color: var(--dim); font: 400 11px var(--mono); text-transform: none; letter-spacing: 0; max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.lv-mt { margin: 2px 0 6px; color: var(--text); font: 550 12.5px var(--sans); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lv-bar { height: 4px; border-radius: 2px; background: rgba(255, 255, 255, .1); overflow: hidden; }
+.lv-bar > i { display: block; height: 100%; background: var(--st-ok); transition: width var(--dur-3) var(--ease); }
+.lv-steps { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.lv-step { display: flex; align-items: center; gap: 7px; min-width: 0; font: 400 12px var(--sans); color: var(--text); }
+.lv-step-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lv-step-s { flex: none; color: var(--dim); font: 400 11px var(--sans); }
+.lv-step.t-work .lv-step-s { color: var(--run-text); }
+.lv-step.t-wait .lv-step-s { color: var(--warn-text); }
+.lv-step.t-err .lv-step-s { color: var(--danger-text); }
+.lv-step.t-ok .lv-step-s, .lv-step.t-idle .lv-step-s, .lv-step.t-skip .lv-step-s, .lv-step.t-cancel .lv-step-s { color: var(--dim); }
+
+.lv-agents { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.lv-ag { min-width: 0; }
+.lv-ag-h { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.lv-ag-h b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font: 550 12.5px var(--sans); }
+.lv-ag-s { margin-left: auto; flex: none; color: var(--faint); font: 400 11px var(--sans); }
+.lv-ag-l { display: block; margin: 2px 0 0 19px; padding: 0 0 0 8px; border: 0; border-left: 1px solid var(--line-strong); border-radius: 0; background: none; color: var(--dim); font: 400 11px/1.5 var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lv-ag.st-working .lv-ag-l { color: var(--text); }
+.lv-ag.st-waiting .lv-ag-l { border-left-color: rgba(240, 140, 58, .5); }
+
+.lv-sum { margin: 2px 0 6px; color: var(--text); font: 500 12px var(--sans); font-variant-numeric: tabular-nums; }
+.lv-sum.err { color: var(--danger-text); }
+.lv-mode { color: var(--faint); font-weight: 400; }
+.lv-msg { margin: 4px 0; color: var(--dim); font-size: 12px; }
+.lv-msg.err { color: var(--danger-text); }
+.lv-files { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.lv-f { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 26px; padding: 2px 4px; border-radius: var(--r-2); }
+.lv-f:hover { background: rgba(255, 255, 255, .035); }
+.lv-mark { flex: none; display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 4px; border: 1px solid currentColor; font: 600 10px/1 var(--mono); }
+.lv-mark.t-ok { color: var(--ok-text); }
+.lv-mark.t-work { color: var(--run-text); }
+.lv-mark.t-err { color: var(--danger-text); }
+.lv-mark.t-wait { color: var(--warn-text); }
+.lv-mark.t-idle { color: var(--dim); }
+.lv-fp { position: relative; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 400 12px var(--mono); }
+.lv-dir { color: var(--faint); }
+.lv-name { color: var(--text); }
+.lv-f.s-deleted .lv-name { text-decoration: line-through; color: var(--dim); }
+.lv-d { flex: none; display: inline-flex; gap: 5px; font: 500 11px var(--mono); font-variant-numeric: tabular-nums; }
+.lv-add { color: var(--ok-text); }
+.lv-rem { color: var(--danger-text); }
+.lv-bin { color: var(--faint); font-weight: 400; }
+.lv-ago { flex: none; width: 5.2em; text-align: right; color: var(--faint); font: 400 11px var(--sans); white-space: nowrap; }
+.lv-more { margin: 4px 4px 0; color: var(--dim); font-size: 11.5px; }
+
+/* estreito: some a coluna do tempo para o caminho caber */
+@media (max-width: 420px) { .lv-ago { display: none; } }
+
+@media (prefers-reduced-motion: reduce) { .lv-bar > i { transition: none; } }
+html[data-motion="reduced"] .lv-bar > i { transition: none; }

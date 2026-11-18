@@ -8,7 +8,8 @@ import ProviderLogo from './ProviderLogo.jsx';
 import StatusGlyph from './StatusGlyph.jsx';
 import PermissionProfileDialog, { ProfileSeal } from './PermissionProfileDialog.jsx';
 import { elapsed, shortPath } from '../forge-shell.js';
-import { missionState } from '../missions-view.js';
+import { flowsActivity } from '../flows-view.js';
+import { withoutFlowTerminals } from '../flow-terminals.js';
 import { logoSvg } from '../forge-logo.mjs';
 
 const BRAND = logoSvg({ variant: 'mark', ink: 'currentColor', stroke: 3 }); // SVG fixo gerado do código (nenhum dado externo entra nele)
@@ -113,7 +114,7 @@ const HomeIcon = () => <svg width={15} height={15} viewBox="0 0 24 24" fill="non
  * (Início, Missões, Terminais, Sessões) e os WORKSPACES em cartões, cada um com os seus terminais aninhados (glifo de estado em tempo real, agente, modelo e tempo).
  * Embaixo, as Configurações e "Arquivos" (abrir, trocar ou adicionar workspace). Em telas estreitas vira uma gaveta modal. Tudo vem de /api/state e /api/terminals.
  */
-export default function Sidebar({ modal = false, onClose, onOpenWorkspaces, onOpenSessions = null, onOpenSettings = null, view = 'cockpit', onView = () => {}, onOpenTerminal = null, missions = null, onCollapse = null, desktop = false }) {
+export default function Sidebar({ modal = false, onClose, onOpenWorkspaces, onOpenSessions = null, onOpenSettings = null, view = 'cockpit', onView = () => {}, onOpenTerminal = null, flows = null, flowsSeenAt = 0, hiddenIds = null, onCollapse = null, desktop = false }) {
   const { workspaces, state, terminals, maestro, workingIds, openWorkspaceIds, act, unseenWs } = useStore();
   const box = useRef(null), searchRef = useRef(null);
   const [editId, setEditId] = useState(null);
@@ -121,7 +122,7 @@ export default function Sidebar({ modal = false, onClose, onOpenWorkspaces, onOp
   const [permEnv, setPermEnv] = useState(null); // workspace cujo perfil de permissão está aberto (diálogo no <body>: a gaveta modal não o prende)
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 30_000); return () => clearInterval(t); }, []);
-  const sessions = terminals?.sessions ?? [];
+  const sessions = useMemo(() => withoutFlowTerminals(terminals?.sessions, hiddenIds), [terminals?.sessions, hiddenIds]); // terminais de missões aparecem na página Missões, não aninhados nos workspaces
   const activeId = state?.activeWorkspace?.id ?? null;
   const envs = useMemo(() => environments({ workspaces, sessions, activeId, workingIds, maestroTasks: maestro?.tasks ?? [], finished: unseenWs }), [workspaces, sessions, activeId, workingIds, maestro, unseenWs]);
   const pending = useMemo(() => pendingPanes(maestro?.tasks ?? []), [maestro]);
@@ -134,7 +135,7 @@ export default function Sidebar({ modal = false, onClose, onOpenWorkspaces, onOp
   const q = query.trim().toLowerCase();
   const shown = q ? envs.filter((e) => e.name.toLowerCase().includes(q) || String(e.path).toLowerCase().includes(q) || (termsOf.get(e.id) ?? []).some((t) => String(t.s.title).toLowerCase().includes(q))) : envs;
   const working = sessions.filter((s) => s.status === 'running' && paneState(s, workingIds, pending) === 'working').length;
-  const ms = Array.isArray(missions) ? missions : [], waitingMissions = ms.filter((m) => missionState(m) === 'approval').length, busyMissions = ms.filter((m) => missionState(m) === 'working').length;
+  const fa = useMemo(() => flowsActivity(flows, { seenAt: view === 'missions' ? Infinity : flowsSeenAt }), [flows, flowsSeenAt, view]); // estado das Missões em tempo real, em qualquer página
 
   // ⌘K / Ctrl+K: foca a busca (de qualquer lugar fora de um campo de texto)
   useEffect(() => {
@@ -194,7 +195,7 @@ export default function Sidebar({ modal = false, onClose, onOpenWorkspaces, onOp
       <nav className="fx-nav" aria-label="Páginas do FORGE">
         <NavItem icon={<HomeIcon />} label="Início" on={view === 'home'} onClick={() => { onView('home'); if (modal) onClose(); }} title="Início: atividade de tokens e workspaces recentes" />
         <NavItem icon={<Icon name="briefcase" size={15} />} label="Missões" on={view === 'missions'} onClick={() => { onView('missions'); if (modal) onClose(); }}
-          badge={waitingMissions > 0 ? <span className="fx-chip warn" title={`${waitingMissions} aguardando aprovação`}>{waitingMissions}</span> : busyMissions > 0 ? <span className="fx-nav-run" title={`${busyMissions} em andamento`}><StatusGlyph state="working" size={12} /></span> : null} />
+          title={fa.title || 'Missões'} badge={fa.state ? <span className={`fx-nav-run is-${fa.state}`} role="status" aria-label={fa.title}><StatusGlyph state={fa.state} size={12} />{fa.count > 1 && <b>{fa.count}</b>}</span> : null} />
         <NavItem icon={<Icon name="terminal" size={15} />} label="Terminais" on={view === 'cockpit'} onClick={() => { onView('cockpit'); if (modal) onClose(); }} title={working ? `${working} terminal(is) trabalhando` : 'Terminais do workspace aberto'}
           badge={working > 0 ? <span className="fx-nav-run" role="status" aria-label={`${working} ${working === 1 ? 'terminal trabalhando' : 'terminais trabalhando'}`}><StatusGlyph state="working" size={12} /><b>{working}</b></span> : null} />
         <NavItem icon={<Icon name="clock" size={15} />} label="Sessões" onClick={() => { onOpenSessions?.(); }} title="Histórico de sessões do workspace aberto, para retomar" />

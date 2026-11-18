@@ -91,6 +91,25 @@ export function flowState(flow) {
   return FLOW_STATE_META[run.status] ? run.status : 'idle';
 }
 
+/**
+ * Resumo para o indicador de Missões na barra lateral (visível em qualquer página). `state`: waiting (alguma etapa espera você) > working (run ativo) > failed / done
+ * (run que terminou depois de `seenAt`, ou seja, enquanto você olhava outra página; some ao abrir Missões) > null (nada a mostrar). Só estado real de /api/flows.
+ */
+export function flowsActivity(flows, { seenAt = 0 } = {}) {
+  const c = { working: 0, waiting: 0, failed: 0, done: 0 };
+  for (const f of arr(flows)) {
+    if (!f || f.archived) continue;
+    const st = flowState(f);
+    if (st === 'running') c.working++;
+    else if (st === 'waiting') c.waiting++;
+    else if ((st === 'failed' || st === 'completed') && ts(currentRun(f)?.finishedAt) > seenAt) c[st === 'failed' ? 'failed' : 'done']++;
+  }
+  const state = c.waiting ? 'waiting' : c.working ? 'working' : c.failed ? 'failed' : c.done ? 'done' : null;
+  const n = (k, one, many) => (c[k] ? [`${c[k]} ${c[k] === 1 ? one : many}`] : []);
+  const parts = [...n('waiting', 'missão aguardando você', 'missões aguardando você'), ...n('working', 'missão em execução', 'missões em execução'), ...n('failed', 'missão falhou', 'missões falharam'), ...n('done', 'missão concluída', 'missões concluídas')];
+  return { state, count: c.waiting || c.working || c.failed || c.done, ...c, title: parts.join(' · ') };
+}
+
 /** { done, total, pct, label, hasRun }. `total` = etapas da definição; `done` = etapas `completed` do run. Sem run: done/pct nulos e label "—/m". */
 export function flowProgress(flow, run = currentRun(flow)) {
   const total = arr(flow?.steps).length || runSteps(run).length;
@@ -197,6 +216,17 @@ export function buildWorkflow(flow, run = currentRun(flow), { roles = FALLBACK_R
   nodes.push({ id: 'delivery', kind: 'delivery', col: Math.max(...nodes.map((n) => n.col)) + 1, row: 0, title: 'Entrega', state: dState, stateLabel: dMeta.label, tone: dMeta.tone, waiting: false, agent: null, terminalId: null, line: dLine, lineKind: dLine ? 'note' : null });
   for (const l of leaves) edges.push({ id: `${l.id}->delivery`, from: l.id, to: 'delivery', state: l.state === 'completed' ? 'done' : l.state === 'failed' ? 'err' : 'idle', reuse: false });
   return { nodes, edges, columns: workflowColumns(nodes), hasRun: !!run };
+}
+
+/**
+ * Conector do workflow de CIMA PARA BAIXO: sai do centro da base do nó de origem (x1, y1), desce até a linha `my` (o corredor entre as fases), anda na horizontal
+ * e desce até o topo do nó de destino (x2, y2). Cantos arredondados de raio até `r`; no mesmo eixo vira uma reta vertical.
+ */
+export function edgePathDown(x1, y1, x2, y2, my, r = 6) {
+  const dx = x2 - x1;
+  if (Math.abs(dx) < 1) return `M ${x1} ${y1} V ${y2}`;
+  const k = Math.min(r, Math.abs(dx) / 2, Math.max(0, (my - y1) / 2), Math.max(0, (y2 - my))), s = Math.sign(dx);
+  return `M ${x1} ${y1} V ${my - k} Q ${x1} ${my} ${x1 + s * k} ${my} H ${x2 - s * k} Q ${x2} ${my} ${x2} ${my + k} V ${y2}`;
 }
 
 /** Colunas (fases) para desenhar: cada uma com seus nós, quantas etapas paralelas há e quantas trabalham/esperam agora. */

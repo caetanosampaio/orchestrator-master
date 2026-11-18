@@ -151,6 +151,9 @@ body.fx-resizing iframe { pointer-events: none; }
 .fx-nav-i:active .fx-nav-ico { transform: scale(.9); }
 .fx-nav-l { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fx-nav-run { display: inline-flex; align-items: center; gap: 5px; color: var(--run-text); font: 600 11px var(--sans); font-variant-numeric: tabular-nums; }
+.fx-nav-run.is-waiting { color: var(--warn-text); }
+.fx-nav-run.is-failed { color: var(--danger-text); }
+.fx-nav-run.is-done { color: var(--ok-text); }
 .fx-sec-h { display: flex; align-items: center; gap: 6px; height: 28px; padding: 6px 4px 0 8px; color: var(--dim); font: 500 12px var(--sans); flex: none; }
 .fx-wslist { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; margin: 0 -4px; padding: 4px 4px 8px; }
 .fx-wslist > ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }

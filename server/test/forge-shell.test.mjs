@@ -77,7 +77,7 @@ test('shell: barra lateral com marca, busca, navegação e workspaces com termin
   assert.match(sb, /<TermRow /, 'os terminais aparecem dentro do cartão do workspace'); assert.match(sb, /onPick=\{pick\}/);
   assert.match(cockpit, /<LivePanel stream=\{stream\}/); assert.match(cockpit, /createTerminalStream\(\)/, 'uma conexão SSE para a grade e o painel');
   assert.match(grid, /stream: shared = null/); assert.match(grid, /className="fx-tabs" role="tablist"/);
-  assert.match(live, /sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads"/); assert.match(live, /referrerPolicy="no-referrer"/);
+  assert.match(live, /"allow-scripts allow-same-origin allow-forms allow-modals allow-downloads"/, 'preview por arquivos do projeto: sem allow-popups'); assert.match(live, /"allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads"/, 'servidor local detectado: como antes'); assert.match(live, /referrerPolicy="no-referrer"/);
   assert.match(live, /safePreviewUrl\(/, 'o iframe só recebe URL validada'); assert.ok(!/allow-top-navigation/.test(live), 'o preview não navega a janela do FORGE');
   assert.match(bar, /untilShort\(/); assert.match(bar, /<ProviderPanel /);
 });
