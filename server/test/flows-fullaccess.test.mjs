@@ -1,4 +1,4 @@
-// Missions v2: opção `fullAccess` dos terminais ("acesso total": sobe sem pedir confirmação de permissão). Só o booleano `true` estrito liga; vale só em sessão NOVA;
+// Missions v2: opção `fullAccess` dos terminais ("acesso total": sobe sem pedir confirmação de permissão). Só o booleano `true` estrito liga; vale em sessão nova e, quando a sessão gravada já tinha acesso total, também na retomada/reabertura (o Claude Code não restaura o bypass);
 // nunca vem do corpo de POST /api/terminals. PTY SIMULADO (nenhum Claude/Codex real), banco temporário (ORCH_DATA_DIR).
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -17,12 +17,12 @@ after(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
 const CLAUDE_FLAG = '--dangerously-skip-permissions', CODEX_FLAG = '--dangerously-bypass-approvals-and-sandbox';
 const ws = path.join(tmp, 'ws'); fs.mkdirSync(ws);
-function world() {
+function world(extra = {}) {
   const spawned = []; let pid = 1_930_000_000, n = 0;
   const lib = { spawn(file, args, opts) { const p = { pid: ++pid, file, args, opts, onData() {}, onExit(cb) { p.exitCb = cb; }, write() {}, resize() {}, exit(code = 0) { p.exitCb({ exitCode: code }); } }; spawned.push(p); return p; } };
   const db = { settings: { activeWorkspaceId: 'ws1' }, workspaces: [{ id: 'ws1', name: 'W', path: ws }], worktrees: [], topics: [] };
   const mgr = T.createTerminalManager({ db, ptyLib: lib, resolveCommand: () => ({ file: '/fake/claude', args: [], viaShell: false }), resolveCommands: { codex: () => ({ file: '/fake/codex', args: [], viaShell: false }) },
-    killTree: () => {}, waitFor: () => true, newSessionId: () => `00000000-0000-4000-8000-${String(++n).padStart(12, '0')}`, inspectConfig: async () => [], persist: () => {} });
+    killTree: () => {}, waitFor: () => true, newSessionId: () => `00000000-0000-4000-8000-${String(++n).padStart(12, '0')}`, inspectConfig: async () => [], persist: () => {}, ...extra });
   return { spawned, db, mgr };
 }
 
@@ -34,7 +34,12 @@ test('claude.paneArgs: a flag só com `true` estrito, só na sessão nova, antes
   assert.equal(on[on.indexOf(CLAUDE_FLAG) + 1], '--model', 'a flag não tem valor: o argumento seguinte continua sendo uma opção');
   for (const v of [false, undefined, null, 'true', 1, 'yes', {}, [], [true], 0, NaN]) assert.ok(!claudeProvider.paneArgs({ mode: 'new', ...base, fullAccess: v }).includes(CLAUDE_FLAG), JSON.stringify(v));
   assert.deepEqual(claudeProvider.paneArgs({ mode: 'new', ...base }), ['--append-system-prompt', 'p', '--name', 'L', '--session-id', 'sid'], 'sem a opção nada muda');
-  for (const mode of ['resume', 'fork']) assert.ok(!claudeProvider.paneArgs({ mode, resumeSessionId: 'old', sessionId: 'sid', fullAccess: true }).includes(CLAUDE_FLAG), mode);
+  // retomada/fork: o Claude Code NÃO restaura o bypass, então o FORGE o repassa quando a sessão gravada tinha acesso total (e só com `true` estrito)
+  for (const mode of ['resume', 'fork']) {
+    const on = claudeProvider.paneArgs({ mode, resumeSessionId: 'old', sessionId: 'sid', fullAccess: true, pluginDir: '/pl' });
+    assert.ok(on.includes(CLAUDE_FLAG), mode); assert.ok(on.indexOf(CLAUDE_FLAG) < on.indexOf('--plugin-dir'), `${mode}: a flag vem antes de plugin/MCP`); assert.equal(on[0], '--resume');
+    for (const v of [false, undefined, null, 'true', 1, {}, [true]]) assert.ok(!claudeProvider.paneArgs({ mode, resumeSessionId: 'old', sessionId: 'sid', fullAccess: v }).includes(CLAUDE_FLAG), `${mode} ${JSON.stringify(v)}`);
+  }
 });
 
 test('codex.paneArgs: `true` estrito troca sandbox+aprovação pela flag exclusiva; qualquer outro valor mantém o modo padrão', () => {
@@ -84,8 +89,71 @@ test('o corpo de POST /api/terminals NUNCA liga o acesso total (a opção é int
   } finally { await new Promise((r) => srv.close(r)); }
 });
 
-test('o histórico de sessões não guarda `fullAccess` (reabrir/retomar nunca herda o acesso total)', async () => {
+test('o registro da sessão grava `fullAccess` só quando a sessão teve acesso total; o histórico para a interface não o expõe', async () => {
   const w = world(); const c = await w.mgr.create({ role: 'builder', fullAccess: true }); assert.equal(c.ok, true);
-  assert.ok(!('fullAccess' in w.db.terminalSessions[0]), 'o registro só tem metadados antigos');
+  assert.equal(w.db.terminalSessions[0].fullAccess, true, 'o registro lembra o acesso total (para a retomada)');
+  const d = await w.mgr.create({ role: 'builder' }); assert.equal(d.ok, true);
+  assert.ok(!('fullAccess' in w.db.terminalSessions[1]), 'sessão comum: nada gravado');
   assert.ok(!JSON.stringify(w.mgr.history()).includes('fullAccess'));
+});
+
+test('reabrir um terminal de missão (servidor parou com ele aberto) mantém o acesso total; o de uma sessão comum continua sem', async () => {
+  const w = world();
+  const full = await w.mgr.create({ role: 'builder', fullAccess: true }), plain = await w.mgr.create({ role: 'builder' }); assert.ok(full.ok && plain.ok);
+  for (const sp of w.spawned.slice(0, 2)) sp.exit(0); // o processo acabou (simula o servidor parar com os terminais abertos)
+  for (const r of w.db.terminalSessions) { r.state = 'interrupted'; r.endedAt = new Date().toISOString(); }
+  const rf = await w.mgr.resume({ recordId: w.db.terminalSessions[0].id, reopen: true }); assert.equal(rf.ok, true, rf.error);
+  assert.ok(w.spawned.at(-1).args.includes(CLAUDE_FLAG), 'o terminal reaberto sobe com a flag'); assert.equal(rf.session.fullAccess, true);
+  const rp = await w.mgr.resume({ recordId: w.db.terminalSessions[1].id, reopen: true }); assert.equal(rp.ok, true, rp.error);
+  assert.ok(!w.spawned.at(-1).args.includes(CLAUDE_FLAG), 'sessão comum reaberta não ganha acesso total'); assert.ok(!rp.session.fullAccess);
+  const fresh = w.db.terminalSessions.find((r) => r.id !== w.db.terminalSessions[0].id && r.fullAccess === true); assert.ok(fresh, 'a sessão nova também lembra o acesso total');
+});
+
+test('Maestro autônomo ligado: todo terminal que abre agora (Cockpit ou missão) sobe com acesso total; desligado, só quem pediu; o corpo da rota continua sem poder ligar', async () => {
+  const st = { on: true };
+  const w = world({ autoFullAccess: () => st.on });
+  const a = await w.mgr.create({ role: 'builder' }); assert.equal(a.ok, true, a.error);
+  assert.ok(w.spawned.at(-1).args.includes(CLAUDE_FLAG), 'claude comum abre com a flag'); assert.equal(a.session.fullAccess, true); assert.ok(!('fullAccess' in w.db.terminalSessions[0]), 'o que o autônomo liga não é gravado: vale o estado do autônomo a cada abertura');
+  const x = await w.mgr.create({ role: 'builder', provider: 'codex' }); assert.equal(x.ok, true, x.error);
+  assert.ok(w.spawned.at(-1).args.includes(CODEX_FLAG), 'codex novo também'); assert.equal(x.session.fullAccess, true);
+  st.on = false;
+  const b = await w.mgr.create({ role: 'builder' }); assert.equal(b.ok, true, b.error);
+  assert.ok(!w.spawned.at(-1).args.includes(CLAUDE_FLAG), 'desligado: sem a flag'); assert.equal(b.session.fullAccess, false); assert.ok(!('fullAccess' in w.db.terminalSessions[2]));
+  assert.equal(w.mgr.get(a.session.id).fullAccess, true, 'o terminal que já estava aberto não muda de modo');
+  const c = await w.mgr.create({ role: 'builder', fullAccess: true }); assert.equal(c.ok, true); assert.ok(w.spawned.at(-1).args.includes(CLAUDE_FLAG), 'a missão com acesso total continua independente do autônomo');
+});
+
+test('autoFullAccess com defeito (lança) ou devolvendo algo que não é true estrito nunca liga o acesso total', async () => {
+  for (const fn of [() => { throw new Error('x'); }, () => 'true', () => 1, () => ({}), () => undefined, () => null]) {
+    const w = world({ autoFullAccess: fn }); const r = await w.mgr.create({ role: 'builder' }); assert.equal(r.ok, true, r.error);
+    assert.ok(!w.spawned.at(-1).args.includes(CLAUDE_FLAG)); assert.equal(r.session.fullAccess, false);
+  }
+});
+
+test('Maestro autônomo e a reabertura: sessão comum reaberta com o autônomo ligado ganha acesso total; com ele desligado, reabrir de novo NÃO herda (só o opt-in explícito persiste)', async () => {
+  const st = { on: false };
+  const w = world({ autoFullAccess: () => st.on });
+  const plain = await w.mgr.create({ role: 'builder' }); assert.ok(plain.ok);
+  w.spawned.at(-1).exit(0); const rec = w.db.terminalSessions[0]; rec.state = 'interrupted'; rec.endedAt = new Date().toISOString();
+  st.on = true;
+  const r = await w.mgr.resume({ recordId: rec.id, reopen: true }); assert.equal(r.ok, true, r.error);
+  assert.ok(w.spawned.at(-1).args.includes(CLAUDE_FLAG), 'reaberto com o autônomo ligado: acesso total'); assert.equal(r.session.fullAccess, true);
+  assert.ok(!('fullAccess' in w.db.terminalSessions.find((x) => x.id === rec.id)), 'o registro da sessão comum continua sem acesso total gravado');
+  // desliga o autônomo e reabre a nova sessão de novo: nada foi gravado, então não herda
+  w.spawned.at(-1).exit(0); const again = w.db.terminalSessions.find((x) => x.id === r.session.recordId); again.state = 'interrupted'; again.endedAt = new Date().toISOString();
+  st.on = false;
+  const r2 = await w.mgr.resume({ recordId: again.id, reopen: true }); assert.equal(r2.ok, true, r2.error);
+  assert.ok(!w.spawned.at(-1).args.includes(CLAUDE_FLAG), 'autônomo desligado: reaberta sem acesso total'); assert.ok(!r2.session.fullAccess);
+});
+
+test('Codex: reabrir um registro com acesso total explícito mantém a flag; retomar ou bifurcar o Codex é recusado sem abrir processo (nunca recebe a flag)', async () => {
+  const w = world();
+  const c = await w.mgr.create({ role: 'builder', provider: 'codex', fullAccess: true }); assert.equal(c.ok, true, c.error);
+  assert.equal(w.db.terminalSessions[0].fullAccess, true, 'opt-in explícito fica gravado');
+  w.spawned.at(-1).exit(0); const rec = w.db.terminalSessions[0]; rec.state = 'interrupted'; rec.endedAt = new Date().toISOString();
+  const before = w.spawned.length;
+  for (const opts of [{ recordId: rec.id }, { recordId: rec.id, fork: true }]) { const r = await w.mgr.resume(opts); assert.equal(r.ok, false, JSON.stringify(opts)); }
+  assert.equal(w.spawned.length, before, 'nenhum processo aberto na retomada/fork do Codex');
+  const ro = await w.mgr.resume({ recordId: rec.id, reopen: true }); assert.equal(ro.ok, true, ro.error);
+  assert.ok(w.spawned.at(-1).args.includes(CODEX_FLAG), 'reabrir (sessão nova) mantém a flag do Codex'); assert.equal(ro.session.fullAccess, true);
 });

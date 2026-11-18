@@ -25,6 +25,18 @@ const FLOW_ID_RE = /^flow_[0-9a-f]{8}$/, RUN_ID_RE = /^run_[0-9a-f]{8}$/, STEP_I
 const FAILED_TASK = new Set(['failed', 'expired', 'rejected']);
 const ACTIVE_STEP = new Set(['running', 'waiting']);
 const DEAD_DEP = new Set(['failed', 'skipped', 'cancelled']);
+// "Confiar nesta pasta?" do Claude Code: o terminal de uma missão é aberto NA pasta do workspace que o usuário cadastrou e mandou trabalhar, então o FORGE responde "sim" sozinho (Enter na opção
+// padrão, "Yes, I trust this folder"). Só vale para terminais criados por um run e só enquanto a etapa ainda não foi entregue; o texto precisa estar nas ÚLTIMAS linhas da tela (um aviso antigo
+// que ficou no histórico não conta) e há poucas tentativas espaçadas (nunca vira laço de Enter).
+const TRUST_TAIL = 900, TRUST_MAX_TRIES = 3, TRUST_RETRY_MS = 3000;
+const TRUST_RE = /do you trust the files in this folder|trust (?:the files in )?this folder|is this a project you created or one you trust|yes, i trust/i;
+const OTHER_DIALOG_RE = /bypass permissions|yes, i accept|mcp server|new mcp|\.mcp\.json/i; // "No, exit" NÃO entra: é a segunda opção da própria pergunta de confiança
+const ANSI_RE = /\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][0-9A-B]|\x1b[@-Z\\-_=>]/g;
+/** A pergunta de confiança de pasta está na tela AGORA? (olha só o fim da saída, sem ANSI e com espaços colapsados) */
+export function trustPromptShown(raw) {
+  const tail = String(raw ?? '').replace(ANSI_RE, ' ').replace(/\s+/g, ' ').slice(-TRUST_TAIL);
+  return TRUST_RE.test(tail) && !OTHER_DIALOG_RE.test(tail); // se a tela cita outro diálogo (bypass, aceite, servidor MCP), a pergunta de confiança já passou: nunca se aperta Enter nele
+}
 
 const isObj = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 const clip = (v, n) => { const s = String(v ?? ''); return s.length > n ? `${s.slice(0, n - 1).trimEnd()}…` : s; };
@@ -165,6 +177,19 @@ export function createFlows({ db, terminals, maestro, persist = store.saveOrThro
   const activeRunOf = (flowId) => runs().find((r) => r.flowId === flowId && r.status === 'running') ?? null;
   const ms = () => Date.parse(now()) || Date.now();
   const peekT = (id) => { try { return (terminals.peek ? terminals.peek(id) : terminals.get(id)) ?? null; } catch { return null; } };
+  const trustTries = new Map(); // terminalId -> { n, at }: respostas já enviadas à pergunta de confiança
+  /** Responde "sim" à pergunta de confiança de pasta de um terminal desta missão que ainda não recebeu a etapa. Melhor esforço: nunca lança. */
+  function autoTrust(tid) {
+    if (typeof terminals.readOutput !== 'function' || typeof terminals.write !== 'function') return;
+    const tr = trustTries.get(tid) ?? { n: 0, at: 0, seen: null };
+    if (tr.n >= TRUST_MAX_TRIES || (tr.n > 0 && ms() - tr.at < TRUST_RETRY_MS)) return;
+    let out = ''; try { out = terminals.readOutput(tid, TRUST_TAIL * 2) ?? ''; } catch { return; }
+    if (!trustPromptShown(out)) return;
+    const tail = String(out).slice(-TRUST_TAIL);
+    if (tr.n > 0 && tail !== tr.seen) return; // a tela mudou depois do Enter: a pergunta foi respondida e o que está aberto agora pode ser OUTRO diálogo (ex.: aceite do bypass, cuja opção padrão é sair)
+    trustTries.set(tid, { n: tr.n + 1, at: ms(), seen: tail });
+    try { terminals.write(tid, '\r'); } catch { /* o próximo tick tenta de novo (até o limite) */ }
+  }
   const wsOf = (id) => (db.workspaces ?? []).find((w) => w && w.id === id) ?? null;
 
   const runView = (r) => { const { ownedTerminalIds, ...rest } = structuredClone(r); return rest; };
@@ -283,7 +308,8 @@ export function createFlows({ db, terminals, maestro, persist = store.saveOrThro
     }
     const t = peekT(rs.terminalId);
     if (!t || t.status !== 'running') return failStep(run, rs, rs.taskId ? 'O terminal terminou antes do fim da etapa.' : 'O terminal terminou antes de receber a etapa.');
-    if (!rs.taskId) { tryDispatch(run, rs, flow); if (!ACTIVE_STEP.has(rs.status)) return false; } // sem gravar a falha (rollback) o estado volta e o próximo tick repete
+    if (rs.taskId) trustTries.delete(rs.terminalId);
+    if (!rs.taskId) { autoTrust(rs.terminalId); tryDispatch(run, rs, flow); if (!ACTIVE_STEP.has(rs.status)) return false; } // sem gravar a falha (rollback) o estado volta e o próximo tick repete
     const want = t.agent?.state === 'waiting' ? 'waiting' : 'running'; // sinal real do agente (hooks/OSC); sem ele fica 'running'
     return rs.status === want ? true : apply(run, () => { rs.status = want; });
   }

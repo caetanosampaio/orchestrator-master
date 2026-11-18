@@ -48,9 +48,10 @@ export const claudeProvider = Object.freeze({
     const pluginArgs = [...(pluginDir ? ['--plugin-dir', pluginDir] : []), ...(settingsFile ? ['--settings', settingsFile] : [])];
     const mcpArgs = mcp ? ['--mcp-config', mcp.configPath, '--allowedTools', `mcp__${mcp.serverName ?? 'forge'}`] : [];
     // `model`/`effort` (já validados contra as listas fechadas, ver providers/index.js) só valem na sessão NOVA: retomada e fork herdam o modelo da sessão gravada. Vão ANTES de plugin/MCP (que aceitam vários valores).
-    // `fullAccess` ("acesso total" da missão): SÓ o booleano true estrito liga o modo sem confirmação de permissão, e só na sessão NOVA (a retomada restaura o modo da sessão gravada). Flag sem valor: não engole o argumento seguinte.
+    // `fullAccess` ("acesso total" da missão): SÓ o booleano true estrito liga o modo sem confirmação de permissão. Vale também na retomada/fork, mas só quando a sessão gravada JÁ tinha acesso total (terminals.js):
+    // o Claude Code não restaura o bypass sozinho. Flag sem valor: não engole o argumento seguinte.
     const modelArgs = [...(fullAccess === true ? ['--dangerously-skip-permissions'] : []), ...(model ? ['--model', model] : []), ...(effort ? ['--effort', effort] : [])];
     if (mode === 'new') return ['--append-system-prompt', prompt, '--name', label, '--session-id', sessionId, ...modelArgs, ...pluginArgs, ...mcpArgs];
-    return ['--resume', resumeSessionId, ...(mode === 'fork' ? ['--fork-session', '--session-id', sessionId] : []), ...pluginArgs, ...mcpArgs];
+    return ['--resume', resumeSessionId, ...(mode === 'fork' ? ['--fork-session', '--session-id', sessionId] : []), ...(fullAccess === true ? ['--dangerously-skip-permissions'] : []), ...pluginArgs, ...mcpArgs];
   },
 });

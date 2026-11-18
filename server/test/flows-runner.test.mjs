@@ -20,7 +20,7 @@ function world(over = {}) {
   let tn = 0, un = 0, clock = Date.parse('2026-11-10T10:00:00.000Z'), persists = 0, failPersist = 0, skipPersist = 0, createGate = null;
   const w = {
     db, terms, created, closed, dispatches, tasks, timers,
-    busy: new Set(), refuse: null, failCreate: null, providers: [{ id: 'claude', label: 'Claude Code', available: true }, { id: 'codex', label: 'Codex CLI', available: true }],
+    busy: new Set(), outputs: new Map(), writes: [], refuse: null, failCreate: null, providers: [{ id: 'claude', label: 'Claude Code', available: true }, { id: 'codex', label: 'Codex CLI', available: true }],
     get persists() { return persists; }, failPersist: (n = 1, skip = 0) => { failPersist = n; skipPersist = skip; }, gateCreate: () => { let release; createGate = new Promise((r) => { release = r; }); return () => { createGate = null; release(); }; },
     advance: (ms) => { clock += ms; },
   };
@@ -32,6 +32,8 @@ function world(over = {}) {
       const id = `term_${hex(++tn)}`; terms.set(id, { id, status: 'running', agent: { ...READY }, role: o.role }); return { ok: true, status: 201, session: { id } };
     },
     peek: (id) => terms.get(id) ?? null,
+    readOutput: (id) => w.outputs.get(id) ?? '',
+    write: (id, d) => { w.writes.push([id, d]); return { ok: true }; },
     close: (id) => { closed.push(id); const t = terms.get(id); if (t) t.status = 'exited'; return { ok: true }; },
     count: () => [...terms.values()].filter((t) => t.status === 'running').length,
     providers: () => w.providers,
