@@ -44,10 +44,12 @@ test('createTokenGuard: métodos mutáveis e fluxos de terminal exigem o token; 
     assert.equal(run({ p }).status, 403, `GET ${p} sem token`); assert.equal(run({ p, token: TOKEN }).next, true, `GET ${p} com token`);
   }
   // leituras que expõem conteúdo (sessões, missões, relatórios, chat, fila do Maestro, atividade, eventos, worktrees) também exigem o token
-  for (const p of ['/terminals', '/terminals/history', '/terminals/x/y/stream', '/missions', '/missions/mis_1/delivery', '/missions/mis_1/thread', '/chat', '/maestro', '/activity', '/events', '/worktrees', '/worktrees/wt_1', '/MISSIONS/', '/accounts']) {
+  for (const p of ['/terminals', '/terminals/history', '/terminals/x/y/stream', '/missions', '/missions/mis_1/delivery', '/missions/mis_1/thread', '/chat', '/maestro', '/activity', '/events', '/worktrees', '/worktrees/wt_1', '/MISSIONS/', '/accounts', '/live/changes', '/live/preview', '/LIVE/preview/']) {
     assert.equal(run({ p }).status, 403, `GET ${p} sem token`); assert.equal(run({ p, token: 'errado' }).status, 403, `GET ${p} token errado`); assert.equal(run({ p, token: TOKEN }).next, true, `GET ${p} com token`);
   }
   assert.equal(run({ p: '/missionsx' }).next, true, 'prefixo parecido não é protegido por engano');
+  assert.equal(run({ p: '/livex' }).next, true, 'prefixo parecido de /live não é protegido por engano');
+  for (const method of ['POST', 'DELETE']) assert.equal(run({ method, p: '/live/preview' }).status, 403, `${method} /live/preview sem token`);
   // conversas copiadas têm a mesma natureza da saída dos terminais: leitura também exige o token
   for (const p of ['/workspaces/ws_aaaaaaaa/conversations', '/workspaces/ws_aaaaaaaa/conversations/ses_00000001', '/WORKSPACES/ws_a/conversations/']) {
     assert.equal(run({ p }).status, 403, `GET ${p} sem token`); assert.equal(run({ p, token: 'errado' }).status, 403); assert.equal(run({ p, token: TOKEN }).next, true, `GET ${p} com token`);

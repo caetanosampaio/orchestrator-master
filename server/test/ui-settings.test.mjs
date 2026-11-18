@@ -66,13 +66,13 @@ test('PUT grava (parcial) e GET devolve; o disco tem settings.ui', async () => {
   r = await put({ expandedWorkspaces: { ws_aaaaaaaa: true } }); assert.equal(r.status, 200);
   r = await put({ expandedWorkspaces: { ws_bbbbbbbb: false } }); assert.equal(r.status, 200);
   const g = await (await call('/api/ui')).json();
-  assert.deepEqual(g, { ui: { name: 'Ana', isolate: true, role: 'reviewer', provider: 'claude', autoRestore: true, fontSize: 16, motion: 'reduced', setupDone: true, sidebarCollapsed: true, expandedWorkspaces: { ws_aaaaaaaa: true, ws_bbbbbbbb: false } }, persisted: true }, 'campos não enviados ficam; expandidos são mesclados por chave');
+  assert.deepEqual(g, { ui: { name: 'Ana', isolate: true, role: 'reviewer', provider: 'claude', autoRestore: true, liveAutoOpen: true, fontSize: 16, motion: 'reduced', setupDone: true, sidebarCollapsed: true, expandedWorkspaces: { ws_aaaaaaaa: true, ws_bbbbbbbb: false } }, persisted: true }, 'campos não enviados ficam; expandidos são mesclados por chave');
   assert.deepEqual(disk().settings.ui, g.ui);
 });
 
 test('campos inválidos são recusados (400 em pt-BR) e NADA muda', async () => {
   const before = JSON.stringify(disk().settings.ui);
-  const bad = [{ fontSize: 10 }, { fontSize: 19 }, { fontSize: 13.5 }, { fontSize: '14' }, { motion: 'turbo' }, { role: 'Builder' }, { role: 'a'.repeat(21) }, { provider: 'Codex' }, { provider: 7 }, { provider: '' }, { autoRestore: 'sim' }, { autoRestore: 0 }, { isolate: 'sim' }, { sidebarCollapsed: 1 }, { name: 42 }, { name: 'x'.repeat(41) },
+  const bad = [{ fontSize: 10 }, { fontSize: 19 }, { fontSize: 13.5 }, { fontSize: '14' }, { motion: 'turbo' }, { role: 'Builder' }, { role: 'a'.repeat(21) }, { provider: 'Codex' }, { provider: 7 }, { provider: '' }, { autoRestore: 'sim' }, { autoRestore: 0 }, { liveAutoOpen: 'sim' }, { liveAutoOpen: 1 }, { liveAutoOpen: null }, { isolate: 'sim' }, { sidebarCollapsed: 1 }, { name: 42 }, { name: 'x'.repeat(41) },
     { expandedWorkspaces: [] }, { expandedWorkspaces: { 'ws bad!': true } }, { expandedWorkspaces: { ws_aaaaaaaa: 'sim' } }, { fontSize: 15, motion: 'turbo' }];
   for (const b of bad) { const r = await put(b); assert.equal(r.status, 400, JSON.stringify(b)); assert.match((await r.json()).error, /deve|só aceita/); }
   for (const body of [[], 'texto', null]) assert.equal((await put(body)).status, 400);
@@ -288,6 +288,18 @@ test('provider e autoRestore: gravam no banco, voltam no GET e valores fora do t
   r = await put({ autoRestore: true }); assert.equal(r.status, 200); assert.equal((await (await call('/api/ui')).json()).ui.autoRestore, true);
   assert.equal(U.readUi({ settings: { ui: { provider: 'X!' , autoRestore: 'lixo' } }, workspaces: [] }).provider, 'claude', 'banco editado à mão: volta ao padrão');
   assert.equal(U.readUi({ settings: { ui: { autoRestore: 'lixo' } }, workspaces: [] }).autoRestore, true, 'só um false explícito desliga');
+});
+
+test('liveAutoOpen (abrir o painel Live sozinho): padrão LIGADO, só booleano, só false explícito desliga, e o banco editado à mão não derruba a leitura', async () => {
+  assert.equal(U.DEFAULT_UI.liveAutoOpen, true);
+  assert.equal(U.readUi({ settings: {}, workspaces: [] }).liveAutoOpen, true);
+  for (const v of ['lixo', 0, null, 'false']) assert.equal(U.readUi({ settings: { ui: { liveAutoOpen: v } }, workspaces: [] }).liveAutoOpen, true, 'só um false explícito desliga: ' + String(v));
+  assert.deepEqual(U.validateUiPatch({ liveAutoOpen: false }), { patch: { liveAutoOpen: false } });
+  assert.match(U.validateUiPatch({ liveAutoOpen: 'não' }).error, /liveAutoOpen deve ser verdadeiro ou falso/);
+  let r = await put({ liveAutoOpen: false }); assert.equal(r.status, 200);
+  assert.equal((await (await call('/api/ui')).json()).ui.liveAutoOpen, false); assert.equal(disk().settings.ui.liveAutoOpen, false);
+  r = await put({ liveAutoOpen: 'x' }); assert.equal(r.status, 400); assert.equal((await (await call('/api/ui')).json()).ui.liveAutoOpen, false, 'recusado: nada muda');
+  r = await put({ liveAutoOpen: true }); assert.equal(r.status, 200); assert.equal((await (await call('/api/ui')).json()).ui.liveAutoOpen, true);
 });
 
 test('cliente (prefs): provider e autoRestore existem nas preferências sincronizadas; o desligamento antigo da restauração (chave local) é preservado na migração', async () => {

@@ -37,6 +37,8 @@ import { resolveSupervision, supervisionMs, MAX_MINUTES_LIMIT, STALL_MINUTES_LIM
 import { resolveWorktreeIsolation, createWorktreeManager, setupWorktrees } from './worktrees.js';
 import { createTerminalManager, setupTerminals } from './terminals.js';
 import { setupFlows } from './flows.js';
+import { createPreviewManager, setupLivePreview } from './live-preview.js';
+import { createChangesService, setupLiveChanges } from './live-changes.js';
 import { createAccounts, setupAccounts } from './accounts.js';
 import { createLoginManager } from './account-login.js';
 import { setClaudeEnvProvider } from './claude-cli.js';
@@ -56,9 +58,9 @@ import { createChildRegistry } from './child-registry.js';
 import { installShutdown } from './shutdown.js';
 import { apiGuard } from './origin-guard.js';
 import { trustClaudeFolder } from './trust.js';
+import { resolveAutonomous } from './maestro-default.js';
 import { strictProjectConfig } from './project-config.js';
 import { consumeApiTokenFromEnv, createTokenGuard } from './session-token.js';
-import { resolveAutonomous } from './maestro-default.js';
 
 const apiToken = consumeApiTokenFromEnv(); // M2: lido e REMOVIDO de process.env antes de qualquer processo filho existir (ver session-token.js)
 
@@ -87,7 +89,8 @@ const HOST = '127.0.0.1'; // somente local
 // Trava de instância ANTES de qualquer operação que possa tocar o banco (load, setupExecution, recover): uma 2ª instância sai sem alterar nada.
 const lock = acquireInstanceLock({ dir: store.dataDir, autoRelease: true });
 if (!lock.ok) { console.error(`[forge] ${lock.message}`); process.exit(1); }
-installShutdown({ lock, executor: claudeCodeExecutor, children: [planner, verifier, { killActiveSync: () => worktrees.killActiveSync() }, { killActiveSync: () => terminals.killAllSync() }, { killActiveSync: () => logins.killActiveSync() }], store }); // ao sair: encerra os filhos (executor, Planner, verificador), grava o que está pendente e libera a trava
+let livePreview = null; // gerenciador do preview do painel Live (criado junto das rotas); o encerramento o fecha
+installShutdown({ lock, executor: claudeCodeExecutor, children: [planner, verifier, { killActiveSync: () => worktrees.killActiveSync() }, { killActiveSync: () => terminals.killAllSync() }, { killActiveSync: () => logins.killActiveSync() }, { killActiveSync: () => { void livePreview?.close(); } }], store }); // ao sair: encerra os filhos (executor, Planner, verificador), grava o que está pendente e libera a trava
 const db = store.load();
 // Configuração efetiva de planejamento e retentativas (I4): ambiente > db.settings > padrão (desligados). Lida a cada mensagem do chat e a cada laço do ciclo.
 const orchestration = () => resolveOrchestration({ settings: db.settings });
@@ -461,6 +464,9 @@ setupStepTier(app, { db }); // POST /api/missions/:id/cycle/steps/:stepId/tier: 
 const cycle = setupCycle(app, { db, executor: claudeCodeExecutor, planner, startTaskRun, verifier, router, limits: cycleLimits, multiStep: () => orchestration().planMode, stepRetries: () => orchestration().stepRetries, autoClose: () => orchestration().autoClose, supervision: () => supervisionMs(supervision()), worktrees, worktreeIsolation: () => worktreeIsolation().enabled });
 setupWorktrees(app, { db, manager: worktrees });
 setupTerminals(app, { manager: terminals });
+livePreview = createPreviewManager({ db, dataDir: store.dataDir }); // painel Live: preview da pasta do workspace (somente leitura) em listener próprio 127.0.0.1:<porta efêmera>, origem diferente da API
+setupLivePreview(app, { db, manager: livePreview }); // POST/GET /api/live/preview (Origin + token de sessão no desktop)
+setupLiveChanges(app, { db, service: createChangesService({ db }) }); // GET /api/live/changes: arquivos criados/alterados (git status/numstat ou varredura por mtime)
 setupFlows(app, { db, terminals, maestro }); // Missions v2: /api/flows (missões em etapas com agentes em terminais reais; recover() converte run órfão de um boot anterior em `failed`)
 // Limite real de uso por conta (5 h e semana), somente leitura, sem caminhos/ids/e-mails; a interface consulta a cada ~15-30 s (memo de 2 s). Mesmo apiGuard (Host/Origin) das demais rotas de /api.
 app.get('/api/limits', (req, res) => { try { res.set('Cache-Control', 'no-store').json(rateLimits.view()); } catch { bad(res, 'Não foi possível ler os limites de uso.', 500); } });
