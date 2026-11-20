@@ -9,18 +9,25 @@ const TONE_CLASS = { idle: 'idle', work: 'working', wait: 'approval', ok: 'compl
 const GAP = 44; // altura do corredor entre fases (igual ao `gap` de .fl-wf .mwf-stage em flows.css): o conector anda na horizontal no meio dele
 const reducedMotion = () => document.documentElement.dataset.motion === 'reduced' || !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 const pad2 = (n) => String(n).padStart(2, '0');
+// Selo curto de integração por etapa (modo Git). `none` (modo pasta, run antigo, etapa ainda sem resultado) não mostra nada; o rótulo completo vai para o leitor de tela.
+const INT_BADGE = { pending: 'pendente', integrating: 'integrando', integrated: 'integrada', empty: 'sem alterações', conflict: 'conflito', blocked: 'bloqueada', error: 'erro' };
+const intBadge = (n) => (n.kind === 'step' && INT_BADGE[n.integration?.state] ? { text: INT_BADGE[n.integration.state], tone: n.integration.tone, label: n.integration.label } : null);
 
 function ariaOf(n) {
   const parts = [`${n.kind === 'delivery' ? 'Entrega' : 'Etapa'} ${n.title}: ${n.stateLabel}`];
   if (n.agent) parts.push(`agente ${n.agent.roleLabel}`, `${n.agent.providerLabel} ${n.agent.model ?? NOT_INFORMED}`, `esforço ${n.agent.effort ?? NOT_INFORMED}`);
-  if (n.waiting) parts.push('o agente espera a sua resposta no terminal');
+  if (n.waiting && !n.unconfirmed) parts.push('o agente espera a sua resposta no terminal'); // a etapa sem confirmação já diz o que fazer na própria linha
+  const b = intBadge(n);
+  if (b) parts.push(`integração: ${b.label}`);
   if (n.line) parts.push(n.line);
   return parts.join('; ');
 }
 
 function Node({ node, selected, onSelect, register, delay }) {
-  const a = node.agent, running = node.state === 'running';
-  const cls = ['mwf-node', `mwf-k-${node.kind}`, `mwf-s-${TONE_CLASS[node.tone] ?? 'idle'}`, node.state === 'skipped' ? 'fl-skipped' : '', node.waiting ? 'fl-wait' : '', selected ? 'on' : ''].filter(Boolean).join(' ');
+  const a = node.agent, running = node.state === 'running', badge = intBadge(node);
+  // integração travada ou entrega pronta para integrar também pedem você: borda âmbar (fl-ask) sem recolorir o estado da etapa (que pode estar "concluída")
+  const asks = !node.waiting && (badge?.tone === 'wait' || (node.kind === 'delivery' && node.state === 'ready_to_integrate'));
+  const cls = ['mwf-node', `mwf-k-${node.kind}`, `mwf-s-${TONE_CLASS[node.tone] ?? 'idle'}`, node.state === 'skipped' ? 'fl-skipped' : '', node.waiting ? 'fl-wait' : '', asks ? 'fl-ask' : '', selected ? 'on' : ''].filter(Boolean).join(' ');
   return (
     <button type="button" ref={(el) => register(node.id, el)} data-node-id={node.id} className={cls} style={{ '--d': `${delay}ms` }}
       aria-pressed={selected} aria-label={ariaOf(node)} onClick={() => onSelect?.(node.id)}>
@@ -36,6 +43,7 @@ function Node({ node, selected, onSelect, register, delay }) {
           <span className="mwf-eff">esforço {a.effort ?? NOT_INFORMED}</span>
         </span>
       )}
+      {badge && <span className={`fl-int fl-t-${badge.tone}`} title={badge.label}>integração: {badge.text}</span>}
       {node.line ? <span className={`mwf-task fl-line-${node.lineKind}${running ? ' live' : ''}`}>{node.line}{running && <i className="mwf-caret" aria-hidden="true">▍</i>}</span> : null}
     </button>
   );
@@ -65,7 +73,7 @@ export default function FlowWorkflow({ workflow, selectedId, onSelect }) {
   }, [workflow]);
 
   // Mantém à vista o nó que espera você (ou o que trabalha): rola só o mínimo necessário, e só quando esse nó muda.
-  const activeId = useMemo(() => (nodes.find((n) => n.state === 'waiting') ?? nodes.find((n) => n.state === 'running'))?.id ?? null, [nodes]);
+  const activeId = useMemo(() => (nodes.find((n) => n.state === 'waiting') ?? nodes.find((n) => n.integration?.needsAction) ?? nodes.find((n) => n.state === 'running'))?.id ?? null, [nodes]);
   useEffect(() => {
     const el = activeId ? els.current.get(activeId) : null;
     if (el) el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: reducedMotion() ? 'auto' : 'smooth' });

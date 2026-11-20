@@ -14,7 +14,7 @@ const loadouts = {
 const rows = [{ id: 'x', label: 'Tarefa X', effective: { skills: ['a', 'c'] } }, { id: 'y', label: 'Tarefa Y', effective: { skills: ['c'] } }, { id: 'z', label: 'Sem skill', effective: { skills: [] } }];
 
 test('papéis e tabela: quem recebe cada skill (ordem de exibição, papel desconhecido por último) e onde a tabela a cita', () => {
-  assert.deepEqual(ROLE_ORDER, ['maestro', 'builder', 'reviewer', 'scout']);
+  assert.deepEqual(ROLE_ORDER, ['maestro', 'builder', 'reviewer', 'scout', 'planner']); // planner = Planejador de missões, por último
   assert.deepEqual(rolesLoading(loadouts, 'a'), ['maestro', 'builder']); assert.deepEqual(rolesLoading(loadouts, 'c'), ['builder', 'estranho']); assert.deepEqual(rolesLoading(loadouts, 'd'), []); assert.deepEqual(rolesLoading(null, 'a'), []);
   assert.deepEqual(tasksUsing(rows, 'c').map((t) => t.id), ['x', 'y']); assert.deepEqual(tasksUsing(rows, 'd'), []); assert.deepEqual(tasksUsing(null, 'a'), []);
   assert.equal(callName('mapear-codigo'), '/squad:mapear-codigo');
@@ -33,7 +33,7 @@ test('diferença do padrão, primeira frase, filtro por papel e o resumo do topo
 });
 
 test('o que a tela mostra existe de verdade: os papéis e as skills do catálogo do servidor, nada inventado', () => {
-  assert.deepEqual(ROLE_ORDER, Object.keys(ROLE_DEFAULTS)); assert.equal(Object.keys(SKILLS).length, 16, 'catálogo da Fase 1: 8 de processo + 8 da biblioteca');
+  assert.deepEqual(ROLE_ORDER, Object.keys(ROLE_DEFAULTS)); assert.equal(Object.keys(SKILLS).length, 17, 'catálogo: 9 de processo (inclui planejar-missao, do Planejador) + 8 da biblioteca');
   const sec = src('components/settings/SkillsSection.jsx'); for (const id of Object.keys(SKILLS)) assert.ok(!sec.includes(`'${id}'`), `${id} não deve estar escrita na tela: ela vem do servidor`);
   for (const t of ['list_panes', 'list_tasks', 'report_done', 'send_task', 'read_pane_output', 'list_routes']) assert.ok(sec.includes(t), `o servidor MCP cita ${t}`);
 });
@@ -54,7 +54,7 @@ test('grupo e origem: Processo/Domínio (sem o campo = Processo), vendorizadas c
 test('catálogo do servidor: cada skill tem grupo e as vendorizadas trazem origem e licença (contrato da Fase 1)', async () => {
   const { loadoutView } = await import('../../server/loadouts.js');
   const list = loadoutView({}).catalog.skills;
-  assert.equal(list.length, 16);
+  assert.equal(list.length, 17); // + planejar-missao (Planejador de missões)
   for (const s of list) { assert.ok(['processo', 'dominio'].includes(s.group), `${s.id}: grupo`); if (s.source === 'vendored') assert.ok(skillSource(s).origin && skillSource(s).license, `${s.id}: origem e licença`); }
   assert.ok(groupSkills(catalogSkills({ catalog: { skills: list } })).length === 2, 'os dois grupos aparecem');
 });

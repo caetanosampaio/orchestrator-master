@@ -7,6 +7,8 @@ export const REASON_LABEL = Object.freeze({
 const BLOCKED_SHORT = Object.freeze({
   session_active: 'já está aberta', transcript_missing: 'sem transcrição', workspace_missing: 'workspace removido', workspace_invalid: 'workspace inválido',
   worktree_missing: 'worktree removido', worktree_invalid: 'worktree indisponível', worktree_busy: 'worktree em uso', cwd_mismatch: 'pasta diferente', role_unknown: 'papel inexistente', invalid_record: 'registro inválido',
+  flow_copy_resume: 'etapa de missão: retome pela missão', // cópia de etapa só reabre pelo Retomar da missão, que confere a cópia antes
+  planner_session: 'planejador: abra pela missão', // o Planejador só nasce pelo "Nova por briefing" em Missões (nunca restaurado pelo histórico)
 });
 const arr = (x) => (Array.isArray(x) ? x : []);
 

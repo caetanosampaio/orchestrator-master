@@ -1,11 +1,119 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Dialog from './Dialog.jsx';
 import { Icon } from './ui.jsx';
 import { api } from '../api.js';
-import { addStep, ancestorKeys, draftToBody, emptyDraft, FALLBACK_ROLES, flowToDraft, MAX_STEPS, MAX_TEXT, MAX_TITLE, patchStep, PROVIDER_LABEL, PROVIDERS, removeStep, toggleDependency, validateDraft } from '../flows-view.js';
+import {
+  addStep, ancestorKeys, blocksImplicitSubmit, draftToBody, draftToScheduleBody, emptyDraft, flowToDraft, stepRoles, MAX_EVERY_HOURS, MAX_STEPS, MAX_TEXT, MAX_TITLE, patchStep, proposalNoticeLines, proposalToDraft,
+  PROVIDER_LABEL, PROVIDERS, removeStep, toggleDependency, toggleScheduleDay, validateDraft, validateScheduleDraft, WEEKDAY_SHORT,
+} from '../flows-view.js';
 
-/** Modelos e esforços de cada provedor (listas fechadas do servidor, em /api/team-templates). Sem resposta: só "padrão do agente" (nada é inventado). */
-function useProviderOptions() {
+/**
+ * Avisos de proposta do Planejador dentro do formulário. Nada substitui o que está na tela sozinho: "carregar" e "abrir" só com o clique, e com confirmação se o
+ * formulário já foi mexido. `notices` vem de proposalNotices (flows-view.js).
+ */
+function ProposalNotices({ proposal, notices, onSwap }) {
+  const { newer = null, others = [], pending = false } = notices ?? {};
+  if (!proposal && !others.length) return null;
+  const lines = proposal ? proposalNoticeLines(proposal) : [];
+  return (
+    <>
+      {/* o foco inicial do formulário da proposta fica AQUI (não editável): nada digitado por engano cai num campo */}
+      {proposal && <div className="fl-callout fl-prop-notice" role="note" tabIndex={-1} data-autofocus>{lines.map((t) => <p key={t}><b>{t}</b></p>)}</div>}
+      {newer && (
+        <div className="fl-callout fl-prop-swap" role="status">
+          <span>O Planejador enviou uma versão nova desta proposta — carregar? <span className="dim">Carregar troca o que está neste formulário.</span></span>
+          <button type="button" className="fl-btn" onClick={() => onSwap(newer)}>Carregar versão nova</button>
+        </div>
+      )}
+      {proposal && !newer && !pending && <p className="fl-hint" role="note">Esta proposta não está mais pendente (foi usada, descartada ou expirou). Você ainda pode criar a missão com o que está aqui.</p>}
+      {others.slice(0, 3).map((r) => (
+        <div key={r.id} className="fl-callout fl-prop-swap" role="status">
+          <span>Nova proposta do Planejador: “{r.title}”{r.workspaceName ? <span className="dim"> · {r.workspaceName}</span> : null}</span>
+          <button type="button" className="fl-btn" onClick={() => onSwap(r)} aria-label={`Abrir a proposta “${r.title}” no lugar deste formulário`}>Abrir</button>
+        </div>
+      ))}
+    </>
+  );
+}
+
+// presets da agenda (docs/missions-v2-fatia2.md, A): o rascunho guarda os campos de todos, então trocar de preset não perde o que foi digitado
+const SCHEDULE_PRESETS = [{ id: 'interval', label: 'A cada N horas' }, { id: 'daily', label: 'Todo dia, num horário' }, { id: 'weekly', label: 'Dias da semana, num horário' }];
+
+/** Tipo da missão: projeto (você inicia) ou automação (roda pela agenda). Radios num fieldset: setas trocam a opção. */
+function KindPicker({ kind, onChange, disabled }) {
+  return (
+    <fieldset className="fl-kind" disabled={disabled}>
+      <legend className="fl-label">Tipo</legend>
+      <label className="fl-check"><input type="radio" name="fl-kind" value="project" checked={kind !== 'automation'} onChange={() => onChange('project')} /><span><b>Projeto</b> <span className="dim">— você inicia quando quiser</span></span></label>
+      <label className="fl-check"><input type="radio" name="fl-kind" value="automation" checked={kind === 'automation'} onChange={() => onChange('automation')} /><span><b>Automação</b> <span className="dim">— roda sozinha pela agenda</span></span></label>
+    </fieldset>
+  );
+}
+
+/** Agenda da automação: ligada/desligada, preset e os campos do preset. Os erros vêm de validateScheduleDraft (as mesmas regras do servidor). */
+function ScheduleEditor({ sd, onChange, fullAccess, errOf }) {
+  const set = (patch) => onChange({ ...sd, ...patch });
+  const E = (f) => { const m = errOf(f); return m.length ? <span className="fl-err" role="alert">{m[0]}</span> : null; };
+  return (
+    <fieldset className="fl-sched">
+      <legend className="fl-label">Agenda</legend>
+      <label className="fl-check"><input type="checkbox" checked={sd.enabled === true} onChange={(e) => set({ enabled: e.target.checked })} /><span><b>Agenda ligada</b> <span className="dim">(desligada, a automação só roda quando você clicar em Iniciar)</span></span></label>
+      <div className="fl-grid2">
+        <label>Frequência
+          <select value={sd.kind} onChange={(e) => set({ kind: e.target.value })} aria-invalid={errOf('schedule.kind').length ? true : undefined}>
+            {SCHEDULE_PRESETS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+          </select>
+          {E('schedule.kind')}
+        </label>
+        {sd.kind === 'interval' ? (
+          <label>Intervalo (horas)
+            <input type="number" inputMode="numeric" min={1} max={MAX_EVERY_HOURS} step={1} value={sd.everyHours ?? ''} onChange={(e) => set({ everyHours: e.target.value === '' ? '' : Number(e.target.value) })} aria-invalid={errOf('schedule.everyHours').length ? true : undefined} />
+            {E('schedule.everyHours')}
+          </label>
+        ) : (
+          <label>Horário (local)
+            <input type="time" step={60} value={sd.time ?? ''} onChange={(e) => set({ time: e.target.value.slice(0, 5) })} aria-invalid={errOf('schedule.time').length ? true : undefined} />
+            {E('schedule.time')}
+          </label>
+        )}
+      </div>
+      {sd.kind === 'weekly' && (
+        <div className="fl-days" role="group" aria-labelledby="fl-days-l">
+          <span id="fl-days-l" className="fl-label">Dias</span>
+          <div className="fl-days-l">
+            {WEEKDAY_SHORT.map((name, day) => (
+              <label key={name} className="fl-check"><input type="checkbox" checked={(sd.days ?? []).includes(day)} onChange={() => onChange(toggleScheduleDay(sd, day))} /><span>{name}</span></label>
+            ))}
+          </div>
+          {E('schedule.days')}
+        </div>
+      )}
+      <p className="fl-hint" role="note">Roda só com o FORGE aberto; horários perdidos são pulados.</p>
+      {!fullAccess && <p className="fl-hint warn" role="note">Sem acesso total, a automação pode parar pedindo permissão sem ninguém olhando.</p>}
+    </fieldset>
+  );
+}
+
+/** Política sem ninguém olhando: automação + acesso total + integração automática. Só avisa (o padrão não muda). */
+const UNATTENDED_POLICY_WARNING = 'Esta automação roda sozinha com acesso total e integra na sua branch sem ninguém olhando (só sem conflito e com a pasta limpa). Desmarque a integração automática se quiser revisar antes.';
+
+/** Integração automática na branch do workspace (padrão ligado; desligável por missão). `unattended` = automação com acesso total: mostra o aviso de política com a caixa marcada. */
+function AutoIntegrate({ checked, onChange, unattended = false }) {
+  const warn = unattended && checked;
+  return (
+    <div className="fl-autoint">
+      <label className="fl-check">
+        <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} aria-describedby={warn ? 'fl-autoint-d fl-autoint-w' : 'fl-autoint-d'} />
+        <span><b>Integrar automaticamente na sua branch quando terminar sem conflitos</b></span>
+      </label>
+      <p id="fl-autoint-d" className="fl-hint">Em workspace Git, cada etapa trabalha numa cópia isolada (só arquivos versionados; alterações não commitadas na sua pasta não entram). Sua pasta só muda na integração final, e só se estiver limpa.{!checked && ' Desligada, a execução termina “pronta para integrar” e espera você.'}</p>
+      {warn && <p id="fl-autoint-w" className="fl-policy-warn" role="note"><b>Atenção:</b> {UNATTENDED_POLICY_WARNING}</p>}
+    </div>
+  );
+}
+
+/** Modelos e esforços de cada provedor (listas fechadas do servidor, em /api/team-templates). Sem resposta: só "padrão do agente" (nada é inventado). Também usado no diálogo do briefing. */
+export function useProviderOptions() {
   const [opts, setOpts] = useState({});
   useEffect(() => {
     let alive = true;
@@ -78,14 +186,38 @@ function StepEditor({ draft, step, index, roles, opts, errors, onChange, onRemov
   );
 }
 
-/** Formulário "Nova missão" (ou "Editar missão"): título, objetivo, workspace, acesso total (com aviso), paralelismo e o editor de etapas. O servidor valida de novo. */
-export default function FlowForm({ mode = 'create', flow = null, workspaces, activeWorkspaceId, roles, onClose, onSubmit }) {
-  const [draft, setDraft] = useState(() => (mode === 'edit' && flow ? flowToDraft(flow)
-    : emptyDraft({ workspaceId: activeWorkspaceId && workspaces.some((w) => w.id === activeWorkspaceId) ? activeWorkspaceId : workspaces[0]?.id ?? '' })));
-  const [busy, setBusy] = useState(false), [error, setError] = useState(null), [tried, setTried] = useState(false);
+/**
+ * Formulário "Nova missão" / "Editar missão": tipo, título, objetivo, workspace, acesso total (com aviso), paralelismo, agenda (automação), integração automática e o editor de etapas.
+ * `mode = 'schedule'`: formulário reduzido para a missão com execução ativa, quando o servidor só aceita mudar agenda e integração automática (PATCH só com esses campos).
+ * O servidor valida de novo.
+ * `proposal` (só no create): proposta do Planejador já validada pelo servidor; o formulário nasce preenchido (proposalToDraft: acesso total desligado) e o create leva o
+ * `proposalId`. `notices`/`onOpenProposal`: avisos de propostas que chegaram com o formulário aberto (nunca abrem por cima sozinhas). `onDismissProposal`: Descartar proposta.
+ * Na proposta o foco começa no aviso (não num campo) e Enter num campo não envia: a criação é sempre um clique em "Criar missão".
+ */
+export default function FlowForm({ mode = 'create', flow = null, workspaces, activeWorkspaceId, roles, onClose, onSubmit, proposal = null, notices = null, onOpenProposal = null, onDismissProposal = null }) {
+  const reduced = mode === 'schedule';
+  const [draft, setDraft] = useState(() => ((mode === 'edit' || reduced) && flow ? flowToDraft(flow)
+    : mode === 'create' && proposal ? proposalToDraft(proposal)
+      : emptyDraft({ workspaceId: activeWorkspaceId && workspaces.some((w) => w.id === activeWorkspaceId) ? activeWorkspaceId : workspaces[0]?.id ?? '' })));
+  const [busy, setBusy] = useState(false), [error, setError] = useState(null), [tried, setTried] = useState(false), [dismissing, setDismissing] = useState(false);
+  const fromProposal = mode === 'create' && !!proposal;
+  // "mexido" = diferente do que abriu: trocar por outra proposta pede confirmação antes de jogar fora o que o usuário digitou
+  const initial = useRef(null); if (initial.current === null) initial.current = JSON.stringify(draft);
+  const swap = (row) => {
+    if (!onOpenProposal) return;
+    if (JSON.stringify(draft) !== initial.current && !window.confirm('Abrir a proposta substitui o que você preencheu neste formulário. Continuar?')) return;
+    onOpenProposal(row);
+  };
+  const dismiss = async () => {
+    if (!fromProposal || !onDismissProposal || dismissing) return;
+    if (!window.confirm('Descartar esta proposta? O formulário fecha e nada é criado. O terminal do Planejador continua aberto e pode enviar outra.')) return;
+    setDismissing(true); setError(null);
+    try { await onDismissProposal(proposal.id); } catch (err) { setError(err.message); setDismissing(false); }
+  };
   const opts = useProviderOptions();
-  const roleList = roles?.length ? roles : FALLBACK_ROLES;
-  const check = useMemo(() => validateDraft(draft, { mode }), [draft, mode]);
+  const roleList = stepRoles(roles); // sem Maestro e Planejador (o servidor recusa esses papéis numa etapa)
+  // no modo reduzido só a agenda é conferida (o resto não vai no PATCH)
+  const check = useMemo(() => (reduced ? (draft.kind === 'automation' ? validateScheduleDraft(draft.schedule) : { ok: true, errors: [] }) : validateDraft(draft, { mode })), [draft, mode, reduced]);
   const fieldErr = (f) => (tried ? check.errors.filter((e) => e.field === f).map((e) => e.message) : []);
   const set = (patch) => setDraft((d) => ({ ...d, ...patch }));
   const change = (key, patch) => setDraft((d) => (patch.__toggle ? toggleDependency(d, key, patch.__toggle) : patchStep(d, key, patch)));
@@ -94,14 +226,45 @@ export default function FlowForm({ mode = 'create', flow = null, workspaces, act
     setTried(true);
     if (!check.ok || busy) return;
     setBusy(true); setError(null);
-    try { await onSubmit(draftToBody(draft, { mode })); } catch (err) { setError(err.message); setBusy(false); }
+    try { await onSubmit(reduced ? draftToScheduleBody(draft) : draftToBody(draft, { mode, proposalId: fromProposal ? proposal.id : null })); } catch (err) { setError(err.message); setBusy(false); }
   };
   const E = (f) => { const m = fieldErr(f); return m.length ? <span className="fl-err" role="alert">{m[0]}</span> : null; };
+  const auto = draft.kind === 'automation';
+  const foot = (
+    <>
+      {error && <p className="fl-note err" role="alert">{error}</p>}
+      {tried && !check.ok && <p className="fl-note err" role="alert">Corrija os campos marcados para continuar.</p>}
+      <div className="fl-form-foot">
+        {fromProposal && onDismissProposal && (
+          <button type="button" className="fl-btn fl-btn-danger fl-foot-left" onClick={dismiss} disabled={dismissing || busy}>{dismissing ? <i className="fl-spin" aria-hidden="true" /> : null}<span>Descartar proposta</span></button>
+        )}
+        <button type="button" className="fl-btn" onClick={onClose}>Cancelar</button>
+        <button type="submit" className={`fl-btn fl-btn-primary${busy ? ' is-busy' : ''}`} disabled={busy}>{busy ? <i className="fl-spin" aria-hidden="true" /> : null}<span>{mode === 'create' ? 'Criar missão' : 'Salvar alterações'}</span></button>
+      </div>
+    </>
+  );
+  if (reduced) {
+    return (
+      <Dialog title={auto ? 'Editar agenda' : 'Editar integração'} onClose={onClose} id="flow-form" size="lg">
+        <form className="fl-form" onSubmit={submit} noValidate>
+          <ProposalNotices proposal={null} notices={notices} onSwap={swap} />
+          <p className="dim fl-form-lead">A missão “{flow?.title}” tem uma execução ativa: agora só a agenda e a integração automática podem mudar. O resto fica para quando a execução terminar. Mudar a agenda recalcula a próxima execução a partir de agora.</p>
+          {auto && <ScheduleEditor sd={draft.schedule} onChange={(schedule) => set({ schedule })} fullAccess={draft.fullAccess} errOf={fieldErr} />}
+          <AutoIntegrate checked={draft.autoIntegrate === true} onChange={(v) => set({ autoIntegrate: v })} unattended={auto && draft.fullAccess === true} />
+          {foot}
+        </form>
+      </Dialog>
+    );
+  }
   return (
-    <Dialog title={mode === 'edit' ? 'Editar missão' : 'Nova missão'} onClose={onClose} id="flow-form" size="lg">
-      <form className="fl-form" onSubmit={submit} noValidate>
+    <Dialog title={mode === 'edit' ? 'Editar missão' : fromProposal ? 'Nova missão (proposta do Planejador)' : 'Nova missão'} onClose={onClose} id="flow-form" size="lg">
+      {/* proposta: Enter num campo não envia (só o botão Criar missão); ver blocksImplicitSubmit */}
+      <form className="fl-form" onSubmit={submit} onKeyDown={fromProposal ? (e) => { if (blocksImplicitSubmit(e)) e.preventDefault(); } : undefined} noValidate>
+        <ProposalNotices proposal={fromProposal ? proposal : null} notices={notices} onSwap={swap} />
         <p className="dim fl-form-lead">Cada etapa roda um agente de CLI num terminal real do Cockpit, com as suas permissões. Você acompanha o workflow aqui e pode abrir qualquer terminal.</p>
-        <label>Nome<input data-autofocus value={draft.title} maxLength={MAX_TITLE} onChange={(e) => set({ title: e.target.value })} placeholder="Ex.: Corrigir o login com Google" aria-invalid={fieldErr('title').length ? true : undefined} />{E('title')}</label>
+        <KindPicker kind={draft.kind} onChange={(kind) => set({ kind })} />
+        {E('kind')}
+        <label>Nome<input data-autofocus={fromProposal ? undefined : true} value={draft.title} maxLength={MAX_TITLE} onChange={(e) => set({ title: e.target.value })} placeholder="Ex.: Corrigir o login com Google" aria-invalid={fieldErr('title').length ? true : undefined} />{E('title')}</label>
         <label>Objetivo <span className="dim">(entra no início do texto de cada etapa)</span>
           <textarea value={draft.goal} maxLength={MAX_TEXT} rows={3} onChange={(e) => set({ goal: e.target.value })} placeholder="O que deve ficar pronto, restrições e como saber que terminou." /><span className="dim">{draft.goal.length}/{MAX_TEXT}</span>{E('goal')}
         </label>
@@ -118,6 +281,7 @@ export default function FlowForm({ mode = 'create', flow = null, workspaces, act
             <select value={draft.maxParallel} onChange={(e) => set({ maxParallel: Number(e.target.value) })}>
               {[1, 2, 3, 4].map((n) => <option key={n} value={n}>{n === 1 ? '1 (uma por vez)' : `até ${n}`}</option>)}
             </select>
+            {draft.maxParallel > 1 && <span className="dim">Em workspace Git, cada etapa roda numa cópia isolada e o paralelo vale para todas. Sem Git, etapas de Construtor (que editam arquivos) rodam uma por vez na pasta do workspace; o paralelo vale para revisão e investigação.</span>}
           </label>
         </div>
 
@@ -132,6 +296,9 @@ export default function FlowForm({ mode = 'create', flow = null, workspaces, act
           </p>
         </div>
 
+        {auto && <ScheduleEditor sd={draft.schedule} onChange={(schedule) => set({ schedule })} fullAccess={draft.fullAccess} errOf={fieldErr} />}
+        <AutoIntegrate checked={draft.autoIntegrate === true} onChange={(v) => set({ autoIntegrate: v })} unattended={auto && draft.fullAccess === true} />
+
         <section aria-label="Etapas" className="fl-steps">
           <p className="fl-label">Etapas <span className="fl-count">{draft.steps.length}/{MAX_STEPS}</span></p>
           {draft.steps.map((s, i) => (
@@ -142,12 +309,7 @@ export default function FlowForm({ mode = 'create', flow = null, workspaces, act
           <button type="button" className="fl-btn" onClick={() => setDraft((d) => addStep(d))} disabled={draft.steps.length >= MAX_STEPS}><Icon name="plus" size={13} /><span>Adicionar etapa</span></button>
         </section>
 
-        {error && <p className="fl-note err" role="alert">{error}</p>}
-        {tried && !check.ok && <p className="fl-note err" role="alert">Corrija os campos marcados para continuar.</p>}
-        <div className="fl-form-foot">
-          <button type="button" className="fl-btn" onClick={onClose}>Cancelar</button>
-          <button type="submit" className={`fl-btn fl-btn-primary${busy ? ' is-busy' : ''}`} disabled={busy}>{busy ? <i className="fl-spin" aria-hidden="true" /> : null}<span>{mode === 'edit' ? 'Salvar alterações' : 'Criar missão'}</span></button>
-        </div>
+        {foot}
       </form>
     </Dialog>
   );

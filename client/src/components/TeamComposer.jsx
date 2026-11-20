@@ -5,6 +5,7 @@ import { PRESETS, availableMixes, defaultMix } from '../team-view.js';
 import { providerOptionLabel } from '../env-view.js';
 import { MAX_SLOTS, MAX_NAME, MAX_INSTRUCTION, MAX_SLOT_SKILLS, draftFromPreset, withSlot, withProvider, withSlotSkill, removeSlot, addSlot, applyMix, draftOpenProblem, draftSaveProblem, instructionProblem, squadSummary, slotOptions, takesSkills } from '../squads.js';
 import { groupSkills } from '../skills-view.js';
+import { teamSlotRoles } from '../flow-terminals.js';
 import { EditPanel, EditRow, SelectBox, Pills, TextField, TextArea, CheckChips } from './settings/SettingsUi.jsx';
 
 /**
@@ -17,6 +18,7 @@ export default function TeamComposer({ draft, onChange, onOpen = null, onSave, o
   const available = providers.filter((p) => p.available).map((p) => p.id);
   const labelOf = (id) => providers.find((p) => p.id === id)?.label ?? id;
   const roleOf = Object.fromEntries(roles.map((r) => [r.id, r]));
+  const slotRoles = teamSlotRoles(roles); // sem o Planejador (o servidor recusa numa vaga); o Maestro continua
   const openProblem = draftOpenProblem(draft, { available, room });
   const saveProblem = draftSaveProblem(draft, { available, squads });
   const instrProblem = instructionProblem(draft.instruction);
@@ -69,7 +71,7 @@ export default function TeamComposer({ draft, onChange, onOpen = null, onSave, o
               return (
                 <li key={k} className="ep-slot" style={{ '--c': roleOf[s.role]?.color || 'var(--brand)' }}>
                   <i className="ep-slot-dot" aria-hidden="true" />
-                  <SelectBox label={`Papel da vaga ${i + 1}`} value={s.role} disabled={busy} onChange={(v) => slotChange(i, withSlot(draft, i, { role: v }))}>{roles.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}</SelectBox>
+                  <SelectBox label={`Papel da vaga ${i + 1}`} value={s.role} disabled={busy} onChange={(v) => slotChange(i, withSlot(draft, i, { role: v }))}>{slotRoles.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}</SelectBox>
                   <span className="ep-slot-ai"><ProviderMascot id={s.provider} size={12} />
                     <SelectBox label={`Agente da vaga ${i + 1}`} value={s.provider} disabled={busy} onChange={(v) => slotChange(i, withProvider(draft, i, v))}>{providers.map((p) => <option key={p.id} value={p.id} disabled={!p.available}>{providerOptionLabel(p)}</option>)}</SelectBox></span>
                   {options && (opt?.models.length > 0

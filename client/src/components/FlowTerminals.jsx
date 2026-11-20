@@ -18,11 +18,12 @@ function tabState(t, workingIds, pending) {
 }
 
 /**
- * Dock de terminais DENTRO da página Missões: uma aba por etapa que já tem terminal, com o terminal real (o mesmo xterm do Cockpit) embaixo do workflow.
- * Fechado, vira uma faixa fina com o estado de cada agente. Esses terminais não aparecem no Cockpit nem na barra lateral (App/flow-terminals.js).
- * Aqui não há botão de encerrar o terminal: encerrar é "Cancelar missão" (fechar uma etapa no meio a faria falhar).
+ * Dock de terminais DENTRO da página Missões: uma aba por etapa que já tem terminal, com o terminal real (o mesmo xterm do Cockpit) embaixo do workflow, e uma aba
+ * por Planejador aberto (criar por briefing; vale com ou sem missão selecionada). Fechado, vira uma faixa fina com o estado de cada agente. Esses terminais não
+ * aparecem no Cockpit nem na barra lateral (App/flow-terminals.js).
+ * Etapa de missão não tem botão de encerrar: encerrar é "Cancelar missão" (fechar uma etapa no meio a faria falhar). Só o Planejador (`closable`) se fecha aqui (`onCloseTab`).
  */
-export default function FlowTerminals({ tabs, open, wanted, onWanted, onOpen, onClose, stream }) {
+export default function FlowTerminals({ tabs, open, wanted, onWanted, onOpen, onClose, onCloseTab = null, stream, label = 'Terminais da missão' }) {
   const { terminals, maestro, workingIds } = useStore();
   const [prefs] = usePrefs();
   const [h, setH] = useState(readH), [max, setMax] = useState(false);
@@ -58,9 +59,9 @@ export default function FlowTerminals({ tabs, open, wanted, onWanted, onOpen, on
 
   if (!open) {
     return (
-      <div className="fl-dock closed" role="region" aria-label="Terminais da missão">
-        <button type="button" className="fl-dock-bar" onClick={() => onOpen(null)} aria-label={`Abrir os ${tabs.length} terminais da missão`} title="Abrir os terminais da missão">
-          <Icon name="terminal" size={13} /><span className="fl-dock-t">Terminais da missão</span>
+      <div className="fl-dock closed" role="region" aria-label={label}>
+        <button type="button" className="fl-dock-bar" onClick={() => onOpen(null)} aria-label={`Abrir ${tabs.length === 1 ? 'o terminal' : `os ${tabs.length} terminais`}: ${label}`} title={`Abrir: ${label}`}>
+          <Icon name="terminal" size={13} /><span className="fl-dock-t">{label}</span>
           <span className="fl-dock-dots">{states.map(({ t, st }) => <span key={t.terminalId} className={`fl-dock-dot st-${st}`} title={`${t.title}: ${st}`}><StatusGlyph state={st} size={11} /></span>)}</span>
           <span className="oc-pgrow" /><Icon name="chevronUp" size={13} />
         </button>
@@ -70,22 +71,26 @@ export default function FlowTerminals({ tabs, open, wanted, onWanted, onOpen, on
 
   const sess = active?.session ?? null;
   return (
-    <div className={`fl-dock open${max ? ' max' : ''}`} role="region" aria-label="Terminais da missão" style={max ? undefined : { height: h }}>
-      {!max && <div className="fl-dock-gutter" role="separator" aria-orientation="horizontal" aria-label="Redimensionar os terminais da missão" tabIndex={0} onPointerDown={onDown} onKeyDown={onKey} onDoubleClick={() => { setH(H_DEF); try { localStorage.removeItem(H_KEY); } catch { /* ok */ } }} />}
+    <div className={`fl-dock open${max ? ' max' : ''}`} role="region" aria-label={label} style={max ? undefined : { height: h }}>
+      {!max && <div className="fl-dock-gutter" role="separator" aria-orientation="horizontal" aria-label="Redimensionar o dock de terminais" tabIndex={0} onPointerDown={onDown} onKeyDown={onKey} onDoubleClick={() => { setH(H_DEF); try { localStorage.removeItem(H_KEY); } catch { /* ok */ } }} />}
       <div className="fl-dock-head">
-        <div className="fl-dock-tabs" role="tablist" aria-label="Etapas com terminal">
+        <div className="fl-dock-tabs" role="tablist" aria-label="Terminais abertos nesta página">
           {states.map(({ t, st }) => (
-            <button key={t.terminalId} type="button" role="tab" aria-selected={t.terminalId === activeId} className={`fl-dock-tab st-${st}${t.terminalId === activeId ? ' on' : ''}`} onClick={() => onWanted(t.terminalId)} title={`${t.title}${t.session?.model ? ` · ${t.session.model}` : ''}`}>
+            <button key={t.terminalId} type="button" role="tab" aria-selected={t.terminalId === activeId} className={`fl-dock-tab st-${st}${t.kind === 'planner' ? ' is-planner' : ''}${t.terminalId === activeId ? ' on' : ''}`} onClick={() => onWanted(t.terminalId)}
+              title={`${t.title}${t.workspaceName ? ` · ${t.workspaceName}` : ''}${t.session?.model ? ` · ${t.session.model}` : ''}`}>
               <StatusGlyph state={st} size={12} />{t.session && <ProviderLogo id={t.session.provider || 'claude'} size={12} />}<span>{t.title}</span>
             </button>
           ))}
         </div>
         <span className="oc-pgrow" />
         <button type="button" className="fx-ibtn sm" onClick={() => setMax((v) => !v)} aria-label={max ? 'Restaurar o dock de terminais' : 'Ampliar o dock de terminais'} title={max ? 'Restaurar' : 'Ampliar'}><Icon name="fit" size={13} /></button>
-        <button type="button" className="fx-ibtn sm" onClick={onClose} aria-label="Recolher os terminais da missão" title="Recolher (a missão continua rodando)"><Icon name="chevronDown" size={13} /></button>
+        <button type="button" className="fx-ibtn sm" onClick={onClose} aria-label="Recolher o dock de terminais" title="Recolher (os terminais continuam rodando)"><Icon name="chevronDown" size={13} /></button>
       </div>
       <div className="fl-dock-body">
-        {sess ? (
+        {sess && active.closable && onCloseTab ? (
+          // Planejador: o usuário fecha quando quiser (o botão do próprio painel)
+          <TerminalPane key={sess.id} session={sess} stream={stream} role={byRole[sess.role]} state={paneState(sess, workingIds, pending)} waiting={waitingBy.get(sess.id)} fontSize={prefs.fontSize} maximized={max} onMaximize={() => setMax((v) => !v)} onClose={() => onCloseTab(active)} />
+        ) : sess ? (
           <TerminalPane key={sess.id} session={sess} stream={stream} role={byRole[sess.role]} state={paneState(sess, workingIds, pending)} waiting={waitingBy.get(sess.id)} fontSize={prefs.fontSize} maximized={max} onMaximize={() => setMax((v) => !v)} onClose={null} />
         ) : (
           <p className="fl-note" role="status">{active ? `O terminal da etapa “${active.title}” já foi encerrado e removido. O resumo da etapa está no painel do workflow.` : 'Nenhum terminal selecionado.'}</p>

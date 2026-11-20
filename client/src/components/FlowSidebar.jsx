@@ -20,8 +20,8 @@ function Row({ row, selected, onPick }) {
   );
 }
 
-/** Lista de missões por workspace: título, tipo, estado do último run e progresso n/m; "+" cria uma nova. */
-export default function FlowSidebar({ flows, workspaces, selectedId, onPick, onNew, failure }) {
+/** Lista de missões por workspace: título, tipo, estado do último run e progresso n/m; "+" cria uma nova; o botão do Planejador cria por briefing (`onBriefing`). */
+export default function FlowSidebar({ flows, workspaces, selectedId, onPick, onNew, onBriefing = null, failure }) {
   const [query, setQuery] = useState('');
   const groups = useMemo(() => groupFlows(flows ?? [], { workspaces, query }), [flows, workspaces, query]);
   const total = (flows ?? []).filter((f) => !f.archived).length;
@@ -30,7 +30,8 @@ export default function FlowSidebar({ flows, workspaces, selectedId, onPick, onN
       <div className="fl-side-h">
         <span className="fl-label">Missões</span>
         {total > 0 && <span className="fl-count">{total}</span>}
-        <button type="button" className="fl-plus" onClick={onNew} aria-label="Nova missão" title="Nova missão"><Icon name="plus" size={14} /></button>
+        {onBriefing && <button type="button" className="fl-plus fl-plus-text" onClick={onBriefing} aria-label="Nova por briefing" title="Nova por briefing (o Planejador propõe as etapas)"><Icon name="planner" size={13} /><span>briefing</span></button>}
+        <button type="button" className={`fl-plus${onBriefing ? ' fl-plus-next' : ''}`} onClick={onNew} aria-label="Nova missão" title="Nova missão"><Icon name="plus" size={14} /></button>
       </div>
       {(total > 6 || query) && (
         <label className="fl-search"><span aria-hidden="true">/</span><input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="buscar missão ou workspace" aria-label="Buscar missão ou workspace" /></label>
@@ -42,7 +43,10 @@ export default function FlowSidebar({ flows, workspaces, selectedId, onPick, onN
           <div className="fl-empty">
             <p>Nenhuma missão ainda.</p>
             <p className="dim">Uma missão é um objetivo dividido em etapas. Cada etapa roda um agente (Claude ou Codex) num terminal real do Cockpit, e o workflow mostra o andamento de cada uma.</p>
-            <button type="button" className="fl-btn fl-btn-primary" onClick={onNew}><Icon name="plus" size={13} /><span>Nova missão</span></button>
+            <div className="fl-new-row">
+              <button type="button" className="fl-btn fl-btn-primary" onClick={onNew}><Icon name="plus" size={13} /><span>Nova missão</span></button>
+              {onBriefing && <button type="button" className="fl-btn" onClick={onBriefing}><Icon name="planner" size={13} /><span>Nova por briefing</span></button>}
+            </div>
           </div>
         )}
         {groups.map((g) => (

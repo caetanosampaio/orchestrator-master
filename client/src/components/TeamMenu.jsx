@@ -3,6 +3,7 @@ import { Btn, Icon } from './ui.jsx';
 import { PRESETS, presetById, missingRoles } from '../team-view.js';
 import { providerOptionLabel } from '../env-view.js';
 import ProviderLogo from './ProviderLogo.jsx';
+import { teamSlotRoles } from '../flow-terminals.js';
 import { inferAgents, draftOpenProblem, squadSummary, teamChangePlan, applyCloseChoice } from '../squads.js';
 
 const STATE_TEXT = { working: 'executando', waiting: 'aguardando', done: 'concluído', idle: 'ocioso', failed: 'falhou', exited: 'encerrado' };
@@ -87,7 +88,7 @@ export default function TeamMenu({ role = 'builder', onRole = () => {}, provider
             <h3>Adicionar agente ou terminal</h3>
             <div className="tm-row">
               <label className="sr" htmlFor="tm-role">Papel do novo terminal</label>
-              <select id="tm-role" className="oc-sel" value={role} onChange={(e) => onRole(e.target.value)}>{roles.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}</select>
+              <select id="tm-role" className="oc-sel" value={role} onChange={(e) => onRole(e.target.value)}>{teamSlotRoles(roles).map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}</select>{/* sem o Planejador: ele só abre pela tela de Missões */}
               {providers.length > 1 && <><label className="sr" htmlFor="tm-prov">Agente do novo terminal</label>
               <select id="tm-prov" className="oc-sel" value={provider} onChange={(e) => onProvider(e.target.value)}>{providers.map((p) => <option key={p.id} value={p.id} disabled={!p.available}>{providerOptionLabel(p)}</option>)}</select></>}
               <Btn disabled={busy || room < 1} onClick={() => onAdd([role], provider)} title="Abre um terminal com este papel e este agente (Claude Code ou Codex); cada agente que edita ganha o seu worktree quando há mais de um"><Icon name="plus" size={12} /> Terminal</Btn>

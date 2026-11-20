@@ -1,4 +1,5 @@
-// Modelo de VISÃO das missões v2 (flows). PURO (sem React, sem rede): só organiza e rotula o que /api/flows devolve (contrato em docs/missions-v2-spec.md).
+// Modelo de VISÃO das missões v2 (flows). PURO (sem React, sem rede): só organiza e rotula o que /api/flows devolve (contrato em docs/missions-v2-spec.md e, para
+// paralelo isolado, integração, retomada e agenda, docs/missions-v2-fatia2.md seções A, B e G). Campo novo ausente (run antigo, modo pasta) = comportamento da fatia 1.
 // Nada é simulado: dado ausente vira "não informado" (ou "—" onde cabe um traço). O estado de cada etapa vem do run real; sem run, a etapa está "na fila" e a lista mostra "—/m".
 // Testado em server/test/flows-view.test.mjs.
 
@@ -21,23 +22,57 @@ export const STEP_STATE_META = Object.freeze({
   failed: { label: 'falhou', tone: 'err' },
   skipped: { label: 'pulada', tone: 'skip' },
   cancelled: { label: 'cancelada', tone: 'cancel' },
+  interrupted: { label: 'interrompida', tone: 'wait' }, // só dentro de run `interrupted` (reinício do servidor); volta com Retomar
 });
 export const RUN_STATE_META = Object.freeze({
   running: { label: 'em execução', tone: 'work' },
+  interrupted: { label: 'interrompida', tone: 'wait' },
+  ready_to_integrate: { label: 'pronta para integrar', tone: 'wait' },
   completed: { label: 'concluída', tone: 'ok' },
   failed: { label: 'falhou', tone: 'err' },
   cancelled: { label: 'cancelada', tone: 'cancel' },
+  discarded: { label: 'descartada', tone: 'cancel' },
 });
-/** Estado da MISSÃO na lista (derivado do run ativo ou do último). Ordem = prioridade de exibição (quem pede você vem antes). */
-export const FLOW_STATES = Object.freeze(['waiting', 'running', 'failed', 'idle', 'completed', 'cancelled']);
+/** Runs que ainda ocupam a missão (bloqueiam editar, excluir e iniciar outro; a agenda pula). Espelha ACTIVE_RUN do servidor. */
+export const ACTIVE_RUN_STATES = Object.freeze(['running', 'interrupted', 'ready_to_integrate']);
+export const isActiveRun = (run) => ACTIVE_RUN_STATES.includes(run?.status);
+/**
+ * Estado da MISSÃO na lista (derivado do run ativo ou do último). Ordem = prioridade de exibição (quem pede você vem antes).
+ * `conflict` vem primeiro: a missão já parou de iniciar etapas e só anda com a sua decisão. Tom `wait` (e não `err`): nada se perdeu e a missão não falhou; é um pedido de
+ * ação, como "aguardando você". O vermelho fica reservado para o que já terminou mal.
+ */
+export const FLOW_STATES = Object.freeze(['conflict', 'waiting', 'interrupted', 'ready_to_integrate', 'running', 'failed', 'idle', 'completed', 'cancelled', 'discarded']);
 export const FLOW_STATE_META = Object.freeze({
+  conflict: { label: 'conflito na integração', tone: 'wait' },
   waiting: { label: 'aguardando você', tone: 'wait' },
+  interrupted: { label: 'interrompida', tone: 'wait' },
+  ready_to_integrate: { label: 'pronta para integrar', tone: 'wait' },
   running: { label: 'em execução', tone: 'work' },
   failed: { label: 'falhou', tone: 'err' },
   idle: { label: 'sem execução', tone: 'idle' },
   completed: { label: 'concluída', tone: 'ok' },
   cancelled: { label: 'cancelada', tone: 'cancel' },
+  discarded: { label: 'descartada', tone: 'cancel' },
 });
+/** Estado da integração de uma etapa na branch da missão (modo Git). Ausente = `none` (runs antigos e modo pasta). */
+export const STEP_INTEGRATION_META = Object.freeze({
+  none: { label: 'sem integração', tone: 'idle' },
+  pending: { label: 'aguardando integração', tone: 'idle' },
+  integrating: { label: 'integrando', tone: 'work' },
+  integrated: { label: 'integrada', tone: 'ok' },
+  empty: { label: 'sem alterações para integrar', tone: 'skip' },
+  conflict: { label: 'conflito na integração', tone: 'wait' },
+  blocked: { label: 'integração bloqueada', tone: 'wait' }, // o motivo (integration.reason) refina o rótulo: ver BLOCKED_REASON_LABEL
+  error: { label: 'erro na integração', tone: 'err' },
+});
+/** Rótulo do bloqueio pela causa que o servidor gravou em `integration.reason`. Bloqueio antigo sem `reason` mas com `files` = guard de configuração. */
+export const BLOCKED_REASON_LABEL = Object.freeze({
+  project_config_changed: 'integração bloqueada: configuração ou arquivo sensível alterado',
+  branch_checked_out: 'integração bloqueada: a branch da missão está em checkout em outra pasta',
+});
+export const BRANCH_CHECKED_OUT_TEXT = 'A branch da missão está em checkout em outra pasta do repositório; troque a branch daquela pasta e clique em Tentar de novo.';
+/** Integração de etapa que trava a missão (não inicia etapas novas) até você tentar de novo ou descartar a etapa. */
+export const INTEGRATION_PROBLEM_STATES = Object.freeze(['conflict', 'blocked', 'error']);
 export const KIND_LABEL = Object.freeze({ project: 'projeto', automation: 'automação' });
 export const PROVIDER_LABEL = Object.freeze({ claude: 'Claude Code', codex: 'Codex CLI' });
 export const PROVIDERS = Object.freeze(['claude', 'codex']);
@@ -46,12 +81,24 @@ export const FALLBACK_ROLES = Object.freeze([
   { id: 'builder', label: 'Construtor' }, { id: 'reviewer', label: 'Revisor' }, { id: 'scout', label: 'Batedor' }, { id: 'maestro', label: 'Maestro' },
 ]);
 
+/** Papéis que não são de etapa (espelha STEP_ROLES do servidor): o Maestro e o Planejador não recebem tarefas. */
+export const NON_STEP_ROLES = Object.freeze(['maestro', 'planner']);
+/** Papéis oferecidos no editor de etapas: a lista real do servidor (senão a reserva), sem os que não são de etapa. */
+export const stepRoles = (roles) => (arr(roles).length ? arr(roles) : FALLBACK_ROLES).filter((r) => r?.id && !NON_STEP_ROLES.includes(r.id));
 export const providerLabel = (id) => PROVIDER_LABEL[id] ?? (id ? String(id) : NOT_INFORMED);
 export function roleLabel(id, roles = FALLBACK_ROLES) {
   if (!id) return NOT_INFORMED;
   return arr(roles).find((r) => r?.id === id)?.label ?? FALLBACK_ROLES.find((r) => r.id === id)?.label ?? String(id);
 }
 export const stepMeta = (state) => STEP_STATE_META[state] ?? { label: state ? String(state) : NOT_INFORMED, tone: 'idle' };
+/**
+ * Etapa que parou sem report_done (relatório automático): o servidor a deixa `waiting` com `unconfirmed: true` até o agente confirmar ou você decidir. Se o agente voltar a
+ * trabalhar ou pedir permissão (`agentBusy`), não é hora de decidir: a etapa aparece como trabalhando/aguardando permissão, como qualquer outra.
+ */
+export const UNCONFIRMED_META = Object.freeze({ label: 'confirme a conclusão', tone: 'wait' });
+const isUnconfirmed = (rs) => rs?.status === 'waiting' && rs?.unconfirmed === true && rs?.agentBusy !== true;
+/** Rótulo e cor do estado de uma etapa do run, considerando a etapa que espera a sua confirmação. */
+export const runStepMeta = (rs) => (isUnconfirmed(rs) ? UNCONFIRMED_META : stepMeta(rs?.status ?? 'pending'));
 
 // ---------- tempo ----------
 export function fmtDuration(ms) {
@@ -83,31 +130,230 @@ export const currentRun = (flow) => flow?.activeRun ?? flow?.lastRun ?? null;
 export const runSteps = (run) => arr(run?.steps);
 const runStep = (run, id) => runSteps(run).find((s) => s?.stepId === id) ?? null;
 
-/** Estado da missão: `waiting` só enquanto o run está ativo e alguma etapa espera você (sinal real do servidor). Sem run = idle. */
+const hasIntegrationProblem = (rs) => INTEGRATION_PROBLEM_STATES.includes(rs?.integration?.state);
+
+/**
+ * Estado da missão (sinal real do servidor; sem run = idle). Run `running`: `conflict` (etapa com integração em conflict|blocked|error) > `waiting` (etapa espera você) > `running`.
+ * Run `interrupted` mostra `interrupted` mesmo com conflito pendente: as ações de integração exigem o run `running`, então o primeiro passo é Retomar.
+ */
 export function flowState(flow) {
   const run = currentRun(flow);
   if (!run) return 'idle';
-  if (run.status === 'running') return runSteps(run).some((s) => s?.status === 'waiting') ? 'waiting' : 'running';
+  if (run.status === 'running') {
+    const steps = runSteps(run);
+    return steps.some(hasIntegrationProblem) ? 'conflict' : steps.some((s) => s?.status === 'waiting') ? 'waiting' : 'running';
+  }
   return FLOW_STATE_META[run.status] ? run.status : 'idle';
 }
 
+// estados da missão que pedem você (o indicador da barra lateral junta todos em `waiting`, com o motivo no título)
+const ASKS_YOU = Object.freeze(['conflict', 'waiting', 'interrupted', 'ready_to_integrate']);
+
 /**
- * Resumo para o indicador de Missões na barra lateral (visível em qualquer página). `state`: waiting (alguma etapa espera você) > working (run ativo) > failed / done
- * (run que terminou depois de `seenAt`, ou seja, enquanto você olhava outra página; some ao abrir Missões) > null (nada a mostrar). Só estado real de /api/flows.
+ * Resumo para o indicador de Missões na barra lateral (visível em qualquer página). `state`: waiting (alguma missão pede você: conflito, etapa esperando, interrompida ou pronta
+ * para integrar) > working (run ativo) > failed / done (run que terminou depois de `seenAt`, ou seja, enquanto você olhava outra página; some ao abrir Missões) > null (nada a
+ * mostrar). `waiting` soma os quatro motivos; o `title` diz cada um. Só estado real de /api/flows.
  */
 export function flowsActivity(flows, { seenAt = 0 } = {}) {
-  const c = { working: 0, waiting: 0, failed: 0, done: 0 };
+  const c = { working: 0, waiting: 0, failed: 0, done: 0 }, ask = { conflict: 0, waiting: 0, interrupted: 0, ready_to_integrate: 0 };
   for (const f of arr(flows)) {
     if (!f || f.archived) continue;
     const st = flowState(f);
     if (st === 'running') c.working++;
-    else if (st === 'waiting') c.waiting++;
+    else if (ASKS_YOU.includes(st)) { c.waiting++; ask[st]++; }
     else if ((st === 'failed' || st === 'completed') && ts(currentRun(f)?.finishedAt) > seenAt) c[st === 'failed' ? 'failed' : 'done']++;
   }
   const state = c.waiting ? 'waiting' : c.working ? 'working' : c.failed ? 'failed' : c.done ? 'done' : null;
-  const n = (k, one, many) => (c[k] ? [`${c[k]} ${c[k] === 1 ? one : many}`] : []);
-  const parts = [...n('waiting', 'missão aguardando você', 'missões aguardando você'), ...n('working', 'missão em execução', 'missões em execução'), ...n('failed', 'missão falhou', 'missões falharam'), ...n('done', 'missão concluída', 'missões concluídas')];
+  const n = (v, one, many) => (v ? [`${v} ${v === 1 ? one : many}`] : []);
+  const parts = [
+    ...n(ask.conflict, 'missão com conflito na integração', 'missões com conflito na integração'), ...n(ask.waiting, 'missão aguardando você', 'missões aguardando você'),
+    ...n(ask.interrupted, 'missão interrompida', 'missões interrompidas'), ...n(ask.ready_to_integrate, 'missão pronta para integrar', 'missões prontas para integrar'),
+    ...n(c.working, 'missão em execução', 'missões em execução'), ...n(c.failed, 'missão falhou', 'missões falharam'), ...n(c.done, 'missão concluída', 'missões concluídas'),
+  ];
   return { state, count: c.waiting || c.working || c.failed || c.done, ...c, title: parts.join(' · ') };
+}
+
+// ---------- ações do run e integração (fatia 2) ----------
+/** Runs terminados em que o servidor aceita refazer a limpeza segura das cópias que sobraram (`POST .../cleanup`). */
+export const CLEANUP_RUN_STATES = Object.freeze(['completed', 'failed', 'cancelled', 'discarded']);
+export const LEFTOVERS_HINT = 'Feche o terminal da etapa (ou resolva o que está pendente na cópia) e clique em Limpar cópias de novo.';
+/** Cópias (worktrees) que a limpeza segura não removeu, com o motivo do servidor (ex.: terminal ainda aberto, alterações não integradas). Só modo Git. */
+export function leftoverRows(run) {
+  const git = run?.git && typeof run.git === 'object' ? run.git : null;
+  if (!git || git.mode !== 'git') return [];
+  return arr(git.leftovers).filter((l) => l && typeof l === 'object').map((l, i) => ({ key: `${str(l.worktreeId) || 'wt'}-${i}`, worktreeId: str(l.worktreeId) || null, reason: str(l.reason) || 'motivo não informado' }));
+}
+
+/**
+ * O que a tela pode oferecer para o run atual (o ativo, senão o último: `currentRun`). O servidor confere de novo e pode recusar com 409. Retomar só `interrupted`; Cancelar em
+ * `running|interrupted`; Integrar e Descartar em `ready_to_integrate`; Descartar também em `cancelled|failed` de modo Git ainda não descartado; Limpar cópias (rota cleanup) em
+ * `completed|failed|cancelled|discarded` de modo Git com `git.leftovers`. `cleanupAction` diz o que o botão "Limpar cópias" chama: `discard` (run cancelado/falho ainda não
+ * descartado, sem apagar a branch) tem prioridade; senão `cleanup` (já descartado ou concluído, mas sobraram cópias); senão null.
+ */
+export function runActions(flow) {
+  const run = currentRun(flow), st = run?.status, git = run?.git && typeof run.git === 'object' ? run.git : null;
+  const leftovers = leftoverRows(run);
+  const canDiscard = st === 'ready_to_integrate' || ((st === 'cancelled' || st === 'failed') && git?.mode === 'git' && !git.discardedAt);
+  const canCleanup = CLEANUP_RUN_STATES.includes(st) && git?.mode === 'git' && leftovers.length > 0;
+  return {
+    runId: run?.id ?? null,
+    canResume: st === 'interrupted',
+    canCancel: st === 'running' || st === 'interrupted',
+    canIntegrate: st === 'ready_to_integrate',
+    canDiscard,
+    canCleanup,
+    cleanupAction: canDiscard && st !== 'ready_to_integrate' ? 'discard' : canCleanup ? 'cleanup' : null,
+    leftovers,
+  };
+}
+
+/**
+ * Avisos de Git do run para o cabeçalho, o histórico e a Entrega. `fallback` = motivo de a missão rodar em MODO PASTA (workspace sem Git, HEAD destacado, subpasta do repositório,
+ * Git antigo): sem cópia isolada, as etapas editam a pasta do workspace. `rebased` = a missão recomeçou a partir de outra ponta (`git.rebasedFrom`, objeto { branch, commit }
+ * ou texto). Ausentes = null (run antigo, modo Git normal).
+ */
+export function runGitNotes(run) {
+  const git = run?.git && typeof run.git === 'object' ? run.git : null;
+  if (!git) return { fallback: null, fallbackText: null, rebased: null, rebasedText: null };
+  const fallback = git.mode !== 'git' ? clip(str(git.fallbackReason), 300) || null : null;
+  const rf = git.rebasedFrom;
+  let rebased = null;
+  if (rf && typeof rf === 'object') {
+    const branch = str(rf.branch) || str(rf.baseBranch) || null, commitShort = shortSha(rf.commit) ?? shortSha(rf.baseCommit) ?? shortSha(rf.tip);
+    if (branch || commitShort) rebased = { branch, commitShort };
+  } else if (str(rf).trim()) rebased = { branch: null, commitShort: null, raw: clip(rf, 160) };
+  const rebasedText = rebased ? `a missão recomeçou a partir de ${rebased.raw ?? `${rebased.branch ?? 'branch não informada'}${rebased.commitShort ? `@${rebased.commitShort}` : ''}`}` : null;
+  return { fallback, fallbackText: fallback ? `sem cópia isolada: ${fallback}; as etapas editam a pasta do workspace, uma por vez` : null, rebased, rebasedText };
+}
+
+const strList = (v) => arr(v).filter((x) => typeof x === 'string' && x);
+const shortSha = (v) => (typeof v === 'string' && /^[0-9a-f]{7,64}$/i.test(v) ? v.slice(0, 7) : null);
+
+/**
+ * Integração FINAL do run na branch do workspace (modo Git), para chips, histórico e o aviso "pronta para integrar". null em runs antigos e no modo pasta.
+ * `state`: integrated (feita: `by` auto|user) | pending (esperando você, com `reasons`, `conflicts` e `files`) | none. `branch` = branch da missão; `baseBranch` = onde integra.
+ * `needsAck`: configuração executável ou arquivo sensível mudou; Integrar só passa com a sua confirmação explícita.
+ */
+export function integrationInfo(run) {
+  const git = run?.git && typeof run.git === 'object' ? run.git : null;
+  if (!git || git.mode !== 'git') return null;
+  const done = git.integration && typeof git.integration === 'object' ? git.integration : null, pend = !done && git.pending && typeof git.pending === 'object' ? git.pending : null;
+  const by = done?.by === 'auto' || done?.by === 'user' ? done.by : null, mode = done ? str(done.mode) || null : null;
+  const reasons = arr(pend?.reasons).filter((r) => r && (r.code || r.message)).map((r) => ({ code: str(r.code) || null, message: str(r.message) || NOT_INFORMED }));
+  const label = done ? (mode === 'empty' ? 'nada a integrar (sem alterações)' : mode === 'already' ? 'já estava na branch do workspace' : by === 'auto' ? 'integrada automaticamente' : by === 'user' ? 'integrada por você' : 'integrada')
+    : run?.status === 'ready_to_integrate' ? 'pronta para integrar' : null;
+  return {
+    state: done ? 'integrated' : pend || run?.status === 'ready_to_integrate' ? 'pending' : 'none', label,
+    by, byLabel: by === 'auto' ? 'automática' : by === 'user' ? 'por você' : null, mode, at: done?.at ?? null, commitShort: shortSha(done?.to) ?? shortSha(done?.missionTip),
+    reasons, conflicts: strList(pend?.conflicts), files: strList(pend?.files), needsAck: reasons.some((r) => r.code === 'project_config_changed'), checkedAt: pend?.checkedAt ?? null,
+    branch: str(git.branch) || null, baseBranch: str(git.baseBranch) || null,
+  };
+}
+
+/**
+ * Integração de UMA etapa na branch da missão. Estado ausente = `none`. `needsAction` = trava a missão (Tentar de novo / Descartar etapa). `reason` = causa gravada pelo servidor.
+ * `needsAck` = bloqueada pelo guard de configuração: só com `state === 'blocked'` e (`reason === 'project_config_changed'` ou, em bloqueio antigo sem `reason`, lista de arquivos
+ * não vazia). Outras causas (ex.: `branch_checked_out`) NÃO pedem confirmação: o Tentar de novo vai sem ack. `message` = o que aconteceu, para a tela (texto puro).
+ */
+export function stepIntegration(rs) {
+  const i = rs?.integration && typeof rs.integration === 'object' ? rs.integration : null, state = str(i?.state) || 'none';
+  const reason = str(i?.reason) || null, files = strList(i?.files), error = str(i?.error) || null;
+  const needsAck = state === 'blocked' && (reason === 'project_config_changed' || (!reason && files.length > 0));
+  const meta = STEP_INTEGRATION_META[state] ?? { label: state, tone: 'idle' };
+  const label = state === 'blocked' ? (needsAck ? BLOCKED_REASON_LABEL.project_config_changed : BLOCKED_REASON_LABEL[reason] ?? meta.label) : meta.label;
+  const message = state === 'conflict' ? 'A integração na branch da missão deu conflito; as etapas novas só começam depois que você resolver.'
+    : state === 'blocked' ? (needsAck ? 'A etapa alterou configuração executável ou arquivo sensível. Integrar exige a sua confirmação explícita.'
+      : reason === 'branch_checked_out' ? BRANCH_CHECKED_OUT_TEXT : `A integração foi bloqueada${error ? `: ${error}` : '.'}`)
+      : state === 'error' ? `A integração falhou${error ? `: ${error}` : '.'}` : null;
+  return { state, label, tone: meta.tone, reason, message, conflicts: strList(i?.conflicts), files, error, at: i?.at ?? null, needsAction: INTEGRATION_PROBLEM_STATES.includes(state), needsAck };
+}
+
+/** Etapas do run ATIVO (`running`) cuja integração trava a missão, para o aviso no topo. `worktreePath` só quando o servidor o mandou (só vem na etapa com conflito). */
+export function integrationProblems(flow) {
+  const run = flow?.activeRun ?? null;
+  if (!run || run.status !== 'running') return [];
+  const defs = new Map(arr(flow.steps).map((s) => [s.id, s]));
+  return runSteps(run).filter(hasIntegrationProblem).map((s) => ({ stepId: s.stepId, runId: run.id ?? null, title: defs.get(s.stepId)?.title ?? s.stepId, ...stepIntegration(s), branch: str(s.branch) || null, worktreePath: str(s.worktreePath) || null, terminalId: s.terminalId ?? null }));
+}
+
+// ---------- agenda (automações) ----------
+export const WEEKDAY_SHORT = Object.freeze(['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb']);
+export const SCHEDULE_KINDS = Object.freeze(['interval', 'daily', 'weekly']);
+export const MAX_EVERY_HOURS = 168;
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+const dayList = (v) => [...new Set(arr(v).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6))].sort((a, b) => a - b);
+
+/** "a cada 4 h", "diário às 09:00", "seg, qua às 08:30"; desligada = "desligada"; sem agenda (null) = "sem agenda"; formato desconhecido = "não informado". */
+export function scheduleLabel(schedule) {
+  if (schedule === null || schedule === undefined) return 'sem agenda';
+  if (typeof schedule !== 'object') return NOT_INFORMED;
+  if (schedule.enabled === false) return 'desligada';
+  if (schedule.kind === 'interval' && Number.isInteger(schedule.everyHours) && schedule.everyHours >= 1) return `a cada ${schedule.everyHours} h`;
+  if (schedule.kind === 'daily' && TIME_RE.test(str(schedule.time))) return `diário às ${schedule.time}`;
+  if (schedule.kind === 'weekly' && TIME_RE.test(str(schedule.time)) && dayList(schedule.days).length) return `${dayList(schedule.days).map((d) => WEEKDAY_SHORT[d]).join(', ')} às ${schedule.time}`;
+  return NOT_INFORMED;
+}
+/** Próxima execução da agenda em data curta local ("19/11 14:00"); ausente ou inválida = "—". */
+export const nextRunLabel = (nextRunAt) => (Number.isFinite(Date.parse(nextRunAt ?? '')) ? fmtWhen(nextRunAt) : DASH);
+
+export const SKIP_REASON_LABEL = Object.freeze({
+  missed: 'horário perdido (o FORGE estava fechado ou o servidor fora do ar)',
+  active_run: 'pulada: a execução anterior ainda estava ativa',
+  start_failed: 'não foi possível iniciar a execução',
+  limit: 'pulada: limite de automações rodando ao mesmo tempo',
+  archived: 'pulada: a missão está arquivada',
+  workspace_missing: 'pulada: o workspace não existe mais',
+});
+/** Pulos da agenda (`flow.scheduleSkips`, os últimos do servidor), do mais recente para o mais antigo. `count` > 1 = vários horários perdidos de uma vez. */
+export function skipRows(flow) {
+  return arr(flow?.scheduleSkips).filter((s) => s && typeof s === 'object').map((s, i) => {
+    const reason = str(s.reason) || null, count = Number.isInteger(s.count) && s.count > 1 ? s.count : null;
+    return { key: `${s.slotAt ?? s.at ?? ''}-${reason ?? ''}-${i}`, reason, label: SKIP_REASON_LABEL[reason] ?? (reason || NOT_INFORMED), message: str(s.message) || null, count,
+      countLabel: count ? `${count} horários` : null, slotAt: s.slotAt ?? null, at: s.at ?? null, when: fmtWhen(s.slotAt ?? s.at) };
+  }).sort((a, b) => ts(b.slotAt ?? b.at) - ts(a.slotAt ?? a.at));
+}
+
+/** Rascunho da agenda no formulário: guarda os campos de todos os presets para trocar de preset sem perder o que foi digitado. */
+export function emptySchedule() {
+  return { enabled: true, kind: 'daily', everyHours: 4, time: '09:00', days: [1, 2, 3, 4, 5] };
+}
+export function scheduleToDraft(schedule) {
+  const d = emptySchedule();
+  if (!schedule || typeof schedule !== 'object') return d;
+  return {
+    enabled: schedule.enabled === true, kind: SCHEDULE_KINDS.includes(schedule.kind) ? schedule.kind : d.kind,
+    everyHours: Number.isInteger(schedule.everyHours) ? schedule.everyHours : d.everyHours, time: TIME_RE.test(str(schedule.time)) ? schedule.time : d.time,
+    days: dayList(schedule.days).length ? dayList(schedule.days) : d.days,
+  };
+}
+/** Marca/desmarca um dia da semana (0 = domingo) no rascunho da agenda. */
+export function toggleScheduleDay(sd, day) {
+  const days = arr(sd?.days);
+  return { ...sd, days: days.includes(day) ? days.filter((d) => d !== day) : dayList([...days, day]) };
+}
+/** Mesmas regras do servidor: intervalo inteiro de 1 a 168 h; horário HH:MM; semanal com ao menos um dia de 0 a 6. { ok, errors: [{ field, message }] } */
+export function validateScheduleDraft(sd) {
+  const errors = [], add = (field, message) => errors.push({ field, message });
+  const kind = sd?.kind;
+  if (!SCHEDULE_KINDS.includes(kind)) add('schedule.kind', 'Escolha a frequência da agenda.');
+  if (kind === 'interval') {
+    const h = Number(sd?.everyHours);
+    if (sd?.everyHours === '' || sd?.everyHours === null || !Number.isInteger(h) || h < 1 || h > MAX_EVERY_HOURS) add('schedule.everyHours', `O intervalo vai de 1 a ${MAX_EVERY_HOURS} horas (número inteiro).`);
+  }
+  if ((kind === 'daily' || kind === 'weekly') && !TIME_RE.test(str(sd?.time))) add('schedule.time', 'Informe o horário no formato HH:MM (00:00 a 23:59).');
+  if (kind === 'weekly') {
+    const raw = arr(sd?.days);
+    if (!raw.length) add('schedule.days', 'Escolha ao menos um dia da semana.');
+    else if (raw.some((d) => !Number.isInteger(d) || d < 0 || d > 6)) add('schedule.days', 'Dia da semana inválido.');
+  }
+  return { ok: errors.length === 0, errors };
+}
+/** Rascunho → `schedule` da API, só com os campos do preset escolhido. `enabled` só `true` se marcado (booleano estrito). */
+export function draftToSchedule(sd) {
+  const enabled = sd?.enabled === true;
+  if (sd?.kind === 'interval') return { enabled, kind: 'interval', everyHours: Number(sd.everyHours) };
+  if (sd?.kind === 'weekly') return { enabled, kind: 'weekly', days: dayList(sd.days), time: str(sd.time) };
+  return { enabled, kind: 'daily', time: str(sd?.time) };
 }
 
 /** { done, total, pct, label, hasRun }. `total` = etapas da definição; `done` = etapas `completed` do run. Sem run: done/pct nulos e label "—/m". */
@@ -119,12 +365,15 @@ export function flowProgress(flow, run = currentRun(flow)) {
   return { done, total, pct: Math.round((done / total) * 100), label: `${done}/${total}`, hasRun: true };
 }
 
-/** Etapas esperando o usuário no run ativo (para o aviso no topo e o atalho de abrir o terminal). */
+/**
+ * Etapas esperando o usuário no run ativo (para o aviso no topo e o atalho de abrir o terminal). `unconfirmed` = o agente parou sem confirmar (decida: aceitar ou recusar);
+ * senão, o agente pediu uma permissão no terminal. `runId` vai junto para a decisão.
+ */
 export function waitingSteps(flow) {
   const run = flow?.activeRun ?? null;
   if (!run || run.status !== 'running') return [];
   const defs = new Map(arr(flow.steps).map((s) => [s.id, s]));
-  return runSteps(run).filter((s) => s?.status === 'waiting').map((s) => ({ stepId: s.stepId, title: defs.get(s.stepId)?.title ?? s.stepId, terminalId: s.terminalId ?? null, startedAt: s.startedAt ?? null }));
+  return runSteps(run).filter((s) => s?.status === 'waiting').map((s) => ({ stepId: s.stepId, runId: run.id ?? null, title: defs.get(s.stepId)?.title ?? s.stepId, terminalId: s.terminalId ?? null, startedAt: s.startedAt ?? null, unconfirmed: isUnconfirmed(s), summary: isUnconfirmed(s) ? s.summary ?? null : null }));
 }
 
 // ---------- lista ----------
@@ -172,13 +421,30 @@ const firstLine = (t) => clip(String(t ?? '').split('\n').find((l) => l.trim()) 
 function nodeLine(def, st) {
   switch (st.state) {
     case 'running': return { line: firstLine(def.prompt) || null, lineKind: 'task' };
-    case 'waiting': return { line: 'o agente espera a sua resposta no terminal', lineKind: 'wait' };
+    case 'waiting': return { line: st.unconfirmed ? 'o agente parou sem confirmar que terminou: aceite ou recuse' : 'o agente espera a sua resposta no terminal', lineKind: 'wait' };
     case 'completed': return st.summary ? { line: clip(st.summary, 110), lineKind: 'summary' } : { line: 'sem resumo informado', lineKind: 'note' };
     case 'failed': return { line: clip(st.error, 110) || 'falhou sem motivo informado', lineKind: 'error' };
     case 'skipped': return { line: 'pulada: uma etapa da qual depende falhou', lineKind: 'note' };
     case 'cancelled': return { line: 'cancelada junto com a missão', lineKind: 'note' };
+    case 'interrupted': return { line: 'interrompida pelo reinício do servidor: clique em Retomar', lineKind: 'wait' };
     default: return { line: null, lineKind: null };
   }
+}
+
+/** Estado do nó de Entrega: o do run terminado; `ready_to_integrate` e `discarded` (fatia 2) com rótulo do run; ativo/sem run = na fila. */
+function deliveryState(run) {
+  const s = run?.status, info = integrationInfo(run), meta = (k) => STEP_STATE_META[k] ?? RUN_STATE_META[k];
+  const pick = (state, line) => ({ state, label: meta(state).label, tone: meta(state).tone, line });
+  if (!run) return pick('pending', null);
+  if (s === 'completed') {
+    if (info?.state === 'integrated' && info.mode !== 'empty') return pick('completed', info.baseBranch ? `integrada em ${info.baseBranch}` : 'integrada na branch do workspace');
+    return pick('completed', 'todas as etapas concluídas');
+  }
+  if (s === 'ready_to_integrate') return pick('ready_to_integrate', info?.baseBranch ? `pronta para integrar em ${info.baseBranch}` : 'pronta para integrar');
+  if (s === 'failed') return pick('failed', 'o run terminou com falha');
+  if (s === 'cancelled') return pick('cancelled', 'o run foi cancelado');
+  if (s === 'discarded') return pick('discarded', 'o run foi descartado: nada entrou na branch do workspace');
+  return pick('pending', null);
 }
 
 /**
@@ -191,12 +457,12 @@ export function buildWorkflow(flow, run = currentRun(flow), { roles = FALLBACK_R
   const depth = depths(steps), ids = new Set(steps.map((s) => s.id)), rowIn = new Map();
   const nodes = steps.map((def) => {
     const col = depth.get(def.id) ?? 0, row = rowIn.get(col) ?? 0; rowIn.set(col, row + 1);
-    const rs = runStep(run, def.id), state = rs?.status && STEP_STATE_META[rs.status] ? rs.status : 'pending', meta = STEP_STATE_META[state];
-    const st = { state, summary: rs?.summary, error: rs?.error };
+    const rs = runStep(run, def.id), state = rs?.status && STEP_STATE_META[rs.status] ? rs.status : 'pending', meta = isUnconfirmed(rs) ? UNCONFIRMED_META : STEP_STATE_META[state];
+    const st = { state, summary: rs?.summary, error: rs?.error, unconfirmed: isUnconfirmed(rs) };
     return {
-      id: def.id, kind: 'step', col, row, title: str(def.title) || def.id, state, stateLabel: meta.label, tone: meta.tone, waiting: state === 'waiting',
+      id: def.id, kind: 'step', col, row, title: str(def.title) || def.id, state, stateLabel: meta.label, tone: meta.tone, waiting: state === 'waiting', unconfirmed: st.unconfirmed,
       agent: { provider: def.provider ?? null, providerLabel: providerLabel(def.provider), role: def.role ?? null, roleLabel: roleLabel(def.role, roles), model: def.model || null, effort: def.effort || null },
-      terminalId: rs?.terminalId ?? null, ...nodeLine(def, st),
+      terminalId: rs?.terminalId ?? null, ...nodeLine(def, st), integration: stepIntegration(rs),
     };
   });
   const stateOf = new Map(nodes.map((n) => [n.id, n.state]));
@@ -204,16 +470,14 @@ export function buildWorkflow(flow, run = currentRun(flow), { roles = FALLBACK_R
   for (const def of steps) {
     for (const from of arr(def.dependsOn).filter((d) => ids.has(d) && d !== def.id)) {
       const a = stateOf.get(from), b = stateOf.get(def.id);
-      const state = b === 'running' ? 'active' : b === 'waiting' ? 'wait' : a === 'completed' ? 'done' : a === 'failed' ? 'err' : 'idle';
+      const state = b === 'running' ? 'active' : b === 'waiting' || b === 'interrupted' ? 'wait' : a === 'completed' ? 'done' : a === 'failed' ? 'err' : 'idle';
       edges.push({ id: `${from}->${def.id}`, from, to: def.id, state, reuse: def.continueFrom === from });
     }
   }
   const needed = new Set(steps.flatMap((s) => arr(s.dependsOn)));
   const leaves = nodes.filter((n) => !needed.has(n.id));
-  const rstatus = run?.status, dState = !run ? 'pending' : rstatus === 'completed' ? 'completed' : rstatus === 'failed' ? 'failed' : rstatus === 'cancelled' ? 'cancelled' : 'pending';
-  const dMeta = STEP_STATE_META[dState];
-  const dLine = dState === 'completed' ? 'todas as etapas concluídas' : dState === 'failed' ? 'o run terminou com falha' : dState === 'cancelled' ? 'o run foi cancelado' : null;
-  nodes.push({ id: 'delivery', kind: 'delivery', col: Math.max(...nodes.map((n) => n.col)) + 1, row: 0, title: 'Entrega', state: dState, stateLabel: dMeta.label, tone: dMeta.tone, waiting: false, agent: null, terminalId: null, line: dLine, lineKind: dLine ? 'note' : null });
+  const d = deliveryState(run);
+  nodes.push({ id: 'delivery', kind: 'delivery', col: Math.max(...nodes.map((n) => n.col)) + 1, row: 0, title: 'Entrega', state: d.state, stateLabel: d.label, tone: d.tone, waiting: false, agent: null, terminalId: null, line: d.line, lineKind: d.line ? 'note' : null, integration: integrationInfo(run) });
   for (const l of leaves) edges.push({ id: `${l.id}->delivery`, from: l.id, to: 'delivery', state: l.state === 'completed' ? 'done' : l.state === 'failed' ? 'err' : 'idle', reuse: false });
   return { nodes, edges, columns: workflowColumns(nodes), hasRun: !!run };
 }
@@ -253,15 +517,18 @@ export function nodeDetail(flow, run, nodeId, { now = Date.now(), roles = FALLBA
       counts: { total: steps.length, completed: count('completed'), failed: count('failed'), skipped: count('skipped'), cancelled: count('cancelled') },
       failures: rs.filter((x) => x?.status === 'failed').map((x) => ({ id: x.stepId, title: defs.get(x.stepId)?.title ?? x.stepId, error: x.error ?? null })),
       startedAt: run?.startedAt ?? null, finishedAt: run?.finishedAt ?? null, durationMs: runDuration(run, now), runStatus: run?.status ?? null,
+      line: n.line, integration: integrationInfo(run), gitNotes: runGitNotes(run), leftovers: leftoverRows(run),
     };
   }
   const def = steps.find((s) => s.id === nodeId);
   if (!def) return null;
-  const rs = runStep(run, nodeId), state = rs?.status && STEP_STATE_META[rs.status] ? rs.status : 'pending', meta = STEP_STATE_META[state];
+  const rs = runStep(run, nodeId), state = rs?.status && STEP_STATE_META[rs.status] ? rs.status : 'pending', unconfirmed = isUnconfirmed(rs), meta = unconfirmed ? UNCONFIRMED_META : STEP_STATE_META[state];
   const title = (id) => steps.find((s) => s.id === id)?.title ?? id;
   const live = state === 'running' || state === 'waiting';
   return {
     kind: 'step', id: def.id, title: str(def.title) || def.id, state, stateLabel: meta.label, tone: meta.tone, hasRun: !!run,
+    runId: run?.id ?? null, unconfirmed, canDecide: unconfirmed && run?.status === 'running',
+    completedBy: rs?.completedBy === 'user' || rs?.completedBy === 'agent' ? rs.completedBy : null, decidedAt: rs?.decidedAt ?? null,
     agent: { providerLabel: providerLabel(def.provider), roleLabel: roleLabel(def.role, roles), model: def.model || null, effort: def.effort || null },
     prompt: str(def.prompt) || null,
     dependsOn: arr(def.dependsOn).map((id) => ({ id, title: title(id) })),
@@ -270,7 +537,11 @@ export function nodeDetail(flow, run, nodeId, { now = Date.now(), roles = FALLBA
     startedAt: rs?.startedAt ?? null, finishedAt: rs?.finishedAt ?? null, durationMs: rs ? spanMs(rs.startedAt, rs.finishedAt, live, now) : null,
     terminalId: rs?.terminalId ?? null, taskId: rs?.taskId ?? null,
     canOpenTerminal: !!rs?.terminalId, terminalLive: live,
-    terminalHint: !rs?.terminalId ? 'Esta etapa ainda não abriu um terminal.' : live ? null : 'A etapa terminou; o terminal pode já ter sido encerrado.',
+    terminalHint: !rs?.terminalId ? 'Esta etapa ainda não abriu um terminal.' : live ? null : state === 'interrupted' ? 'O servidor reiniciou durante a etapa; clique em Retomar para continuar.' : 'A etapa terminou; o terminal pode já ter sido encerrado.',
+    // modo Git (fatia 2): ausentes em runs antigos e no modo pasta. O caminho do worktree só vem do servidor na etapa com conflito; nunca é montado aqui.
+    branch: str(rs?.branch) || null, worktreeId: str(rs?.worktreeId) || null, integration: stepIntegration(rs),
+    ...(str(rs?.worktreePath) ? { worktreePath: rs.worktreePath } : {}),
+    canResolveIntegration: run?.status === 'running' && hasIntegrationProblem(rs),
   };
 }
 
@@ -279,7 +550,15 @@ export function historyRows(runs, flow, { now = Date.now() } = {}) {
   return arr(runs).filter((r) => r?.id).map((run) => {
     const meta = RUN_STATE_META[run.status] ?? { label: run.status ? String(run.status) : NOT_INFORMED, tone: 'idle' };
     const p = flowProgress(flow, run), failed = runSteps(run).find((s) => s?.status === 'failed');
-    return { id: run.id, status: run.status, label: meta.label, tone: meta.tone, startedAt: run.startedAt ?? null, durationMs: runDuration(run, now), progress: p.label, reason: failed ? clip(failed.error, 140) || null : null };
+    const info = integrationInfo(run), notes = runGitNotes(run), git = run.git && typeof run.git === 'object' ? run.git : null;
+    return {
+      id: run.id, status: run.status, label: meta.label, tone: meta.tone, startedAt: run.startedAt ?? null, durationMs: runDuration(run, now), progress: p.label, reason: failed ? clip(failed.error, 140) || null : null,
+      trigger: run.trigger === 'schedule' ? 'agenda' : 'manual', // run antigo sem `trigger` foi iniciado à mão
+      integration: info && info.state !== 'none' ? { state: info.state, label: info.label, by: info.by, mode: info.mode, at: info.at, commitShort: info.commitShort } : null,
+      // onde as etapas trabalharam: cópia isolada (Git), pasta do workspace (com o motivo) ou não informado (run antigo / ainda sondando)
+      copy: git?.mode === 'git' ? 'cópia isolada (Git)' : notes.fallback ? `pasta do workspace: ${notes.fallback}` : git?.mode === 'folder' ? 'pasta do workspace' : null,
+      fallback: notes.fallback, rebasedText: notes.rebasedText,
+    };
   });
 }
 
@@ -297,8 +576,9 @@ export function describeFailure(err, ctx = 'list') {
 // ---------- rascunho do formulário "Nova missão" ----------
 /** Etapa do editor. `key` é local (estável na edição); os ids s1..sN só nascem em `draftToBody`. */
 const blankStep = (key, deps = []) => ({ key, title: '', prompt: '', provider: 'claude', role: 'builder', model: '', effort: '', dependsOn: deps, continueFrom: '' });
-export function emptyDraft({ workspaceId = '' } = {}) {
-  return { workspaceId, title: '', goal: '', fullAccess: false, maxParallel: 1, steps: [blankStep('k1')], nextKey: 2 };
+/** `kind`: 'project' | 'automation' (só automação leva agenda). `autoIntegrate` nasce ligado (padrão do servidor); `schedule` é o rascunho de `emptySchedule()`. */
+export function emptyDraft({ workspaceId = '', kind = 'project' } = {}) {
+  return { workspaceId, kind: kind === 'automation' ? 'automation' : 'project', title: '', goal: '', fullAccess: false, maxParallel: 1, autoIntegrate: true, schedule: emptySchedule(), steps: [blankStep('k1')], nextKey: 2 };
 }
 /** Nova etapa ao fim; por padrão depende da anterior (sequência), e o usuário desmarca para criar um ramo paralelo. */
 export function addStep(draft) {
@@ -332,6 +612,8 @@ export function flowToDraft(flow) {
   const steps = arr(flow?.steps), keyOf = new Map(steps.map((s, i) => [s.id, `k${i + 1}`]));
   return {
     workspaceId: flow?.workspaceId ?? '', title: str(flow?.title), goal: str(flow?.goal), fullAccess: flow?.fullAccess === true, maxParallel: Math.min(4, Math.max(1, Number(flow?.maxParallel) || 1)),
+    kind: flow?.kind === 'automation' ? 'automation' : 'project', schedule: scheduleToDraft(flow?.schedule), autoIntegrate: flow?.autoIntegrate !== false, // missão antiga sem o campo = true
+
     steps: steps.length ? steps.map((s) => ({ key: keyOf.get(s.id), title: str(s.title), prompt: str(s.prompt), provider: s.provider ?? 'claude', role: s.role ?? 'builder', model: s.model ?? '', effort: s.effort ?? '', dependsOn: arr(s.dependsOn).map((d) => keyOf.get(d)).filter(Boolean), continueFrom: s.continueFrom ? keyOf.get(s.continueFrom) ?? '' : '' })) : [blankStep('k1')],
     nextKey: steps.length + 1,
   };
@@ -346,6 +628,9 @@ export function validateDraft(draft, { mode = 'create' } = {}) {
   if (str(draft?.goal).length > MAX_TEXT) add('goal', `O objetivo passa de ${MAX_TEXT} caracteres.`);
   if (mode === 'create' && !draft?.workspaceId) add('workspaceId', 'Escolha o workspace onde a missão vai rodar.');
   if (![1, 2, 3, 4].includes(Number(draft?.maxParallel))) add('maxParallel', 'O paralelismo vai de 1 a 4.');
+  const kind = draft?.kind ?? 'project'; // rascunho antigo sem tipo = projeto
+  if (kind !== 'project' && kind !== 'automation') add('kind', 'Escolha o tipo: projeto ou automação.');
+  if (kind === 'automation') for (const e of validateScheduleDraft(draft?.schedule).errors) add(e.field, e.message);
   const steps = arr(draft?.steps);
   if (!steps.length) add('steps', 'Adicione ao menos uma etapa.');
   if (steps.length > MAX_STEPS) add('steps', `No máximo ${MAX_STEPS} etapas por missão.`);
@@ -362,15 +647,120 @@ export function validateDraft(draft, { mode = 'create' } = {}) {
   return { ok: errors.length === 0, errors, byStep };
 }
 
-/** Corpo de POST/PATCH /api/flows. Vazio de modelo/esforço = null (padrão do agente). `fullAccess` só vai `true` se o usuário marcou (booleano estrito). PATCH não leva workspace nem tipo. */
-export function draftToBody(draft, { mode = 'create' } = {}) {
+/**
+ * Corpo de POST/PATCH /api/flows. Vazio de modelo/esforço = null (padrão do agente). `fullAccess` e `autoIntegrate` só vão `true` se marcados (booleano estrito: texto nunca
+ * liga; o rascunho nasce com `autoIntegrate: true`). `kind` vai nos dois modos (o PATCH valida contra o resultado mesclado); `schedule` só em automação, senão null. PATCH não leva workspace.
+ */
+export function draftToBody(draft, { mode = 'create', proposalId = null } = {}) {
   const ids = new Map(arr(draft.steps).map((s, i) => [s.key, `s${i + 1}`]));
+  const kind = draft.kind === 'automation' ? 'automation' : 'project';
   const body = {
-    title: str(draft.title).trim(), goal: str(draft.goal).trim(), fullAccess: draft.fullAccess === true, maxParallel: Number(draft.maxParallel) || 1,
+    kind, title: str(draft.title).trim(), goal: str(draft.goal).trim(), fullAccess: draft.fullAccess === true, maxParallel: Number(draft.maxParallel) || 1,
+    schedule: kind === 'automation' ? draftToSchedule(draft.schedule) : null, autoIntegrate: draft.autoIntegrate === true,
     steps: arr(draft.steps).map((s) => ({
       id: ids.get(s.key), title: str(s.title).trim(), prompt: str(s.prompt).trim(), provider: s.provider, role: s.role, model: s.model || null, effort: s.effort || null,
       dependsOn: arr(s.dependsOn).map((d) => ids.get(d)).filter(Boolean), continueFrom: s.continueFrom ? ids.get(s.continueFrom) ?? null : null,
     })),
   };
-  return mode === 'create' ? { workspaceId: draft.workspaceId, kind: 'project', ...body } : body;
+  // `proposalId` só no create e só no formato do servidor: serve para baixar a proposta do Planejador depois da criação (não muda a missão)
+  return mode === 'create' ? { workspaceId: draft.workspaceId, ...body, ...(isProposalId(proposalId) ? { proposalId } : {}) } : body;
+}
+/** PATCH só com agenda e integração automática: o único aceito com run ativo (os demais campos dão 409). */
+export function draftToScheduleBody(draft) {
+  return { schedule: draft?.kind === 'automation' ? draftToSchedule(draft.schedule) : null, autoIntegrate: draft?.autoIntegrate === true };
+}
+
+// ---------- criar por briefing: terminal planejador e propostas (docs/missions-v2-briefing.md) ----------
+export const PROPOSAL_ID_RE = /^prop_[0-9a-f]{8}$/;
+export const isProposalId = (v) => typeof v === 'string' && PROPOSAL_ID_RE.test(v);
+export const BRIEFING_TEXT = 'Abre um terminal com o Planejador. Escreva o que você quer; ele lê o projeto, pergunta o que faltar e propõe as etapas. Você revisa no formulário antes de criar.';
+export const PROPOSAL_NOTICE = 'Proposta do Planejador: revise as etapas, papéis e dependências antes de criar. Acesso total vem desligado.';
+/** Automação proposta: o servidor manda a agenda SEMPRE desligada (só o usuário liga). Se um servidor antigo mandar ligada, o aviso diz isso em vez de mentir. */
+export const PROPOSAL_SCHEDULE_OFF = 'A agenda vem desligada: ligue só se quiser que rode sozinha.';
+export const PROPOSAL_SCHEDULE_ON = 'Atenção: a agenda veio LIGADA; desligue se não quiser que a automação rode sozinha.';
+
+/** Linhas do aviso no topo do formulário da proposta: o aviso geral e, em automação com agenda, como a agenda chegou. */
+export function proposalNoticeLines(proposal) {
+  const flow = proposal?.flow && typeof proposal.flow === 'object' ? proposal.flow : null;
+  if (!flow) return [PROPOSAL_NOTICE];
+  const sched = flow.kind === 'automation' && flow.schedule && typeof flow.schedule === 'object' ? flow.schedule : null;
+  return sched ? [PROPOSAL_NOTICE, sched.enabled === true ? PROPOSAL_SCHEDULE_ON : PROPOSAL_SCHEDULE_OFF] : [PROPOSAL_NOTICE];
+}
+
+/**
+ * Formulário aberto a partir de proposta: Enter num <input> NÃO envia (o envio implícito do navegador criaria a missão com um Enter acidental, ex.: digitando no
+ * terminal quando o formulário abriu). Só o botão "Criar missão" envia. Textarea (quebra de linha), select e botões seguem normais; composição de IME não é tocada.
+ */
+export const blocksImplicitSubmit = (e) => e?.key === 'Enter' && e?.nativeEvent?.isComposing !== true && e?.isComposing !== true && String(e?.target?.tagName ?? '').toUpperCase() === 'INPUT';
+
+/** O foco está dentro de um terminal (xterm)? Usado para não abrir o formulário da proposta por cima de quem está digitando. */
+export const focusInTerminal = (el) => !!(el && typeof el.closest === 'function' && el.closest('.xterm'));
+
+/** Briefing num workspace com configuração executável de projeto ainda não revisada: o servidor recusa com 409 e a lista; a tela pede confirmação explícita. */
+export const BRIEFING_CONFIG_CODE = 'project_config_unreviewed';
+export const BRIEFING_CONFIG_TEXT = 'Este workspace tem configuração executável do projeto que ainda não foi revisada; o planejador vai rodar nesta pasta e o agente pode carregar esses arquivos.';
+/** Arquivos do 409 `project_config_unreviewed` (só texto), ou null se o erro é outro. */
+export function briefingConfigFiles(err) {
+  if (err?.code !== BRIEFING_CONFIG_CODE) return null;
+  return arr(err.files).filter((f) => typeof f === 'string' && f);
+}
+
+/**
+ * Corpo de POST /api/flows/briefing: workspace obrigatório; agente só se for um dos conhecidos; modelo e esforço só quando escolhidos (vazio = padrão do agente).
+ * Os valores vêm de listas fechadas (selects); o servidor valida de novo. `acknowledgeProjectConfig` só vai `true` com o booleano estrito (a caixa marcada no diálogo).
+ */
+export function briefingBody({ workspaceId, provider, model, effort, acknowledgeProjectConfig } = {}) {
+  return {
+    workspaceId: str(workspaceId), ...(PROVIDERS.includes(provider) ? { provider } : {}),
+    ...(str(model) ? { model } : {}), ...(str(effort) ? { effort } : {}),
+    ...(acknowledgeProjectConfig === true ? { acknowledgeProjectConfig: true } : {}),
+  };
+}
+
+/**
+ * Propostas pendentes de GET /api/flows/proposals, da mais nova para a mais antiga. Item sem id no formato do servidor ou sem `flow` é ignorado (texto de agente: nada
+ * é confiável além do que o servidor validou). `title` é só para avisos curtos; o formulário usa o `proposal` inteiro.
+ */
+export function proposalRows(list, { workspaces = [] } = {}) {
+  return arr(list).filter((p) => p && isProposalId(p.id) && p.flow && typeof p.flow === 'object').map((p) => ({
+    id: p.id, terminalId: str(p.terminalId) || null, workspaceId: str(p.workspaceId) || null,
+    workspaceName: str(p.workspaceName).trim() || wsNameOf({ workspaceId: p.workspaceId }, workspaces), createdAt: p.createdAt ?? null,
+    title: clip(str(p.flow.title), 80) || 'sem título', steps: arr(p.flow.steps).length, proposal: p,
+  })).sort((a, b) => ts(b.createdAt) - ts(a.createdAt));
+}
+
+/**
+ * Rascunho do formulário "Nova missão" a partir de uma proposta do Planejador: mesmo caminho da edição (flowToDraft), mas o workspace é SEMPRE o da proposta (o do pane,
+ * nunca um campo do agente) e o acesso total vem SEMPRE desligado (só o usuário liga).
+ */
+export function proposalToDraft(proposal) {
+  const flow = proposal?.flow && typeof proposal.flow === 'object' ? proposal.flow : {};
+  return { ...flowToDraft(flow), workspaceId: str(proposal?.workspaceId), fullAccess: false };
+}
+
+/**
+ * O que fazer com as propostas que chegaram. `seen` = ids já anunciados (abertos ou avisados). Bloqueado (outro diálogo aberto) = espera, sem marcar nada.
+ * Com um formulário aberto, NADA abre por cima: as novas só viram aviso dentro dele (e ficam marcadas). Sem formulário, abre a mais nova; as demais ficam na faixa da página.
+ * `terminalFocused` (o foco está num terminal xterm, ex.: o usuário digitando no Planejador): NADA abre; as novas ficam marcadas e vão para a faixa da página
+ * ("Revisar"), e `held` traz a mais nova para a tela avisar. Assim um formulário nunca rouba o foco de quem digita (e um Enter não cai nele).
+ */
+export function proposalAutoOpen({ rows = [], seen = new Set(), formOpen = false, blocked = false, terminalFocused = false } = {}) {
+  const fresh = arr(rows).filter((r) => r?.id && !seen.has(r.id));
+  if (!fresh.length || blocked) return { open: null, markSeen: [] };
+  const markSeen = fresh.map((r) => r.id);
+  if (formOpen) return { open: null, markSeen };
+  if (terminalFocused) return { open: null, markSeen, held: fresh[0] };
+  return { open: fresh[0], markSeen };
+}
+
+/**
+ * Avisos dentro do formulário. `current` = a proposta carregada nele (null no formulário comum). `newer` = versão nova do MESMO terminal (a pendente anterior foi
+ * substituída): só carrega se o usuário pedir. `others` = outras pendentes que chegaram DEPOIS que o formulário abriu ("Nova proposta"): `seenAtOpen` = ids já vistos
+ * naquele momento; essas continuam só na faixa da página. `pending` = a carregada ainda está pendente no servidor.
+ */
+export function proposalNotices(rows, current = null, { seenAtOpen = null } = {}) {
+  const list = arr(rows), cur = current?.id ?? null;
+  const old = seenAtOpen && typeof seenAtOpen.has === 'function' ? seenAtOpen : new Set();
+  const newer = cur && current?.terminalId ? list.find((r) => r.terminalId === current.terminalId && r.id !== cur) ?? null : null;
+  return { newer, others: list.filter((r) => r.id !== cur && r !== newer && !old.has(r.id)), pending: !!cur && list.some((r) => r.id === cur) };
 }

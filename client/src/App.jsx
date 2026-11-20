@@ -50,7 +50,7 @@ export default function App() {
   const narrow = useNarrow();
   const menuRef = useRef(null);
   const [prefs] = usePrefs();
-  const { error, toast, state, openWorkspaceIds, act, workspaces, terminals, workingIds } = useStore();
+  const { error, toast, state, openWorkspaceIds, act, workspaces, terminals, workingIds, setHiddenTerminals } = useStore();
   const [view, setView] = useState(() => (location.hash.startsWith('#/settings') ? 'settings' : location.hash.startsWith('#/missions') ? 'missions' : location.hash.startsWith('#/cockpit') ? 'cockpit' : 'home')); // página: 'home' (Início, a de abertura: #/ ou #/home) | 'cockpit' (terminais) | 'missions' (central de missões) | 'settings' (Configurações; #/settings: link antigo)
   const backTo = useRef(view === 'settings' ? 'home' : view); // de onde as Configurações foram abertas: o "Voltar" retorna para lá
   const missionsData = useMissions({ intervalMs: view === 'missions' ? 2500 : 6000 }); // mais devagar fora da página: só alimenta o indicador do botão Missions
@@ -59,6 +59,7 @@ export default function App() {
   const [flowsSeenAt, setFlowsSeenAt] = useState(() => Date.now());
   useEffect(() => { if (view === 'missions') setFlowsSeenAt(Date.now()); }, [view, flowsData.flows]);
   const flowTermIds = useMemo(() => flowTerminalIds(flowsData.flows), [flowsData.flows]); // terminais das missões: só aparecem na página Missões
+  useEffect(() => { setHiddenTerminals?.(flowTermIds); }, [flowTermIds, setHiddenTerminals]); // e não contam no "terminou" (!) dos workspaces da barra lateral
   // Painel Live abre sozinho quando a equipe do workspace aberto começa a trabalhar (preferência liveAutoOpen). Só setLiveOpen: NÃO grava forge.live.open, não usa focus() nem rola a página.
   const autoOpenLive = useCallback(({ mission }) => { setLiveHint(mission ? 'build' : null); setLiveOpen(true); }, []);
   useLiveAutoOpen({ wsId: state?.activeWorkspace?.id ?? null, flows: flowsData.flows, sessions: terminals?.sessions, workingIds, liveOpen, open: autoOpenLive });

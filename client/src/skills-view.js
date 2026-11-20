@@ -1,6 +1,6 @@
 // Skills no cliente: lógica pura sobre o que GET /api/loadouts (o catálogo e o que cada papel recebe) e GET /api/harness (a tabela "Quem faz cada tarefa") devolvem. Sem React, sem rede.
 // Só existem as skills do catálogo do servidor (texto fixo, em loadouts.js): nada aqui inventa skill.
-export const ROLE_ORDER = Object.freeze(['maestro', 'builder', 'reviewer', 'scout']);
+export const ROLE_ORDER = Object.freeze(['maestro', 'builder', 'reviewer', 'scout', 'planner']); // planner: Planejador de missões (Missions v2)
 /** Como o agente chama a skill no Claude Code: /squad:<id>. */
 export const callName = (id) => `/squad:${id}`;
 

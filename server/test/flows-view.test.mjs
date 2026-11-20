@@ -10,6 +10,7 @@ import {
   flowsActivity, edgePathDown, buildWorkflow, workflowColumns, nodeDetail, historyRows, fmtDuration, fmtWhen, spanMs, runDuration, describeFailure, roleLabel, providerLabel,
   emptyDraft, addStep, removeStep, patchStep, toggleDependency, ancestorKeys, flowToDraft, validateDraft, draftToBody, MAX_STEPS,
 } from '../../client/src/flows-view.js';
+import * as FV from '../../client/src/flows-view.js'; // fatia 2 (docs/missions-v2-fatia2.md, seções A, B e G)
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const T0 = '2026-11-16T10:00:00.000Z';
@@ -262,13 +263,13 @@ test('validação do rascunho: espelha as regras do servidor, com mensagens por 
   assert.equal(validateDraft(patchStep(patchStep(e, 'k2', { dependsOn: [] }), 'k2', { continueFrom: 'k1' })).errors[0].field, 'step.continueFrom');
 });
 
-test('corpo da API: ids s1..sN, vazio vira null, fullAccess só booleano estrito, PATCH sem workspace/tipo', () => {
+test('corpo da API: ids s1..sN, vazio vira null, fullAccess só booleano estrito, PATCH sem workspace (tipo, agenda e autoIntegrate vão nos dois)', () => {
   let d = emptyDraft({ workspaceId: 'ws_1' }); d = { ...d, title: '  Missão  ', goal: ' obj ', maxParallel: 2 };
   d = patchStep(d, 'k1', { title: ' A ', prompt: ' faça A ', model: 'opus', effort: '' });
   d = addStep(d); d = patchStep(d, 'k2', { title: 'B', prompt: 'faça B', provider: 'codex', role: 'reviewer', continueFrom: 'k1' });
   const body = draftToBody(d);
   assert.deepEqual(body, {
-    workspaceId: 'ws_1', kind: 'project', title: 'Missão', goal: 'obj', fullAccess: false, maxParallel: 2,
+    workspaceId: 'ws_1', kind: 'project', title: 'Missão', goal: 'obj', fullAccess: false, maxParallel: 2, schedule: null, autoIntegrate: true, // fatia 2: projeto não leva agenda
     steps: [
       { id: 's1', title: 'A', prompt: 'faça A', provider: 'claude', role: 'builder', model: 'opus', effort: null, dependsOn: [], continueFrom: null },
       { id: 's2', title: 'B', prompt: 'faça B', provider: 'codex', role: 'reviewer', model: null, effort: null, dependsOn: ['s1'], continueFrom: 's1' },
@@ -277,7 +278,8 @@ test('corpo da API: ids s1..sN, vazio vira null, fullAccess só booleano estrito
   assert.equal(draftToBody({ ...d, fullAccess: 'true' }).fullAccess, false); // texto nunca liga o acesso total
   assert.equal(draftToBody({ ...d, fullAccess: true }).fullAccess, true);
   const patch = draftToBody(d, { mode: 'edit' });
-  assert.ok(!('workspaceId' in patch) && !('kind' in patch));
+  assert.ok(!('workspaceId' in patch)); // editar não troca o workspace
+  assert.deepEqual([patch.kind, patch.schedule, patch.autoIntegrate], ['project', null, true]); // fatia 2: o PATCH aceita kind/schedule/autoIntegrate
 });
 
 test('editar: flowToDraft e draftToBody fazem ida e volta sem perder dependências nem terminal reaproveitado', () => {
@@ -352,4 +354,657 @@ test('FlowWorkflow desenha as fases uma abaixo da outra (sem rolagem lateral nem
   const w = fs.readFileSync(path.join(here, '../../client/src/components/FlowWorkflow.jsx'), 'utf8'), css = fs.readFileSync(path.join(here, '../../client/src/flows.css'), 'utf8');
   assert.ok(w.includes('edgePathDown(') && w.includes('y1 = a.y + a.h') && !w.includes('scrollLeft') && !w.includes("from './MissionWorkflow.jsx'"));
   assert.ok(/.fl-wf .mwf-stage { flex-direction: column;/.test(css) && css.includes('.fl-phase-nodes'));
+});
+
+test('etapa que parou sem report_done (unconfirmed): rótulo próprio, aviso com runId e resumo, detalhe com decisão só no run ativo; quem concluiu aparece', async () => {
+  const V = await import('../../client/src/flows-view.js');
+  const un = rs('s2', 'waiting', { unconfirmed: true, terminalId: 'term_9', summary: 'Relatório automático: quer que eu continue?' });
+  const f = flow({ activeRun: run([rs('s1', 'completed', { completedBy: 'user', decidedAt: T0 }), un, rs('s3', 'waiting')]) });
+  assert.deepEqual(waitingSteps(f).map((w) => [w.stepId, w.unconfirmed, w.runId, w.summary]), [['s2', true, 'run_1', un.summary], ['s3', false, 'run_1', null]]);
+  assert.equal(flowState(f), 'waiting', 'conta como aguardando você (sidebar e lista)');
+  assert.deepEqual(V.runStepMeta(un), V.UNCONFIRMED_META); assert.deepEqual(V.runStepMeta(rs('s3', 'waiting')), STEP_STATE_META.waiting); assert.deepEqual(V.runStepMeta(undefined), STEP_STATE_META.pending);
+  const node = buildWorkflow(f).nodes.find((n) => n.id === 's2');
+  assert.deepEqual([node.state, node.stateLabel, node.waiting], ['waiting', 'confirme a conclusão', true]); assert.match(node.line, /parou sem confirmar/);
+  const d = nodeDetail(f, f.activeRun, 's2'); assert.deepEqual([d.unconfirmed, d.canDecide, d.runId], [true, true, 'run_1']);
+  assert.equal(nodeDetail(f, f.activeRun, 's1').completedBy, 'user'); assert.equal(nodeDetail(f, f.activeRun, 's3').canDecide, false);
+  const ended = run([un], { status: 'failed' }); assert.equal(nodeDetail(flow({ lastRun: ended }), ended, 's2').canDecide, false, 'run terminado: nada a decidir');
+  assert.equal(nodeDetail(f, f.activeRun, 's1').completedBy, 'user'); assert.equal(nodeDetail(flow({ activeRun: run([rs('s1', 'completed', { completedBy: '<x>' })]) }), null, 's1').completedBy, null);
+});
+
+test('decisão na tela: use-flows chama a rota de decisão; aviso e painel mostram Aceitar/Recusar só para a etapa sem confirmação; recusar pede confirmação', () => {
+  const read = (p) => fs.readFileSync(path.join(here, '../../client/src', p), 'utf8');
+  const hook = read('use-flows.js'), head = read('components/FlowHeader.jsx'), panel = read('components/FlowSidePanel.jsx'), page = read('pages/Missions.jsx'), form = read('components/FlowForm.jsx');
+  assert.ok(hook.includes('/steps/${encodeURIComponent(stepId)}/decision`, { decision })'));
+  assert.ok(head.includes('w.unconfirmed && onDecide && w.runId && <StepDecision') && head.includes('Aceitar como concluída') && head.includes('Recusar'));
+  assert.ok(panel.includes('d.canDecide && onDecide && <StepDecision'));
+  assert.ok(/decision === 'reject' && !window\.confirm\(/.test(page) && page.includes('onDecide={onDecide}'));
+  assert.ok(form.includes('rodam uma por vez na pasta do workspace'), 'o formulário explica que Construtores não rodam juntos');
+});
+
+test('etapa sem confirmação com o agente ocupado (agentBusy): não pede decisão; aparece como trabalhando/permissão comum', async () => {
+  const V = await import('../../client/src/flows-view.js');
+  const busyWait = rs('s1', 'waiting', { unconfirmed: true, agentBusy: true, terminalId: 'term_1' }), busyRun = rs('s2', 'running', { unconfirmed: true, agentBusy: true });
+  const f = flow({ activeRun: run([busyWait, busyRun]) });
+  assert.deepEqual(waitingSteps(f).map((w) => [w.stepId, w.unconfirmed]), [['s1', false]], 'é um pedido de permissão, não a confirmação');
+  assert.deepEqual(V.runStepMeta(busyWait), STEP_STATE_META.waiting); assert.deepEqual(V.runStepMeta(busyRun), STEP_STATE_META.running);
+  assert.equal(nodeDetail(f, f.activeRun, 's1').canDecide, false); assert.equal(buildWorkflow(f).nodes.find((n) => n.id === 's1').unconfirmed, false);
+  const wf = fs.readFileSync(path.join(here, '../../client/src/components/FlowWorkflow.jsx'), 'utf8'); assert.ok(wf.includes('n.waiting && !n.unconfirmed'), 'leitor de tela sem texto contraditório');
+});
+
+// ---------- fatia 2: paralelo isolado, integração, retomada e agenda (dados no formato das seções A e B de docs/missions-v2-fatia2.md) ----------
+const SHA = 'abcdef1234567890abcdef1234567890abcdef12';
+const gitOf = (o = {}) => ({ mode: 'git', fallbackReason: null, baseBranch: 'main', baseCommit: '1111111', branch: 'orch/run_1', tip: SHA, state: 'ready', op: null, integration: null, pending: null, leftovers: [], cleanedAt: null, branchDeleted: false, discardedAt: null, ...o });
+const integ = (state, o = {}) => ({ state, from: null, to: null, conflicts: [], files: [], error: null, at: T0, ...o });
+
+test('fatia 2: rótulos novos de run, missão e etapa; conflito vem antes de tudo na prioridade', () => {
+  assert.deepEqual(FV.RUN_STATE_META.interrupted, { label: 'interrompida', tone: 'wait' });
+  assert.deepEqual(FV.RUN_STATE_META.ready_to_integrate, { label: 'pronta para integrar', tone: 'wait' });
+  assert.deepEqual(FV.RUN_STATE_META.discarded, { label: 'descartada', tone: 'cancel' });
+  assert.deepEqual(STEP_STATE_META.interrupted, { label: 'interrompida', tone: 'wait' });
+  assert.deepEqual(FLOW_STATE_META.conflict, { label: 'conflito na integração', tone: 'wait' });
+  assert.equal(FLOW_STATE_META.interrupted.label, 'interrompida'); assert.equal(FLOW_STATE_META.ready_to_integrate.label, 'pronta para integrar'); assert.equal(FLOW_STATE_META.discarded.label, 'descartada');
+  assert.deepEqual(FLOW_STATES.slice(0, 5), ['conflict', 'waiting', 'interrupted', 'ready_to_integrate', 'running'], 'quem pede você vem antes de quem só trabalha');
+  assert.deepEqual(new Set(FLOW_STATES), new Set(Object.keys(FLOW_STATE_META)));
+  assert.deepEqual([...FV.ACTIVE_RUN_STATES], ['running', 'interrupted', 'ready_to_integrate']);
+  assert.equal(FV.isActiveRun({ status: 'interrupted' }), true); assert.equal(FV.isActiveRun({ status: 'completed' }), false); assert.equal(FV.isActiveRun(null), false);
+});
+
+test('fatia 2: flowState com conflito, interrompida, pronta para integrar e descartada; run antigo sem os campos fica igual', () => {
+  for (const s of ['conflict', 'blocked', 'error']) assert.equal(flowState(flow({ activeRun: run([rs('s1', 'completed', { integration: integ(s) }), rs('s2', 'running')]) })), 'conflict', s);
+  assert.equal(flowState(flow({ activeRun: run([rs('s1', 'completed', { integration: integ('conflict') }), rs('s2', 'waiting')]) })), 'conflict', 'conflito vence a espera');
+  for (const s of ['none', 'pending', 'integrating', 'integrated', 'empty']) assert.equal(flowState(flow({ activeRun: run([rs('s1', 'completed', { integration: integ(s) }), rs('s2', 'running')]) })), 'running', s);
+  assert.equal(flowState(flow({ activeRun: run([rs('s1', 'completed', { integration: integ('integrated') }), rs('s2', 'waiting')]) })), 'waiting');
+  assert.equal(flowState(flow({ activeRun: run([rs('s1', 'interrupted', { interruptedFrom: 'running' })], { status: 'interrupted', interruptedAt: T0 }) })), 'interrupted');
+  // interrompida com conflito: o primeiro passo é Retomar (as ações de integração exigem run `running`)
+  assert.equal(flowState(flow({ activeRun: run([rs('s1', 'completed', { integration: integ('conflict') }), rs('s2', 'interrupted')], { status: 'interrupted' }) })), 'interrupted');
+  assert.equal(flowState(flow({ activeRun: run([rs('s1', 'completed')], { status: 'ready_to_integrate', git: gitOf() }) })), 'ready_to_integrate');
+  assert.equal(flowState(flow({ lastRun: run([rs('s1', 'completed')], { status: 'discarded', git: gitOf({ discardedAt: T0 }) }) })), 'discarded');
+  // conflito num run já terminado não acende nada
+  assert.equal(flowState(flow({ lastRun: run([rs('s1', 'completed', { integration: integ('conflict') })], { status: 'failed' }) })), 'failed');
+  const mk = (id, o) => flow({ id, title: id, updatedAt: '2026-11-10T00:00:00Z', ...o });
+  const rows = flowRows([
+    mk('run', { activeRun: run([rs('s1', 'running')]) }), mk('ready', { activeRun: run([], { status: 'ready_to_integrate' }) }), mk('int', { activeRun: run([rs('s1', 'interrupted')], { status: 'interrupted' }) }),
+    mk('wait', { activeRun: run([rs('s1', 'waiting')]) }), mk('conf', { activeRun: run([rs('s1', 'completed', { integration: integ('blocked') })]) }), mk('disc', { lastRun: run([], { status: 'discarded' }) }),
+  ]);
+  assert.deepEqual(rows.map((r) => r.id), ['conf', 'wait', 'int', 'ready', 'run', 'disc']);
+  assert.deepEqual(rows.map((r) => r.meta.label), ['conflito na integração', 'aguardando você', 'interrompida', 'pronta para integrar', 'em execução', 'descartada']);
+});
+
+test('fatia 2: runActions oferece só o que o servidor aceita em cada estado', () => {
+  const act = (status, git = null, where = 'activeRun') => FV.runActions(flow({ [where]: run([], { status, git }) }));
+  const pick = (a) => [a.canResume, a.canCancel, a.canIntegrate, a.canDiscard, a.canCleanup];
+  assert.deepEqual(pick(FV.runActions(flow())), [false, false, false, false, false]);
+  assert.equal(FV.runActions(flow()).runId, null);
+  assert.deepEqual(pick(act('running')), [false, true, false, false, false]);
+  assert.deepEqual(pick(act('interrupted')), [true, true, false, false, false]);
+  assert.deepEqual(pick(act('ready_to_integrate', gitOf())), [false, false, true, true, false]);
+  assert.equal(act('ready_to_integrate', gitOf()).runId, 'run_1');
+  for (const s of ['cancelled', 'failed']) { // descartar só em modo Git e ainda não descartada
+    assert.deepEqual(pick(act(s, gitOf(), 'lastRun')), [false, false, false, true, false], s);
+    assert.equal(act(s, gitOf({ discardedAt: T0 }), 'lastRun').canDiscard, false, `${s} já descartada`);
+    assert.equal(act(s, gitOf({ mode: 'folder' }), 'lastRun').canDiscard, false, `${s} modo pasta`);
+    assert.equal(act(s, null, 'lastRun').canDiscard, false, `${s} run antigo`);
+  }
+  assert.equal(act('completed', gitOf({ leftovers: [{ worktreeId: 'wt_1', reason: 'sujo' }] }), 'lastRun').canCleanup, true);
+  assert.equal(act('completed', gitOf(), 'lastRun').canCleanup, false);
+  assert.equal(act('completed', null, 'lastRun').canCleanup, false);
+  assert.deepEqual(pick(act('discarded', gitOf({ discardedAt: T0 }), 'lastRun')), [false, false, false, false, false]);
+});
+
+test('fatia 2: integrationInfo (final) e stepIntegration (por etapa)', () => {
+  assert.equal(FV.integrationInfo(null), null);
+  assert.equal(FV.integrationInfo(run([])), null, 'run antigo sem git');
+  assert.equal(FV.integrationInfo(run([], { git: gitOf({ mode: 'folder' }) })), null, 'modo pasta');
+  const auto = FV.integrationInfo(run([], { status: 'completed', git: gitOf({ integration: { by: 'auto', mode: 'ff', at: T0, from: '2222222', to: SHA, missionTip: SHA, digest: 'x', policy: {} } }) }));
+  assert.deepEqual([auto.state, auto.by, auto.byLabel, auto.mode, auto.at, auto.commitShort, auto.label, auto.branch, auto.baseBranch], ['integrated', 'auto', 'automática', 'ff', T0, 'abcdef1', 'integrada automaticamente', 'orch/run_1', 'main']);
+  assert.deepEqual([auto.reasons, auto.conflicts, auto.files, auto.needsAck], [[], [], [], false]);
+  const user = FV.integrationInfo(run([], { status: 'completed', git: gitOf({ integration: { by: 'user', mode: 'merge', at: T0, to: 'zz' } }) }));
+  assert.deepEqual([user.label, user.commitShort], ['integrada por você', null], 'sha inválido não vira commit');
+  const pend = FV.integrationInfo(run([], { status: 'ready_to_integrate', git: gitOf({ pending: { reasons: [{ code: 'target_dirty', message: 'A pasta tem alterações não commitadas.' }, { code: 'project_config_changed', message: 'Configuração alterada.' }, null], conflicts: ['a.js', 3], files: ['package.json'], checkedAt: T0 } }) }));
+  assert.deepEqual([pend.state, pend.label, pend.by, pend.commitShort, pend.needsAck, pend.conflicts, pend.files, pend.checkedAt], ['pending', 'pronta para integrar', null, null, true, ['a.js'], ['package.json'], T0]);
+  assert.deepEqual(pend.reasons.map((r) => r.code), ['target_dirty', 'project_config_changed']);
+  assert.equal(FV.integrationInfo(run([], { status: 'ready_to_integrate', git: gitOf() })).state, 'pending', 'pronta mesmo sem diagnóstico gravado');
+  assert.equal(FV.integrationInfo(run([], { status: 'running', git: gitOf() })).state, 'none');
+
+  assert.deepEqual(FV.stepIntegration(rs('s1', 'running')), { state: 'none', label: 'sem integração', tone: 'idle', reason: null, message: null, conflicts: [], files: [], error: null, at: null, needsAction: false, needsAck: false });
+  assert.equal(FV.stepIntegration(null).state, 'none');
+  const c = FV.stepIntegration(rs('s1', 'completed', { integration: integ('conflict', { conflicts: ['src/a.js', 'src/b.js'] }) }));
+  assert.deepEqual([c.state, c.label, c.tone, c.conflicts, c.needsAction, c.needsAck], ['conflict', 'conflito na integração', 'wait', ['src/a.js', 'src/b.js'], true, false]);
+  const b = FV.stepIntegration(rs('s1', 'completed', { integration: integ('blocked', { files: ['.env'] }) }));
+  assert.deepEqual([b.needsAction, b.needsAck, b.files], [true, true, ['.env']]);
+  const e = FV.stepIntegration(rs('s1', 'completed', { integration: integ('error', { error: 'git sem resposta' }) }));
+  assert.deepEqual([e.tone, e.error, e.needsAction], ['err', 'git sem resposta', true]);
+  assert.deepEqual([FV.stepIntegration(rs('s1', 'completed', { integration: integ('integrated') })).label, FV.stepIntegration(rs('s1', 'completed', { integration: integ('empty') })).tone], ['integrada', 'skip']);
+  const unk = FV.stepIntegration(rs('s1', 'completed', { integration: integ('novo') }));
+  assert.deepEqual([unk.label, unk.tone, unk.needsAction], ['novo', 'idle', false]);
+  // aviso no topo: só no run ativo `running`, com caminho do worktree só se o servidor mandou
+  const f = flow({ activeRun: run([rs('s1', 'completed', { integration: integ('conflict', { conflicts: ['x'] }), branch: 'orch/wt_1', worktreePath: 'C:/tmp/wt_1' }), rs('s2', 'completed', { integration: integ('error', { error: 'falhou' }) }), rs('s3', 'running')]) });
+  assert.deepEqual(FV.integrationProblems(f).map((p) => [p.stepId, p.runId, p.title, p.state, p.worktreePath, p.branch]), [['s1', 'run_1', 'Etapa s1', 'conflict', 'C:/tmp/wt_1', 'orch/wt_1'], ['s2', 'run_1', 'Etapa s2', 'error', null, null]]);
+  assert.deepEqual(FV.integrationProblems(flow({ activeRun: { ...f.activeRun, status: 'interrupted' } })), []);
+  assert.deepEqual(FV.integrationProblems(flow()), []);
+});
+
+test('fatia 2: rótulos da agenda, próxima execução e pulos', () => {
+  assert.equal(FV.scheduleLabel({ enabled: true, kind: 'interval', everyHours: 4 }), 'a cada 4 h');
+  assert.equal(FV.scheduleLabel({ enabled: true, kind: 'daily', time: '09:00' }), 'diário às 09:00');
+  assert.equal(FV.scheduleLabel({ enabled: true, kind: 'weekly', days: [3, 1], time: '08:30' }), 'seg, qua às 08:30');
+  assert.equal(FV.scheduleLabel({ enabled: true, kind: 'weekly', days: [0, 6], time: '08:30' }), 'dom, sáb às 08:30');
+  assert.equal(FV.scheduleLabel({ enabled: false, kind: 'daily', time: '09:00' }), 'desligada');
+  assert.equal(FV.scheduleLabel(null), 'sem agenda'); assert.equal(FV.scheduleLabel(undefined), 'sem agenda');
+  assert.equal(FV.scheduleLabel({ enabled: true, kind: 'daily', time: '25:00' }), NOT_INFORMED);
+  assert.equal(FV.scheduleLabel({ enabled: true, kind: 'weekly', days: [], time: '08:30' }), NOT_INFORMED);
+  assert.equal(FV.nextRunLabel(T0), fmtWhen(T0)); assert.match(FV.nextRunLabel(T0), /^\d{2}\/\d{2}.*\d{2}:\d{2}$/);
+  assert.equal(FV.nextRunLabel(null), '—'); assert.equal(FV.nextRunLabel('lixo'), '—');
+  assert.deepEqual(FV.skipRows(flow()), []); assert.deepEqual(FV.skipRows(null), []);
+  const rows = FV.skipRows(flow({ scheduleSkips: [
+    { slotAt: '2026-11-16T08:00:00.000Z', reason: 'missed', message: 'perdido', count: 3, at: T0 },
+    { slotAt: '2026-11-16T09:00:00.000Z', reason: 'active_run', message: 'run ativo', at: T0 },
+    { slotAt: '2026-11-15T09:00:00.000Z', reason: 'start_failed', at: T0 },
+    { slotAt: '2026-11-14T09:00:00.000Z', reason: 'limit', at: T0 }, { slotAt: '2026-11-13T09:00:00.000Z', reason: 'archived', at: T0 },
+    { slotAt: '2026-11-12T09:00:00.000Z', reason: 'workspace_missing', at: T0 }, { slotAt: '2026-11-11T09:00:00.000Z', reason: 'estranho', at: T0 }, null,
+  ] }));
+  assert.deepEqual(rows.map((r) => r.reason), ['active_run', 'missed', 'start_failed', 'limit', 'archived', 'workspace_missing', 'estranho'], 'mais recente primeiro');
+  assert.match(rows[1].label, /horário perdido/); assert.deepEqual([rows[1].count, rows[1].countLabel, rows[1].message], [3, '3 horários', 'perdido']);
+  assert.deepEqual([rows[0].count, rows[2].message], [null, null]);
+  assert.match(rows[0].label, /execução anterior ainda estava ativa/); assert.match(rows[2].label, /não foi possível iniciar/); assert.match(rows[3].label, /limite/);
+  assert.match(rows[4].label, /arquivada/); assert.match(rows[5].label, /workspace não existe/); assert.equal(rows[6].label, 'estranho');
+  assert.equal(new Set(rows.map((r) => r.key)).size, rows.length, 'chaves únicas para a lista');
+  assert.match(rows[0].when, /^\d{2}\/\d{2}/);
+});
+
+test('fatia 2: rascunho da agenda espelha as regras do servidor', () => {
+  const e = FV.emptySchedule();
+  assert.deepEqual(e, { enabled: true, kind: 'daily', everyHours: 4, time: '09:00', days: [1, 2, 3, 4, 5] });
+  assert.equal(FV.validateScheduleDraft(e).ok, true);
+  assert.deepEqual(FV.scheduleToDraft(null), e);
+  assert.deepEqual(FV.scheduleToDraft({ enabled: true, kind: 'interval', everyHours: 6 }), { ...e, kind: 'interval', everyHours: 6 });
+  assert.deepEqual(FV.scheduleToDraft({ enabled: false, kind: 'weekly', days: [5, 1, 1], time: '07:15' }), { ...e, enabled: false, kind: 'weekly', days: [1, 5], time: '07:15' });
+  const v = (o) => FV.validateScheduleDraft({ ...e, ...o }).errors.map((x) => x.field);
+  assert.deepEqual(v({ kind: 'interval', everyHours: 1 }), []); assert.deepEqual(v({ kind: 'interval', everyHours: 168 }), []); assert.deepEqual(v({ kind: 'interval', everyHours: '12' }), []);
+  for (const h of [0, 169, 1.5, '', null, 'x']) assert.deepEqual(v({ kind: 'interval', everyHours: h }), ['schedule.everyHours'], String(h));
+  for (const t of ['9:00', '24:00', '12:60', '', 'aa:bb']) assert.deepEqual(v({ kind: 'daily', time: t }), ['schedule.time'], t);
+  assert.deepEqual(v({ kind: 'daily', time: '23:59' }), []); assert.deepEqual(v({ kind: 'daily', time: '00:00' }), []);
+  assert.deepEqual(v({ kind: 'weekly', days: [] }), ['schedule.days']); assert.deepEqual(v({ kind: 'weekly', days: [7] }), ['schedule.days']); assert.deepEqual(v({ kind: 'weekly', days: [0, 6] }), []);
+  assert.deepEqual(v({ kind: 'monthly' }), ['schedule.kind']); assert.equal(FV.validateScheduleDraft(undefined).ok, false);
+  // rascunho → API: só os campos do preset
+  assert.deepEqual(FV.draftToSchedule({ ...e, kind: 'interval', everyHours: '8' }), { enabled: true, kind: 'interval', everyHours: 8 });
+  assert.deepEqual(FV.draftToSchedule(e), { enabled: true, kind: 'daily', time: '09:00' });
+  assert.deepEqual(FV.draftToSchedule({ ...e, kind: 'weekly', days: [3, 1, 3], enabled: 'true' }), { enabled: false, kind: 'weekly', days: [1, 3], time: '09:00' }, 'enabled estrito; dias únicos e ordenados');
+  assert.deepEqual(FV.toggleScheduleDay({ ...e, days: [1, 5] }, 3).days, [1, 3, 5]); assert.deepEqual(FV.toggleScheduleDay({ ...e, days: [1, 5] }, 5).days, [1]);
+});
+
+test('fatia 2: rascunho do formulário com tipo, agenda e integração automática; corpo do POST/PATCH', () => {
+  const base = emptyDraft({ workspaceId: 'ws_1' });
+  assert.deepEqual([base.kind, base.autoIntegrate, base.schedule], ['project', true, FV.emptySchedule()]);
+  assert.equal(emptyDraft({ kind: 'automation' }).kind, 'automation'); assert.equal(emptyDraft({ kind: 'lixo' }).kind, 'project');
+  const d = patchStep({ ...base, title: 'Rotina' }, 'k1', { title: 'A', prompt: 'faça' });
+  // agenda inválida só importa em automação
+  const badSched = { ...d, schedule: { ...d.schedule, kind: 'interval', everyHours: 0 } };
+  assert.equal(validateDraft(badSched).ok, true, 'projeto ignora a agenda');
+  const av = validateDraft({ ...badSched, kind: 'automation' });
+  assert.deepEqual([av.ok, av.errors.map((x) => x.field)], [false, ['schedule.everyHours']]);
+  assert.equal(validateDraft({ ...d, kind: 'automation' }).ok, true);
+  assert.deepEqual(validateDraft({ ...d, kind: 'outro' }).errors.map((x) => x.field), ['kind']);
+  const { kind: _k, schedule: _s, autoIntegrate: _a, ...old } = d; assert.equal(validateDraft(old).ok, true, 'rascunho sem os campos novos continua válido');
+  const auto = { ...d, kind: 'automation', schedule: { ...d.schedule, kind: 'weekly', days: [3, 1], time: '08:30' } };
+  const cb = draftToBody(auto);
+  assert.deepEqual([cb.workspaceId, cb.kind, cb.schedule, cb.autoIntegrate], ['ws_1', 'automation', { enabled: true, kind: 'weekly', days: [1, 3], time: '08:30' }, true]);
+  const pb = draftToBody(auto, { mode: 'edit' });
+  assert.deepEqual([('workspaceId' in pb), pb.kind, pb.schedule.kind], [false, 'automation', 'weekly']);
+  assert.equal(draftToBody({ ...d, autoIntegrate: false }).autoIntegrate, false);
+  assert.equal(draftToBody({ ...d, autoIntegrate: 'true' }).autoIntegrate, false, 'texto nunca liga a integração automática');
+  assert.equal(draftToBody({ ...auto, kind: 'project' }).schedule, null, 'projeto não leva agenda');
+  assert.deepEqual(FV.draftToScheduleBody(auto), { schedule: { enabled: true, kind: 'weekly', days: [1, 3], time: '08:30' }, autoIntegrate: true });
+  assert.deepEqual(FV.draftToScheduleBody({ ...d, autoIntegrate: false }), { schedule: null, autoIntegrate: false });
+  // editar: ida e volta
+  const fd = flowToDraft(flow({ kind: 'automation', autoIntegrate: false, schedule: { enabled: true, kind: 'interval', everyHours: 4 } }));
+  assert.deepEqual([fd.kind, fd.autoIntegrate, fd.schedule.kind, fd.schedule.everyHours], ['automation', false, 'interval', 4]);
+  assert.deepEqual(draftToBody(fd, { mode: 'edit' }).schedule, { enabled: true, kind: 'interval', everyHours: 4 });
+  // missão antiga sem os campos: projeto, integração automática ligada, agenda padrão no rascunho
+  const legacy = flowToDraft({ ...flow(), autoIntegrate: undefined, schedule: undefined });
+  assert.deepEqual([legacy.kind, legacy.autoIntegrate, legacy.schedule], ['project', true, FV.emptySchedule()]);
+  assert.equal(draftToBody(legacy, { mode: 'edit' }).schedule, null);
+});
+
+test('fatia 2: indicador da barra lateral conta conflito, interrompida e pronta para integrar como "aguardando você"', () => {
+  const conf = flow({ id: 'a', activeRun: run([rs('s1', 'completed', { integration: integ('conflict') }), rs('s2', 'running')]) });
+  const intr = flow({ id: 'b', activeRun: run([rs('s1', 'interrupted')], { status: 'interrupted' }) });
+  const ready = flow({ id: 'c', activeRun: run([rs('s1', 'completed')], { status: 'ready_to_integrate' }) });
+  const ready2 = flow({ id: 'd', activeRun: run([rs('s1', 'completed')], { status: 'ready_to_integrate' }) });
+  const wait = flow({ id: 'e', activeRun: run([rs('s1', 'waiting')]) });
+  const work = flow({ id: 'f', activeRun: run([rs('s1', 'running')]) });
+  assert.equal(flowsActivity([intr]).title, '1 missão interrompida');
+  assert.equal(flowsActivity([ready]).title, '1 missão pronta para integrar');
+  assert.equal(flowsActivity([conf]).title, '1 missão com conflito na integração');
+  const all = flowsActivity([conf, intr, ready, ready2, wait, work]);
+  assert.deepEqual([all.state, all.count, all.waiting, all.working], ['waiting', 5, 5, 1]);
+  assert.equal(all.title, '1 missão com conflito na integração · 1 missão aguardando você · 1 missão interrompida · 2 missões prontas para integrar · 1 missão em execução');
+  assert.deepEqual(Object.keys(all).sort(), ['count', 'done', 'failed', 'state', 'title', 'waiting', 'working'], 'formato do retorno não muda (a Sidebar usa)');
+  assert.equal(flowsActivity([flow({ archived: true, activeRun: run([], { status: 'interrupted' }) })]).state, null);
+  assert.equal(flowsActivity([flow({ lastRun: run([], { status: 'discarded', finishedAt: '2026-11-16T11:00:00.000Z' }) })]).state, null, 'descartada não acende nada');
+});
+
+test('fatia 2: workflow e detalhe com etapa interrompida, integração por nó e Entrega integrada ou pronta para integrar', () => {
+  const f = flow({ activeRun: run([
+    rs('s1', 'completed', { integration: integ('integrated'), branch: 'orch/wt_a', worktreeId: 'wt_a', commit: SHA }),
+    rs('s2', 'interrupted', { interruptedFrom: 'running', terminalId: 'term_2', branch: 'orch/wt_b', worktreeId: 'wt_b', integration: integ('none') }),
+    rs('s3', 'completed', { integration: integ('conflict', { conflicts: ['src/x.js'] }), worktreePath: 'C:/tmp/wt_c', worktreeId: 'wt_c', branch: 'orch/wt_c' }),
+  ], { status: 'interrupted', git: gitOf() }) });
+  const wf = buildWorkflow(f), n = (id) => wf.nodes.find((x) => x.id === id);
+  assert.deepEqual([n('s2').state, n('s2').stateLabel, n('s2').tone, n('s2').line, n('s2').lineKind, n('s2').waiting], ['interrupted', 'interrompida', 'wait', 'interrompida pelo reinício do servidor: clique em Retomar', 'wait', false]);
+  assert.equal(wf.edges.find((x) => x.id === 's1->s2').state, 'wait');
+  assert.deepEqual([n('s1').integration.state, n('s3').integration.state, n('s3').integration.conflicts, n('s4').integration.state], ['integrated', 'conflict', ['src/x.js'], 'none']);
+  assert.deepEqual([n('delivery').state, n('delivery').line], ['pending', null], 'run interrompido: entrega na fila');
+  const d2 = nodeDetail(f, f.activeRun, 's2');
+  assert.deepEqual([d2.state, d2.branch, d2.worktreeId, d2.integration.state, d2.terminalLive, ('worktreePath' in d2), d2.canResolveIntegration], ['interrupted', 'orch/wt_b', 'wt_b', 'none', false, false, false]);
+  assert.match(d2.terminalHint, /Retomar/);
+  const d3 = nodeDetail(f, f.activeRun, 's3');
+  assert.deepEqual([d3.worktreePath, d3.integration.state, d3.canResolveIntegration], ['C:/tmp/wt_c', 'conflict', false], 'resolver só com o run em execução');
+  const running = { ...f.activeRun, status: 'running' };
+  assert.equal(nodeDetail(flow({ activeRun: running }), running, 's3').canResolveIntegration, true);
+  // run antigo: campos novos vazios, sem caminho inventado
+  const old = nodeDetail(flow(), run([rs('s1', 'completed')]), 's1');
+  assert.deepEqual([old.branch, old.worktreeId, old.integration.state, ('worktreePath' in old)], [null, null, 'none', false]);
+  // entrega integrada / pronta / descartada / concluída sem Git / sem alterações
+  const done = run(['s1', 's2', 's3', 's4'].map((s) => rs(s, 'completed', { integration: integ('integrated') })), { status: 'completed', finishedAt: T0, git: gitOf({ integration: { by: 'auto', mode: 'ff', at: T0, to: SHA } }) });
+  const dn = buildWorkflow(flow({ lastRun: done })).nodes.find((x) => x.id === 'delivery');
+  assert.deepEqual([dn.state, dn.line, dn.integration.by], ['completed', 'integrada em main', 'auto']);
+  const dd = nodeDetail(flow({ lastRun: done }), done, 'delivery');
+  assert.deepEqual([dd.line, dd.integration.commitShort], ['integrada em main', 'abcdef1']);
+  const ready = run([rs('s1', 'completed')], { status: 'ready_to_integrate', git: gitOf({ pending: { reasons: [{ code: 'target_dirty', message: 'pasta suja' }], conflicts: [], files: [], checkedAt: T0 } }) });
+  const rn = buildWorkflow(flow({ activeRun: ready })).nodes.find((x) => x.id === 'delivery');
+  assert.deepEqual([rn.state, rn.stateLabel, rn.tone, rn.line, rn.integration.reasons.length], ['ready_to_integrate', 'pronta para integrar', 'wait', 'pronta para integrar em main', 1]);
+  const disc = buildWorkflow(flow({ lastRun: run([], { status: 'discarded', git: gitOf({ discardedAt: T0 }) }) })).nodes.find((x) => x.id === 'delivery');
+  assert.deepEqual([disc.state, disc.stateLabel, disc.tone], ['discarded', 'descartada', 'cancel']);
+  const legacy = buildWorkflow(flow({ lastRun: run(['s1', 's2', 's3', 's4'].map((s) => rs(s, 'completed')), { status: 'completed' }) })).nodes.find((x) => x.id === 'delivery');
+  assert.deepEqual([legacy.line, legacy.integration], ['todas as etapas concluídas', null], 'run antigo: igual à fatia 1');
+  const empty = run([], { status: 'completed', git: gitOf({ integration: { by: 'auto', mode: 'empty', at: T0 } }) });
+  assert.equal(buildWorkflow(flow({ lastRun: empty })).nodes.find((x) => x.id === 'delivery').line, 'todas as etapas concluídas', 'sem alterações: nada foi integrado');
+});
+
+test('fatia 2: histórico com gatilho (manual/agenda) e integração resumida', () => {
+  const rows = historyRows([
+    run([], { id: 'run_3', status: 'completed', trigger: 'schedule', scheduledFor: T0, finishedAt: T0, git: gitOf({ integration: { by: 'user', mode: 'merge', at: T0, to: SHA } }) }),
+    run([], { id: 'run_2', status: 'ready_to_integrate', git: gitOf() }),
+    run([], { id: 'run_1', status: 'discarded', trigger: undefined, git: gitOf({ discardedAt: T0 }) }),
+    run([], { id: 'run_0', status: 'completed' }),
+  ], flow(), { now: Date.parse(T0) });
+  assert.deepEqual(rows.map((r) => [r.id, r.label, r.trigger]), [['run_3', 'concluída', 'agenda'], ['run_2', 'pronta para integrar', 'manual'], ['run_1', 'descartada', 'manual'], ['run_0', 'concluída', 'manual']]);
+  assert.deepEqual(rows[0].integration, { state: 'integrated', label: 'integrada por você', by: 'user', mode: 'merge', at: T0, commitShort: 'abcdef1' });
+  assert.deepEqual([rows[1].integration.state, rows[1].integration.label], ['pending', 'pronta para integrar']);
+  assert.deepEqual([rows[2].integration, rows[3].integration], [null, null]);
+});
+
+// ---------- fatia 2: interface (checagens de código-fonte, como as da decisão acima) ----------
+const readSrc = (p) => fs.readFileSync(path.join(here, '../../client/src', p), 'utf8');
+
+test('fatia 2 (tela): use-flows chama as rotas novas; o ack só vai com confirmação explícita; PATCH da agenda leva só schedule/autoIntegrate; erro preserva code e files', () => {
+  const hook = readSrc('use-flows.js');
+  for (const t of ['/resume`, {})', '/integrate`, ackBody(opts))', '/discard`, { deleteBranch: deleteBranch === true })', '/cleanup`, {})',
+    '/steps/${encodeURIComponent(stepId)}/integration`, { action, ...ackBody(opts) })']) assert.ok(hook.includes(t), t);
+  assert.ok(/opts\?\.acknowledgeProjectConfig === true && Array\.isArray\(opts\.acknowledgedFiles\)\s*\? \{ acknowledgeProjectConfig: true, acknowledgedFiles: strList\(opts\.acknowledgedFiles\) \} : \{\}/.test(hook), 'ack só com true estrito e SEMPRE com a lista vista, nunca por padrão');
+  assert.equal(hook.match(/acknowledgeProjectConfig: true/g).length, 1, 'nenhum outro lugar do hook liga o ack');
+  assert.ok(hook.includes('{ schedule: body?.schedule ?? null, autoIntegrate: body?.autoIntegrate === true }'), 'updateSchedule não repassa outros campos');
+  assert.ok(hook.includes("typeof data.code === 'string' ? { code: data.code } : {}") && hook.includes('files: strList(data.files)'), 'a tela recebe code e a lista de arquivos do 409');
+});
+
+test('fatia 2 (tela): página só reenvia com ack depois do diálogo; descartar pede confirmação; Cancelar e Descartar etapa usam window.confirm', () => {
+  const page = readSrc('pages/Missions.jsx'), head = readSrc('components/FlowHeader.jsx');
+  assert.ok(page.includes("e?.code === 'project_config_changed'"), '409 project_config_changed abre a confirmação');
+  assert.ok(page.includes('if (info?.needsAck) { askAck(') && page.includes('if (p.needsAck) { askAck('), 'bloqueio conhecido pergunta antes de tentar');
+  // o ack só aparece no handler do diálogo (confirmAck)
+  const acks = [...page.matchAll(/acknowledgeProjectConfig: true/g)].map((m) => m.index), at = page.indexOf('const confirmAck'), end = page.indexOf('const onDiscardStep');
+  assert.ok(acks.length === 2 && acks.every((i) => i > at && i < end), 'ack só dentro de confirmAck');
+  assert.ok(head.includes('disabled={!checked || !!busy}') && head.includes('Revisei esses arquivos e quero integrar mesmo assim.'), 'o botão do diálogo só libera com a caixa marcada');
+  assert.ok(head.includes('configuração executável do projeto ou arquivos sensíveis'));
+  assert.ok(/onDiscardStep = \(p\) => \{\s*if \(!flow \|\| !p\?\.runId \|\| !window\.confirm\(/.test(page), 'Descartar etapa pede confirmação');
+  assert.ok(/!window\.confirm\('Cancelar a missão\?/.test(page), 'Cancelar pede confirmação');
+  assert.ok(page.includes('<DiscardDialog') && head.includes('Apagar também a branch da missão') && head.includes('const [deleteBranch, setDeleteBranch] = useState(false)'), 'Descartar abre o diálogo com a caixa (desmarcada) de apagar a branch');
+  assert.ok(page.includes('actions.discard(flow.id, d.runId, { deleteBranch: deleteBranch === true })'));
+  assert.ok(page.includes('actions.discard(flow.id, ra.runId, { deleteBranch: false })'), 'Limpar cópias de run cancelado/falho nunca apaga a branch');
+  assert.ok(/onCleanup = \(\) => \{[\s\S]*?window\.confirm\(/.test(page), 'Limpar cópias pede confirmação');
+});
+
+test('fatia 2 (tela): cabeçalho usa runActions e mostra chips de branch, integração automática, agenda e próxima execução', () => {
+  const head = readSrc('components/FlowHeader.jsx');
+  assert.ok(head.includes('runActions(flow)') && head.includes('integrationInfo(run)'));
+  for (const t of ['ra.canResume &&', 'ra.canIntegrate &&', 'ra.canCancel &&', '(ra.canDiscard || ra.canCleanup)', '<span>Retomar</span>', '<span>Integrar</span>', '<span>Descartar</span>', '<span>Limpar cópias</span>']) assert.ok(head.includes(t), t);
+  for (const t of ['branch {info.branch}', 'integração automática', 'próxima: {nextRunLabel(flow.nextRunAt)}', 'scheduleLabel(flow.schedule)', 'flow.autoIntegrate !== false']) assert.ok(head.includes(t), t);
+  assert.ok(head.includes("auto ? 'Editar agenda' : 'Editar integração'") && head.includes('onEditSchedule'), 'com run ativo só agenda/integração podem mudar');
+  // aviso: conflito com pasta e instrução, interrupção e pronta para integrar com motivos
+  for (const t of ['Resolva os conflitos nessa pasta, commite e clique em Tentar de novo.', '<span>Tentar de novo</span>', '<span>Descartar etapa</span>', 'Missão interrompida', 'Pronta para integrar', 'ready.reasons.map']) assert.ok(head.includes(t), t);
+  const page = readSrc('pages/Missions.jsx');
+  assert.ok(page.includes('integrationProblems(flow)') && page.includes('problems={problems}') && page.includes('interrupted={!!ra?.canResume}') && page.includes('ready={readyInfo}'));
+});
+
+test('fatia 2 (tela): formulário com tipo, presets da agenda, avisos e integração automática; modo reduzido envia só a agenda', () => {
+  const form = readSrc('components/FlowForm.jsx');
+  for (const t of ['value="project"', 'value="automation"', "id: 'interval'", "id: 'daily'", "id: 'weekly'", 'WEEKDAY_SHORT.map', 'toggleScheduleDay(sd, day)', 'Agenda ligada', 'type="time"']) assert.ok(form.includes(t), t);
+  assert.ok(form.includes('Roda só com o FORGE aberto; horários perdidos são pulados.'));
+  assert.ok(form.includes('{!fullAccess && <p') && form.includes('Sem acesso total, a automação pode parar pedindo permissão sem ninguém olhando.'), 'aviso só sem acesso total');
+  assert.ok(form.includes('Integrar automaticamente na sua branch quando terminar sem conflitos'));
+  assert.ok(form.includes('Em workspace Git, cada etapa trabalha numa cópia isolada (só arquivos versionados; alterações não commitadas na sua pasta não entram). Sua pasta só muda na integração final, e só se estiver limpa.'));
+  // briefing: o create passa a levar o proposalId (só da proposta carregada); o modo reduzido continua mandando só a agenda
+  assert.ok(form.includes('validateScheduleDraft(draft.schedule)') && form.includes('reduced ? draftToScheduleBody(draft) : draftToBody(draft, { mode, proposalId: fromProposal ? proposal.id : null })'), 'modo reduzido: valida e envia só a agenda');
+  const page = readSrc('pages/Missions.jsx');
+  assert.ok(page.includes("form?.mode === 'schedule'") && page.includes('actions.updateSchedule(form.flow.id, body)'));
+});
+
+test('fatia 2 (tela): painel, workflow e histórico mostram integração, interrupção, gatilho e pulos da agenda', () => {
+  const panel = readSrc('components/FlowSidePanel.jsx'), wf = readSrc('components/FlowWorkflow.jsx'), runs = readSrc('components/FlowRuns.jsx');
+  assert.ok(panel.includes('d.canResolveIntegration') && panel.includes('<IntegrationProblem') && panel.includes("d.state === 'interrupted'"), 'etapa: resolver integração e dica de Retomar');
+  for (const t of ["info.by === 'auto'", 'info?.commitShort', 'info?.mode', 'info?.at', 'd.line']) assert.ok(panel.includes(t), t);
+  assert.ok(wf.includes("integrated: 'integrada'") && wf.includes("conflict: 'conflito'") && wf.includes("blocked: 'bloqueada'") && wf.includes("pending: 'pendente'"), 'selo de integração por nó');
+  assert.ok(wf.includes("node.state === 'ready_to_integrate'"), 'entrega pronta para integrar destacada');
+  assert.ok(runs.includes('<td>{r.trigger}</td>') && runs.includes('integrationText(r.integration)') && runs.includes('skipRows(flow)') && runs.includes('s.countLabel'));
+  const css = readSrc('flows.css');
+  assert.ok(css.includes('.fl-runs-wrap { overflow-x: auto;') && css.includes('.fl-wf .mwf-node.fl-ask'), 'tabela rola dentro do histórico; destaque sem brilho');
+});
+
+// ---------- revisão da fatia 2: ack atado à lista, limpeza de cópias, causa do bloqueio, modo pasta e política sem ninguém olhando ----------
+test('revisão: runActions oferece Limpar cópias em run terminado de modo Git com sobras (último run), e escolhe descartar ou limpar', () => {
+  const left = [{ worktreeId: 'wt_1', reason: 'terminal ainda aberto' }, { worktreeId: 'wt_2', reason: 'alterações não integradas' }];
+  const last = (status, git) => FV.runActions(flow({ lastRun: run([], { status, git, finishedAt: T0 }) }));
+  for (const s of ['completed', 'failed', 'cancelled', 'discarded']) {
+    const a = last(s, gitOf({ leftovers: left, discardedAt: s === 'completed' ? null : T0 }));
+    assert.deepEqual([a.canCleanup, a.canDiscard, a.cleanupAction, a.runId], [true, false, 'cleanup', 'run_1'], s);
+    assert.deepEqual(a.leftovers.map((l) => [l.worktreeId, l.reason]), [['wt_1', 'terminal ainda aberto'], ['wt_2', 'alterações não integradas']], s);
+    assert.equal(last(s, gitOf({ leftovers: [], discardedAt: T0 })).canCleanup, false, `${s} sem sobras`);
+    assert.equal(last(s, gitOf({ mode: 'folder', leftovers: left })).canCleanup, false, `${s} modo pasta`);
+  }
+  // cancelado/falho ainda não descartado: o botão descarta (sem apagar a branch), mesmo se já houver sobras
+  for (const s of ['failed', 'cancelled']) {
+    assert.deepEqual([last(s, gitOf()).cleanupAction, last(s, gitOf({ leftovers: left })).cleanupAction], ['discard', 'discard'], s);
+  }
+  // ativos nunca limpam; pronta para integrar descarta pelo diálogo próprio (sem cleanupAction)
+  for (const s of ['running', 'interrupted', 'ready_to_integrate']) {
+    const a = FV.runActions(flow({ activeRun: run([], { status: s, git: gitOf({ leftovers: left }) }) }));
+    assert.equal(a.canCleanup, false, s); assert.equal(a.cleanupAction, null, s);
+  }
+  assert.deepEqual([FV.runActions(flow()).cleanupAction, FV.runActions(flow()).leftovers], [null, []]);
+  // linhas das sobras: motivo ausente vira texto claro; lixo é ignorado; só modo Git
+  assert.deepEqual(FV.leftoverRows(run([], { git: gitOf({ leftovers: [{ worktreeId: 'wt_9' }, null, 'x'] }) })).map((l) => [l.worktreeId, l.reason]), [['wt_9', 'motivo não informado']]);
+  assert.deepEqual(FV.leftoverRows(run([], { git: gitOf({ mode: 'folder', leftovers: left }) })), []);
+  assert.deepEqual(FV.leftoverRows(null), []);
+  assert.match(FV.LEFTOVERS_HINT, /Feche o terminal/);
+});
+
+test('revisão: stepIntegration usa a causa do bloqueio; só o guard de configuração pede confirmação', () => {
+  const si = (o) => FV.stepIntegration(rs('s1', 'completed', { integration: integ('blocked', o) }));
+  const cfg = si({ reason: 'project_config_changed', files: ['package.json'], error: 'a etapa alterou configuração executável' });
+  assert.deepEqual([cfg.needsAck, cfg.needsAction, cfg.reason, cfg.label, cfg.files], [true, true, 'project_config_changed', 'integração bloqueada: configuração ou arquivo sensível alterado', ['package.json']]);
+  assert.match(cfg.message, /confirmação explícita/);
+  const co = si({ reason: 'branch_checked_out', error: 'a branch da missão está em checkout em outra pasta do repositório; troque a branch daquela pasta e tente de novo' });
+  assert.deepEqual([co.needsAck, co.needsAction, co.reason], [false, true, 'branch_checked_out']);
+  assert.match(co.label, /checkout em outra pasta/); assert.doesNotMatch(co.label, /configura/);
+  assert.equal(co.message, FV.BRANCH_CHECKED_OUT_TEXT);
+  assert.match(co.message, /a branch da missão está em checkout em outra pasta do repositório; troque a branch daquela pasta e clique em Tentar de novo/i); assert.doesNotMatch(co.message, /configura/);
+  // bloqueio antigo sem `reason`: com arquivos = guard de configuração; sem arquivos = bloqueio genérico com o erro do servidor (nunca afirma "configuração alterada")
+  assert.equal(si({ files: ['.env'] }).needsAck, true);
+  const gen = si({ error: 'motivo novo do servidor' });
+  assert.deepEqual([gen.needsAck, gen.label], [false, 'integração bloqueada']); assert.match(gen.message, /motivo novo do servidor/); assert.doesNotMatch(gen.message, /configura/);
+  assert.equal(si({ reason: 'outro', files: ['a.js'] }).needsAck, false, 'causa desconhecida com arquivos não vira confirmação');
+  assert.equal(FV.stepIntegration(rs('s1', 'completed', { integration: integ('conflict', { reason: 'project_config_changed', files: ['x'] }) })).needsAck, false, 'só blocked pede ack');
+  assert.match(FV.stepIntegration(rs('s1', 'completed', { integration: integ('error', { error: 'git sem resposta' }) })).message, /falhou: git sem resposta/);
+  assert.match(FV.stepIntegration(rs('s1', 'completed', { integration: integ('conflict') })).message, /deu conflito/);
+  // o aviso do topo leva a causa, o texto e o needsAck
+  const p = FV.integrationProblems(flow({ activeRun: run([rs('s1', 'completed', { integration: integ('blocked', { reason: 'branch_checked_out' }) })]) }))[0];
+  assert.deepEqual([p.needsAck, p.reason, p.message], [false, 'branch_checked_out', FV.BRANCH_CHECKED_OUT_TEXT]);
+});
+
+test('revisão: modo pasta (fallbackReason) e recomeço (rebasedFrom) no cabeçalho, na Entrega e no histórico', () => {
+  const folder = run([], { status: 'completed', finishedAt: T0, git: { mode: 'folder', fallbackReason: 'o HEAD está destacado' } });
+  const n = FV.runGitNotes(folder);
+  assert.deepEqual([n.fallback, n.fallbackText, n.rebased], ['o HEAD está destacado', 'sem cópia isolada: o HEAD está destacado; as etapas editam a pasta do workspace, uma por vez', null]);
+  const none = { fallback: null, fallbackText: null, rebased: null, rebasedText: null };
+  assert.deepEqual(FV.runGitNotes(run([], { git: gitOf() })), none, 'modo Git normal: nada');
+  assert.deepEqual(FV.runGitNotes(run([])), none, 'run antigo: nada');
+  assert.equal(FV.runGitNotes(run([], { git: { mode: 'folder', fallbackReason: '' } })).fallbackText, null, 'sem motivo, sem aviso inventado');
+  assert.equal(FV.runGitNotes(run([], { git: gitOf({ rebasedFrom: { branch: 'main', commit: SHA } }) })).rebasedText, 'a missão recomeçou a partir de main@abcdef1');
+  assert.equal(FV.runGitNotes(run([], { git: gitOf({ rebasedFrom: 'main@1234567' }) })).rebasedText, 'a missão recomeçou a partir de main@1234567');
+  assert.equal(FV.runGitNotes(run([], { git: gitOf({ rebasedFrom: {} }) })).rebasedText, null);
+  const d = nodeDetail(flow({ lastRun: folder }), folder, 'delivery');
+  assert.equal(d.gitNotes.fallback, 'o HEAD está destacado'); assert.deepEqual(d.leftovers, []);
+  const rows = historyRows([folder, run([], { id: 'run_2', status: 'completed', git: gitOf({ rebasedFrom: { branch: 'main', commit: SHA } }) }), run([], { id: 'run_0', status: 'completed' })], flow(), { now: Date.parse(T0) });
+  assert.deepEqual(rows.map((r) => [r.copy, r.fallback, r.rebasedText]), [
+    ['pasta do workspace: o HEAD está destacado', 'o HEAD está destacado', null], ['cópia isolada (Git)', null, 'a missão recomeçou a partir de main@abcdef1'], [null, null, null],
+  ]);
+});
+
+test('revisão (tela): o ack vai SEMPRE com a lista vista; 409 com lista nova reabre o diálogo desmarcado sem reenviar', () => {
+  const page = readSrc('pages/Missions.jsx'), head = readSrc('components/FlowHeader.jsx'), hook = readSrc('use-flows.js');
+  assert.equal([...page.matchAll(/acknowledgeProjectConfig: true(?!, acknowledgedFiles: files)/g)].length, 0, 'nenhum ack sem acknowledgedFiles');
+  assert.equal([...page.matchAll(/acknowledgeProjectConfig: true, acknowledgedFiles: files/g)].length, 2, 'etapa e integração final');
+  const at = page.indexOf('const confirmAck'), end = page.indexOf('const onDiscardStep'), body = page.slice(at, end);
+  assert.ok(body.includes('const files = a.files'), 'a lista enviada é a do diálogo');
+  const c = body.slice(body.indexOf('catch (e)'), body.indexOf('finally'));
+  assert.ok(c.includes("e?.code === 'project_config_changed'") && c.includes('files: e.files?.length ? e.files : files') && c.includes('rev: (a.rev ?? 0) + 1') && c.includes('changed: true'), 'reabre com a lista nova e nova revisão');
+  assert.ok(!c.includes('actions.'), 'o 409 nunca reenvia sozinho');
+  assert.ok(page.includes('<AckDialog key={`${ack.kind}-${ack.stepId ?? ack.runId}-${ack.rev ?? 0}`}'), 'lista nova remonta o diálogo com a caixa desmarcada');
+  assert.ok(head.includes('const [checked, setChecked] = useState(false)') && head.includes('ack.changed &&') && head.includes('max={Infinity}'), 'diálogo: caixa nasce desmarcada, avisa que a lista mudou e mostra a lista inteira');
+  assert.ok(hook.includes('Array.isArray(opts.acknowledgedFiles)'), 'o hook não manda ack sem a lista');
+});
+
+test('revisão (tela): Limpar cópias segue cleanupAction e mostra as sobras com motivo; IntegrationProblem usa o texto da causa; política e modo pasta aparecem', () => {
+  const page = readSrc('pages/Missions.jsx'), head = readSrc('components/FlowHeader.jsx'), panel = readSrc('components/FlowSidePanel.jsx'), form = readSrc('components/FlowForm.jsx'), runs = readSrc('components/FlowRuns.jsx');
+  assert.ok(page.includes("ra.cleanupAction === 'cleanup'") && page.includes('actions.cleanup(flow.id, ra.runId)') && page.includes('if (!flow || !ra?.cleanupAction) return undefined;'));
+  assert.ok(head.includes('ra.leftovers.map((l) =>') && head.includes('{l.reason}') && head.includes('{LEFTOVERS_HINT}'), 'sobras com motivo e dica');
+  assert.ok(panel.includes('d.leftovers.map((l) =>') && panel.includes('d.gitNotes?.fallbackText') && panel.includes('d.gitNotes?.rebasedText'));
+  // o texto do problema vem da causa: nada de "configuração alterada" fixo no componente
+  assert.ok(head.includes('{p.message && <p'), 'texto pela causa');
+  assert.ok(!head.includes('A etapa alterou configuração executável ou arquivo sensível. Integrar exige'), 'sem texto fixo de configuração no IntegrationProblem');
+  assert.ok(head.includes("label={p.needsAck ? 'Configuração ou arquivos sensíveis alterados' : 'Arquivos'}"));
+  assert.ok(head.includes('notes.fallbackText &&') && head.includes('notes.rebasedText &&') && head.includes('runGitNotes(run)'), 'aviso de modo pasta e recomeço no cabeçalho');
+  assert.ok(runs.includes('<th scope="col">Cópia</th>') && runs.includes("r.copy ?? '—'") && runs.includes('r.rebasedText'), 'coluna no histórico');
+  assert.ok(panel.includes('<p className="fl-text err pre">{d.error}</p>'), 'erro da etapa inteiro no painel');
+  // aviso de política: automação + acesso total + integração automática (o padrão não muda)
+  assert.ok(form.includes('Esta automação roda sozinha com acesso total e integra na sua branch sem ninguém olhando (só sem conflito e com a pasta limpa). Desmarque a integração automática se quiser revisar antes.'));
+  assert.ok(form.includes('const warn = unattended && checked;') && form.includes('{warn && <p id="fl-autoint-w"'));
+  assert.equal([...form.matchAll(/unattended=\{auto && draft\.fullAccess === true\}/g)].length, 2, 'formulário completo e reduzido');
+  assert.equal(emptyDraft().autoIntegrate, true, 'o padrão continua ligado');
+});
+
+// ---------- criar missão por briefing (docs/missions-v2-briefing.md): proposta do Planejador → formulário preenchido → só o usuário cria ----------
+const proposal = (o = {}) => ({
+  id: 'prop_0a1b2c3d', terminalId: 'term_p1', workspaceId: 'ws_9', workspaceName: 'Loja', createdAt: '2026-11-19T10:00:00.000Z',
+  flow: {
+    title: 'Checkout novo', goal: 'Trocar o checkout', kind: 'automation', maxParallel: 2, autoIntegrate: false, fullAccess: false,
+    schedule: { enabled: true, kind: 'weekly', days: [1, 3], time: '08:30' },
+    steps: [def('s1', { role: 'scout', model: 'haiku', effort: 'low' }), def('s2', { dependsOn: ['s1'], continueFrom: 's1', provider: 'codex' }), def('s3', { role: 'reviewer', dependsOn: ['s1', 's2'] })],
+  },
+  ...o,
+});
+
+test('briefing: proposalToDraft usa o workspace da proposta, desliga SEMPRE o acesso total e preserva tipo, agenda, integração, dependências e continueFrom', () => {
+  const d = FV.proposalToDraft(proposal());
+  assert.deepEqual([d.workspaceId, d.fullAccess, d.title, d.goal, d.kind, d.maxParallel, d.autoIntegrate], ['ws_9', false, 'Checkout novo', 'Trocar o checkout', 'automation', 2, false]);
+  assert.deepEqual(d.schedule, { enabled: true, kind: 'weekly', everyHours: 4, time: '08:30', days: [1, 3] });
+  assert.deepEqual(d.steps.map((s) => [s.key, s.role, s.provider, s.model, s.effort, s.dependsOn, s.continueFrom]), [
+    ['k1', 'scout', 'claude', 'haiku', 'low', [], ''], ['k2', 'builder', 'codex', '', '', ['k1'], 'k1'], ['k3', 'reviewer', 'claude', '', '', ['k1', 'k2'], ''],
+  ]);
+  assert.equal(validateDraft(d).ok, true, 'a proposta válida no servidor passa na validação da tela');
+  // acesso total e workspace nunca vêm do agente: mesmo que a proposta traga, o rascunho ignora
+  const sneaky = FV.proposalToDraft(proposal({ flow: { ...proposal().flow, fullAccess: true, workspaceId: 'ws_outro' } }));
+  assert.deepEqual([sneaky.fullAccess, sneaky.workspaceId], [false, 'ws_9']);
+  assert.equal(FV.proposalToDraft(proposal({ workspaceId: undefined })).workspaceId, '');
+  // projeto sem agenda e sem campos opcionais: padrões do formulário (integração automática ligada)
+  const plain = FV.proposalToDraft(proposal({ flow: { title: 'P', steps: [def('a')] } }));
+  assert.deepEqual([plain.kind, plain.autoIntegrate, plain.maxParallel, plain.fullAccess, plain.steps.length], ['project', true, 1, false, 1]);
+  assert.equal(FV.proposalToDraft(null).steps.length, 1, 'proposta ausente não quebra');
+  // ida e volta: o corpo do create leva as mesmas dependências e o proposalId
+  const body = draftToBody(d, { proposalId: 'prop_0a1b2c3d' });
+  assert.deepEqual([body.workspaceId, body.fullAccess, body.kind, body.autoIntegrate, body.proposalId], ['ws_9', false, 'automation', false, 'prop_0a1b2c3d']);
+  assert.deepEqual(body.schedule, { enabled: true, kind: 'weekly', days: [1, 3], time: '08:30' });
+  assert.deepEqual(body.steps.map((s) => [s.id, s.dependsOn, s.continueFrom, s.role]), [['s1', [], null, 'scout'], ['s2', ['s1'], 's1', 'builder'], ['s3', ['s1', 's2'], null, 'reviewer']]);
+});
+
+test('briefing: o editor de etapas não oferece Maestro nem Planejador (o servidor recusa esses papéis numa etapa)', () => {
+  const server = [{ id: 'builder', label: 'Construtor' }, { id: 'maestro', label: 'Maestro' }, { id: 'planner', label: 'Planejador' }, { id: 'reviewer', label: 'Revisor' }, null];
+  assert.deepEqual(FV.stepRoles(server).map((r) => r.id), ['builder', 'reviewer']);
+  assert.deepEqual(FV.stepRoles(null).map((r) => r.id), ['builder', 'reviewer', 'scout'], 'sem resposta: a reserva, também sem o Maestro');
+  assert.ok(readSrc('components/FlowForm.jsx').includes('const roleList = stepRoles(roles);'));
+});
+
+test('briefing: draftToBody só leva proposalId no create e no formato do servidor', () => {
+  let d = emptyDraft({ workspaceId: 'ws_1' }); d = { ...d, title: 'M' }; d = patchStep(d, 'k1', { title: 'A', prompt: 'p' });
+  assert.ok(!('proposalId' in draftToBody(d)), 'sem proposta, nada');
+  assert.equal(draftToBody(d, { proposalId: 'prop_deadbeef' }).proposalId, 'prop_deadbeef');
+  assert.ok(!('proposalId' in draftToBody(d, { mode: 'edit', proposalId: 'prop_deadbeef' })), 'PATCH nunca leva proposalId');
+  for (const bad of ['prop_XYZ', 'prop_123', 'prop_0a1b2c3d0', '', null, 42, { id: 'prop_deadbeef' }]) assert.ok(!('proposalId' in draftToBody(d, { proposalId: bad })), String(bad));
+});
+
+test('briefing: corpo de /api/flows/briefing só com o que foi escolhido; propostas válidas, da mais nova para a mais antiga', () => {
+  assert.deepEqual(FV.briefingBody({ workspaceId: 'ws_1' }), { workspaceId: 'ws_1' });
+  assert.deepEqual(FV.briefingBody({ workspaceId: 'ws_1', provider: 'codex', model: 'gpt', effort: 'high' }), { workspaceId: 'ws_1', provider: 'codex', model: 'gpt', effort: 'high' });
+  assert.deepEqual(FV.briefingBody({ workspaceId: 'ws_1', provider: 'gemini', model: '', effort: '' }), { workspaceId: 'ws_1' }, 'agente desconhecido e vazios ficam de fora');
+  const older = proposal({ id: 'prop_00000001', terminalId: 'term_a', createdAt: '2026-11-19T09:00:00.000Z', workspaceName: '' });
+  const rows = FV.proposalRows([older, proposal(), { id: 'lixo', flow: {} }, { id: 'prop_00000002' }, null], { workspaces: [{ id: 'ws_9', displayName: 'Do store' }] });
+  assert.deepEqual(rows.map((r) => [r.id, r.terminalId, r.workspaceName, r.steps, r.title]), [['prop_0a1b2c3d', 'term_p1', 'Loja', 3, 'Checkout novo'], ['prop_00000001', 'term_a', 'Do store', 3, 'Checkout novo']]);
+  assert.equal(rows[0].proposal.id, 'prop_0a1b2c3d', 'o formulário recebe a proposta inteira');
+  assert.deepEqual(FV.proposalRows(null), []);
+  assert.equal(FV.PROPOSAL_NOTICE, 'Proposta do Planejador: revise as etapas, papéis e dependências antes de criar. Acesso total vem desligado.');
+  assert.equal(FV.BRIEFING_TEXT, 'Abre um terminal com o Planejador. Escreva o que você quer; ele lê o projeto, pergunta o que faltar e propõe as etapas. Você revisa no formulário antes de criar.');
+});
+
+test('briefing: proposta nova só abre o formulário quando nada está aberto; com formulário aberto vira aviso (nunca sobrescreve); versão nova do mesmo terminal pede para carregar', () => {
+  const a = FV.proposalRows([proposal()])[0], b = FV.proposalRows([proposal({ id: 'prop_bbbbbbbb', terminalId: 'term_p2', createdAt: '2026-11-19T11:00:00.000Z' })])[0];
+  assert.deepEqual(FV.proposalAutoOpen({ rows: [b, a] }), { open: b, markSeen: ['prop_bbbbbbbb', 'prop_0a1b2c3d'] }, 'abre a mais nova; as outras ficam na faixa');
+  assert.deepEqual(FV.proposalAutoOpen({ rows: [b, a], formOpen: true }), { open: null, markSeen: ['prop_bbbbbbbb', 'prop_0a1b2c3d'] }, 'formulário aberto: só avisa');
+  assert.deepEqual(FV.proposalAutoOpen({ rows: [b, a], blocked: true }), { open: null, markSeen: [] }, 'outro diálogo aberto: espera sem marcar');
+  assert.deepEqual(FV.proposalAutoOpen({ rows: [b, a], seen: new Set(['prop_bbbbbbbb', 'prop_0a1b2c3d']) }), { open: null, markSeen: [] }, 'já anunciadas (ex.: o usuário cancelou o formulário) não reabrem sozinhas');
+  assert.deepEqual(FV.proposalAutoOpen(), { open: null, markSeen: [] });
+  // o Planejador term_p1 mandou uma versão nova (a anterior saiu das pendentes): aviso para carregar, sem trocar sozinho
+  const v2 = FV.proposalRows([proposal({ id: 'prop_cccccccc', createdAt: '2026-11-19T12:00:00.000Z' })])[0];
+  const n = FV.proposalNotices([v2, b], a.proposal);
+  assert.deepEqual([n.newer?.id, n.others.map((r) => r.id), n.pending], ['prop_cccccccc', ['prop_bbbbbbbb'], false]);
+  const same = FV.proposalNotices([a, b], a.proposal);
+  assert.deepEqual([same.newer, same.others.map((r) => r.id), same.pending], [null, ['prop_bbbbbbbb'], true]);
+  const plainForm = FV.proposalNotices([a, b], null);
+  assert.deepEqual([plainForm.newer, plainForm.others.length, plainForm.pending], [null, 2, false], 'formulário comum: atalho para abrir cada uma');
+});
+
+test('briefing (tela): rotas no hook, botões "Nova por briefing", diálogo, aviso e Descartar no formulário, sem abrir por cima nem criar sozinho', () => {
+  const hook = readSrc('use-flows.js'), page = readSrc('pages/Missions.jsx'), side = readSrc('components/FlowSidebar.jsx'), form = readSrc('components/FlowForm.jsx'), brief = readSrc('components/FlowBriefing.jsx');
+  for (const t of ["post('/api/flows/briefing', briefingBody(body))", "api.get('/api/flows/proposals')", 'post(`/api/flows/proposals/${encodeURIComponent(id)}/dismiss`, {})', 'return { flows, failure, refresh, actions, proposals }']) assert.ok(hook.includes(t), t);
+  assert.ok(hook.includes("if (fl.status === 'rejected') throw fl.reason;") && !/pr\.status === 'rejected'\) throw/.test(hook), 'falha das propostas não derruba a lista de missões');
+  // um só polling: a página continua recebendo tudo do App
+  assert.ok(!page.includes("from '../use-flows.js'") && page.includes('const { flows, failure, refresh, actions, proposals } = data;'));
+  // botões ao lado de "Nova missão": barra lateral (cabeçalho e lista vazia) e estado vazio da página
+  assert.ok(side.includes('aria-label="Nova por briefing"') && side.includes('<span>Nova por briefing</span>') && side.includes('onBriefing'));
+  assert.ok(page.includes('<span>Nova por briefing</span>') && page.includes('onBriefing={() => setBriefing(true)}') && page.includes('<FlowBriefing '));
+  assert.ok(brief.includes('{BRIEFING_TEXT}') && brief.includes('useProviderOptions()') && brief.includes('briefingBody({ workspaceId, provider, model, effort, acknowledgeProjectConfig: needsAck && cfgOk === true })') && brief.includes("useState('claude')"), 'diálogo: texto, listas fechadas, Claude por padrão');
+  assert.ok(brief.includes('role="alert">{error}'), 'erro do servidor (ex.: limite de terminais) aparece no diálogo');
+  // formulário: aviso no topo, Descartar proposta (com confirmação), troca só por clique e com confirmação se mexido
+  assert.ok(form.includes('{proposal && <div className="fl-callout fl-prop-notice" role="note" tabIndex={-1} data-autofocus>{lines.map((t) => <p key={t}><b>{t}</b></p>)}</div>}') && form.includes('const lines = proposal ? proposalNoticeLines(proposal) : [];') && form.includes('<span>Descartar proposta</span>'));
+  assert.ok(form.includes('O Planejador enviou uma versão nova desta proposta — carregar?') && form.includes('Nova proposta do Planejador:'));
+  assert.ok(/const swap = \(row\) => \{[\s\S]*?window\.confirm\(/.test(form) && /const dismiss = async \(\) => \{[\s\S]*?window\.confirm\(/.test(form));
+  assert.ok(form.includes("mode === 'create' && proposal ? proposalToDraft(proposal)"), 'formulário nasce da proposta (acesso total desligado)');
+  // página: abre só sem formulário aberto (proposalAutoOpen com formOpen), avisos via proposalNotices, troca remonta pela chave
+  assert.ok(page.includes('proposalAutoOpen({ rows: propRows, seen: seenRef.current, formOpen: !!form, blocked: !!ack || !!discarding || briefing, terminalFocused: focusInTerminal(document.activeElement) })'));
+  assert.ok(page.includes('notices={proposalNotices(propRows, form.proposal ?? null, { seenAtOpen: form.seenAtOpen })}') && page.includes("key={`${form.mode}-${form.key ?? form.flow?.id ?? 'novo'}`}"));
+  assert.ok(page.includes('<ProposalTray ') && /onTrayDismiss = async \(r\) => \{\s*if \(!window\.confirm\(/.test(page), 'faixa de propostas com Descartar confirmado');
+  // nada é criado nem iniciado sozinho: o efeito só abre o formulário; create só no submit do formulário
+  const eff = page.slice(page.indexOf('const plan = proposalAutoOpen('), page.indexOf('}, [propRows, form'));
+  assert.ok(eff.length > 0 && !eff.includes('actions.') && eff.includes("openForm({ mode: 'create', proposal: plan.open.proposal"), 'o efeito só abre o formulário');
+  assert.equal([...page.matchAll(/actions\.create\(/g)].length, 1, 'create só no submit do formulário');
+  // o Planejador aparece no dock da página, também sem missão selecionada, e pode ser fechado
+  assert.ok(page.includes('plannerTabs(terminals?.sessions') && page.includes('onCloseTab={closePlanner}') && page.includes('const hasDock = !!stream && dockTabs.length > 0;'));
+  assert.ok(page.indexOf('{stream && <FlowTerminals') > page.lastIndexOf('</>'), 'o dock fica fora do ramo da missão selecionada');
+  const css = readSrc('flows.css');
+  assert.ok(css.includes('.fl-props {') && css.includes('.fl-brief-grid {') && css.includes('.fl-new-row {'));
+});
+
+// ---------- revisão do briefing (segurança e código): foco, Enter, agenda desligada, confirmação da configuração, avisos e histórico ----------
+test('revisão briefing: aviso da proposta diz como a agenda chegou (desligada pelo servidor); proposalToDraft mantém o enabled como veio', () => {
+  const auto = (schedule) => proposal({ flow: { ...proposal().flow, schedule } });
+  assert.deepEqual(FV.proposalNoticeLines(auto({ enabled: false, kind: 'interval', everyHours: 6 })), [FV.PROPOSAL_NOTICE, FV.PROPOSAL_SCHEDULE_OFF]);
+  assert.equal(FV.PROPOSAL_SCHEDULE_OFF, 'A agenda vem desligada: ligue só se quiser que rode sozinha.');
+  assert.deepEqual(FV.proposalNoticeLines(auto({ kind: 'daily', time: '09:00' })), [FV.PROPOSAL_NOTICE, FV.PROPOSAL_SCHEDULE_OFF], 'sem enabled = desligada');
+  assert.deepEqual(FV.proposalNoticeLines(auto({ enabled: true, kind: 'daily', time: '09:00' })), [FV.PROPOSAL_NOTICE, FV.PROPOSAL_SCHEDULE_ON], 'servidor antigo que manda ligada: o aviso não mente');
+  assert.deepEqual(FV.proposalNoticeLines(auto(null)), [FV.PROPOSAL_NOTICE], 'automação sem agenda');
+  assert.deepEqual(FV.proposalNoticeLines(proposal({ flow: { title: 'P', kind: 'project', schedule: { enabled: false }, steps: [def('a')] } })), [FV.PROPOSAL_NOTICE], 'projeto não fala de agenda');
+  assert.deepEqual(FV.proposalNoticeLines(null), [FV.PROPOSAL_NOTICE]);
+  const off = FV.proposalToDraft(auto({ enabled: false, kind: 'weekly', days: [2], time: '07:00' }));
+  assert.equal(off.schedule.enabled, false, 'a agenda continua desligada no rascunho');
+  assert.equal(draftToBody(off).schedule.enabled, false, 'e no corpo do create, até o usuário ligar');
+});
+
+test('revisão briefing: Enter num <input> não envia o formulário da proposta; textarea, select, botões e IME seguem normais', () => {
+  const ev = (key, tagName, o = {}) => ({ key, target: { tagName }, nativeEvent: {}, ...o });
+  assert.equal(FV.blocksImplicitSubmit(ev('Enter', 'INPUT')), true);
+  assert.equal(FV.blocksImplicitSubmit(ev('Enter', 'input')), true);
+  for (const tag of ['TEXTAREA', 'SELECT', 'BUTTON', 'DIV']) assert.equal(FV.blocksImplicitSubmit(ev('Enter', tag)), false, tag);
+  assert.equal(FV.blocksImplicitSubmit(ev('a', 'INPUT')), false);
+  assert.equal(FV.blocksImplicitSubmit(ev('Enter', 'INPUT', { nativeEvent: { isComposing: true } })), false, 'Enter que confirma a composição do IME');
+  assert.equal(FV.blocksImplicitSubmit(null), false);
+  // foco num terminal xterm (o usuário digitando no Planejador)
+  const inXterm = { closest: (sel) => (sel === '.xterm' ? {} : null) }, outside = { closest: () => null };
+  assert.deepEqual([FV.focusInTerminal(inXterm), FV.focusInTerminal(outside), FV.focusInTerminal(null), FV.focusInTerminal({})], [true, false, false, false]);
+});
+
+test('revisão briefing: com o foco num terminal a proposta não abre o formulário; fica marcada (faixa com Revisar) e a tela avisa', () => {
+  const a = FV.proposalRows([proposal()])[0], b = FV.proposalRows([proposal({ id: 'prop_bbbbbbbb', terminalId: 'term_p2', createdAt: '2026-11-19T11:00:00.000Z' })])[0];
+  assert.deepEqual(FV.proposalAutoOpen({ rows: [b, a], terminalFocused: true }), { open: null, markSeen: ['prop_bbbbbbbb', 'prop_0a1b2c3d'], held: b });
+  assert.deepEqual(FV.proposalAutoOpen({ rows: [b, a], terminalFocused: true, formOpen: true }), { open: null, markSeen: ['prop_bbbbbbbb', 'prop_0a1b2c3d'] }, 'com formulário aberto continua só aviso dentro dele');
+  assert.deepEqual(FV.proposalAutoOpen({ rows: [b, a], terminalFocused: true, blocked: true }), { open: null, markSeen: [] });
+  assert.deepEqual(FV.proposalAutoOpen({ rows: [b, a], terminalFocused: true, seen: new Set(['prop_bbbbbbbb', 'prop_0a1b2c3d']) }), { open: null, markSeen: [] });
+  assert.deepEqual(FV.proposalAutoOpen({ rows: [b, a], terminalFocused: false }).open, b, 'fora do terminal abre como antes');
+});
+
+test('revisão briefing: no formulário, "Nova proposta" só para as que chegaram depois de ele abrir; as já vistas ficam na faixa', () => {
+  const a = FV.proposalRows([proposal()])[0], b = FV.proposalRows([proposal({ id: 'prop_bbbbbbbb', terminalId: 'term_p2' })])[0], c = FV.proposalRows([proposal({ id: 'prop_cccccccc', terminalId: 'term_p3' })])[0];
+  const plain = FV.proposalNotices([a, b, c], null, { seenAtOpen: new Set(['prop_0a1b2c3d', 'prop_bbbbbbbb']) });
+  assert.deepEqual(plain.others.map((r) => r.id), ['prop_cccccccc']);
+  assert.deepEqual(FV.proposalNotices([a, b], null, { seenAtOpen: new Set(['prop_0a1b2c3d', 'prop_bbbbbbbb']) }).others, [], 'nada novo: nenhum aviso no formulário');
+  // formulário da proposta a: a versão nova do MESMO terminal continua pedindo para carregar mesmo já marcada como vista
+  const v2 = FV.proposalRows([proposal({ id: 'prop_dddddddd' })])[0];
+  const cur = FV.proposalNotices([v2, b], a.proposal, { seenAtOpen: new Set(['prop_0a1b2c3d', 'prop_bbbbbbbb', 'prop_dddddddd']) });
+  assert.deepEqual([cur.newer?.id, cur.others.map((r) => r.id)], ['prop_dddddddd', []]);
+  assert.equal(FV.proposalNotices([a, b], null).others.length, 2, 'sem o registro do que foi visto: todas (compatível)');
+});
+
+test('revisão briefing: confirmação da configuração do projeto só com o booleano estrito; 409 project_config_unreviewed vira lista de arquivos', () => {
+  assert.deepEqual(FV.briefingBody({ workspaceId: 'ws_1', acknowledgeProjectConfig: true }), { workspaceId: 'ws_1', acknowledgeProjectConfig: true });
+  for (const v of [false, 'true', 1, undefined, null, {}]) assert.ok(!('acknowledgeProjectConfig' in FV.briefingBody({ workspaceId: 'ws_1', acknowledgeProjectConfig: v })), String(v));
+  assert.deepEqual(FV.briefingBody(FV.briefingBody({ workspaceId: 'ws_1', provider: 'claude', acknowledgeProjectConfig: true })), { workspaceId: 'ws_1', provider: 'claude', acknowledgeProjectConfig: true }, 'o hook passa o corpo por briefingBody de novo: a confirmação sobrevive');
+  assert.deepEqual(FV.briefingConfigFiles({ code: 'project_config_unreviewed', files: ['.mcp.json', '', 3, '.claude/settings.json'] }), ['.mcp.json', '.claude/settings.json']);
+  assert.deepEqual(FV.briefingConfigFiles({ code: 'project_config_unreviewed' }), []);
+  assert.equal(FV.briefingConfigFiles({ code: 'project_config_changed', files: ['x'] }), null);
+  assert.equal(FV.briefingConfigFiles(new Error('limite')), null);
+  assert.equal(FV.BRIEFING_CONFIG_CODE, 'project_config_unreviewed');
+  assert.ok(FV.BRIEFING_CONFIG_TEXT.includes('configuração executável do projeto que ainda não foi revisada; o planejador vai rodar nesta pasta'));
+});
+
+test('revisão briefing (tela): sem autofocus no Nome da proposta, foco no aviso, Enter bloqueado só na proposta, caixa obrigatória no briefing, pós-POST protegido', () => {
+  const form = readSrc('components/FlowForm.jsx'), page = readSrc('pages/Missions.jsx'), brief = readSrc('components/FlowBriefing.jsx'), hook = readSrc('use-flows.js');
+  // foco: o Nome só recebe data-autofocus fora da proposta; na proposta, o aviso (div não editável, tabIndex -1) é o alvo
+  assert.ok(form.includes('<label>Nome<input data-autofocus={fromProposal ? undefined : true} value={draft.title}'));
+  assert.ok(!/<input data-autofocus value=\{draft\.title\}/.test(form), 'nada de autofocus fixo no Nome');
+  assert.equal([...form.matchAll(/data-autofocus/g)].length, 2, 'só o Nome (condicional) e o aviso da proposta');
+  assert.ok(/role="note" tabIndex=\{-1\} data-autofocus>/.test(form));
+  // Enter: só o formulário da proposta bloqueia (o comum continua enviando com Enter)
+  assert.ok(form.includes('onKeyDown={fromProposal ? (e) => { if (blocksImplicitSubmit(e)) e.preventDefault(); } : undefined}'));
+  assert.ok(readSrc('flows.css').includes('.fl-prop-notice:focus {'), 'foco visível no aviso');
+  // página: não abre por cima de quem digita no terminal; avisa e deixa na faixa
+  assert.ok(page.includes('else if (plan.held) notify(') && page.includes('Clique em Revisar na faixa do topo de Missões.'));
+  assert.ok(page.includes('const openForm = useCallback((f) => setForm({ ...f, seenAtOpen: new Set(seenRef.current) }), []);'));
+  assert.ok(!/setForm\(\{ mode: '(create|edit|schedule)'/.test(page), 'todo formulário abre por openForm (registra o que já foi visto)');
+  // startBriefing: depois do POST, nada lança de volta para o diálogo já desmontado
+  const sb = page.slice(page.indexOf('const startBriefing = async (body) => {'), page.indexOf('const propRows = useMemo('));
+  assert.ok(sb.indexOf('setBriefing(false);') < sb.indexOf('try {') && /try \{[\s\S]*await loadTerminals\?\.\(\);[\s\S]*setDockOpen\(true\);[\s\S]*notify\([\s\S]*\} catch \{/.test(sb));
+  assert.equal([...sb.matchAll(/await /g)].length, 2, 'só o POST (fora do try, erro para o diálogo) e o loadTerminals (dentro do try)');
+  // briefing: 409 vira lista + caixa; sem a caixa marcada nada é reenviado; trocar de workspace descarta a confirmação
+  assert.ok(brief.includes('const files = briefingConfigFiles(err);') && brief.includes('setCfg({ workspaceId, files }); setCfgOk(false);'));
+  assert.ok(brief.includes('if (busy || !workspaceId || (needsAck && !cfgOk)) return; // sem a caixa marcada nada é reenviado'));
+  assert.ok(brief.includes('disabled={busy || !workspaceId || (needsAck && !cfgOk)}') && brief.includes('<input ref={cfgBox} type="checkbox" checked={cfgOk}'));
+  assert.ok(brief.includes('{BRIEFING_CONFIG_TEXT}') && brief.includes('cfg.files.map((f, i) =>'), 'explicação e a lista de arquivos');
+  assert.ok(brief.includes('const pickWorkspace = (id) => { setWorkspaceId(id); setCfg(null); setCfgOk(false);'));
+  assert.ok(brief.includes('acknowledgeProjectConfig: needsAck && cfgOk === true') && !/acknowledgeProjectConfig: true/.test(brief), 'a confirmação só sai da caixa marcada, nunca fixa');
+  assert.ok(hook.includes("startBriefing: (body) => post('/api/flows/briefing', briefingBody(body)),"), 'o hook não inventa a confirmação');
+});
+
+test('revisão briefing: histórico mostra o Planejador como não restaurável pelo histórico', async () => {
+  const SH = await import('../../client/src/session-history.js');
+  const { others } = SH.historyRows({ history: [{ id: 'r1', workspaceId: 'ws_1', title: 'Planejador de missão', role: 'planner', state: 'exited', resumable: false, blockedReason: 'planner_session' }], workspaceId: 'ws_1' });
+  assert.deepEqual([others[0].blockedCode, others[0].blockedShort, others[0].resumable], ['planner_session', 'planejador: abra pela missão', false]);
 });

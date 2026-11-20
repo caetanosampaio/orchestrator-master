@@ -14,11 +14,38 @@ export function flowTerminalIds(flows) {
   return ids;
 }
 
-/** `sessions` sem os terminais de missões. Sem nada a esconder devolve a MESMA lista (referência estável para useMemo). */
+/** Terminal do Planejador de missão (criar por briefing): papel `planner`. Mostrado só na página Missões. */
+export const PLANNER_ROLE = 'planner';
+export const isPlannerSession = (s) => s?.role === PLANNER_ROLE;
+
+/**
+ * Papéis oferecidos nas vagas de equipe (TeamComposer): os do servidor, sem o Planejador (ele só nasce pelo "Nova por briefing" e o servidor o recusa numa vaga).
+ * O Maestro continua (formações prontas usam vaga de Maestro).
+ */
+export const teamSlotRoles = (roles) => arr(roles).filter((r) => r && typeof r.id === 'string' && r.id && r.id !== PLANNER_ROLE);
+
+/**
+ * `sessions` sem os terminais de missões e sem os do Planejador (os dois vivem na página Missões; montar o mesmo terminal em dois lugares disputaria o tamanho do pty).
+ * Sem nada a esconder devolve a MESMA lista (referência estável para useMemo).
+ */
 export function withoutFlowTerminals(sessions, hidden) {
-  const list = arr(sessions);
-  if (!hidden || hidden.size === 0) return list;
-  return list.filter((s) => !hidden.has(s?.id));
+  const list = arr(sessions), none = !hidden || hidden.size === 0;
+  if (none && !list.some(isPlannerSession)) return list;
+  return list.filter((s) => !isPlannerSession(s) && (none || !hidden.has(s?.id)));
+}
+
+/**
+ * Abas dos Planejadores abertos (um por briefing; pode haver vários), na ordem em que abriram. Valem com ou sem missão selecionada. `closable`: o Planejador o usuário
+ * fecha quando quiser (as etapas de missão não: encerrar é "Cancelar missão"). Título "Planejador" (numerado quando há mais de um); o workspace vai na dica.
+ */
+export function plannerTabs(sessions, { workspaces = [] } = {}) {
+  const list = arr(sessions).filter((s) => isPlannerSession(s) && typeof s.id === 'string' && s.id)
+    .sort((a, b) => (Date.parse(a.startedAt ?? '') || 0) - (Date.parse(b.startedAt ?? '') || 0));
+  const wsName = (id) => { const w = arr(workspaces).find((x) => x?.id === id); return w ? w.displayName || w.name || null : null; };
+  return list.map((s, i) => ({
+    terminalId: s.id, kind: 'planner', closable: true, stepId: null, stepStatus: null, order: -1, session: s,
+    title: list.length > 1 ? `Planejador ${i + 1}` : 'Planejador', workspaceName: wsName(s.workspaceId),
+  }));
 }
 
 /**
@@ -35,7 +62,7 @@ export function flowTerminalTabs(flow, sessions) {
     if (typeof rs?.terminalId !== 'string' || !rs.terminalId || seen.has(rs.terminalId)) continue; // continueFrom: várias etapas, um terminal só
     seen.add(rs.terminalId);
     const d = defs.get(rs.stepId);
-    tabs.push({ terminalId: rs.terminalId, stepId: rs.stepId, title: d?.title ?? rs.stepId, order: d?.order ?? 999, stepStatus: rs.status, session: byId.get(rs.terminalId) ?? null });
+    tabs.push({ terminalId: rs.terminalId, kind: 'step', closable: false, stepId: rs.stepId, title: d?.title ?? rs.stepId, order: d?.order ?? 999, stepStatus: rs.status, session: byId.get(rs.terminalId) ?? null });
   }
   return tabs.sort((a, b) => a.order - b.order);
 }

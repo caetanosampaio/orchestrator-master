@@ -151,8 +151,8 @@ test('componente e página: montagem mínima, URL só em memória, sem console/l
   assert.match(comp, /mission\?\.demo/); assert.match(comp, /Acompanhar no navegador/); assert.match(comp, /Copiar link/); assert.match(comp, /Encerrar link/);
   assert.match(comp, /role="alert"/); assert.match(comp, /readOnly/);
   assert.match(css, /prefers-reduced-motion/); assert.ok(!/box-shadow|drop-shadow|text-shadow/.test(css), 'sem glow');
+  // A página de Missões agora é a v2 (flows, docs/missions-v2-spec.md): o botão era do ciclo antigo (db.missions), que ficou dormente. Ele NÃO pode aparecer na página nova,
+  // onde receberia um flow no lugar de uma missão legada; o componente segue íntegro (acima) para quando o ciclo antigo for removido ou religado.
   const page = src('pages/Missions.jsx');
-  assert.match(page, /import MissionLiveButton from '\.\.\/components\/MissionLiveButton\.jsx'/);
-  assert.match(page, /<MissionLiveButton key=\{mission\.id\} mission=\{mission\} \/>/);
-  assert.ok(page.indexOf('<MissionPanel ') < page.indexOf('<MissionLiveButton') && page.indexOf('<MissionLiveButton') < page.indexOf('<MissionAttention '), 'entre MissionPanel e a faixa de atenção (a tela nova de cima para baixo não usa mais o ControlBar)');
+  assert.ok(!/MissionLiveButton/.test(page), 'a página v2 não monta o botão do ciclo antigo');
 });

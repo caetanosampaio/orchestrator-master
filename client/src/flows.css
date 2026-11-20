@@ -102,7 +102,38 @@
 .fl-attn ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .fl-attn li { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; color: #e4e4e7; font-size: 12.5px; line-height: 1.5; } .fl-attn li b { color: #fff; }
 
+/* fatia 2: integração travada, interrupção e "pronta para integrar" no aviso; listas de arquivos e caminhos em mono, quebrando onde precisar */
+.fl-attn li.fl-attn-int { flex-direction: column; align-items: flex-start; gap: 6px; }
+.fl-attn-body { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; width: 100%; } .fl-attn-body p { margin: 0; }
+.fl-page code, .fl-confirm code { padding: 0 3px; border-radius: 2px; background: rgba(255, 255, 255, .06); color: #e4e4e7; font: inherit; overflow-wrap: anywhere; }
+.fl-files { display: flex; flex-direction: column; gap: 3px; width: 100%; font-size: 12px; }
+.fl-files-l { color: var(--fl-mute-2, #9ca3af); font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; }
+.fl-files ul { list-style: none; margin: 0; padding: 0 0 0 10px; max-height: 180px; overflow-y: auto; border-left: 1px solid var(--fl-hair-2, rgba(255, 255, 255, .14)); scrollbar-width: thin; }
+.fl-files li { line-height: 1.6; overflow-wrap: anywhere; }
+.fl-path { margin: 0; color: #e4e4e7; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.fl-reasons { margin: 0; padding-left: 18px; }
+.fl-int-box { display: flex; flex-direction: column; gap: 6px; } .fl-int-box > p { margin: 0; }
+.fl-int-box .fl-files-l, .fl-int-box .fl-hint { color: #d4d4d8; }
+.fl-st-t { color: var(--st-t); }
+.fl-text.wait { color: #fbbf24; }
+.fl-int-msg { overflow-wrap: anywhere; }
+/* avisos do run no cabeçalho: modo pasta (sem cópia isolada), recomeço e cópias que não saíram; texto longo quebra (nada de rolagem lateral no celular) */
+.fl-gitnote { margin: 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; color: #d4d4d8; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.fl-leftovers { display: flex; flex-direction: column; gap: 4px; padding: 8px 12px; border-left: 3px solid var(--fl-wait); background: rgba(245, 158, 11, .06); color: #e4e4e7; font-size: 12px; line-height: 1.5; }
+.fl-leftovers p { margin: 0; } .fl-leftovers b { color: #fff; } .fl-leftovers .fl-hint { color: #d4d4d8; }
+.fl-leftovers ul { margin: 0; padding-left: 18px; max-height: 160px; overflow-y: auto; scrollbar-width: thin; } .fl-leftovers li { overflow-wrap: anywhere; }
+.fl-runs-note { display: block; margin-top: 2px; font-size: 11px; }
+.fl-runs-t td.fl-warn-t { color: #fbbf24; }
+/* política sem ninguém olhando (automação + acesso total + integração automática): mesmo âmbar do aviso de acesso total */
+.fl-policy-warn { margin: 0; padding: 8px 12px; border-left: 3px solid var(--fl-wait); background: rgba(245, 158, 11, .08); color: #fcd34d; font-size: 12.5px; line-height: 1.55; } .fl-policy-warn b { color: #fff; }
+/* confirmações (Integrar com configuração alterada, Descartar): dentro do Dialog */
+.fl-confirm { display: flex; flex-direction: column; gap: 14px; font-family: var(--mono); color: #d4d4d8; font-size: 12.5px; line-height: 1.55; } .fl-confirm p { margin: 0; } .fl-confirm b { color: #fff; }
+.fl-confirm .dim { color: #7c8494; }
+
 /* workflow: ajustes sobre o desenho reaproveitado (missions-workflow.css) */
+.fl-wf .mwf-node.fl-ask { border-color: var(--fl-wait); border-left-width: 3px; } /* integração travada ou entrega pronta: pede você, sem recolorir o estado */
+.fl-wf .mwf-node.fl-ask.on { border-color: var(--brand, #8c242a); border-left-color: var(--fl-wait); }
+.fl-wf .fl-int { display: block; padding-left: 12px; color: var(--st-t); font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fl-wf { max-width: none; }
 .fl-wf .mwf-node.fl-wait { border-color: var(--fl-wait); border-left-width: 3px; background: #0d0900; }
 .fl-wf .mwf-node.fl-wait .mwf-state { color: #fbbf24; }
@@ -119,6 +150,12 @@
 .fl-runs-t { width: 100%; margin-top: 8px; border-collapse: collapse; font-size: 12px; }
 .fl-runs-t th { text-align: left; padding: 4px 10px 4px 0; color: var(--fl-mute); font-size: 10.5px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; }
 .fl-runs-t td { padding: 6px 10px 6px 0; border-top: 1px solid var(--fl-hair); color: #d4d4d8; vertical-align: top; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.fl-runs-t td.dim { color: var(--fl-mute); }
+.fl-runs-wrap { overflow-x: auto; scrollbar-width: thin; } .fl-runs-wrap .fl-runs-t { min-width: 760px; } /* 8 colunas: no celular a tabela rola dentro do histórico, não a página */
+.fl-skips { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; }
+.fl-skips ul { list-style: none; margin: 0; padding: 0; } .fl-skips .fl-note { margin: 0; }
+.fl-skips li { display: flex; flex-wrap: wrap; gap: 2px 12px; padding: 5px 0; border-top: 1px solid var(--fl-hair); color: #d4d4d8; line-height: 1.5; overflow-wrap: anywhere; }
+.fl-skip-when { color: var(--fl-mute-2); font-variant-numeric: tabular-nums; }
 
 /* ---------- painel lateral ---------- */
 .fl-panel { min-width: 0; min-height: 0; display: flex; flex-direction: column; border-left: 1px solid var(--fl-hair); background: var(--surface); overflow-y: auto; scrollbar-width: thin; scrollbar-color: #27272a transparent; }
@@ -132,6 +169,12 @@
 .fl-fact { display: grid; grid-template-columns: 84px 1fr; gap: 10px; } .fl-fact dt { color: var(--fl-mute); } .fl-fact dd { margin: 0; color: #d4d4d8; overflow-wrap: anywhere; }
 .fl-text { margin: 0; color: #d4d4d8; font-size: 12.5px; line-height: 1.55; overflow-wrap: anywhere; } .fl-text.pre { white-space: pre-wrap; } .fl-text.err { color: var(--fl-err-t); } .fl-text.dim { color: var(--fl-mute); }
 .fl-callout { margin: 0; padding: 8px 12px; border-left: 3px solid var(--fl-wait); background: rgba(245, 158, 11, .06); color: #fbbf24; font-size: 12.5px; line-height: 1.5; }
+.fl-callout > p { margin: 0 0 8px; } .fl-callout > p:last-child { margin: 0; }
+.fl-brief-cfg-l { margin: 0 0 8px; padding-left: 18px; max-height: 140px; overflow: auto; color: #fde68a; overflow-wrap: anywhere; } /* caminhos longos quebram (sem rolagem lateral em 320 px) */
+.fl-brief-cfg .fl-check { color: #e5e7eb; } .fl-brief-cfg-l:focus-visible { outline: 1px dashed var(--brand, #8c242a); outline-offset: 2px; }
+.fl-prop-notice:focus { outline: 1px dashed var(--brand, #8c242a); outline-offset: 2px; } /* foco inicial do formulário da proposta (não editável) */
+/* decisão humana sobre a etapa que parou sem confirmar: os dois botões juntos, quebrando linha no celular */
+.fl-decide { display: inline-flex; gap: 8px; flex-wrap: wrap; }
 .fl-fails { margin: 0; padding-left: 18px; color: #d4d4d8; font-size: 12.5px; line-height: 1.55; } .fl-fails b { color: #fff; }
 .fl-panel-f { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
 .fl-hint { margin: 0; color: var(--fl-mute); font-size: 11.5px; line-height: 1.5; }
@@ -157,6 +200,15 @@
 .fl-access.on { border-color: var(--fl-wait); background: rgba(245, 158, 11, .1); }
 .fl-access-l { color: #fff !important; font-size: 13px !important; }
 .fl-access-warn { margin: 0; color: #fcd34d; font-size: 12.5px; line-height: 1.55; } .fl-access-warn b { color: #fff; }
+
+/* tipo, agenda e integração automática (fatia 2) */
+.fl-kind, .fl-sched { display: flex; flex-direction: column; gap: 10px; min-width: 0; margin: 0; padding: 12px 14px 14px; border: 1px solid var(--fl-hair-2); border-radius: 6px; }
+.fl-kind { flex-direction: row; flex-wrap: wrap; gap: 8px 22px; }
+.fl-kind legend, .fl-sched legend { padding: 0 6px; }
+.fl-days { display: flex; flex-direction: column; gap: 6px; } .fl-days-l { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.fl-days-l .fl-check { align-items: center; min-height: 28px; } /* alvo de toque maior nas caixas dos dias */
+.fl-hint.warn { color: #fcd34d; }
+.fl-autoint { display: flex; flex-direction: column; gap: 6px; }
 
 .fl-steps { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; } .fl-steps > .fl-btn { align-self: flex-start; }
 .fl-step { width: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 12px; margin: 0; padding: 12px 14px 14px; border: 1px solid var(--fl-hair-2); border-radius: 6px; min-width: 0; }
@@ -211,6 +263,23 @@
 .fl-dock-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; background: var(--term-bg, #1c1c1c); }
 .fl-dock-body > .fl-note { margin: 16px; }
 @media (max-width: 860px) { .fl-dock.open { max-height: 70vh; } .fl-dock-tab { max-width: 150px; } }
+
+/* ---------- criar por briefing: botões, faixa de propostas, avisos no formulário e aba do Planejador ---------- */
+.fl-plus-text { display: inline-flex; align-items: center; width: auto; gap: 5px; padding: 0 7px; font: 600 11px var(--mono); letter-spacing: .04em; }
+.fl-plus-next { margin-left: 0; }
+.fl-plus-text:focus-visible { outline: 1px dashed var(--brand, #8c242a); outline-offset: 2px; }
+.fl-new-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.fl-scroll-blank { display: flex; flex-direction: column; }
+.fl-props { flex: none; width: 100%; max-width: 1056px; margin: 14px auto 0; padding: 0 28px; box-sizing: border-box; }
+.fl-props-box { margin: 0; }
+.fl-props-box .dim { color: #b6b7c0; } /* sobre o fundo âmbar, o cinza claro mantém o contraste */
+.fl-props-act { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.fl-prop-swap { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.fl-prop-swap .dim { color: #d4d4d8; }
+.fl-foot-left { margin-right: auto; }
+.fl-brief-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.fl-dock-tab.is-planner { font-weight: 600; }
+@media (max-width: 900px) { .fl-props { padding: 0 16px; } .fl-brief-grid { grid-template-columns: minmax(0, 1fr); } }
 
 /* ---------- workflow de CIMA PARA BAIXO: cada fase é uma linha (ramos paralelos lado a lado), os conectores descem de uma fase à seguinte ---------- */
 .fl-wf .mwf-viewport { min-height: 0; max-height: none; overflow-x: auto; overflow-y: visible; }

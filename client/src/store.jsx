@@ -3,6 +3,7 @@ import { api, nav } from './api.js';
 import { createActivityTracker } from './activity.js';
 import { createWorkEndTracker, finishedStamps, unseenFinished } from './workspace-nav.js';
 import { paneState } from './env-view.js';
+import { withoutFlowTerminals } from './flow-terminals.js';
 
 const Ctx = createContext(null);
 export const useStore = () => useContext(Ctx);
@@ -61,13 +62,21 @@ export function StoreProvider({ children }) {
     try { localStorage.setItem('forge.finishSeen', JSON.stringify(next)); } catch { /* sem armazenamento: vale só nesta sessão */ }
   }, [baseline]);
   const noteInteraction = useCallback((id) => { tracker.current.noteInteraction(id); markSeen(wsOfRef.current.get(id)); }, [markSeen]); // clique, foco, tecla, mouse ou redimensionamento no pane: silencia a classificação dele e dá o término do workspace como visto
+  // Terminais das missões (ids que o App calcula das missões) e do Planejador vivem na página Missões: não contam no "terminou" (!) da barra lateral do Cockpit,
+  // como já não aparecem nela (withoutFlowTerminals). `workingIds` continua com todos: o dock de Missões e o painel Live mostram o estado desses panes.
+  const [hiddenTerms, setHiddenTerms] = useState(null);
+  const hiddenRef = useRef(null); hiddenRef.current = hiddenTerms;
+  const setHiddenTerminals = useCallback((ids) => setHiddenTerms((prev) => {
+    const next = ids && ids.size ? ids : null;
+    return (prev?.size ?? 0) === (next?.size ?? 0) && [...(next ?? [])].every((x) => prev.has(x)) ? prev : next;
+  }), []);
   const loadTerminals = useCallback(async () => {
     try {
       const d = await api.get('/api/terminals');
       const act = tracker.current.update(d.sessions);
       wsOfRef.current = new Map(d.sessions.map((x) => [x.id, x.workspaceId]));
       // "Trabalhando" por workspace com a MESMA regra dos indicadores (estado real do agente pelos hooks; sem hooks, a leitura pela saída): só quando NENHUM agente do workspace trabalha mais é que a equipe terminou.
-      const ends = workEnd.current.update(new Set(d.sessions.filter((x) => x.workspaceId && paneState(x, act) === 'working').map((x) => x.workspaceId)));
+      const ends = workEnd.current.update(new Set(withoutFlowTerminals(d.sessions, hiddenRef.current).filter((x) => x.workspaceId && paneState(x, act) === 'working').map((x) => x.workspaceId)));
       setWorkEnds((prev) => (JSON.stringify(prev) === JSON.stringify(ends) ? prev : ends));
       setWorkingIds((prev) => (prev.size === act.size && [...act].every((x) => prev.has(x)) ? prev : act));
       const json = JSON.stringify(d); if (json !== lastT.current) { lastT.current = json; setTerminals(d); }
@@ -111,7 +120,7 @@ export function StoreProvider({ children }) {
 
   const activeWsId = data.state?.activeWorkspace?.id ?? null;
   // Terminal que o usuário encerrou (ou que acabou) não conta como "a equipe terminou": só tarefa concluída e o fim do trabalho observado, olhando os terminais vivos.
-  const stamps = React.useMemo(() => finishedStamps({ sessions: (terminals?.sessions ?? []).filter((x) => x.status === 'running'), maestroTasks: maestro?.tasks ?? [], workEnds }), [terminals, maestro, workEnds]);
+  const stamps = React.useMemo(() => finishedStamps({ sessions: withoutFlowTerminals(terminals?.sessions, hiddenTerms).filter((x) => x.status === 'running'), maestroTasks: maestro?.tasks ?? [], workEnds }), [terminals, maestro, workEnds, hiddenTerms]);
   stampsRef.current = stamps;
   useEffect(() => { markSeen(activeWsId); }, [activeWsId, markSeen]); // ativar o workspace = ver o que terminou nele até agora (um término posterior volta a avisar)
   const unseenWs = React.useMemo(() => unseenFinished({ stamps, seen, baseline }), [stamps, seen, baseline]);
@@ -134,6 +143,6 @@ export function StoreProvider({ children }) {
   const selectTopic = (workspaceId, topicId) => act(() => (topicId ? nav.activateTopic(topicId) : nav.activateGeneral(workspaceId)));
 
   return (
-    <Ctx.Provider value={{ ...data, openWorkspaceIds, topics, activeTopicIds, selectTopic, error, refresh, act, notify, toast, terminals, maestro, setMaestro: updateMaestro, workingIds, loadTerminals, noteInteraction, unseenWs, accounts, loadAccounts }}>{children}</Ctx.Provider>
+    <Ctx.Provider value={{ ...data, openWorkspaceIds, topics, activeTopicIds, selectTopic, error, refresh, act, notify, toast, terminals, maestro, setMaestro: updateMaestro, workingIds, loadTerminals, noteInteraction, unseenWs, setHiddenTerminals, accounts, loadAccounts }}>{children}</Ctx.Provider>
   );
 }
