@@ -18,7 +18,7 @@ const bad = (body, re, opts = { create: true }) => { const r = F.validateFlowInp
 test('criação válida: padrões (project, maxParallel 1, fullAccess false, goal vazio, sem agenda, autoIntegrate true) e normalização das etapas', () => {
   const r = F.validateFlowInput({ workspaceId: 'ws_1', title: '  Missão  ', steps: [step({ title: ' A ' })] }, { create: true });
   assert.equal(r.error, undefined);
-  assert.deepEqual({ ...r.value, steps: undefined }, { title: 'Missão', goal: '', fullAccess: false, maxParallel: 1, workspaceId: 'ws_1', kind: 'project', schedule: null, autoIntegrate: true, steps: undefined });
+  assert.deepEqual({ ...r.value, steps: undefined }, { title: 'Missão', goal: '', fullAccess: false, maxParallel: 1, workspaceId: 'ws_1', kind: 'project', schedule: null, autoIntegrate: true, verifyCommand: null, steps: undefined });
   assert.deepEqual(r.value.steps, [{ id: 's1', title: 'A', prompt: 'Faça algo', provider: 'claude', role: 'builder', model: null, effort: null, dependsOn: [], continueFrom: null }]);
   const full = F.validateFlowInput(flowBody({ kind: 'automation', fullAccess: true, maxParallel: 4, schedule: null, goal: 'a\nb' }), { create: true });
   assert.equal(full.error, undefined); assert.deepEqual([full.value.kind, full.value.fullAccess, full.value.maxParallel, full.value.goal], ['automation', true, 4, 'a\nb']);
@@ -198,4 +198,59 @@ test('composeStepText: contexto + etapa em uma linha; limite do Maestro respeita
   assert.equal(e.ok, true); assert.equal(e.text.length, MAX_TASK_TEXT);
   // controles e ESC do objetivo não chegam ao terminal
   const f = F.composeStepText({ title: 'M\x1b', goal: 'a\x07b' }, { title: 'E', prompt: 'x' }); assert.ok(!/[\x00-\x1f]/.test(f.text));
+});
+
+// ---------- comando de verificação (verifyCommand) ----------
+/** Gerente com terminais falsos e banco em memória (nada é gravado em disco): só o necessário para criar, editar e propor. */
+function manager() {
+  const db = { workspaces: [{ id: 'ws_1', name: 'proj', path: tmp }], flows: [], flowRuns: [] };
+  const pane = (id) => (id === 'term_00000001' ? { id, status: 'running', role: 'planner', workspaceId: 'ws_1' } : null);
+  const terminals = { get: pane, peek: pane, count: () => 0, providers: () => [], close() {} };
+  const fl = F.createFlows({ db, terminals, maestro: {}, persist: () => {}, pollMs: 0, onError: () => {}, flowVerify: { run: async () => { throw new Error('não deveria rodar'); } } });
+  return { db, fl };
+}
+
+test('verifyCommand: null/ausente = sem verificação; objeto validado (args 1..16 textos sem controle, timeoutSec inteiro 10..1800, padrão 300); recusas com o nome do campo', () => {
+  assert.equal(F.validateFlowInput(flowBody(), { create: true }).value.verifyCommand, null);
+  assert.equal(F.validateFlowInput(flowBody({ verifyCommand: null }), { create: true }).value.verifyCommand, null);
+  assert.deepEqual(F.validateFlowInput(flowBody({ verifyCommand: { args: ['npm', 'test'] } }), { create: true }).value.verifyCommand, { args: ['npm', 'test'], timeoutSec: 300 });
+  assert.deepEqual(F.validateFlowInput(flowBody({ verifyCommand: { args: ['node', 'x.js'], timeoutSec: 60 } }), { create: true }).value.verifyCommand, { args: ['node', 'x.js'], timeoutSec: 60 });
+  for (const vc of ['npm test', ['npm'], { args: [] }, { args: 'npm' }, { args: [1] }, { args: [''] }, { args: ['npm', 'a\nb'] }, { args: Array(17).fill('x') }, { args: ['npm'], timeoutSec: 5 }, { args: ['npm'], timeoutSec: 1801 }, { args: ['npm'], timeoutSec: 30.5 }, { args: ['npm'], timeoutSec: '60' }]) bad(flowBody({ verifyCommand: vc }), /^verifyCommand: /);
+  // edição: só quando vier; null remove
+  assert.equal(Object.hasOwn(F.validateFlowInput({ title: 'x' }, { create: false }).value, 'verifyCommand'), false);
+  assert.equal(F.validateFlowInput({ verifyCommand: null }, { create: false }).value.verifyCommand, null);
+  bad({ verifyCommand: { args: [] } }, /^verifyCommand: /, { create: false });
+  assert.equal(F.runSafePatch({ verifyCommand: null }), false, 'não entra nos campos editáveis com run ativo');
+  assert.equal(F.RUN_SAFE_PATCH_KEYS.includes('verifyCommand'), false);
+});
+
+test('verifyCommand no gerente: criar/editar/remover; list e get devolvem o campo (null em missão antiga ou com valor inválido no banco)', () => {
+  const { db, fl } = manager();
+  const c = fl.create(flowBody({ verifyCommand: { args: ['npm', 'test'], timeoutSec: 120 } })); assert.equal(c.status, 201, c.error);
+  assert.deepEqual(c.body.verifyCommand, { args: ['npm', 'test'], timeoutSec: 120 });
+  assert.deepEqual(fl.get(c.body.id).body.verifyCommand, { args: ['npm', 'test'], timeoutSec: 120 }); assert.deepEqual(fl.list()[0].verifyCommand, { args: ['npm', 'test'], timeoutSec: 120 });
+  assert.equal(fl.create(flowBody({ verifyCommand: { args: [] } })).status, 400);
+  const e = fl.update(c.body.id, { verifyCommand: { args: ['node', 't.js'] } }); assert.equal(e.status, 200, e.error); assert.deepEqual(e.body.verifyCommand, { args: ['node', 't.js'], timeoutSec: 300 });
+  const n = fl.update(c.body.id, { verifyCommand: null }); assert.equal(n.status, 200, n.error); assert.equal(n.body.verifyCommand, null); assert.equal(db.flows[0].verifyCommand, null);
+  delete db.flows[0].verifyCommand; assert.equal(fl.get(c.body.id).body.verifyCommand, null, 'missão antiga sem o campo');
+  db.flows[0].verifyCommand = { args: 'rm -rf /' }; assert.equal(fl.get(c.body.id).body.verifyCommand, null, 'valor inválido no banco não vale');
+});
+
+test('verifyCommand: o planejador nunca define (propose_mission recusa a propriedade); edição com run ativo = 409', () => {
+  const { db, fl } = manager();
+  const caller = { terminalId: 'term_00000001', role: 'planner' };
+  const mission = { title: 'M', goal: 'G', steps: [step()] };
+  const no = fl.plannerPort().propose(caller, { ...mission, verifyCommand: { args: ['npm', 'test'] } });
+  assert.equal(no.ok, false); assert.match(no.error, /verifyCommand/);
+  const no2 = fl.plannerPort().propose(caller, { ...mission, verifyCommand: null }); assert.equal(no2.ok, false, 'nem null: a chave não pode vir do agente');
+  const ok = fl.plannerPort().propose(caller, mission); assert.equal(ok.ok, true, ok.error);
+  assert.equal(fl.listProposals()[0].flow.verifyCommand, null);
+  // run ativo (running, interrupted ou ready_to_integrate): verifyCommand não muda; a agenda/autoIntegrate continuam liberados
+  const c = fl.create(flowBody({ verifyCommand: { args: ['npm', 'test'] } })); assert.equal(c.status, 201, c.error);
+  for (const status of ['running', 'interrupted', 'ready_to_integrate']) {
+    db.flowRuns = [{ id: 'run_0000000a', flowId: c.body.id, status, steps: [], git: null, ownedTerminalIds: [] }];
+    for (const body of [{ verifyCommand: null }, { verifyCommand: { args: ['node', 'x.js'] } }, { verifyCommand: null, autoIntegrate: false }]) assert.equal(fl.update(c.body.id, body).status, 409, `${status} ${JSON.stringify(body)}`);
+    assert.equal(fl.update(c.body.id, { autoIntegrate: false }).status, 200);
+  }
+  assert.deepEqual(db.flows.find((f) => f.id === c.body.id).verifyCommand, { args: ['npm', 'test'], timeoutSec: 300 });
 });
