@@ -25,7 +25,7 @@ const readSeen = () => { try { const v = JSON.parse(sessionStorage.getItem(SEEN_
  * à direita, o painel do nó selecionado. Tudo vem de /api/flows (polling ~2,5 s): nada é simulado; o que o servidor não informa aparece como "não informado".
  * O ciclo Planner/Executor antigo não é mais usado aqui (o código do servidor fica dormente). `data` = o resultado de useFlows, que o App mantém (um só polling para a página e para a barra lateral).
  */
-export default function Missions({ onOpenCockpit, data, stream = null, onBack = null, backLabel = 'Início', narrow = false }) {
+export default function Missions({ onOpenCockpit, data, stream = null, onBack = null, backLabel = 'Início', narrow = false, side = null }) { // side: navegação da barra (o mesmo desenho da do Cockpit)
   const { flows, failure, refresh, actions, proposals } = data; // o App mantém um único polling de /api/flows (também usado pelo indicador da barra lateral); as propostas vêm junto
   const { workspaces, state, terminals, notify, loadTerminals } = useStore();
   const [selectedId, setSelectedId] = useState(readSel), [nodeId, setNodeId] = useState(null);
@@ -279,7 +279,7 @@ export default function Missions({ onOpenCockpit, data, stream = null, onBack = 
         <>
           {narrow && <div className="fl-scrim" onClick={() => closeList()} aria-hidden="true" />}
           <FlowSidebar flows={flows} workspaces={workspaces ?? []} selectedId={selectedId} onPick={select} onNew={() => openForm({ mode: 'create' })} onBriefing={() => setBriefing(true)} failure={failure}
-            onBack={onBack} backLabel={backLabel} modal={narrow} onClose={closeList} />
+            onBack={onBack} backLabel={backLabel} modal={narrow} onClose={closeList} side={side} />
         </>
       )}
       <div className={`fl-main${hasDock ? ' has-dock' : ''}`}>

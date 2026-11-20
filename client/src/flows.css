@@ -63,39 +63,18 @@
 .fl-push-wait { display: flex; align-items: center; gap: 8px; color: var(--fl-mute-2); }
 .fl-chip.mono { font-family: var(--mono) !important; font-size: 11px; } /* branch: código em mono (o forge.css força sans nos selos) */
 
-/* ---------- barra lateral das Missões (no lugar da do Cockpit, mesmo desenho: .fx-side) ---------- */
-.fl-side { display: flex; flex-direction: column; min-height: 0; padding: 0 8px; background: var(--side, #232323); border-right: 1px solid var(--fl-hair); }
-.fl-side-top { flex: none; display: flex; align-items: center; gap: 4px; height: 44px; padding: 0 0 0 2px; }
-.fl-side-t { margin: 0 0 0 4px; color: var(--strong, #f3f3f3); font: 600 13.5px var(--sans); letter-spacing: -.01em; }
-.fl-side-top .fl-count { margin-left: 2px; }
+/* ---------- barra lateral das Missões: o MESMO desenho da do Cockpit (forge.css .fx-side, .fx-ws, .fx-term); aqui só o que é próprio dela ---------- */
+.fx-side .fx-term.on { background: rgba(255, 255, 255, .08); } .fx-side .fx-term.on .fx-term-t { color: var(--strong); } /* missão aberta */
+.fl-mrow.fl-t-wait .fx-term-m { color: var(--warn-text); } .fl-mrow.fl-t-err .fx-term-m { color: var(--danger-text); } /* o n/m leva a cor só quando pede você */
+.fl-back-c > svg { transform: rotate(180deg); transition: transform 160ms ease; } .fl-back-c:hover > svg { transform: rotate(180deg) translateX(2px); } /* voltar, no lugar do recolher */
+.fl-side-err { color: var(--danger-text); }
+.fx-empty-side .fx-link { display: block; margin-top: 6px; }
 .fl-back { flex: none; display: inline-flex; align-items: center; gap: 3px; height: 28px; padding: 0 7px 0 3px; border: 0; border-radius: 6px; background: transparent; color: var(--fl-mute-2); cursor: pointer; transition: background-color 120ms ease, color 120ms ease; }
 .fl-back > svg { transform: rotate(180deg); transition: transform 160ms ease; }
 .fl-back:hover { background: rgba(255, 255, 255, .07); color: var(--strong, #f3f3f3); }
 .fl-back:hover > svg { transform: rotate(180deg) translateX(2px); }
 .fl-back-mark { display: grid; width: 18px; height: 18px; color: var(--strong, #f3f3f3); } .fl-back-mark svg { width: 100%; height: 100%; }
-.fl-search { flex: none; display: flex; align-items: center; gap: 8px; height: 32px; margin: 2px 0 6px; padding: 0 10px; border: 1px solid transparent; border-radius: 8px; background: rgba(255, 255, 255, .055); color: var(--fl-mute-2); transition: background-color 120ms ease, border-color 120ms ease; }
-.fl-search:focus-within { background: rgba(255, 255, 255, .04); border-color: var(--fl-hair-2); }
-.fl-search input { flex: 1; min-width: 0; height: 100%; padding: 0; border: 0 !important; background: none !important; color: var(--strong, #f3f3f3); font: 400 13px var(--sans); outline: none; } .fl-search input::placeholder { color: var(--fl-mute-2); }
-.fl-list { flex: 1; min-height: 0; overflow-y: auto; margin: 0 -4px; padding: 2px 4px 12px; }
-.fl-group ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
-.fl-group-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0; padding: 12px 8px 4px; color: var(--fl-mute-2); font: 500 12px var(--sans); letter-spacing: 0; }
-.fl-group-h > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fl-row { position: relative; width: 100%; display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 6px 8px; border: 0; border-radius: 6px; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; overflow: hidden; transition: background-color 120ms ease; }
-.fl-row:hover { background: rgba(255, 255, 255, .055); }
-.fl-row.on { background: rgba(255, 255, 255, .08); }
-.fl-row .fl-dot { flex: none; }
-.fl-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.fl-row-title { color: var(--text, #d8d8d8); font: 500 13px var(--sans); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fl-row.on .fl-row-title, .fl-row:hover .fl-row-title { color: var(--strong, #f3f3f3); }
-.fl-row-sub { color: var(--fl-mute-2); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fl-row-state { color: var(--st-t); }
-.fl-row-n { flex: none; color: var(--fl-mute-2); font: 500 11.5px var(--sans); font-variant-numeric: tabular-nums; }
-.fl-row.fl-t-wait .fl-row-n { color: var(--fl-wait-t); }
-.fl-row-meter { position: absolute; left: 8px; right: 8px; bottom: 0; height: 1px; overflow: hidden; border-radius: 1px; }
-.fl-row-meter::after { content: ''; position: absolute; inset: 0; background: var(--fl-work); opacity: .5; }
-.fl-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 16px 8px; font-size: 13px; line-height: 1.55; } .fl-empty p { margin: 0; }
 /* telas estreitas: a lista vira gaveta sobre a página (como a navegação do Cockpit), com véu escuro atrás */
-.fl-side.modal { position: fixed; z-index: var(--z-nav, 41); inset: 0 auto 0 0; width: min(320px, 86vw); border-right: 1px solid var(--fl-hair-2); }
 .fl-scrim { position: fixed; inset: 0; z-index: var(--z-scrim, 40); background: rgba(0, 0, 0, .5); }
 .fl-topbar { flex: none; display: flex; align-items: center; gap: 4px; height: 44px; padding: 0 8px; border-bottom: 1px solid var(--fl-hair); background: var(--side, #232323); }
 .fl-topbar-list { display: inline-flex; align-items: center; gap: 8px; min-width: 0; height: 32px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--strong, #f3f3f3); font: 600 13.5px var(--sans); cursor: pointer; transition: background-color 120ms ease; }
@@ -381,12 +360,11 @@
   html:not([data-motion="reduced"]) .fl-head { animation: fl-in 220ms var(--ease, ease-out) both; }
   html:not([data-motion="reduced"]) .fl-panel { animation: fl-slide 200ms var(--ease, ease-out) both; }
   html:not([data-motion="reduced"]) .fl-attn, html:not([data-motion="reduced"]) .fl-leftovers { animation: fl-in 220ms var(--ease, ease-out) both; }
-  html:not([data-motion="reduced"]) .fl-side.modal { animation: fl-drawer 200ms var(--ease, ease-out) both; }
   html:not([data-motion="reduced"]) .fl-scrim { animation: fl-fade 160ms ease both; }
   html:not([data-motion="reduced"]) .fl-enter .mwf-node { animation: fl-rise 260ms var(--ease, ease-out) both; animation-delay: var(--d, 0ms); }
   html:not([data-motion="reduced"]) .fl-enter .fl-rail-n { animation: fl-fade 240ms ease both; }
   html:not([data-motion="reduced"]) .fl-enter .mwf-edges { animation: fl-fade 280ms ease 200ms both; }
-  html:not([data-motion="reduced"]) .fl-wf .fl-node-meter::after, html:not([data-motion="reduced"]) .fl-row-meter::after { right: auto; width: 38%; opacity: 1; animation: fl-sweep 1.8s var(--ease-in-out, ease-in-out) infinite; }
+  html:not([data-motion="reduced"]) .fl-wf .fl-node-meter::after  { right: auto; width: 38%; opacity: 1; animation: fl-sweep 1.8s var(--ease-in-out, ease-in-out) infinite; }
   html:not([data-motion="reduced"]) .fl-wf .fl-caret { animation: fl-caret 1s steps(1) infinite; }
   html:not([data-motion="reduced"]) .fl-wf .fl-e-active path { animation: fl-dash 1s linear infinite; }
   html:not([data-motion="reduced"]) .fl-seg.fl-t-work, html:not([data-motion="reduced"]) .fl-seg.fl-t-wait, html:not([data-motion="reduced"]) .fl-attn .fl-kicker > i { animation: fl-breathe 1.8s var(--ease-in-out, ease-in-out) infinite; }

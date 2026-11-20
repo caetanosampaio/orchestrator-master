@@ -99,15 +99,15 @@ function EnvCard({ env, terms, now, editing, onPick, onEdit, onSave, onCancel, o
   );
 }
 
-/** Item da navegação principal (Início, Missões, Terminais, Sessões). */
-function NavItem({ icon, label, on, onClick, badge = null, title }) {
+/** Item da navegação principal (Início, Missões, Terminais, Sessões). Exportado: a barra da página Missões usa o mesmo desenho. */
+export function NavItem({ icon, label, on, onClick, badge = null, title }) {
   return (
     <button type="button" className={`fx-nav-i${on ? ' on' : ''}`} onClick={onClick} aria-current={on ? 'page' : undefined} title={title ?? label}>
       <span className="fx-nav-ico">{icon}</span><span className="fx-nav-l">{label}</span>{badge}
     </button>
   );
 }
-const HomeIcon = () => <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false"><path d="M4 11l8-7 8 7M6 10v10h4v-6h4v6h4V10" /></svg>;
+export const HomeIcon = () => <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false"><path d="M4 11l8-7 8 7M6 10v10h4v-6h4v6h4V10" /></svg>;
 
 /**
  * Barra lateral do FORGE no formato do Orca: a marca e o botão de recolher no topo (área de arrastar a janela no app desktop), a busca (⌘K), a navegação principal

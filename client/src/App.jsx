@@ -120,7 +120,8 @@ export default function App() {
                 Escondido, o contêiner mede 0 e o terminal não se reajusta (TerminalGrid só ajusta acima de 40px): nenhum redimensionamento vai ao servidor. */}
             <div className="oc-view fx-view" hidden={view !== 'cockpit'}><Cockpit stream={termStream} hiddenIds={flowTermIds} flows={flowsData.flows} liveHint={liveHint} liveVisible={view === 'cockpit'} onOpenWorkspaces={openWorkspaces} onOpenSettings={openSettings} onOpenSessions={openSessions} liveOpen={liveOpen} onToggleLive={toggleLive} narrow={narrow || sideHidden} onMenu={menu} menuIcon={narrow ? 'menu' : 'panel'} focusRequest={focusReq} onFocusHandled={() => setFocusReq(null)} /></div>
             {view === 'home' && <div className="fx-view fx-page"><Home onOpenWorkspaces={openWorkspaces} onOpenWorkspace={openCockpit} missions={missionsData.missions} /></div>}
-            {view === 'missions' && <div className="fx-view fx-page"><Missions onOpenCockpit={openCockpit} data={flowsData} stream={termStream} onBack={backToCockpit} backLabel={cockpitFrom.current === 'cockpit' ? 'Terminais' : 'Início'} narrow={narrow} /></div>}
+            {view === 'missions' && <div className="fx-view fx-page"><Missions onOpenCockpit={openCockpit} data={flowsData} stream={termStream} onBack={backToCockpit} backLabel={cockpitFrom.current === 'cockpit' ? 'Terminais' : 'Início'} narrow={narrow}
+              side={{ onView: goView, onOpenSessions: openSessions, onOpenSettings: openSettings, onOpenWorkspaces: openWorkspaces, desktop }} /></div>}
             {settings && <Settings key={settingsKey} initial={settingsTab} onClose={closeSettings} onOpenWorkspaces={openWorkspaces} />}
           </main>
         </div>
