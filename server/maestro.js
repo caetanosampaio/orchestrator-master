@@ -51,7 +51,7 @@ const BOX_RE = /[─-▟]+/g;
  * A INDENTAÇÃO é mantida (tab = 2 espaços, no máximo 16): em YAML, Python, diff ou árvore de arquivos ela é significado. Linhas só de pontuação (um '}' seguido de outro '}') nunca são fundidas.
  * A ordem e o final do texto são preservados.
  */
-const compactOutput = (raw, max) => {
+export const compactOutput = (raw, max) => { // exportado: flows.js relê o fim do terminal com a mesma compactação do relatório automático
   const out = [];
   for (const raw1 of cleanOutput(raw).split('\n')) {
     const line = raw1.replace(/^[ \t]*[─-▟]+[ \t]*/, '').replace(BOX_RE, ' '); // a borda esquerda da moldura não é indentação

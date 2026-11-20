@@ -22,7 +22,8 @@
 // Execução: um runner único (tick periódico, injetável) percorre os runs ativos. A etapa pronta (dependências `completed`, respeitando `maxParallel`) ganha um terminal (ou reaproveita o de `continueFrom`,
 // se ainda vivo) e o texto é entregue pelo MESMO caminho do Maestro (`maestro.dispatch`: espera o agente ficar livre e nunca digita sobre um pedido de permissão). A etapa só é `completed` quando a tarefa do Maestro
 // termina com o report_done do agente; `waiting` vem do estado real do agente (hooks/OSC), nunca é inventado. O RELATÓRIO AUTOMÁTICO do Maestro (o agente parou sem report_done: pode ter terminado ou
-// só estar esperando uma resposta) NÃO conclui a etapa: ela fica `waiting` com `unconfirmed: true` até o agente chamar report_done ou o usuário decidir (aceitar/recusar, registrado em decidedBy/decidedAt).
+// só estar esperando uma resposta) NÃO conclui a etapa: ela fica `waiting` com `unconfirmed: true` até o agente chamar report_done ou o usuário decidir (aceitar/recusar, registrado em decidedBy/decidedAt;
+// ou continuar: o agente recebe "continue de onde parou" e a etapa volta a andar). Se o fim do terminal mostra o limite de uso da conta, a etapa leva `stopReason: 'limit'` (e `limitResets`): só explica a parada.
 // MODO PASTA: etapas cujo papel edita arquivos (ROLES[role].edits) nunca rodam ao mesmo tempo no mesmo run (todas trabalham na mesma pasta do workspace); o paralelismo vale para quem só lê.
 // No modo Git cada etapa tem a sua cópia e não há essa serialização.
 // A etapa recebe, além do contexto da missão, o resumo das etapas das quais depende (texto de agente, marcado como referência), para não começar às cegas.
@@ -38,15 +39,16 @@
 import * as store from './store.js';
 import { ROLES, MAX_SESSIONS } from './terminals.js';
 import { isProvider, validateChoice, providerIds, providerOptions, getProvider, DEFAULT_PROVIDER } from './providers/index.js';
-import { cleanLine, MAX_TASK_TEXT, MAX_SUMMARY } from './maestro.js';
+import { cleanLine, compactOutput, MAX_TASK_TEXT, MAX_SUMMARY } from './maestro.js';
 import { asyncRoute } from './async-route.js';
 import { validateSchedule, freshScheduleState, readScheduleState, createFlowScheduler, SCHEDULE_KINDS, MAX_EVERY_HOURS } from './flow-schedule.js';
 import { git as realGit, worktreeProblem } from './worktrees.js';
 import { createFlowGit, missionBranchFor } from './flow-git.js';
+import { detectLimitStop } from './limit-stop.js';
 
 export const MAX_STEPS = 12, MAX_FLOWS = 50, MAX_RUNS = 200, MAX_PARALLEL = 4, MAX_TITLE = 120, MAX_GOAL = 2000, MAX_PROMPT = 2000, MAX_RUNS_LISTED = 20;
 export const POLL_MS = 1000, DISPATCH_WAIT_MS = 30 * 60 * 1000, MIN_GOAL_CONTEXT = 60, MIN_DEP_CONTEXT = 80;
-export const DECISIONS = Object.freeze(['accept', 'reject']);
+export const DECISIONS = Object.freeze(['accept', 'reject', 'continue']);
 const NO_SUMMARY = 'Concluída sem resumo.', NO_AUTO_SUMMARY = 'O agente parou sem resumo.';
 const SERVER_SUMMARIES = new Set([NO_SUMMARY, NO_AUTO_SUMMARY]); // textos do servidor, não do agente: não viram contexto da etapa seguinte
 const editsFiles = (role) => ROLES[role]?.edits === true; // papel que edita a pasta do workspace (hoje: builder)
@@ -67,6 +69,8 @@ export const TRIGGERS = Object.freeze(['manual', 'schedule']);
 const FINAL_STEP = new Set(['completed', 'failed', 'skipped', 'cancelled']);
 // textos da retomada (passam pelo composeStepText: cleanLine e limite do Maestro)
 const RESUME_NOTE = '(retomada após reinício do servidor)', CONTINUE_PROMPT = 'continue de onde parou; ao terminar chame report_done.';
+const CONTINUE_NOTE = '(continuação pedida pelo usuário)'; // decisão `continue` com o terminal vivo: mesma conversa, texto fixo do servidor
+const TAIL_READ = 6000; // saída lida do terminal para reconhecer a parada por limite (limit-stop.js só olha o fim)
 const RESTART_NOTE = '(Retomada: pode haver trabalho parcial desta etapa nesta pasta; confira antes de refazer.)';
 const INTERRUPTED_ERROR = 'Servidor reiniciado: a execução foi interrompida. Clique em Retomar para continuar (nada é retomado automaticamente).';
 const DEAD_DEP = new Set(['failed', 'skipped', 'cancelled']);
@@ -586,8 +590,9 @@ export function createFlows({ db, terminals, maestro, flowGit = null, runGit = r
   function closeTerminal(id) { try { if (peekT(id)?.status === 'running') terminals.close(id); } catch { /* já encerrado */ } }
 
   /**
-   * Decisão HUMANA sobre uma etapa que parou sem report_done (`unconfirmed`): `accept` conclui (completedBy 'user'), `reject` falha (os dependentes são pulados). Só vale para a etapa nesse estado,
-   * num run ativo; fica registrada (decidedBy/decidedAt). Nunca é automática. Corpo: { decision: 'accept' | 'reject' }.
+   * Decisão HUMANA sobre uma etapa que parou sem report_done (`unconfirmed`): `accept` conclui (completedBy 'user'), `reject` falha (os dependentes são pulados), `continue` pede ao agente
+   * que siga de onde parou (ex.: parou no limite de uso da conta) e a etapa volta a andar, sem concluir nada. Só vale para a etapa nesse estado, num run ativo; accept/reject ficam
+   * registradas (decidedBy/decidedAt) e continue em continues/continuedAt. Nunca é automática. Corpo: { decision: 'accept' | 'reject' | 'continue' }.
    */
   function decideStep(flowId, runId, stepId, body) {
     const f = flowById(flowId); if (!f) return fail(404, 'Missão não encontrada.');
@@ -599,14 +604,54 @@ export function createFlows({ db, terminals, maestro, flowGit = null, runGit = r
     if (!(rs.status === 'waiting' && rs.unconfirmed === true)) return fail(409, 'Esta etapa não está aguardando a confirmação de conclusão.');
     // o agente voltou a trabalhar (ou pede uma permissão) depois do relatório automático: decidir agora liberaria outra etapa enquanto ele ainda mexe na pasta. Olha o estado AO VIVO, não só o do último tick.
     if (rs.agentBusy === true || agentBusyNow(rs.terminalId)) return fail(409, 'O agente voltou a trabalhar neste terminal (ou pede uma permissão): espere ele parar para decidir.');
+    if (body.decision === 'continue') return continueStep(f, run, rs);
     const accept = body.decision === 'accept';
     const ok = apply(run, () => {
-      const t = now(); rs.unconfirmed = false; rs.agentBusy = false; rs.decidedBy = 'user'; rs.decidedAt = t; rs.finishedAt = t;
+      const t = now(); rs.unconfirmed = false; rs.agentBusy = false; rs.decidedBy = 'user'; rs.decidedAt = t; rs.finishedAt = t; rs.stopReason = null; rs.limitResets = null;
       if (accept) { rs.status = 'completed'; rs.completedBy = 'user'; rs.error = null; if (gitOn(run)) rs.integration = pendingIntegration(); } // modo Git: a aceitação humana também leva o trabalho para a branch da missão
       else { rs.status = 'failed'; rs.error = 'Conclusão recusada pelo usuário: o agente parou sem confirmar que terminou.'; }
     });
     if (!ok) return fail(500, `Não foi possível registrar a decisão: ${PERSIST_ERROR}`);
     void tick();
+    return okv(200, runView(run));
+  }
+
+  /**
+   * Decisão `continue` (já conferido: run ativo, etapa `unconfirmed`, agente parado). A etapa sai da espera e volta a `running` acompanhando uma tarefa NOVA, então só conclui com o
+   * report_done dela ou com outra decisão sua (o gate é o mesmo). Terminal vivo: o Maestro entrega o texto fixo CONTINUE_PROMPT na mesma conversa (o mesmo caminho das etapas, que
+   * espera o agente ficar livre e nunca digita sobre uma permissão; ocupado = 409 e nada muda). Terminal encerrado (servidor reiniciado, fechado à mão): a etapa é reaberta pelo
+   * caminho da retomada (resumeStep: mesma conversa se der, senão terminal novo com o aviso de trabalho parcial), com as conferências do Retomar antes (vaga, workspace, provedor);
+   * se a reabertura falhar mesmo assim, a etapa VOLTA a esperar a sua decisão com o motivo (`continueResume`), em vez de falhar: continuar nunca tira a opção de aceitar ou recusar.
+   * Nenhum texto do usuário ou do agente vai ao terminal.
+   */
+  function continueStep(flow, run, rs) {
+    if (ops.has(run.id)) return fail(409, 'Há uma operação em andamento nesta execução; tente de novo em um instante.', 'busy');
+    const step = stepDef(flow, rs.stepId);
+    if (!step) return fail(409, 'A definição desta etapa não existe mais.');
+    const count1 = (t) => { rs.unconfirmed = false; rs.agentBusy = false; rs.error = null; rs.continues = (Number.isInteger(rs.continues) ? rs.continues : 0) + 1; rs.continuedAt = t; };
+    const reset = (t) => { count1(t); rs.stopReason = null; rs.limitResets = null; rs.summary = null; };
+    if (peekT(rs.terminalId)?.status === 'running') {
+      const c = composeStepText(flow, { title: step.title, prompt: CONTINUE_PROMPT }, [], { note: CONTINUE_NOTE });
+      if (!c.ok) return fail(409, c.error);
+      const r = maestro.dispatch({ to: rs.terminalId, text: c.text, from: null, source: 'flow' });
+      if (!r?.ok) return fail(409, r?.transient ? `O agente ainda não pode receber o pedido: ${r.error}` : `Não foi possível enviar o pedido ao agente: ${r?.error ?? 'erro desconhecido'}`);
+      // o texto já foi entregue (não se desfaz): o estado segue a realidade e a gravação é tentada de novo na próxima mutação
+      apply(run, () => { reset(now()); rs.status = 'running'; rs.taskId = r.taskId; }, { rollback: false });
+      void tick();
+      return okv(200, runView(run));
+    }
+    // as mesmas conferências do Retomar, ANTES de mudar qualquer coisa (409 e a etapa continua esperando a decisão)
+    if (!wsOf(flow.workspaceId)) return fail(409, 'O espaço de trabalho desta missão não existe mais.', 'workspace_missing');
+    let provs = []; try { provs = terminals.providers?.() ?? []; } catch { provs = []; }
+    const prov = provs.find((x) => x?.id === step.provider);
+    if (prov && prov.available === false) return fail(409, `${prov.label ?? step.provider} não está disponível neste computador (não foi encontrado no PATH).`, 'provider_unavailable');
+    let count = 0; try { count = terminals.count(); } catch { count = 0; }
+    if (count + 1 > maxSessions) return fail(409, `Sem terminais disponíveis: continuar precisa reabrir o terminal desta etapa e o limite de ${maxSessions} terminais simultâneos seria passado. Feche algum e tente de novo.`, 'no_slots');
+    // `delivered`: a conversa gravada já recebeu a tarefa desta etapa, então a retomada tenta primeiro continuar a MESMA conversa. O motivo e o fim do terminal ficam até
+    // a reabertura dar certo (se falhar, a etapa volta a esperar a decisão com eles).
+    const ok = apply(run, () => { const t = now(); count1(t); rs.status = 'running'; rs.resumePending = true; rs.dispatchFrom = t; rs.taskId = null; rs.delivered = true; rs.continueResume = true; });
+    if (!ok) return fail(500, `Não foi possível registrar a decisão: ${PERSIST_ERROR}`);
+    ensureTimer(); void tick();
     return okv(200, runView(run));
   }
 
@@ -623,11 +668,28 @@ export function createFlows({ db, terminals, maestro, flowGit = null, runGit = r
   /**
    * Etapa que parou sem report_done (`unconfirmed`): continua acompanhando o agente. Se ele voltar a trabalhar (você respondeu no terminal), a etapa volta a `running`; se pedir permissão,
    * fica `waiting` com `agentBusy` (é uma permissão, não a confirmação). Quando ele para de novo, volta a esperar a sua decisão. Terminal fechado ou sem sinal = espera a decisão.
+   * O motivo da parada acompanha: trabalhando de novo, o limite deixa de ser o motivo; parando de novo, o fim do terminal é relido (você digitou "continue" e o limite ainda valia?).
    */
   function trackUnconfirmed(run, rs) {
     const st = agentStateOf(rs.terminalId), busy = st === 'running' || st === 'waiting', want = st === 'running' ? 'running' : 'waiting';
     if (rs.status === want && (rs.agentBusy === true) === busy) return true;
-    return apply(run, () => { rs.status = want; rs.agentBusy = busy; });
+    const stopped = rs.agentBusy === true && !busy, lim = stopped ? limitInTerminal(rs.terminalId) : null;
+    return apply(run, () => {
+      rs.status = want; rs.agentBusy = busy;
+      if (busy || stopped) { rs.stopReason = lim ? 'limit' : null; rs.limitResets = lim?.resets ?? null; }
+    });
+  }
+  /** Parada por limite no fim da saída do terminal (limit-stop.js); null sem saída legível ou sem a mensagem. Nunca lança. */
+  function limitInTerminal(tid) {
+    if (typeof terminals.readOutput !== 'function') return null;
+    // compactação ANTES do corte (como o relatório automático) e cada linha só na sua ÚLTIMA ocorrência: os redesenhos da TUI (caixa de entrada, "? for shortcuts",
+    // barra de status) se alternam e não empurram a mensagem de limite para fora da janela do detector
+    try { return detectLimitStop(lastOccurrences(compactOutput(terminals.readOutput(tid, TAIL_READ) ?? '', TAIL_READ))); } catch { return null; }
+  }
+  function lastOccurrences(text) {
+    const seen = new Set(), out = [];
+    for (const raw of String(text).split('\n').reverse()) { const l = cleanLine(raw, 400); if (l && !seen.has(l)) { seen.add(l); out.push(l); } }
+    return out.reverse().join(' ');
   }
 
   /**
@@ -635,7 +697,7 @@ export function createFlows({ db, terminals, maestro, flowGit = null, runGit = r
    * trabalho parcial (sem espaço para o aviso, vai o original, que já coube no início do run) e, como a conversa é nova, também o resultado da etapa de `continueFrom`.
    */
   function stepText(run, rs, flow, step) {
-    if (rs.resumeMode === 'continue') return composeStepText(flow, { title: step.title, prompt: CONTINUE_PROMPT }, [], { note: RESUME_NOTE });
+    if (rs.resumeMode === 'continue') return composeStepText(flow, { title: step.title, prompt: CONTINUE_PROMPT }, [], { note: rs.continueResume === true ? CONTINUE_NOTE : RESUME_NOTE });
     const fresh = rs.resumeMode === 'restart';
     // resultados das dependências diretas concluídas; a etapa que CONTINUA um terminal já tem o contexto dele na conversa e não o recebe de novo
     // Etapa aceita por VOCÊ: o resumo é o fim do terminal (relatório automático, pode ter saída de ferramenta ou texto de terceiros), então só o título vai adiante.
@@ -653,7 +715,7 @@ export function createFlows({ db, terminals, maestro, flowGit = null, runGit = r
     const step = stepDef(flow, rs.stepId);
     const c = stepText(run, rs, flow, step); if (!c.ok) return failStep(run, rs, c.error);
     const r = maestro.dispatch({ to: rs.terminalId, text: c.text, from: null, source: 'flow' });
-    if (r.ok) return apply(run, () => { rs.taskId = r.taskId; }, { rollback: false });
+    if (r.ok) return apply(run, () => { rs.taskId = r.taskId; if (rs.continueResume === true) rs.continueResume = false; }, { rollback: false });
     if (!r.transient) return failStep(run, rs, `Não foi possível entregar a etapa ao agente: ${r.error}`);
     if (ms() - Date.parse(rs.dispatchFrom ?? rs.startedAt) > dispatchWaitMs) return failStep(run, rs, `O agente não ficou livre para receber a etapa em ${Math.round(dispatchWaitMs / 60000)} minutos (${r.error})`);
     return true;
@@ -668,7 +730,10 @@ export function createFlows({ db, terminals, maestro, flowGit = null, runGit = r
       if (!ts) return rs.unconfirmed === true ? trackUnconfirmed(run, rs) : failStep(run, rs, 'A tarefa desta etapa não foi encontrada no Maestro.');
       if (ts.status === 'done' && ts.auto !== true) return apply(run, () => { rs.status = 'completed'; rs.finishedAt = now(); rs.summary = clip(ts.summary || NO_SUMMARY, 2000); rs.error = null; rs.unconfirmed = false; rs.agentBusy = false; rs.completedBy = 'agent'; if (gitOn(run)) rs.integration = pendingIntegration(); });
       if (ts.status === 'done' && rs.unconfirmed !== true) { // relatório automático: o agente parou sem report_done (terminou OU espera uma resposta). Não avança sozinho.
-        return apply(run, () => { rs.status = 'waiting'; rs.unconfirmed = true; rs.agentBusy = false; rs.summary = clip(ts.summary || NO_AUTO_SUMMARY, 2000); });
+        // fim do terminal com a mensagem de limite de uso da conta: só muda a explicação (e o que a tela sugere), nunca o gate. O resumo do Maestro é curto e pode ter
+        // perdido a mensagem para os redesenhos da TUI: sem ela no resumo, a tela do terminal também é conferida
+        const lim = detectLimitStop(ts.summary) ?? limitInTerminal(rs.terminalId);
+        return apply(run, () => { rs.status = 'waiting'; rs.unconfirmed = true; rs.agentBusy = false; rs.summary = clip(ts.summary || NO_AUTO_SUMMARY, 2000); rs.stopReason = lim ? 'limit' : null; rs.limitResets = lim?.resets ?? null; });
       }
       if (FAILED_TASK.has(ts.status)) return failStep(run, rs, ts.note || 'A tarefa do agente falhou.');
     }
@@ -779,7 +844,13 @@ export function createFlows({ db, terminals, maestro, flowGit = null, runGit = r
     if (hasResume && rec && owned) plan.push('reopen');
     plan.push('create'); // modo Git: no worktree da etapa se ainda for utilizável, senão num worktree novo da ponta da branch da missão (registrando a perda do trabalho parcial)
     let last = null;
-    const stopStep = (error) => { apply(run, () => { rs.status = 'failed'; rs.finishedAt = now(); rs.resumePending = false; rs.error = clip(error, 500); }); };
+    // reabertura pedida pela decisão `continue`: não dá certo = a etapa volta a esperar a SUA decisão (aceitar, recusar ou continuar de novo), com o motivo; nas demais, falha
+    const stopStep = (error) => {
+      apply(run, () => {
+        rs.resumePending = false; rs.error = clip(error, 500);
+        if (rs.continueResume === true) { rs.continueResume = false; rs.status = 'waiting'; rs.unconfirmed = true; rs.agentBusy = false; rs.taskId = null; } else { rs.status = 'failed'; rs.finishedAt = now(); }
+      });
+    };
     for (const mode of plan) {
       let r;
       if (mode === 'create' && git) { r = await createGitResume(run, rs, flow, step); if (r?.stop) { if (run.status === 'running') stopStep(r.error); return; } }
@@ -798,11 +869,14 @@ export function createFlows({ db, terminals, maestro, flowGit = null, runGit = r
       if (run.status !== 'running') { if (r?.ok) closeTerminal(r.session.id); return; } // cancelado durante a reabertura: o terminal é deste run e fecha
       if (r?.ok && typeof r.session?.id === 'string') {
         const tid = r.session.id, nrec = recordOf(r);
-        apply(run, () => { run.ownedTerminalIds = [...(run.ownedTerminalIds ?? []), tid]; rs.terminalId = tid; rs.recordId = nrec; rs.resumePending = false; rs.resumeMode = mode === 'continue' ? 'continue' : 'restart'; rs.taskId = null; rs.error = null; }, { rollback: false });
+        apply(run, () => {
+          run.ownedTerminalIds = [...(run.ownedTerminalIds ?? []), tid]; rs.terminalId = tid; rs.recordId = nrec; rs.resumePending = false; rs.resumeMode = mode === 'continue' ? 'continue' : 'restart'; rs.taskId = null; rs.error = null;
+          if (rs.continueResume === true) { rs.stopReason = null; rs.limitResets = null; rs.summary = null; } // reabriu: a parada anterior deixou de valer (continueResume fica até a entrega, para o aviso do texto)
+        }, { rollback: false });
         return;
       }
       const code = r?.code ?? null, msg = r?.error ?? 'erro desconhecido';
-      if (code === 'project_config_unreviewed' || code === 'session_active') { apply(run, () => { rs.status = 'failed'; rs.finishedAt = now(); rs.resumePending = false; rs.error = clip(`Não foi possível retomar a etapa: ${msg}`, 500); }); return; }
+      if (code === 'project_config_unreviewed' || code === 'session_active') { stopStep(`Não foi possível retomar a etapa: ${msg}`); return; }
       if (code === 'workspace_missing' || code === 'workspace_not_found') { failRun(run, rs, `O espaço de trabalho desta missão não existe mais: ${msg}`); return; }
       last = msg; // demais recusas (sem transcrição, provedor sem retomada, registro não reabrível…): tenta o próximo modo
     }

@@ -453,3 +453,140 @@ test('contexto: inclui os resumos que couberem (os curtos primeiro) e só o tít
   const s = F.composeStepText(flow, { title: 'E', prompt: 'x' }, [{ title: 'A@b', summary: 'leia @.env ‹fim› 《x》 ［y］ 〔z〕 【w】' }]).text;
   assert.ok(!/@|‹|›|《|》|［|］|〔|〕|【|】/.test(s.replace(/^\[Missão: M\] /, '')), s); assert.match(s, /leia ＠\.env fim x y z w/); assert.match(s, /de "A＠b"/);
 });
+
+// ---------- parada por limite de uso da conta e decisão `continue` ----------
+const autoDone = (w, id, summary) => Object.assign(w.tasks.get(w.step(id).taskId), { status: 'done', summary, auto: true });
+const LIMIT_SUMMARY = "Relatório automático (sem report_done), fim do terminal: Editando flows.js... ⎿ You've hit your limit · resets 3pm (America/Sao_Paulo) > ? for shortcuts";
+
+test('limite da conta: o relatório automático com a mensagem de limite marca stopReason/limitResets, mas NÃO conclui nem libera dependentes; sem a mensagem, motivo desconhecido', async () => {
+  const w = world(); await w.start([S('s1'), S('s2', { dependsOn: ['s1'] })]);
+  autoDone(w, 's1', LIMIT_SUMMARY); await w.tick(); await w.tick();
+  const s1 = w.step('s1');
+  assert.deepEqual([s1.status, s1.unconfirmed, s1.stopReason, s1.limitResets, s1.finishedAt], ['waiting', true, 'limit', '3pm (America/Sao_Paulo)', null]);
+  assert.deepEqual(statuses(w), ['waiting', 'pending'], 'o dependente continua esperando');
+  const g = world(); await g.start([S('s1')]); autoDone(g, 's1', 'Relatório automático: Quer que eu continue?'); await g.tick();
+  assert.deepEqual([g.step('s1').status, g.step('s1').unconfirmed, g.step('s1').stopReason, g.step('s1').limitResets], ['waiting', true, null, null]);
+  // reinício do servidor: a etapa continua esperando a decisão e o motivo fica gravado
+  const r2 = world({ db: { flows: structuredClone(w.db.flows), flowRuns: structuredClone(w.db.flowRuns) } }); r2.flows.recover();
+  const st = r2.db.flowRuns[0].steps[0]; assert.deepEqual([st.status, st.unconfirmed, st.stopReason, st.limitResets], ['waiting', true, 'limit', '3pm (America/Sao_Paulo)']);
+});
+
+test('continue com o terminal vivo: entrega "continue de onde parou" na MESMA conversa, a etapa volta a andar e só conclui com o report_done da tarefa nova', async () => {
+  const w = world(); await w.start([S('s1'), S('s2', { dependsOn: ['s1'] })]);
+  const tid = w.step('s1').terminalId, oldTask = w.step('s1').taskId;
+  autoDone(w, 's1', LIMIT_SUMMARY); await w.tick();
+  const n = w.dispatches.length;
+  const r = w.flows.decideStep(w.flow.id, w.run.id, 's1', { decision: 'continue' }); assert.equal(r.status, 200, r.error);
+  assert.equal(w.dispatches.length, n + 1); const d = w.dispatches.at(-1);
+  assert.equal(d.to, tid, 'mesmo terminal'); assert.match(d.text, /Etapa "Etapa s1" \(continuação pedida pelo usuário\): continue de onde parou; ao terminar chame report_done\.$/);
+  assert.ok(!/hit your limit/.test(d.text), 'nada do terminal volta para o agente');
+  let s1 = w.step('s1');
+  assert.deepEqual([s1.status, s1.unconfirmed, s1.stopReason, s1.limitResets, s1.summary, s1.continues, s1.terminalId], ['running', false, null, null, null, 1, tid]);
+  assert.notEqual(s1.taskId, oldTask); assert.ok(s1.continuedAt); assert.equal(s1.decidedBy, undefined, 'continuar não é aceitar');
+  assert.equal(w.created.length, 1, 'nenhum terminal novo');
+  await w.tick(); assert.deepEqual(statuses(w), ['running', 'pending'], 'nada é liberado antes do fim de verdade');
+  // parou de novo no limite: volta a esperar com o motivo
+  autoDone(w, 's1', LIMIT_SUMMARY); await w.tick(); assert.deepEqual([w.step('s1').status, w.step('s1').stopReason], ['waiting', 'limit']);
+  assert.equal(w.flows.decideStep(w.flow.id, w.run.id, 's1', { decision: 'continue' }).status, 200); assert.equal(w.step('s1').continues, 2);
+  w.done(w.step('s1').taskId, 'Terminei de verdade'); await w.tick();
+  s1 = w.step('s1'); assert.deepEqual([s1.status, s1.completedBy, s1.summary], ['completed', 'agent', 'Terminei de verdade']); assert.equal(w.step('s2').status, 'running');
+});
+
+test('continue recusado sem mudar nada: terminal ocupado ou pedindo permissão, agente trabalhando, etapa que não espera decisão, run cancelado', async () => {
+  const w = world(); await w.start([S('s1'), S('s2', { dependsOn: ['s1'] })]);
+  const c = (step = 's1') => w.flows.decideStep(w.flow.id, w.run.id, step, { decision: 'continue' });
+  assert.equal(c().status, 409, 'etapa em andamento normal'); assert.equal(c('s2').status, 409, 'etapa pendente');
+  autoDone(w, 's1', LIMIT_SUMMARY); await w.tick();
+  const snap = JSON.stringify(w.step('s1')), n = w.dispatches.length;
+  w.busy.add(w.step('s1').terminalId); let r = c(); assert.equal(r.status, 409); assert.match(r.error, /ainda não pode receber/); w.busy.clear();
+  w.refuse = 'O terminal de destino não está ativo.'; r = c(); assert.equal(r.status, 409); assert.match(r.error, /Não foi possível enviar/); w.refuse = null;
+  assert.equal(JSON.stringify(w.step('s1')), snap, 'nada mudou'); assert.equal(w.dispatches.length, n);
+  w.terms.get(w.step('s1').terminalId).agent = { state: 'running', at: READY.at }; r = c(); assert.equal(r.status, 409); assert.match(r.error, /voltou a trabalhar/);
+  w.terms.get(w.step('s1').terminalId).agent = { ...READY };
+  assert.equal(w.flows.decideStep(w.flow.id, w.run.id, 's1', { decision: 'CONTINUE' }).status, 400);
+  w.flows.cancelRun(w.flow.id, w.run.id); assert.equal(c().status, 409, 'run cancelado');
+});
+
+test('continue com o terminal encerrado: a etapa é reaberta pelo caminho da retomada (terminal novo, aviso de trabalho parcial); sem vaga = 409 e falha de gravação = 500, sem mudar nada', async () => {
+  const w = world(); await w.start([S('s1')]);
+  autoDone(w, 's1', LIMIT_SUMMARY); await w.tick();
+  w.terms.get(w.step('s1').terminalId).status = 'exited'; await w.tick(); assert.equal(w.step('s1').status, 'waiting');
+  const r = w.flows.decideStep(w.flow.id, w.run.id, 's1', { decision: 'continue' }); assert.equal(r.status, 200, r.error);
+  await w.tick(); await w.tick();
+  const s1 = w.step('s1'); assert.equal(w.created.length, 2, 'terminal novo'); assert.equal(s1.status, 'running'); assert.equal(s1.resumePending, false);
+  assert.match(w.dispatches.at(-1).text, /pode haver trabalho parcial/); assert.equal(w.dispatches.at(-1).to, s1.terminalId);
+  // sem vaga de terminal
+  const x = world({ deps: { maxSessions: 1 } }); await x.start([S('s1')]); autoDone(x, 's1', LIMIT_SUMMARY); await x.tick();
+  x.terms.get(x.step('s1').terminalId).status = 'exited'; x.terms.set('term_ffffffff', { id: 'term_ffffffff', status: 'running', agent: { ...READY } }); await x.tick();
+  const snap = JSON.stringify(x.step('s1')); const q = x.flows.decideStep(x.flow.id, x.run.id, 's1', { decision: 'continue' });
+  assert.equal(q.status, 409); assert.equal(q.code, 'no_slots'); assert.equal(JSON.stringify(x.step('s1')), snap);
+  // falha de gravação no caminho da retomada
+  const y = world(); await y.start([S('s1')]); autoDone(y, 's1', LIMIT_SUMMARY); await y.tick(); y.terms.get(y.step('s1').terminalId).status = 'exited'; await y.tick();
+  const snapY = JSON.stringify(y.step('s1')); y.failPersist(1); assert.equal(y.flows.decideStep(y.flow.id, y.run.id, 's1', { decision: 'continue' }).status, 500); assert.equal(JSON.stringify(y.step('s1')), snapY);
+});
+
+test('continue com o terminal encerrado: workspace removido ou provedor indisponível = 409 sem mudar nada (as conferências do Retomar vêm antes)', async () => {
+  const w = world(); await w.start([S('s1')]); autoDone(w, 's1', LIMIT_SUMMARY); await w.tick();
+  w.terms.get(w.step('s1').terminalId).status = 'exited'; await w.tick();
+  const snap = JSON.stringify(w.step('s1')), c = () => w.flows.decideStep(w.flow.id, w.run.id, 's1', { decision: 'continue' });
+  w.providers = [{ id: 'claude', label: 'Claude Code', available: false }]; let r = c(); assert.equal(r.status, 409); assert.equal(r.code, 'provider_unavailable');
+  w.providers = [{ id: 'claude', label: 'Claude Code', available: true }];
+  const ws = w.db.workspaces.splice(0, 1); r = c(); assert.equal(r.status, 409); assert.equal(r.code, 'workspace_missing'); w.db.workspaces.push(...ws);
+  assert.equal(JSON.stringify(w.step('s1')), snap, 'a etapa continua esperando a decisão, intacta'); assert.equal(w.created.length, 1);
+});
+
+test('continue com o terminal encerrado: se a reabertura FALHAR, a etapa volta a esperar a sua decisão (com o motivo e o fim do terminal), sem falhar nem pular dependentes', async () => {
+  const w = world(); await w.start([S('s1'), S('s2', { dependsOn: ['s1'] })]); autoDone(w, 's1', LIMIT_SUMMARY); await w.tick();
+  w.terms.get(w.step('s1').terminalId).status = 'exited'; await w.tick();
+  w.failCreate = 'Configuração de projeto não revisada.';
+  assert.equal(w.flows.decideStep(w.flow.id, w.run.id, 's1', { decision: 'continue' }).status, 200); await w.tick(); await w.tick();
+  const s1 = w.step('s1');
+  assert.deepEqual([s1.status, s1.unconfirmed, s1.resumePending, s1.continueResume, s1.stopReason, s1.limitResets, s1.finishedAt ?? null], ['waiting', true, false, false, 'limit', '3pm (America/Sao_Paulo)', null]);
+  assert.match(s1.error, /Configuração de projeto não revisada/); assert.match(s1.summary, /hit your limit/);
+  assert.deepEqual(statuses(w), ['waiting', 'pending'], 'o dependente não foi pulado');
+  // a decisão continua disponível: agora dá certo
+  w.failCreate = null; assert.equal(w.flows.decideStep(w.flow.id, w.run.id, 's1', { decision: 'continue' }).status, 200); await w.tick(); await w.tick();
+  assert.deepEqual([w.step('s1').status, w.step('s1').stopReason, w.step('s1').summary, w.step('s1').continues], ['running', null, null, 2]);
+  // uma etapa interrompida pelo Retomar comum continua falhando como antes (sem continueResume)
+  assert.equal(w.step('s1').continueResume, false);
+});
+
+test('continue com o terminal encerrado e conversa gravada: retoma a MESMA conversa com o aviso de continuação pedida por você (não o de reinício do servidor)', async () => {
+  const w = world(); await w.start([S('s1')]); autoDone(w, 's1', LIMIT_SUMMARY); await w.tick();
+  const resumed = [];
+  w.terminals.resume = async (args) => { resumed.push(args); const id = 'term_0000abcd'; w.terms.set(id, { id, status: 'running', agent: { ...READY }, role: 'builder' }); return { ok: true, session: { id, recordId: 'rec_novo' } }; };
+  w.db.flowRuns[0].steps[0].recordId = 'rec_velho';
+  w.terms.get(w.step('s1').terminalId).status = 'exited'; await w.tick();
+  assert.equal(w.flows.decideStep(w.flow.id, w.run.id, 's1', { decision: 'continue' }).status, 200); await w.tick(); await w.tick();
+  assert.deepEqual(resumed, [{ recordId: 'rec_velho' }], 'mesma conversa (sem reopen)');
+  const d = w.dispatches.at(-1); assert.equal(d.to, 'term_0000abcd');
+  assert.match(d.text, /\(continuação pedida pelo usuário\): continue de onde parou/); assert.ok(!/reinício do servidor/.test(d.text));
+  assert.deepEqual([w.step('s1').status, w.step('s1').continueResume, w.step('s1').stopReason], ['running', false, null]);
+});
+
+test('releitura do terminal com a tela crua da TUI (moldura e redesenhos repetidos depois da mensagem): o limite ainda é reconhecido', async () => {
+  const w = world(); await w.start([S('s1')]); autoDone(w, 's1', 'Relatório automático: posso seguir?'); await w.tick();
+  const tid = w.step('s1').terminalId, term = w.terms.get(tid);
+  term.agent = { state: 'running', at: READY.at }; await w.tick();
+  const box = '\x1b[2m╭──────────────────────────────────────────────╮\x1b[0m\r\n│ >                                            │\r\n╰──────────────────────────────────────────────╯\r\n  ? for shortcuts\r\n';
+  w.outputs.set(tid, `● Lendo arquivos...\r\n  ⎿  You've hit your limit · resets 3pm (America/Sao_Paulo)\r\n${box.repeat(40)}`);
+  term.agent = { ...READY }; await w.tick();
+  assert.deepEqual([w.step('s1').status, w.step('s1').stopReason, w.step('s1').limitResets], ['waiting', 'limit', '3pm (America/Sao_Paulo)']);
+  // relatório automático cujo resumo curto perdeu a mensagem para os redesenhos: a tela do terminal é conferida
+  const x = world(); await x.start([S('s1')]); const xt = x.step('s1').terminalId;
+  x.outputs.set(xt, `⎿ 5-hour limit reached ∙ resets 7pm\r\n${box.repeat(40)}`);
+  autoDone(x, 's1', 'Relatório automático (sem report_done), fim do terminal: > ? for shortcuts > ? for shortcuts'); await x.tick();
+  assert.deepEqual([x.step('s1').status, x.step('s1').unconfirmed, x.step('s1').stopReason, x.step('s1').limitResets], ['waiting', true, 'limit', '7pm']);
+});
+
+test('motivo acompanha o agente: voltou a trabalhar = o limite deixa de ser o motivo; parou de novo com o limite na tela = volta a ser', async () => {
+  const w = world(); await w.start([S('s1')]);
+  autoDone(w, 's1', LIMIT_SUMMARY); await w.tick(); assert.equal(w.step('s1').stopReason, 'limit');
+  const tid = w.step('s1').terminalId, term = w.terms.get(tid);
+  term.agent = { state: 'running', at: READY.at }; await w.tick(); // você digitou "continue" no terminal
+  assert.deepEqual([w.step('s1').status, w.step('s1').stopReason, w.step('s1').limitResets], ['running', null, null]);
+  w.outputs.set(tid, '\x1b[1m● Working...\x1b[0m\r\n⎿ 5-hour limit reached ∙ resets 7pm\r\n> '); term.agent = { ...READY }; await w.tick();
+  assert.deepEqual([w.step('s1').status, w.step('s1').unconfirmed, w.step('s1').stopReason, w.step('s1').limitResets], ['waiting', true, 'limit', '7pm']);
+  term.agent = { state: 'running', at: READY.at }; await w.tick(); w.outputs.set(tid, 'Pronto, terminei. Quer que eu rode os testes?'); term.agent = { ...READY }; await w.tick();
+  assert.deepEqual([w.step('s1').status, w.step('s1').stopReason], ['waiting', null], 'parou por outro motivo');
+});
