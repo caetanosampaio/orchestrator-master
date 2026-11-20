@@ -33,6 +33,25 @@ test('claude.paneArgs: new, resume e fork geram os MESMOS argumentos de antes (c
   assert.deepEqual(claudeProvider.paneArgs({ mode: 'new', prompt: 'P', label: 'L', sessionId: SID, mcp: { configPath: '/c.json' } }).slice(-1), ['mcp__forge'], 'sem serverName vale o nome padrão');
 });
 
+test('claude.paneArgs readOnly (planejador): --disallowedTools Edit Write NotebookEdit no grupo final, antes do MCP; nunca --dangerously-skip-permissions; sem readOnly nada muda', () => {
+  const D = ['--disallowedTools', 'Edit', 'Write', 'NotebookEdit'];
+  assert.deepEqual(claudeProvider.paneArgs({ mode: 'new', prompt: 'P', label: 'L', sessionId: SID, readOnly: true }), ['--append-system-prompt', 'P', '--name', 'L', '--session-id', SID, ...D]);
+  assert.deepEqual(claudeProvider.paneArgs({ mode: 'new', prompt: 'P', label: 'L', sessionId: SID, model: 'opus', effort: 'high', pluginDir: '/p', settingsFile: '/s.json', mcp, readOnly: true }),
+    ['--append-system-prompt', 'P', '--name', 'L', '--session-id', SID, '--model', 'opus', '--effort', 'high', '--plugin-dir', '/p', '--settings', '/s.json', ...D, '--mcp-config', '/tmp/x/mcp.json', '--allowedTools', 'mcp__orchestrator_abc123']);
+  // readOnly vence fullAccess (nem por engano o planejador sobe sem confirmação)
+  for (const mode of ['new', 'resume', 'fork']) {
+    const a = claudeProvider.paneArgs({ mode, prompt: 'P', label: 'L', sessionId: SID, resumeSessionId: OLD, mcp, fullAccess: true, readOnly: true });
+    assert.ok(!a.includes('--dangerously-skip-permissions'), mode);
+    const i = a.indexOf('--disallowedTools'); assert.deepEqual(a.slice(i, i + 4), D, mode); assert.equal(a[i + 4], '--mcp-config', mode);
+  }
+  assert.deepEqual(claudeProvider.paneArgs({ mode: 'resume', sessionId: SID, resumeSessionId: OLD, readOnly: true }), ['--resume', OLD, ...D]);
+  // sem readOnly (todos os outros papéis): exatamente como antes, inclusive o acesso total
+  for (const ro of [false, undefined, 'true', 1]) {
+    const a = claudeProvider.paneArgs({ mode: 'new', prompt: 'P', label: 'L', sessionId: SID, mcp, fullAccess: true, readOnly: ro });
+    assert.deepEqual(a, ['--append-system-prompt', 'P', '--name', 'L', '--session-id', SID, '--dangerously-skip-permissions', '--mcp-config', '/tmp/x/mcp.json', '--allowedTools', 'mcp__orchestrator_abc123'], String(ro));
+  }
+});
+
 test('claude.resolve: acha o `claude` no PATH, ignora diretórios sem ele e o terminals.js continua exportando resolveClaude', () => {
   const dir = path.join(tmp, 'bin'); fs.mkdirSync(dir); fs.writeFileSync(path.join(dir, 'claude'), '#!/bin/sh\n');
   assert.deepEqual(resolveClaude({ env: { PATH: [path.join(tmp, 'vazio'), dir].join(path.delimiter) }, platform: 'linux' }), { file: path.join(dir, 'claude'), args: [], viaShell: false });

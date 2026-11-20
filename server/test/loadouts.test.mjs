@@ -53,7 +53,10 @@ test('catálogo: cada skill tem id válido igual ao nome, descrição útil e co
 test('cada papel recebe a skill do seu papel e o protocolo do squad; o maestro delega e o batedor só lê', () => {
   assert.ok(L.ROLE_DEFAULTS.maestro.includes('delegar-com-clareza') && L.ROLE_DEFAULTS.builder.includes('implementar-em-passos-pequenos'));
   assert.ok(L.ROLE_DEFAULTS.reviewer.includes('revisar-alteracoes') && L.ROLE_DEFAULTS.scout.includes('mapear-codigo'));
-  for (const ids of Object.values(L.ROLE_DEFAULTS)) assert.ok(ids.includes('protocolo-do-squad'));
+  // todo papel do SQUAD recebe o protocolo; o Planejador de missões não é do squad (não recebe tarefas nem chama report_done) e recebe só a skill de planejar
+  for (const [role, ids] of Object.entries(L.ROLE_DEFAULTS)) { if (role === 'planner') continue; assert.ok(ids.includes('protocolo-do-squad'), role); }
+  assert.deepEqual([...L.ROLE_DEFAULTS.planner], ['planejar-missao']);
+  assert.match(L.SKILLS['planejar-missao'].body, /não crie, edite nem apague arquivos/); assert.match(L.SKILLS['planejar-missao'].body, /propose_mission/); assert.ok(!/report_done/.test(L.SKILLS['planejar-missao'].body));
   assert.match(L.SKILLS['mapear-codigo'].body, /Somente leitura/);
 });
 

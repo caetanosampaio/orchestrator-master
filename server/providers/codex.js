@@ -133,10 +133,14 @@ export const codexProvider = Object.freeze({
    * `quote: false` é para wrapper .cmd. As ferramentas do Maestro são pré-aprovadas só nesse servidor (default_tools_approval_mode), como o --allowedTools do Claude;
    * a aprovação humana das TAREFAS continua no próprio Maestro (send_task fica pendente até o usuário decidir).
    */
-  paneArgs({ mode = 'new', prompt, mcp = null, quote = true, trustDir = null, model = null, effort = null, fullAccess = false }) {
+  paneArgs({ mode = 'new', prompt, mcp = null, quote = true, trustDir = null, model = null, effort = null, fullAccess = false, readOnly = false }) {
     if (mode !== 'new') throw new Error('O Codex CLI não oferece retomada nem bifurcação neste adaptador.');
     // `fullAccess` (acesso total da missão): SÓ o booleano true estrito troca o sandbox + aprovação padrão pelo modo sem confirmação e sem sandbox. A flag é exclusiva de -s/-a na CLI, por isso substitui os dois.
-    const args = ['--no-alt-screen', '--no-daemon', ...(fullAccess === true ? ['--dangerously-bypass-approvals-and-sandbox'] : ['-s', 'workspace-write', '-a', 'on-request'])];
+    // `readOnly` (papel somente leitura, hoje o planejador; decidido no terminals.js a partir do PAPEL): sandbox `read-only` no lugar de `workspace-write`, com a mesma aprovação `on-request`, e o acesso
+    // total nunca liga. HIPÓTESE (não verificada contra a CLI real nesta máquina, sem login): o sandbox do Codex restringe os comandos de shell e a aplicação de patches que o MODELO pede; as chamadas às
+    // ferramentas MCP (mission_options/propose_mission) são feitas pelo próprio processo do Codex (cliente MCP por HTTP), fora do sandbox, e continuam funcionando.
+    const ro = readOnly === true;
+    const args = ['--no-alt-screen', '--no-daemon', ...(fullAccess === true && !ro ? ['--dangerously-bypass-approvals-and-sandbox'] : ['-s', ro ? 'read-only' : 'workspace-write', '-a', 'on-request'])];
     // Confiança da pasta SÓ para este processo (o Codex não pergunta "confiar nesta pasta?"): nada é gravado no config do usuário. O caminho vai como CHAVE de uma tabela inline (`projects={'<pasta>'={trust_level='trusted'}}`) e não como
     // `projects.'<pasta>'.trust_level=...`: o parser do -c do Codex quebra a chave no PONTO mesmo entre aspas, e uma pasta com ponto (ex.: `C:\proj.orch-worktrees\wt_x`, a dos worktrees do FORGE) tinha a confiança IGNORADA, com o aviso
     // "Codex is ignoring 1 unrecognized configuration setting" e a pergunta de confiança na tela (verificado no 0.167.0). A tabela inline é mesclada ao config: as pastas que o usuário já confiou continuam valendo. Aspas simples (literal TOML) valem até no cmd.exe;

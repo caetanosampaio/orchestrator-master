@@ -49,6 +49,12 @@ test('createTokenGuard: métodos mutáveis e fluxos de terminal exigem o token; 
   }
   assert.equal(run({ p: '/missionsx' }).next, true, 'prefixo parecido não é protegido por engano');
   assert.equal(run({ p: '/livex' }).next, true, 'prefixo parecido de /live não é protegido por engano');
+  // missões v2 (/flows): prompts, resumos dos agentes, branches, arquivos alterados e o caminho das cópias também exigem o token na leitura
+  for (const p of ['/flows', '/flows/', '/flows/flow_0a1b2c3d', '/flows/flow_0a1b2c3d/runs', '/flows/flow_0a1b2c3d/runs/run_0a1b2c3d', '/FLOWS']) {
+    assert.equal(run({ p }).status, 403, `GET ${p} sem token`); assert.equal(run({ p, token: 'errado' }).status, 403, `GET ${p} token errado`); assert.equal(run({ p, token: TOKEN }).next, true, `GET ${p} com token`);
+  }
+  assert.equal(run({ p: '/flowsx' }).next, true, 'prefixo parecido de /flows não é protegido por engano');
+  assert.equal(run({ method: 'POST', p: '/flows/flow_0a1b2c3d/runs/run_0a1b2c3d/integrate' }).status, 403, 'mutação de /flows sem token (como antes)');
   for (const method of ['POST', 'DELETE']) assert.equal(run({ method, p: '/live/preview' }).status, 403, `${method} /live/preview sem token`);
   // conversas copiadas têm a mesma natureza da saída dos terminais: leitura também exige o token
   for (const p of ['/workspaces/ws_aaaaaaaa/conversations', '/workspaces/ws_aaaaaaaa/conversations/ses_00000001', '/WORKSPACES/ws_a/conversations/']) {

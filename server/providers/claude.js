@@ -21,6 +21,9 @@ export const CLAUDE_OPTIONS = Object.freeze({
   efforts: frozenList([['low', 'Baixo'], ['medium', 'Médio'], ['high', 'Alto'], ['xhigh', 'Muito alto'], ['max', 'Máximo']]),
 });
 
+/** Ferramentas de edição do Claude Code bloqueadas no pane somente leitura (--disallowedTools). Nomes fixos, sem caracteres especiais: valem também pelo cmd.exe. */
+export const READ_ONLY_DENIED = Object.freeze(['Edit', 'Write', 'NotebookEdit']);
+
 export const claudeProvider = Object.freeze({
   id: 'claude',
   label: 'Claude Code',
@@ -43,15 +46,21 @@ export const claudeProvider = Object.freeze({
    * `pluginDir` = plugin de sessão com as skills do papel (loadouts.js); vale também na retomada, porque o plugin não faz parte da sessão gravada.
    *   Vem ANTES dos argumentos de MCP: `--mcp-config` e `--allowedTools` aceitam vários valores e um argumento depois deles seria lido como valor.
    */
-  paneArgs({ mode, prompt, label, sessionId, resumeSessionId, mcp = null, pluginDir = null, settingsFile = null, model = null, effort = null, fullAccess = false }) {
+  paneArgs({ mode, prompt, label, sessionId, resumeSessionId, mcp = null, pluginDir = null, settingsFile = null, model = null, effort = null, fullAccess = false, readOnly = false }) {
+    // `readOnly` (papel somente leitura, hoje o planejador; decidido no terminals.js a partir do PAPEL, nunca do cliente): as ferramentas de edição do Claude Code ficam BLOQUEADAS na própria CLI
+    // (--disallowedTools tira as ferramentas do agente) e o acesso total nunca liga, mesmo se alguém passar fullAccess.
+    // LIMITE: o Bash continua disponível (pedindo permissão, como em qualquer pane sem acesso total); um comando de shell aprovado pelo usuário ainda pode alterar arquivos.
+    const ro = readOnly === true, full = fullAccess === true && !ro;
     // `settingsFile` = arquivo JSON com a status line do FORGE (rate-limits.js), que grava o limite real da conta. Vale nos três modos, junto do plugin e ANTES do MCP; sem ele, nenhum argumento.
     const pluginArgs = [...(pluginDir ? ['--plugin-dir', pluginDir] : []), ...(settingsFile ? ['--settings', settingsFile] : [])];
+    // --disallowedTools é variádico (como --mcp-config/--allowedTools): fica no grupo FINAL, logo antes do MCP; o que vem depois dele é sempre outra flag (ou nada), então nenhum argumento é engolido.
+    const roArgs = ro ? ['--disallowedTools', ...READ_ONLY_DENIED] : [];
     const mcpArgs = mcp ? ['--mcp-config', mcp.configPath, '--allowedTools', `mcp__${mcp.serverName ?? 'forge'}`] : [];
     // `model`/`effort` (já validados contra as listas fechadas, ver providers/index.js) só valem na sessão NOVA: retomada e fork herdam o modelo da sessão gravada. Vão ANTES de plugin/MCP (que aceitam vários valores).
     // `fullAccess` ("acesso total" da missão): SÓ o booleano true estrito liga o modo sem confirmação de permissão. Vale também na retomada/fork, mas só quando a sessão gravada JÁ tinha acesso total (terminals.js):
     // o Claude Code não restaura o bypass sozinho. Flag sem valor: não engole o argumento seguinte.
-    const modelArgs = [...(fullAccess === true ? ['--dangerously-skip-permissions'] : []), ...(model ? ['--model', model] : []), ...(effort ? ['--effort', effort] : [])];
-    if (mode === 'new') return ['--append-system-prompt', prompt, '--name', label, '--session-id', sessionId, ...modelArgs, ...pluginArgs, ...mcpArgs];
-    return ['--resume', resumeSessionId, ...(mode === 'fork' ? ['--fork-session', '--session-id', sessionId] : []), ...(fullAccess === true ? ['--dangerously-skip-permissions'] : []), ...pluginArgs, ...mcpArgs];
+    const modelArgs = [...(full ? ['--dangerously-skip-permissions'] : []), ...(model ? ['--model', model] : []), ...(effort ? ['--effort', effort] : [])];
+    if (mode === 'new') return ['--append-system-prompt', prompt, '--name', label, '--session-id', sessionId, ...modelArgs, ...pluginArgs, ...roArgs, ...mcpArgs];
+    return ['--resume', resumeSessionId, ...(mode === 'fork' ? ['--fork-session', '--session-id', sessionId] : []), ...(full ? ['--dangerously-skip-permissions'] : []), ...pluginArgs, ...roArgs, ...mcpArgs];
   },
 });

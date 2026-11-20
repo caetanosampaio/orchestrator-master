@@ -144,7 +144,7 @@ test('servidor real: criar terminal sem Origin é recusado (403); com Origin e s
   const child = spawn(process.execPath, [INDEX], { env: { ...process.env, PORT: String(port), ORCH_DATA_DIR: dir }, stdio: 'ignore', windowsHide: true }); children.add(child);
   const base = `http://127.0.0.1:${port}`; let up = false; for (let i = 0; i < 120 && !up; i++) { try { up = (await fetch(`${base}/api/terminals`)).status === 200; } catch { /* subindo */ } if (!up) await sleep(250); }
   assert.ok(up, 'o servidor subiu');
-  const list = await (await fetch(`${base}/api/terminals`)).json(); assert.deepEqual([list.sessions, list.roles.length], [[], 4]);
+  const list = await (await fetch(`${base}/api/terminals`)).json(); assert.deepEqual([list.sessions, list.roles.map((r) => r.id)], [[], ['maestro', 'builder', 'reviewer', 'scout', 'planner']]); // planner: missões por briefing
   let r = await fetch(`${base}/api/terminals`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }); assert.equal(r.status, 403, 'sem Origin, uma requisição mutável é recusada');
   r = await fetch(`${base}/api/terminals`, { method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://evil.example' }, body: '{}' }); assert.equal(r.status, 403);
   r = await fetch(`${base}/api/terminals`, { method: 'POST', headers: { 'content-type': 'application/json', origin: base }, body: '{}' }); assert.equal(r.status, 409); assert.match((await r.json()).error, /espaço de trabalho/);

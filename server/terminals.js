@@ -3,7 +3,7 @@
 //
 // O que o servidor decide (nada disto vem do cliente):
 //   - o COMANDO: sempre a CLI do provedor (Claude Code ou Codex) encontrada no PATH, com argumentos fixos por papel; o cliente só escolhe o papel e o provedor de listas fechadas;
-//   - o DIRETÓRIO: o espaço de trabalho cadastrado (validado) ou, com `isolate`, um worktree Git próprio do pane (módulo de worktrees), para vários agentes não se pisarem;
+//   - o DIRETÓRIO: o espaço de trabalho cadastrado (validado) ou, com `isolate`, um worktree Git próprio do pane (módulo de worktrees), para vários agentes não se pisarem; ou, nas etapas de missão, o worktree já criado para a etapa (`create(opts, { flowWorktreeId })`, parâmetro só interno);
 //   - o limite de sessões simultâneas, o tamanho do terminal e o tamanho de cada entrada.
 // O cliente só recebe a saída (SSE, com reposição do que já foi impresso) e envia teclas, redimensionamento e pedido de encerramento por POST: tudo passa pela mesma checagem
 // de Host/Origin da API (um WebSocket a contornaria). Os PIDs ficam no child-registry (tipo `terminal`): se o servidor cair, o próximo boot reclama os processos órfãos.
@@ -25,7 +25,7 @@ import { getProvider, isProvider, providerIds as providerIdsList, validateChoice
 import { envForAccount } from './claude-cli.js';
 import { cleanLine } from './harness.js';
 
-const ID_RE = /^term_[0-9a-f]{8}$/, REC_RE = /^ses_[0-9a-f]{8}$/, UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ID_RE = /^term_[0-9a-f]{8}$/, REC_RE = /^ses_[0-9a-f]{8}$/, WT_ID_RE = /^wt_[0-9a-f]{8}$/, UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const SWEEP_MS = 2000; // varredura dos processos retidos (lingering): UM temporizador central, só existe enquanto há retidos
 /** Por que o terminal acabou (registro de sessão): user = fechado pelo usuário; exit = o processo terminou sozinho; shutdown = o servidor foi encerrado de forma graciosa (o terminal estava aberto); crash = o servidor caiu (apurado no boot). */
 export const REASONS = ['user', 'exit', 'shutdown', 'crash'];
@@ -37,8 +37,14 @@ export const ROLES = Object.freeze({
   builder: { label: 'Construtor', color: '#a3e635', edits: true, prompt: 'Voce e o CONSTRUTOR deste squad. Implemente exatamente a tarefa que receber, em passos pequenos, rode os testes do projeto e relate o que mudou e o que ficou pendente. Nao mexa em arquivos fora da tarefa. Se estiver numa branch propria, faca commits nela e informe o nome da branch no resumo, sem integrar nada na branch principal. Ao terminar uma tarefa recebida do maestro (mensagem iniciada por Tarefa task_), chame a ferramenta MCP report_done do servidor MCP do FORGE com o id da tarefa e um resumo curto.' },
   reviewer: { label: 'Revisor', color: '#8b5cf6', prompt: 'Voce e o REVISOR deste squad. Nao implemente funcionalidades: leia as alteracoes, aponte defeitos, regressoes, falhas de seguranca e testes ausentes, em ordem de gravidade, e proponha a correcao minima. Se a tarefa citar uma branch ou um caminho de worktree, leia as alteracoes la. Ao terminar uma tarefa recebida do maestro (mensagem iniciada por Tarefa task_), chame a ferramenta MCP report_done do servidor MCP do FORGE com o id da tarefa e um resumo curto.' },
   scout: { label: 'Batedor', color: '#1d4ed8', prompt: 'Voce e o BATEDOR deste squad. Apenas investigue: leia o codigo, mapeie arquivos, dependencias e riscos relevantes para a tarefa e entregue um resumo objetivo. Nao altere nenhum arquivo. Ao terminar uma tarefa recebida do maestro (mensagem iniciada por Tarefa task_), chame a ferramenta MCP report_done do servidor MCP do FORGE com o id da tarefa e um resumo curto.' },
+  // Missões por briefing (docs/missions-v2-briefing.md): não edita, não recebe tarefas do Maestro (maestro.js) e não é papel de etapa (flows.js STEP_ROLES). Sem acentos, como os demais (linha de comando do Windows).
+  planner: { label: 'Planejador', color: '#f59e0b', prompt: 'Voce e o PLANEJADOR de missoes do FORGE. Converse com o usuario para entender o objetivo, leia o projeto (sem editar arquivos nem rodar comandos que alterem algo), consulte mission_options e proponha a missao com propose_mission, ferramentas do servidor MCP do FORGE: etapas pequenas e verificaveis, papel certo para cada uma (Construtor edita; Revisor revisa; Batedor investiga), dependencias so quando uma etapa precisa do resultado de outra, paralelo quando forem independentes, modelo/esforco proporcional a dificuldade (leve para tarefas simples, forte so para as dificeis). Cada prompt de etapa diz o resultado esperado e como saber que terminou. Se a validacao recusar, corrija e envie de novo. Nao inicie a missao: o usuario revisa e cria.' },
 });
 export const roleIds = () => Object.keys(ROLES);
+/** Papéis que entram em vagas de time (team-templates.js) e no seletor de papel do Cockpit (`team` em GET /api/terminals > roles). O planejador fica de fora: só abre por POST /api/flows/briefing. */
+export const TEAM_ROLES = Object.freeze(roleIds().filter((r) => r !== 'planner'));
+/** Papéis SOMENTE LEITURA de verdade (decidido aqui, nunca pelo cliente): o provedor recebe `readOnly` e bloqueia edição na própria CLI (Claude: --disallowedTools; Codex: sandbox read-only). */
+export const READ_ONLY_ROLES = Object.freeze(['planner']);
 
 const fail = (status, error, extra = {}) => ({ ok: false, status, error, ...extra });
 const UNCONFIRMED = 'o encerramento do processo NÃO foi confirmado: a sessão fica bloqueada até ele terminar.';
@@ -160,7 +166,11 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
   let creating = 0, seq = 0; // vagas reservadas por criações em andamento (isolate espera o worktree): o limite vale também para squads abertos em paralelo
   const send = (res, event, data) => { try { res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); } catch { /* conexão fechada: o 'close' remove */ } };
 
-  async function create(opts = {}) {
+  /**
+   * O 2º parâmetro só existe para chamadas do SERVIDOR (runner de missões, flows.js); a rota HTTP nunca o passa. `flowWorktreeId`: abre o terminal DENTRO do worktree já
+   * criado para a etapa. Um `worktreeId` dentro de `opts` continua ignorado, como sempre (o cliente nunca escolhe worktree).
+   */
+  async function create(opts = {}, { flowWorktreeId = null } = {}) {
     if (!ROLES[opts?.role ?? 'builder']) return fail(400, `Papel inválido. Use um destes: ${roleIds().join(', ')}.`);
     if (opts?.provider !== undefined && opts?.provider !== null && !isProvider(opts.provider)) return fail(400, 'Provedor inválido.', { code: 'provider_invalid' });
     // acesso total (sem confirmação de permissão): opção interna de quem monta a missão (flows.js), nunca de texto livre; só o booleano true liga, qualquer outro valor que não seja booleano é recusado
@@ -174,9 +184,17 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
     const tm = checkTeam(opts?.templateId, opts?.slotIndex, opts?.role ?? 'builder', provOf(opts?.provider ?? undefined).id);
     if (!tm.ok) return tm;
     opts = { ...opts, team: tm.team };
+    // flowWorktreeId é exclusivo com isolate/squadId: quem chama com os dois tem um erro de lógica, e nenhum deles pode decidir sozinho qual worktree vale.
+    const fwId = flowWorktreeId === undefined ? null : flowWorktreeId, wtGiven = fwId !== null;
+    if (wtGiven) {
+      if (typeof fwId !== 'string' || !WT_ID_RE.test(fwId)) return fail(400, 'flowWorktreeId deve ser o identificador de um worktree (wt_…).', { code: 'worktree_invalid' });
+      if (opts?.isolate || (opts?.squadId !== undefined && opts?.squadId !== null)) return fail(400, 'O worktree da etapa não pode ser combinado com isolate nem com squadId.', { code: 'worktree_exclusive' });
+    }
     if (live().length + creating >= maxSessions) return fail(409, `Limite de ${maxSessions} terminais simultâneos atingido; feche algum antes de abrir outro.`);
+    if (wtGiven && wtClaims.has(fwId)) return fail(409, 'Outro terminal já está sendo aberto neste worktree.', { code: 'worktree_in_use' });
     creating++;
     let held = null; // workspace em que este criador está reservado como "editor": criações simultâneas contam umas às outras
+    if (wtGiven) wtClaims.add(fwId); // síncrono: duas criações simultâneas no mesmo worktree nunca passam as duas pela inspeção (await)
     try {
       if (opts?.isolate === 'auto') {
         const explicit = opts.workspaceId !== undefined && opts.workspaceId !== null, wsId = explicit ? opts.workspaceId : db.settings?.activeWorkspaceId;
@@ -189,10 +207,28 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
         }
         opts = { ...opts, isolate: iso, isolateAuto: iso };
       }
-      return await createReserved(opts);
-    } finally { creating--; if (held) { const n = (editorsHeld.get(held) ?? 1) - 1; if (n > 0) editorsHeld.set(held, n); else editorsHeld.delete(held); } }
+      return await createReserved(opts, { flowWorktreeId: fwId });
+    } finally { creating--; if (wtGiven) wtClaims.delete(fwId); if (held) { const n = (editorsHeld.get(held) ?? 1) - 1; if (n > 0) editorsHeld.set(held, n); else editorsHeld.delete(held); } }
   }
   const editorsHeld = new Map(); // workspaceId -> criações em curso de panes que editam
+  const wtClaims = new Set(); // worktrees de missão com criação de terminal em curso (create com worktreeId)
+  /**
+   * Worktree de etapa de missão (`flowWorktreeId`, 2º parâmetro interno do create): só registro EXISTENTE com `flow`, do mesmo workspace, utilizável (worktreeProblem), com a pasta no disco e
+   * sem nenhum outro terminal vivo ou retido (lingering) nele. Síncrono: o create confere de novo imediatamente antes do spawn. Devolve { wt } ou { block: falha 409 }.
+   */
+  function flowWorktree(wtId, wsId) {
+    const no = (code, message, extra = {}) => ({ block: fail(409, message, { code, ...extra }) });
+    settleLingering(); // retido cujo processo já morreu deixa de contar (mesma regra da retomada)
+    const r = (db.worktrees ?? []).find((w) => w && w.id === wtId);
+    if (!r) return no('worktree_missing', 'O worktree informado não existe.');
+    if (!r.flow || typeof r.flow !== 'object') return no('worktree_not_flow', 'Este worktree não pertence a uma etapa de missão.');
+    const why = worktreeProblem(r, wsId);
+    if (why) return no('worktree_invalid', { workspace: 'Este worktree pertence a outro espaço de trabalho.', state: 'Este worktree não está em um estado utilizável.', op: 'Este worktree tem uma operação em andamento.', path: 'Este worktree não existe mais no disco.', missing: 'O worktree informado não existe.' }[why] ?? 'Este worktree não está utilizável.', { reason: why });
+    let isDir = false; try { isDir = fs.statSync(r.path).isDirectory(); } catch { /* sumiu */ }
+    if (!isDir) return no('worktree_invalid', 'Este worktree não existe mais no disco.', { reason: 'path' });
+    if (worktreeUsers(r.id).length) return no('worktree_in_use', 'Outro terminal já usa este worktree.');
+    return { wt: r };
+  }
   /** Panes que editam (qualquer provedor) vivos no workspace + criações em curso. */
   const editorsIn = (wsId) => live().filter((x) => x.workspaceId === wsId && ROLES[x.role]?.edits === true).length + (editorsHeld.get(wsId) ?? 0);
   /** Tópico (db.topics, criado por topics.js): null/ausente = Geral. Só vale se existir, não estiver arquivado e pertencer ao MESMO espaço de trabalho da sessão. */
@@ -215,7 +251,7 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
   function markShared(wtId) { try { for (const r of records()) if (r && r.worktreeId === wtId) r.sharedWorktree = true; persistLoose(); } catch { /* informativo */ } }
   /** Só o ÚLTIMO terminal a sair devolve o worktree ao estado "execução terminada". */
   function releaseWorktree(wtId, exceptId) { if (!wtId || worktreeUsers(wtId, exceptId).length) return; try { worktrees?.release?.(wtId, 'terminal_ended'); } catch { /* informativo */ } }
-  async function createReserved({ workspaceId, topicId, role = 'builder', title, cols, rows, isolate = false, squadId = null, acknowledgeProjectConfig = false, accountId, provider: providerId = null, isolateAuto = false, model = null, effort = null, team = null, fullAccess = false } = {}) {
+  async function createReserved({ workspaceId, topicId, role = 'builder', title, cols, rows, isolate = false, squadId = null, acknowledgeProjectConfig = false, accountId, provider: providerId = null, isolateAuto = false, model = null, effort = null, team = null, fullAccess = false } = {}, { flowWorktreeId = null } = {}) {
     const prov = provOf(providerId ?? undefined);
     // Padrões da tabela "Quem faz cada tarefa" (harness.js): o Maestro novo abre com o modelo e o esforço do piloto e a instrução do agente dele; nunca sobrescreve o que foi escolhido nem vale na retomada.
     let extraPrompt = ''; try { const d = defaults?.(role, prov.id) ?? {}; if (model === null && d.model) model = d.model; if (effort === null && d.effort) effort = d.effort; if (typeof d.extraPrompt === 'string') extraPrompt = d.extraPrompt; } catch { /* sem padrões: abre como sempre */ }
@@ -241,12 +277,16 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
       if (!peer) return bad(409, 'squad_not_found', 'Este squad não tem mais terminal ativo com worktree: abra um squad novo.');
       if (peer.workspaceId !== ws.id) return bad(409, 'squad_workspace', 'Este squad pertence a outro espaço de trabalho.');
       shared = (db.worktrees ?? []).find((w) => w && w.id === peer.worktreeId);
-      if (!shared || worktreeProblem(shared, ws.id)) return bad(409, 'worktree_invalid', 'O worktree deste squad não está utilizável.');
+      if (!shared || shared.flow || worktreeProblem(shared, ws.id)) return bad(409, 'worktree_invalid', 'O worktree deste squad não está utilizável.'); // worktree de etapa de missão nunca vira squad (defesa extra: os terminais dele nem têm chave)
     }
-    // M3: configuração executável do projeto não revisada (ver project-config.js) só roda no pane com confirmação explícita. Com `isolate` o worktree traz apenas arquivos versionados.
+    // Worktree de etapa de missão (interno): conferido antes de qualquer efeito e de novo, síncrono, logo antes do spawn.
+    let flowWt = null;
+    if (flowWorktreeId !== null && flowWorktreeId !== undefined) { const f = flowWorktree(flowWorktreeId, ws.id); if (f.block) return f.block; flowWt = f.wt; }
+    // M3: configuração executável do projeto não revisada (ver project-config.js) só roda no pane com confirmação explícita. Com `isolate` o worktree é recém-criado e traz apenas
+    // arquivos versionados (nada a inspecionar). O worktree de MISSÃO já existe e pode ter arquivos que etapas anteriores gravaram (não versionados ou alterados): inspeciona a pasta DELE.
     if (!isolate && !shared && acknowledgeProjectConfig !== true) {
-      const pc = await inspectConfig(v.path, prov.projectConfig);
-      if (pc.length) return fail(409, `Este espaço de trabalho tem configuração do ${prov.label} que executa comandos e não está revisada no Git: ${pc.map((f) => `${f.path} (${f.why})`).join('; ')}. Confirme só se foi você quem a escreveu.`, { code: 'project_config_unreviewed', files: pc });
+      const pc = await inspectConfig(flowWt ? flowWt.path : v.path, prov.projectConfig);
+      if (pc.length) return fail(409, `${flowWt ? 'O worktree desta etapa' : 'Este espaço de trabalho'} tem configuração do ${prov.label} que executa comandos e não está revisada no Git: ${pc.map((f) => `${f.path} (${f.why})`).join('; ')}. Confirme só se foi você quem a escreveu.`, { code: 'project_config_unreviewed', files: pc });
     }
     const cmd = cmdOf(prov); if (!cmd) return fail(409, prov.notFoundMessage ?? `${prov.label} não foi encontrado no PATH.`);
     const pty = ptyLib ?? loadPty(); if (!pty) return fail(503, 'O módulo de terminal (node-pty) não está disponível neste ambiente.');
@@ -254,7 +294,10 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
     if (gone()) return fail(409, 'O espaço de trabalho foi removido enquanto o terminal era preparado.', { code: 'workspace_not_found' });
     const id = uid('term'), label = cleanTitle(title) || `${ROLES[role].label} ${++seq}`;
     let cwd = v.path, wt = null, warning = null;
-    if (shared) { wt = shared; cwd = shared.path; markShared(shared.id); } // mesmo worktree do squad: nada é criado
+    if (flowWt) { // depois dos awaits: o worktree pode ter mudado de estado ou ganhado outro terminal
+      const again = flowWorktree(flowWt.id, ws.id); if (again.block) return again.block;
+      wt = again.wt; cwd = wt.path; // nada é criado: o worktree é do runner de missões
+    } else if (shared) { wt = shared; cwd = shared.path; markShared(shared.id); } // mesmo worktree do squad: nada é criado
     else if (isolate) {
       if (!worktrees && !isolateAuto) return fail(409, 'O isolamento por worktree não está disponível.');
       const r = worktrees ? await worktrees.create({ mission: { id }, workspace: ws }) : { ok: false, error: 'O isolamento por worktree não está disponível.' }; // worktree próprio do pane (branch orch/…); nada é alterado na branch nem no workspace principal
@@ -272,7 +315,7 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
         if (gone()) { try { worktrees.release?.(wt.id, 'terminal_ended'); } catch { /* informativo */ } return fail(409, 'O espaço de trabalho foi removido enquanto o terminal era preparado.', { code: 'workspace_not_found' }); }
       }
     }
-    const launched = launch({ prov, id, ws, role, label, cwd, wt, cols, rows, claudeSessionId: newSessionId(), mode: 'new', topicId: tp.topicId, accountId: account, model, effort, extraPrompt, team, fullAccess: fullAccess === true, cmd, pty, squadKey: wt ? (peer?.squadKey ?? uid('sq')) : null });
+    const launched = launch({ prov, id, ws, role, label, cwd, wt, cols, rows, claudeSessionId: newSessionId(), mode: 'new', topicId: tp.topicId, accountId: account, model, effort, extraPrompt, team, fullAccess: fullAccess === true, cmd, pty, squadKey: wt && !wt.flow ? (peer?.squadKey ?? uid('sq')) : null }); // worktree de missão sem chave de squad: ninguém se anexa a ele pela rota
     if (warning && launched.ok) launched.warning = warning;
     return launched;
   }
@@ -287,8 +330,10 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
     // Maestro autônomo ligado = acesso total (bypass) SEMPRE ligado nos terminais que abrem agora (Cockpit e missões). `autoFullAccess` vem do boot (index.js) e lê o estado do Maestro na hora do spawn;
     // a retomada do Codex fica de fora (resumeBlock a recusa, provider_no_resume; o paneArgs dele só aceita sessão nova). Um terminal já aberto não muda de modo: vale para os próximos.
     // O que o autônomo liga NÃO é gravado no registro: só o opt-in explícito da missão persiste; ao retomar, vale o estado do autônomo naquele momento.
-    const autoFull = typeof autoFullAccess === 'function' && (mode === 'new' || prov.id === 'claude') && (() => { try { return autoFullAccess() === true; } catch { return false; } })();
-    const full = fullAccess === true || autoFull; // quem chama decide: sessão nova (opt-in da missão) ou retomada/fork/reabertura de uma sessão que JÁ tinha acesso total gravado (resumeReserved); nunca vem de texto livre
+    // O planejador de missões fica de fora: só lê o projeto e conversa (briefing = texto livre), então nunca sobe sem confirmação de permissão (docs/missions-v2-briefing.md, Segurança).
+    const readOnly = READ_ONLY_ROLES.includes(role); // planejador: somente leitura imposta pela própria CLI (providers/*.js paneArgs) e NUNCA acesso total, nem por opt-in interno nem herdado
+    const autoFull = !readOnly && typeof autoFullAccess === 'function' && (mode === 'new' || prov.id === 'claude') && (() => { try { return autoFullAccess() === true; } catch { return false; } })();
+    const full = !readOnly && (fullAccess === true || autoFull); // quem chama decide: sessão nova (opt-in da missão) ou retomada/fork/reabertura de uma sessão que JÁ tinha acesso total gravado (resumeReserved); nunca vem de texto livre
     if (!accountOk(accountId)) return fail(409, 'A conta deste terminal não existe mais (ou está sendo removida); o terminal não foi aberto.', { code: 'account_missing' }); // conferido aqui, síncrono, imediatamente antes do spawn
     const env = { ...(prov.envFor ? prov.envFor(process.env) : envForAccount(process.env, accounts?.configDirOf(accountId) ?? null)), TERM: 'xterm-256color', COLORTERM: 'truecolor' }; delete env.ELECTRON_RUN_AS_NODE; delete env.NODE_OPTIONS;
     for (const [k, v] of Object.entries(prov.paneEnv ?? {})) if (env[k] === undefined) env[k] = v; // ex.: renderer em tela cheia do Claude Code (providers/claude.js)
@@ -315,7 +360,7 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
     if (typeof trustFolders === 'function') { try { trustFolders({ provider: prov.id, cwd, configDir: prov.id === 'claude' ? accounts?.configDirOf(accountId) ?? null : null }); } catch { /* melhor esforço: a pergunta aparece normalmente */ } }
     const rolePrompt = extraPrompt ? `${ROLES[role].prompt} Instrucao do agente escolhido pelo usuario para este papel: ${extraPrompt}` : ROLES[role].prompt;
     const prompt = team?.instruction ? `${rolePrompt} Instrucao do time escolhido pelo usuario: ${team.instruction}` : rolePrompt; // a do time vem por último: vale para todas as vagas dele
-    const args = prov.paneArgs({ mode, prompt, label, sessionId: claudeSessionId, resumeSessionId: rec?.claudeSessionId, mcp: mcpArg, pluginDir, settingsFile, model, effort, fullAccess: full, quote: !cmd.viaShell, trustDir: typeof trustFolders === 'function' ? cwd : null });
+    const args = prov.paneArgs({ mode, prompt, label, sessionId: claudeSessionId, resumeSessionId: rec?.claudeSessionId, mcp: mcpArg, pluginDir, settingsFile, model, effort, fullAccess: full, readOnly, quote: !cmd.viaShell, trustDir: typeof trustFolders === 'function' ? cwd : null });
     let p;
     try { p = pty.spawn(cmd.file, [...cmd.args, ...args], { name: 'xterm-256color', cols: c, rows: r, cwd, env, useConpty: true }); }
     catch (e) { revokeMcp(id); return fail(500, `Não foi possível iniciar o terminal: ${String(e?.message ?? e).slice(0, 160)}`); }
@@ -370,10 +415,14 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
   /**
    * Regra ÚNICA do que impede retomar um registro (síncrona, sem efeitos): serve à retomada e ao `resumable` do histórico. O histórico é informativo; o endpoint de retomada
    * refaz TODAS estas checagens. Devolve { block: null | { status, code, message }, ws, wt, cwd }.
+   * `audited`: só o runner de missões (flows.js) passa true, DEPOIS de conferir a cópia da etapa (flowGit.configAudit). Sem ele, sessão cujo worktree é cópia de etapa
+   * (`flow`) é recusada (flow_copy_resume): a inspeção daqui trata configuração versionada no HEAD como revisada, e o agente pode ter commitado hooks na cópia.
    */
-  function resumeBlock(rec, hasTranscript, { reopen = false } = {}) {
+  function resumeBlock(rec, hasTranscript, { reopen = false, audited = false } = {}) {
     const no = (code, message, status = 409) => ({ block: { status, code, message } });
     const prov = provOf(rec.provider);
+    // Planejador de missões: conversa de briefing, sem trabalho a continuar. A restauração automática do Cockpit (resumable/reopenable do histórico) nunca o traz de volta; retomar, reabrir e bifurcar são recusados.
+    if (rec.role === 'planner') return no('planner_session', 'Abra um novo planejador pela tela de Missões.');
     if (rec.supersededBy) return no('superseded', 'Esta sessão já foi reaberta como um terminal novo.');
     if (!reopen && !can(prov, 'resume')) return no('provider_no_resume', `${prov.label} não oferece retomada de sessão: abra um terminal novo.`);
     if (!UUID_RE.test(String(rec.claudeSessionId))) return no('invalid_record', 'O registro desta sessão não tem um identificador válido do Claude Code.');
@@ -390,11 +439,13 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
     if (rec.worktreeId) {
       wt = (db.worktrees ?? []).find((w) => w && w.id === rec.worktreeId);
       if (!wt) return no('worktree_missing', 'O worktree desta sessão não existe mais.');
+      if (wt.flow && audited !== true) return no('flow_copy_resume', 'Esta sessão é de uma etapa de missão: retome pela missão (botão Retomar), que confere a cópia antes de abrir.'); // N1: vale para retomar, reabrir, fork e o `resumable`/`reopenable` do histórico
       const why = worktreeProblem(wt, ws.id); // mesma regra do ciclo (worktrees.js)
       if (why) return no('worktree_invalid', { workspace: 'O worktree desta sessão pertence a outro espaço de trabalho.', state: 'O worktree desta sessão não está mais em um estado utilizável.', op: 'O worktree desta sessão tem uma operação em andamento.', path: 'O worktree desta sessão não existe mais no disco.', missing: 'O worktree desta sessão não existe mais.' }[why]);
       let isDir = false; try { isDir = fs.statSync(wt.path).isDirectory(); } catch { /* sumiu */ }
       if (!isDir || norm(wt.path) !== norm(rec.cwd)) return no('worktree_invalid', 'O worktree desta sessão não está mais no caminho original.');
       if (rec.sharedWorktree !== true && [...sessions.values()].some((x) => x.status === 'running' && x.worktreeId === wt.id)) return no('worktree_busy', 'Outro terminal já usa o worktree desta sessão.');
+      if (wt.flow && worktreeUsers(wt.id).length) return no('worktree_busy', 'Outro terminal (ou um processo cujo encerramento não foi confirmado) ainda usa o worktree desta etapa.'); // etapa de missão: um terminal por worktree, contando os retidos
       cwd = wt.path;
     } else if (norm(rec.cwd) !== norm(v.path)) return no('cwd_mismatch', 'O diretório registrado desta sessão difere do espaço de trabalho atual; não foi retomada.');
     if (!reopen && !hasTranscript(rec)) return no('transcript_missing', 'A transcrição desta sessão não foi encontrada: não há o que retomar.');
@@ -403,20 +454,22 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
   /**
    * Retoma uma sessão REGISTRADA. O cliente só informa o id do registro (ses_…) e se quer fork: UUID, caminhos e papel vêm do banco, nunca do cliente.
    * Sem fallback automático: sessão ativa ou com processo ainda vivo é conflito (409); o fork só acontece quando pedido.
+   * O 2º parâmetro só existe para o SERVIDOR (runner de missões): `audited: true` = a cópia da etapa já foi conferida (ver resumeBlock). A rota HTTP nunca o passa.
    */
-  async function resume({ recordId, fork = false, reopen = false, cols, rows, acknowledgeProjectConfig = false } = {}) {
+  async function resume({ recordId, fork = false, reopen = false, cols, rows, acknowledgeProjectConfig = false } = {}, { audited = false } = {}) {
     if (!REC_RE.test(String(recordId))) return fail(400, 'Identificador de sessão inválido.');
     const rec = records().find((x) => x && x.id === recordId); if (!rec) return fail(404, 'Sessão registrada não encontrada.');
+    if (rec.role === 'planner') return fail(409, 'Abra um novo planejador pela tela de Missões.', { code: 'planner_session' }); // antes de qualquer outra regra (inclusive not_reopenable): retomar, reabrir e bifurcar são sempre recusados (ver resumeBlock)
     if (resuming.has(rec.id)) return fail(409, 'Esta sessão já está sendo retomada.');
     if (live().length + creating >= maxSessions) return fail(409, `Limite de ${maxSessions} terminais simultâneos atingido; feche algum antes de abrir outro.`);
     resuming.add(rec.id); creating++; // síncrono: nada acima espera
-    try { return await resumeReserved(rec, { fork: fork === true && reopen !== true, reopen: reopen === true, cols, rows, acknowledgeProjectConfig }); } finally { creating--; resuming.delete(rec.id); }
+    try { return await resumeReserved(rec, { fork: fork === true && reopen !== true, reopen: reopen === true, cols, rows, acknowledgeProjectConfig, audited: audited === true }); } finally { creating--; resuming.delete(rec.id); }
   }
-  async function resumeReserved(rec, { fork, reopen = false, cols, rows, acknowledgeProjectConfig }) {
+  async function resumeReserved(rec, { fork, reopen = false, cols, rows, acknowledgeProjectConfig, audited = false }) {
     // `reopen`: a sessão não tem como ser retomada (nunca teve conversa, ou o provedor não retoma, como o Codex), mas o terminal ESTAVA aberto: abre um terminal NOVO no lugar dela, com o mesmo papel, título,
     // provedor, conta, tópico e worktree. Só vale para quem estava aberto quando o servidor parou; a antiga fica marcada como reaberta e não volta a ser restaurada.
     if (reopen && rec.state !== 'interrupted') return fail(409, 'Só um terminal que estava aberto quando o servidor parou pode ser reaberto.', { code: 'not_reopenable' });
-    const first = resumeBlock(rec, transcriptLookup([rec]), { reopen });
+    const first = resumeBlock(rec, transcriptLookup([rec]), { reopen, audited });
     if (first.block) return fail(first.block.status, first.block.message, { code: first.block.code });
     const { ws, wt } = first;
     // A1: na retomada a configuração executável do diretório EFETIVO é sempre inspecionada, com ou sem worktree. Só o worktree recém-criado (criação com `isolate`) é garantidamente
@@ -429,13 +482,13 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
     const cmd = cmdOf(prov); if (!cmd) return fail(409, prov.notFoundMessage ?? `${prov.label} não foi encontrado no PATH.`);
     const pty = ptyLib ?? loadPty(); if (!pty) return fail(503, 'O módulo de terminal (node-pty) não está disponível neste ambiente.');
     // depois de qualquer await (a inspeção acima): confere TUDO de novo, de forma síncrona, imediatamente antes de abrir o processo
-    const again = resumeBlock(rec, transcriptLookup([rec]), { reopen });
+    const again = resumeBlock(rec, transcriptLookup([rec]), { reopen, audited });
     if (again.block) return fail(again.block.status, again.block.message, { code: again.block.code });
     const claudeSessionId = fork || reopen ? newSessionId() : rec.claudeSessionId;
     if ((fork || reopen) && (!UUID_RE.test(String(claudeSessionId)) || records().some((x) => x.claudeSessionId === claudeSessionId))) return fail(500, 'Não foi possível gerar um identificador novo para o fork.');
     const keepFull = rec.fullAccess === true && (reopen || prov.id === 'claude'); // o Claude Code NÃO restaura o bypass ao retomar: sem isto o terminal voltava pedindo permissão (a missão tinha acesso total)
     const team = teamForRecord(rec); // skills da vaga e instrução do time recalculadas agora (o plugin não faz parte da sessão gravada)
-    const launched = launch({ prov, id: uid('term'), ws: again.ws, role: rec.role, label: rec.title, cwd: again.cwd, wt: again.wt, cols, rows, claudeSessionId, mode: reopen ? 'new' : fork ? 'fork' : 'resume', accountId: rec.accountId ?? 'system', ...(reopen ? tolerantChoice(prov.id, rec) : {}), fullAccess: keepFull, team, topicId: checkTopic(rec.topicId, again.ws).topicId ?? null, rec, cmd, pty, squadKey: again.wt ? ([...sessions.values()].find((x) => x.status === 'running' && x.worktreeId === again.wt.id)?.squadKey ?? uid('sq')) : null }); // tópico sumido/arquivado/de outro workspace: a sessão volta para Geral (null), sem bloquear a retomada
+    const launched = launch({ prov, id: uid('term'), ws: again.ws, role: rec.role, label: rec.title, cwd: again.cwd, wt: again.wt, cols, rows, claudeSessionId, mode: reopen ? 'new' : fork ? 'fork' : 'resume', accountId: rec.accountId ?? 'system', ...(reopen ? tolerantChoice(prov.id, rec) : {}), fullAccess: keepFull, team, topicId: checkTopic(rec.topicId, again.ws).topicId ?? null, rec, cmd, pty, squadKey: again.wt && !again.wt.flow ? ([...sessions.values()].find((x) => x.status === 'running' && x.worktreeId === again.wt.id)?.squadKey ?? uid('sq')) : null }); // tópico sumido/arquivado/de outro workspace: a sessão volta para Geral (null), sem bloquear a retomada
     if (reopen && launched.ok) { rec.supersededBy = launched.session.recordId; persistLoose(); }
     return launched;
   }
@@ -540,7 +593,9 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
   }
   function killAllSync() { for (const s of live()) kill(s, 'shutdown'); }
 
-  return { create, resume, history, write, resize, readOutput, peek, close, subscribe, subscribeAll, killAllSync, get: (id) => { const s = get(id); return s ? describe(s) : null; }, list: () => [...sessions.values()].map(describe), count: () => live().length, usesAccount: (accountId) => live().some((x) => (x.accountId ?? 'system') === accountId) || [...lingering.values()].some((l) => (l.accountId ?? 'system') === accountId), roles: () => roleIds().map((k) => ({ id: k, label: ROLES[k].label, color: ROLES[k].color, edits: ROLES[k].edits === true })), providers: () => providerIdsList().map((id) => { const p = provOf(id); let ok = false; try { ok = !!cmdOf(p); } catch { ok = false; } return { id: p.id, label: p.label, available: ok, capabilities: { resume: can(p, 'resume') } }; }) };
+  /** Leitura INTERNA mínima de um registro de sessão (runner de missões, N2: a sessão pertence à cópia conferida?). Sem UUID do Claude Code nem caminhos; nenhuma rota a expõe. */
+  const recordInfo = (recordId) => { const r = records().find((x) => x && x.id === recordId); return r ? { id: r.id, workspaceId: r.workspaceId ?? null, worktreeId: r.worktreeId ?? null } : null; };
+  return { create, resume, recordInfo, history, write, resize, readOutput, peek, close, subscribe, subscribeAll, killAllSync, get: (id) => { const s = get(id); return s ? describe(s) : null; }, list: () => [...sessions.values()].map(describe), count: () => live().length, usesAccount: (accountId) => live().some((x) => (x.accountId ?? 'system') === accountId) || [...lingering.values()].some((l) => (l.accountId ?? 'system') === accountId), roles: () => roleIds().map((k) => ({ id: k, label: ROLES[k].label, color: ROLES[k].color, edits: ROLES[k].edits === true, team: TEAM_ROLES.includes(k) })), providers: () => providerIdsList().map((id) => { const p = provOf(id); let ok = false; try { ok = !!cmdOf(p); } catch { ok = false; } return { id: p.id, label: p.label, available: ok, capabilities: { resume: can(p, 'resume') } }; }) };
 }
 
 export function setupTerminals(app, { manager }) {
@@ -556,6 +611,7 @@ export function setupTerminals(app, { manager }) {
     }));
     res.json({ roles: manager.roles(), providers, maxSessions: MAX_SESSIONS, sessions: manager.list() });
   }));
+  // Campos mapeados um a um: opções internas (fullAccess) NUNCA chegam do corpo da requisição; o 2º parâmetro do create (flowWorktreeId do runner de missões) nunca é passado aqui.
   app.post('/api/terminals', asyncRoute(async (req, res) => { const b = body(req); out(res, await manager.create({ workspaceId: b.workspaceId, topicId: b.topicId, role: b.role, provider: b.provider === undefined || b.provider === null ? undefined : (typeof b.provider === 'string' ? b.provider : false), title: b.title, model: str(b.model), effort: str(b.effort), cols: b.cols, rows: b.rows, isolate: b.isolate === 'auto' ? 'auto' : b.isolate === true, expectEditors: b.expectEditors, squadId: typeof b.squadId === 'string' ? b.squadId : (b.squadId === undefined || b.squadId === null ? null : false), acknowledgeProjectConfig: b.acknowledgeProjectConfig === true, accountId: b.accountId, templateId: b.templateId, slotIndex: b.slotIndex }), (r) => ({ session: r.session, ...(r.warning ? { warning: r.warning } : {}) })); }));
   app.get('/api/terminals/stream', (req, res) => { if (manager.subscribeAll(res) === null) res.status(429).json({ error: 'Conexões demais com o fluxo de terminais.' }); });
   app.get('/api/terminals/:id/stream', (req, res) => {
@@ -565,6 +621,7 @@ export function setupTerminals(app, { manager }) {
     return undefined;
   });
   app.get('/api/terminals/history', (req, res) => res.json({ sessions: manager.history() }));
+  // Retomada: campos mapeados um a um e SEM o 2º parâmetro (`audited` é só do runner de missões, depois de conferir a cópia da etapa)
   app.post('/api/terminals/resume', asyncRoute(async (req, res) => { const b = body(req); out(res, await manager.resume({ recordId: typeof b.recordId === 'string' ? b.recordId : '', fork: b.fork === true, reopen: b.reopen === true, cols: b.cols, rows: b.rows, acknowledgeProjectConfig: b.acknowledgeProjectConfig === true }), (r) => ({ session: r.session })); }));
   app.post('/api/terminals/:id/input', (req, res) => out(res, manager.write(req.params.id, body(req).data)));
   app.post('/api/terminals/:id/resize', (req, res) => out(res, manager.resize(req.params.id, body(req).cols, body(req).rows), (r) => ({ session: r.session })));

@@ -66,7 +66,9 @@ test('sem serverName o padrão é "forge" (servidor e provedor concordam)', () =
 test('textos entregues ao agente não citam mais "servidor orchestrator" (o nome real é por instalação) e apontam para o servidor MCP do FORGE', () => {
   for (const [papel, r] of Object.entries(ROLES)) {
     assert.ok(!/servidor orchestrator/i.test(r.prompt), `prompt de ${papel}`);
-    if (papel === 'maestro') assert.match(r.prompt, /servidor MCP do FORGE/); else assert.match(r.prompt, /report_done do servidor MCP do FORGE/);
+    if (papel === 'maestro') assert.match(r.prompt, /servidor MCP do FORGE/);
+    else if (papel === 'planner') { assert.match(r.prompt, /servidor MCP do FORGE/); assert.ok(!/report_done/.test(r.prompt), 'o planejador não recebe tarefas: não cita report_done'); } // missões por briefing
+    else assert.match(r.prompt, /report_done do servidor MCP do FORGE/);
   }
   const textoSkills = JSON.stringify(SKILLS);
   assert.ok(!/servidor orchestrator/i.test(textoSkills)); assert.match(textoSkills, /servidor MCP do FORGE/);

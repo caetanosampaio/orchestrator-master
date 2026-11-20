@@ -62,6 +62,24 @@ test('validação estrita: papel/provedor fora da lista, vagas demais ou de meno
   assert.equal((await jr(await call('/api/team-templates'))).j.templates.length, 1, 'nada inválido foi gravado');
 });
 
+test('planejador de missões NÃO entra em times: POST/PUT recusam com mensagem explícita; banco com vaga planner é ignorado na leitura e no findTeam', async () => {
+  const { TEAM_ROLES } = await import('../terminals.js');
+  assert.deepEqual([...TEAM_ROLES], ['maestro', 'builder', 'reviewer', 'scout'], 'papéis de time (o planner fica de fora)');
+  const n = (await jr(await call('/api/team-templates'))).j.templates.length;
+  for (const provider of ['claude', 'codex']) {
+    const r = await jr(await call('/api/team-templates', 'POST', { name: `Com planner ${provider}`, slots: slots(['builder', 'claude'], ['planner', provider]) }));
+    assert.equal(r.status, 400); assert.equal(r.j.error, `slots[1]: ${T.PLANNER_NOT_IN_TEAM}`); assert.match(r.j.error, /Missões/);
+  }
+  assert.match(T.validateTemplateBody({ name: 'x', slots: slots(['planner', 'claude']) }).error, /Planejador não entra em times/);
+  const ok = await jr(await call('/api/team-templates', 'POST', { name: 'Sem planner', slots: slots(['builder', 'claude']) })); assert.equal(ok.status, 201);
+  const put = await jr(await call(`/api/team-templates/${ok.j.template.id}`, 'PUT', { slots: slots(['planner', 'claude']) })); assert.equal(put.status, 400); assert.match(put.j.error, /Planejador não entra em times/);
+  assert.equal((await jr(await call('/api/team-templates'))).j.templates.length, n + 1, 'só o time válido foi gravado');
+  // leitura tolerante: um time gravado à mão com vaga planner é descartado (como papel inválido) e não abre terminais
+  const hand = { teamTemplates: [{ id: 'tpl_0a0a0a0a', name: 'À mão', slots: [{ role: 'planner', provider: 'claude' }] }, { id: 'tpl_0b0b0b0b', name: 'Bom', slots: [{ role: 'scout', provider: 'claude' }] }] };
+  assert.deepEqual(T.readTemplates(hand).map((t) => t.id), ['tpl_0b0b0b0b']); assert.equal(T.findTeam(hand, 'tpl_0a0a0a0a'), null);
+  await call(`/api/team-templates/${ok.j.template.id}`, 'DELETE');
+});
+
 test('nome único (sem diferenciar maiúsculas), limpeza de caracteres de controle e nome com acento', async () => {
   const dup = await jr(await call('/api/team-templates', 'POST', { name: 'CLAUDE LIDERA, CODEX CONSTRÓI', slots: SQUAD }));
   assert.equal(dup.status, 409); assert.match(dup.j.error, /Já existe/);

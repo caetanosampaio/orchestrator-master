@@ -45,6 +45,19 @@ test('codex.paneArgs: sandbox e aprovação fixos, prompt em developer_instructi
   assert.throws(() => codexProvider.paneArgs({ mode: 'resume' }), /não oferece retomada/); assert.throws(() => codexProvider.paneArgs({ mode: 'fork' }), /não oferece retomada/);
 });
 
+test('codex.paneArgs readOnly (planejador): sandbox read-only com aprovação on-request, MCP igual; readOnly vence fullAccess; sem readOnly nada muda', () => {
+  const mcp = { url: URL_, serverName: NAME };
+  const ro = codexProvider.paneArgs({ prompt: 'PLANEJADOR', mcp, readOnly: true }), rw = codexProvider.paneArgs({ prompt: 'PLANEJADOR', mcp });
+  assert.deepEqual(ro.slice(0, 6), ['--no-alt-screen', '--no-daemon', '-s', 'read-only', '-a', 'on-request']);
+  assert.deepEqual(ro.slice(6), rw.slice(6), 'prompt e MCP (default_tools_approval_mode approve) iguais: as ferramentas do FORGE são chamadas pelo próprio Codex, fora do sandbox');
+  const both = codexProvider.paneArgs({ prompt: 'x', fullAccess: true, readOnly: true });
+  assert.deepEqual(both.slice(0, 6), ['--no-alt-screen', '--no-daemon', '-s', 'read-only', '-a', 'on-request']); assert.ok(!both.includes('--dangerously-bypass-approvals-and-sandbox'));
+  for (const v of [false, undefined, 'true', 1]) {
+    assert.deepEqual(codexProvider.paneArgs({ prompt: 'x', readOnly: v }).slice(0, 6), ['--no-alt-screen', '--no-daemon', '-s', 'workspace-write', '-a', 'on-request'], String(v));
+    assert.deepEqual(codexProvider.paneArgs({ prompt: 'x', fullAccess: true, readOnly: v }).slice(0, 3), ['--no-alt-screen', '--no-daemon', '--dangerously-bypass-approvals-and-sandbox'], String(v));
+  }
+});
+
 test('codex.envFor: herda o ambiente, mas sem variáveis do Claude Code/Anthropic; capacidades e configuração de projeto declaradas', () => {
   const e = codexProvider.envFor({ PATH: '/bin', HOME: '/h', CLAUDE_CODE_CHILD_SESSION: '1', CLAUDE_CONFIG_DIR: '/c', ANTHROPIC_API_KEY: 'k', OPENAI_API_KEY: 'o' });
   assert.deepEqual(e, { PATH: '/bin', HOME: '/h', OPENAI_API_KEY: 'o' });

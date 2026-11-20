@@ -5,7 +5,7 @@
 // Os times prontos do FORGE (team-presets.js) vão junto no GET, só para leitura.
 import * as store from './store.js';
 import { now, uid } from './store.js';
-import { ROLES } from './terminals.js';
+import { TEAM_ROLES } from './terminals.js';
 import { isProvider, getProvider, providerOptions, validateChoice, tolerantChoice } from './providers/index.js';
 import { isSkillId } from './loadouts.js';
 import { cleanLine } from './harness.js';
@@ -18,7 +18,9 @@ export const NO_SKILLS_PROVIDER = 'O Codex CLI ainda não recebe skills: tire as
 const isObj = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 const cleanName = (s) => s.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, ' ').replace(/ {2,}/g, ' ').trim();
 const norm = (s) => s.toLocaleLowerCase('pt-BR');
-const roleOk = (r) => typeof r === 'string' && Object.hasOwn(ROLES, r);
+// Só papéis de time (terminals.js TEAM_ROLES): o planejador de missões fica de fora (abre só pela tela de Missões, POST /api/flows/briefing).
+const roleOk = (r) => typeof r === 'string' && TEAM_ROLES.includes(r);
+export const PLANNER_NOT_IN_TEAM = 'O Planejador não entra em times: abra-o pela tela de Missões (Nova por briefing).';
 /** O provedor carrega skills (plugins)? Hoje só o Claude Code. */
 export const providerTakesSkills = (p) => isProvider(p) && getProvider(p).capabilities?.plugins === true;
 
@@ -28,6 +30,7 @@ function cleanSlots(slots) {
   if (!Array.isArray(slots) || slots.length < 1 || slots.length > MAX_SLOTS) return generic;
   const out = [];
   for (const [i, s] of slots.entries()) {
+    if (isObj(s) && s.role === 'planner') return { error: `slots[${i}]: ${PLANNER_NOT_IN_TEAM}` }; // recusa explícita (o papel existe, mas não é de time)
     if (!isObj(s) || !roleOk(s.role) || !isProvider(s.provider)) return generic;
     const extra = Object.keys(s).filter((k) => !SLOT_KEYS.includes(k));
     if (extra.length) return { error: `slots[${i}]: propriedades não permitidas: ${extra.map((k) => k.slice(0, 40)).join(', ')}.` };

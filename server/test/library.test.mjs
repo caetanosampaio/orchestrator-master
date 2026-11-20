@@ -14,15 +14,15 @@ after(() => fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 5, retryD
 
 const L = await import('../loadouts.js');
 const LIB = fileURLToPath(new URL('../library/skills/', import.meta.url));
-const PROCESS = ['protocolo-do-squad', 'delegar-com-clareza', 'cobrar-e-integrar', 'implementar-em-passos-pequenos', 'design-de-interface', 'revisar-alteracoes', 'mapear-codigo', 'relato-de-conclusao'];
+const PROCESS = ['protocolo-do-squad', 'delegar-com-clareza', 'cobrar-e-integrar', 'implementar-em-passos-pequenos', 'design-de-interface', 'revisar-alteracoes', 'mapear-codigo', 'planejar-missao', 'relato-de-conclusao']; // planejar-missao: skill do Planejador de missões (v2)
 const DOMAIN = ['backend-api', 'conteudo-e-copy', 'depuracao-metodica', 'frontend-design', 'pesquisa-web-segura', 'qualidade-e-testes', 'seguranca-pratica'];
 const AUTHORED = ['backend-api', 'qualidade-e-testes', 'seguranca-pratica', 'depuracao-metodica', 'pesquisa-web-segura', 'conteudo-e-copy', 'orquestrar-briefing'];
 const lf = (t) => t.replace(/\r\n/g, '\n'); // o Git no Windows pode trazer CRLF
 const sha = (t) => createHash('sha256').update(t, 'utf8').digest('hex');
 
-test('catálogo final: exatamente as 8 de processo + as 8 da biblioteca (16), com grupo e origem certos', () => {
+test('catálogo final: exatamente as 9 de processo + as 8 da biblioteca (17), com grupo e origem certos', () => {
   assert.deepEqual(Object.keys(L.SKILLS), [...PROCESS, ...[...DOMAIN, 'orquestrar-briefing'].sort()]);
-  assert.equal(Object.keys(L.SKILLS).length, 16);
+  assert.equal(Object.keys(L.SKILLS).length, 17);
   for (const id of PROCESS) assert.deepEqual([L.SKILLS[id].group, L.SKILLS[id].source, L.SKILLS[id].license, L.SKILLS[id].origin], ['processo', 'forge', null, null], id);
   for (const id of DOMAIN) assert.equal(L.SKILLS[id].group, 'dominio', id);
   assert.equal(L.SKILLS['orquestrar-briefing'].group, 'processo', 'a skill do maestro é de processo, mas mora na biblioteca');
@@ -87,7 +87,7 @@ test('plugin: a vendorizada leva o LICENSE.txt ao lado do SKILL.md; as demais s�
 
 test('GET /api/loadouts (view): cada skill do catálogo traz id, description, body, group, source, license e origin', () => {
   const v = L.loadoutView({});
-  assert.equal(v.catalog.skills.length, 16);
+  assert.equal(v.catalog.skills.length, 17);
   for (const s of v.catalog.skills) assert.deepEqual(Object.keys(s).sort(), ['body', 'description', 'group', 'id', 'license', 'origin', 'source'], s.id);
   const f = v.catalog.skills.find((s) => s.id === 'frontend-design'); assert.deepEqual([f.group, f.source, f.license], ['dominio', 'vendored', 'Apache-2.0']);
   assert.ok(!JSON.stringify(v).includes('TERMS AND CONDITIONS'), 'o texto da licença não vai para a API');
