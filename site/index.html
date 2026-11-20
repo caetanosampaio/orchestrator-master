@@ -1,0 +1,853 @@
+<!doctype html>
+<html lang="pt-BR" class="no-js">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FORGE: a ADE para trabalhar com agentes de IA</title>
+  <meta name="description" content="O FORGE é a ADE para trabalhar com agentes todo dia: Claude Code, Codex e as próximas IAs em paralelo, cada uma na sua cópia do código, com Maestro, aprovação, revisão, fluxos e consumo numa janela só. Usa as assinaturas que você já paga.">
+  <meta name="theme-color" content="#1c1c1c">
+  <meta property="og:title" content="FORGE: a ADE para trabalhar com agentes de IA">
+  <meta property="og:description" content="Rode Claude Code, Codex e os próximos agentes em paralelo, com as assinaturas que você já paga. Um Maestro divide o trabalho e você aprova.">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="assets/fonts/geist.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="sections.css">
+</head>
+<body>
+  <!-- Traços da logo do ferreiro (de client/src/forge-logo.mjs), reaproveitados por <use>. O mascote animado é montado em app.js. -->
+  <svg width="0" height="0" class="sr" aria-hidden="true" focusable="false">
+    <defs>
+      <g id="logo-paths" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M26.3 72.4 L26 78.3"/><path d="M33.8 72.6 L34.2 78.4"/><path d="M24.9 52.4 C24.6 59 24.7 65.6 24.3 72.2 C28.4 72.6 32.4 72.5 36.6 72.2"/><path d="M24.9 39.2 C29 37.9 33.4 37.4 37.1 37.8 C39.9 40.4 39.6 47.6 38.6 54.4 C37.9 60.4 37.2 66.4 36.6 72.2"/><path d="M35.9 40.2 C34.6 44.6 34.7 50.2 35.8 54.1 C37.1 50 37.2 44.4 35.9 40.2"/><path d="M21.9 41.2 C19.6 42.6 18 44.4 18.1 46.4 C18.2 48.6 18.4 50.6 19.1 51.9 C20.8 50.4 22.6 49.9 24.8 51 L25 52.4"/><path d="M25 52.4 C28.2 52.2 31.2 52.6 34.2 52.9"/><path d="M23.2 41.6 C26.4 43.7 29.6 45.9 32.6 48.1 C33.4 49 33.4 49.8 33.1 50.6 C32.4 54 31.6 57.2 30.8 60.4"/><path d="M15.4 61.9 C27.6 61.4 40.2 61.8 52.9 61.5"/><path d="M20.4 40.6 L19.9 38.9 L21.3 38.3 L21.5 36.9 L23 37.6 L24.4 36.8 L24.6 38.4 L25.9 39.2 L24.8 40.4 L25.1 41.8 L23.5 41.6 L22.4 42.7 L21.8 41.3 Z" fill="currentColor"/><path d="M31.6 62.4 L37.1 62 L36.7 72.1 L34.4 72.2 C33.6 68.8 32.8 65.4 31.6 62.4 Z" fill="currentColor"/><path d="M42.6 64.4 L58.9 64.6 L58.6 66.9 L55.6 67.9 L49.6 68.2 L45.3 67.6 L42.8 66.4 Z" fill="currentColor"/><path d="M47.1 68.4 L45.6 78"/><path d="M55.1 68.2 L57.2 78"/><path d="M48.6 71.9 C49.4 74.2 48.2 75.9 49.1 77.9"/><path d="M51.2 70.9 C52 73.6 50.6 75.6 51.5 77.9"/><path d="M53.8 72.1 C53.1 74.4 54.4 76.1 53.6 77.8"/><path d="M49.4 57.4 C47.4 54.2 51.4 51.8 49.2 48.2"/><path d="M53.4 55.2 C51.2 50.8 55.6 47.4 53.1 41.8"/><path d="M7.6 78.1 C30 77.6 60 78.5 92.5 78.2"/>
+      </g>
+      <g id="logo-glyph" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M42.6 64.4 L58.9 64.6 L58.6 66.9 L55.6 67.9 L49.6 68.2 L45.3 67.6 L42.8 66.4 Z" fill="currentColor"/><path d="M47.1 68.4 L45.6 78"/><path d="M55.1 68.2 L57.2 78"/><path d="M49.4 57.4 C47.4 54.2 51.4 51.8 49.2 48.2"/><path d="M53.4 55.2 C51.2 50.8 55.6 47.4 53.1 41.8"/><path d="M40.4 78 L61.6 78"/></g>
+    </defs>
+  </svg>
+
+  <!-- Logos oficiais (Simple Icons, CC0; marcas dos respectivos donos, usadas só para indicar compatibilidade) e ícones de traço das seções. -->
+  <svg width="0" height="0" class="sr" aria-hidden="true" focusable="false">
+    <defs>
+      <symbol id="i-claude" viewBox="0 0 24 24"><path fill="#D97757" d="m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z"/></symbol>
+      <symbol id="i-openai" viewBox="0 0 24 24"><path fill="currentColor" d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z"/></symbol>
+      <symbol id="i-anthropic" viewBox="0 0 24 24"><path fill="currentColor" d="M17.3041 3.541h-3.6718l6.696 16.918H24Zm-10.6082 0L0 20.459h3.7442l1.3693-3.5527h7.0052l1.3693 3.5528h3.7442L10.5363 3.5409Zm-.3712 10.2232 2.2914-5.9456 2.2914 5.9456Z"/></symbol>
+      <symbol id="i-plug" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v4M15 3v4"/><path d="M6.5 7h11v3.5a5.5 5.5 0 0 1-11 0V7Z"/><path d="M12 16v5"/></g></symbol>
+      <symbol id="i-chat" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H9.5L4 20V5Z"/><path d="M8 9.5h8M8 12.5h5"/></g></symbol>
+      <symbol id="i-approve" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 5 6v5c0 4.4 3 8.3 7 9.5 4-1.2 7-5.1 7-9.5V6l-7-3Z"/><path d="m9 12 2.2 2.2L15.5 10"/></g></symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 5 6v5c0 4.4 3 8.3 7 9.5 4-1.2 7-5.1 7-9.5V6l-7-3Z"/><circle cx="11.5" cy="11.5" r="2.6"/><path d="m13.4 13.4 2.1 2.1"/></g></symbol>
+      <symbol id="i-lanes" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h13M3 12h16M3 18h10"/><path d="m16 3.5 3 2.5-3 2.5M19 9.5l3 2.5-3 2.5M13 15.5l3 2.5-3 2.5"/></g></symbol>
+      <symbol id="i-merge" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="12" r="2"/><path d="M6 7v10"/><path d="M6 7c0 4 4 5 10 5"/></g></symbol>
+      <symbol id="i-branch" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.2"/><circle cx="6" cy="18" r="2.2"/><circle cx="18" cy="8" r="2.2"/><path d="M6 8.2v7.6M18 10.2c0 3.6-3.5 4.6-9.6 5.6"/></g></symbol>
+      <symbol id="i-test" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h10M4 18h7"/><path d="m15 17 2.2 2.2L21 15"/></g></symbol>
+      <symbol id="i-review" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.5" cy="10.5" r="6"/><path d="m15 15 5 5"/><path d="m8 10.5 1.8 1.8 3-3.3"/></g></symbol>
+      <symbol id="i-chart" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 20V11M11 20V5M17 20v-7M22 20H2"/></g></symbol>
+      <symbol id="i-key" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="m11 12 8.5-8.5M16.5 6.5l2.5 2.5M14 9l2 2"/></g></symbol>
+      <symbol id="i-users" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19.5a5.5 5.5 0 0 1 11 0"/><circle cx="17" cy="9" r="2.4"/><path d="M15.8 14.3a4.5 4.5 0 0 1 5.2 4.6"/></g></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.2 4.2L19 7"/></g></symbol>
+      <symbol id="i-clock" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></g></symbol>
+      <symbol id="i-flow" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3.5" width="6.5" height="5" rx="1.2"/><rect x="14.5" y="3.5" width="6.5" height="5" rx="1.2"/><rect x="8.75" y="15.5" width="6.5" height="5" rx="1.2"/><path d="M6.25 8.5v1.5a2 2 0 0 0 2 2h7.5a2 2 0 0 0 2-2V8.5M12 12v3.5"/></g></symbol>
+      <symbol id="i-bug" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="7.5" y="8" width="9" height="12" rx="4.5"/><path d="M12 11v9M9.5 5.5 10.7 8M14.5 5.5 13.3 8M3.5 13h4M16.5 13h4M4.5 8.5l3 1.8M19.5 8.5l-3 1.8M4.5 18.5l3-1.6M19.5 18.5l-3-1.6"/></g></symbol>
+      <symbol id="i-play" viewBox="0 0 24 24"><path fill="currentColor" d="M8 5.2v13.6a.8.8 0 0 0 1.2.7l10.6-6.8a.8.8 0 0 0 0-1.4L9.2 4.5A.8.8 0 0 0 8 5.2Z"/></symbol>
+      <symbol id="i-refresh" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11.5A8 8 0 1 0 17.7 17"/><path d="M20 4.5v7h-7"/></g></symbol>
+      <symbol id="i-web" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 9v11"/></g></symbol>
+      <symbol id="i-api" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m8 7-5 5 5 5M16 7l5 5-5 5M13.5 4.5l-3 15"/></g></symbol>
+      <symbol id="i-code" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m8 10 2.5 2.5L8 15M13 15h3.5"/></g></symbol>
+      <symbol id="i-layers" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 12.5 9 5 9-5"/><path d="m3 16.5 9 5 9-5"/></g></symbol>
+      <symbol id="i-book" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 5a2 2 0 0 1 2-2h13v15h-13a2 2 0 0 0-2 2V5Z"/><path d="M4.5 20a2 2 0 0 0 2 1h13v-3M9 7.5h6.5M9 11h4.5"/></g></symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></g></symbol>
+      <symbol id="i-grid" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5"/></g></symbol>
+      <symbol id="i-route" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="5.5" cy="18.5" r="2"/><circle cx="18.5" cy="5.5" r="2"/><path d="M7.5 18.5h7a3.5 3.5 0 0 0 0-7h-5a3.5 3.5 0 0 1 0-7h7"/></g></symbol>
+      <symbol id="i-eye" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="2.8"/></g></symbol>
+      <symbol id="i-history" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1"/><path d="M3.5 4.5v4h4"/><path d="M12 8v4l3 2"/></g></symbol>
+      <symbol id="i-bolt" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2.5 4.5 14h7l-1 7.5L19 10h-7l1-7.5Z"/></g></symbol>
+      <symbol id="i-desktop" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8.5 20h7M12 16v4"/></g></symbol>
+      <symbol id="i-file-check" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6.5a1.5 1.5 0 0 0-1.5 1.5v15A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V8l-5-5Z"/><path d="M14 3v5h5"/><path d="m9 14 2 2 4-4"/></g></symbol>
+      <symbol id="i-cloud-off" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18.5h10a4 4 0 0 0 .7-7.9 6 6 0 0 0-11.4-1A4.5 4.5 0 0 0 7 18.5Z"/><path d="m3.5 3.5 17 17"/></g></symbol>
+      <symbol id="i-download" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/></g></symbol>
+      <!-- IAs "em breve" no FORGE (client/src/provider-catalog.js). Logos do LobeHub Icons; os de várias cores ficam com as cores oficiais, os monocromáticos em currentColor. -->
+      <symbol id="i-gemini" viewBox="0 0 24 24"><defs><linearGradient id="gem-a" gradientUnits="userSpaceOnUse" x1="7" x2="11" y1="15.5" y2="12"><stop stop-color="#08B962"/><stop offset="1" stop-color="#08B962" stop-opacity="0"/></linearGradient><linearGradient id="gem-b" gradientUnits="userSpaceOnUse" x1="8" x2="11.5" y1="5.5" y2="11"><stop stop-color="#F94543"/><stop offset="1" stop-color="#F94543" stop-opacity="0"/></linearGradient><linearGradient id="gem-c" gradientUnits="userSpaceOnUse" x1="3.5" x2="17.5" y1="13.5" y2="12"><stop stop-color="#FABC12"/><stop offset=".46" stop-color="#FABC12" stop-opacity="0"/></linearGradient></defs><path d="M20.616 10.835a14.147 14.147 0 01-4.45-3.001 14.111 14.111 0 01-3.678-6.452.503.503 0 00-.975 0 14.134 14.134 0 01-3.679 6.452 14.155 14.155 0 01-4.45 3.001c-.65.28-1.318.505-2.002.678a.502.502 0 000 .975c.684.172 1.35.397 2.002.677a14.147 14.147 0 014.45 3.001 14.112 14.112 0 013.679 6.453.502.502 0 00.975 0c.172-.685.397-1.351.677-2.003a14.145 14.145 0 013.001-4.45 14.113 14.113 0 016.453-3.678.503.503 0 000-.975 13.245 13.245 0 01-2.003-.678z" fill="#3186FF"/><path d="M20.616 10.835a14.147 14.147 0 01-4.45-3.001 14.111 14.111 0 01-3.678-6.452.503.503 0 00-.975 0 14.134 14.134 0 01-3.679 6.452 14.155 14.155 0 01-4.45 3.001c-.65.28-1.318.505-2.002.678a.502.502 0 000 .975c.684.172 1.35.397 2.002.677a14.147 14.147 0 014.45 3.001 14.112 14.112 0 013.679 6.453.502.502 0 00.975 0c.172-.685.397-1.351.677-2.003a14.145 14.145 0 013.001-4.45 14.113 14.113 0 016.453-3.678.503.503 0 000-.975 13.245 13.245 0 01-2.003-.678z" fill="url(#gem-a)"/><path d="M20.616 10.835a14.147 14.147 0 01-4.45-3.001 14.111 14.111 0 01-3.678-6.452.503.503 0 00-.975 0 14.134 14.134 0 01-3.679 6.452 14.155 14.155 0 01-4.45 3.001c-.65.28-1.318.505-2.002.678a.502.502 0 000 .975c.684.172 1.35.397 2.002.677a14.147 14.147 0 014.45 3.001 14.112 14.112 0 013.679 6.453.502.502 0 00.975 0c.172-.685.397-1.351.677-2.003a14.145 14.145 0 013.001-4.45 14.113 14.113 0 016.453-3.678.503.503 0 000-.975 13.245 13.245 0 01-2.003-.678z" fill="url(#gem-b)"/><path d="M20.616 10.835a14.147 14.147 0 01-4.45-3.001 14.111 14.111 0 01-3.678-6.452.503.503 0 00-.975 0 14.134 14.134 0 01-3.679 6.452 14.155 14.155 0 01-4.45 3.001c-.65.28-1.318.505-2.002.678a.502.502 0 000 .975c.684.172 1.35.397 2.002.677a14.147 14.147 0 014.45 3.001 14.112 14.112 0 013.679 6.453.502.502 0 00.975 0c.172-.685.397-1.351.677-2.003a14.145 14.145 0 013.001-4.45 14.113 14.113 0 016.453-3.678.503.503 0 000-.975 13.245 13.245 0 01-2.003-.678z" fill="url(#gem-c)"/></symbol>
+      <symbol id="i-cursor" viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M22.106 5.68L12.5.135a.998.998 0 00-.998 0L1.893 5.68a.84.84 0 00-.419.726v11.186c0 .3.16.577.42.727l9.607 5.547a.999.999 0 00.998 0l9.608-5.547a.84.84 0 00.42-.727V6.407a.84.84 0 00-.42-.726zm-.603 1.176L12.228 22.92c-.063.108-.228.064-.228-.061V12.34a.59.59 0 00-.295-.51l-9.11-5.26c-.107-.062-.063-.228.062-.228h18.55c.264 0 .428.286.296.514z"/></symbol>
+      <symbol id="i-copilot" viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M19.245 5.364c1.322 1.36 1.877 3.216 2.11 5.817.622 0 1.2.135 1.592.654l.73.964c.21.278.323.61.323.955v2.62c0 .339-.173.669-.453.868C20.239 19.602 16.157 21.5 12 21.5c-4.6 0-9.205-2.583-11.547-4.258-.28-.2-.452-.53-.453-.868v-2.62c0-.345.113-.679.321-.956l.73-.963c.392-.517.974-.654 1.593-.654l.029-.297c.25-2.446.81-4.213 2.082-5.52 2.461-2.54 5.71-2.851 7.146-2.864h.198c1.436.013 4.685.323 7.146 2.864zm-7.244 4.328c-.284 0-.613.016-.962.05-.123.447-.305.85-.57 1.108-1.05 1.023-2.316 1.18-2.994 1.18-.638 0-1.306-.13-1.851-.464-.516.165-1.012.403-1.044.996a65.882 65.882 0 00-.063 2.884l-.002.48c-.002.563-.005 1.126-.013 1.69.002.326.204.63.51.765 2.482 1.102 4.83 1.657 6.99 1.657 2.156 0 4.504-.555 6.985-1.657a.854.854 0 00.51-.766c.03-1.682.006-3.372-.076-5.053-.031-.596-.528-.83-1.046-.996-.546.333-1.212.464-1.85.464-.677 0-1.942-.157-2.993-1.18-.266-.258-.447-.661-.57-1.108-.32-.032-.64-.049-.96-.05zm-2.525 4.013c.539 0 .976.426.976.95v1.753c0 .525-.437.95-.976.95a.964.964 0 01-.976-.95v-1.752c0-.525.437-.951.976-.951zm5 0c.539 0 .976.426.976.95v1.753c0 .525-.437.95-.976.95a.964.964 0 01-.976-.95v-1.752c0-.525.437-.951.976-.951zM7.635 5.087c-1.05.102-1.935.438-2.385.906-.975 1.037-.765 3.668-.21 4.224.405.394 1.17.657 1.995.657h.09c.649-.013 1.785-.176 2.73-1.11.435-.41.705-1.433.675-2.47-.03-.834-.27-1.52-.63-1.813-.39-.336-1.275-.482-2.265-.394zm6.465.394c-.36.292-.6.98-.63 1.813-.03 1.037.24 2.06.675 2.47.968.957 2.136 1.104 2.776 1.11h.044c.825 0 1.59-.263 1.995-.657.555-.556.765-3.187-.21-4.224-.45-.468-1.335-.804-2.385-.906-.99-.088-1.875.058-2.265.394zM12 7.615c-.24 0-.525.015-.84.044.03.16.045.336.06.526l-.001.159a2.94 2.94 0 01-.014.25c.225-.022.425-.027.612-.028h.366c.187 0 .387.006.612.028-.015-.146-.015-.277-.015-.409.015-.19.03-.365.06-.526a9.29 9.29 0 00-.84-.044z"/></symbol>
+      <symbol id="i-grok" viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M9.27 15.29l7.978-5.897c.391-.29.95-.177 1.137.272.98 2.369.542 5.215-1.41 7.169-1.951 1.954-4.667 2.382-7.149 1.406l-2.711 1.257c3.889 2.661 8.611 2.003 11.562-.953 2.341-2.344 3.066-5.539 2.388-8.42l.006.007c-.983-4.232.242-5.924 2.75-9.383.06-.082.12-.164.179-.248l-3.301 3.305v-.01L9.267 15.292M7.623 16.723c-2.792-2.67-2.31-6.801.071-9.184 1.761-1.763 4.647-2.483 7.166-1.425l2.705-1.25a7.808 7.808 0 00-1.829-1A8.975 8.975 0 005.984 5.83c-2.533 2.536-3.33 6.436-1.962 9.764 1.022 2.487-.653 4.246-2.34 6.022-.599.63-1.199 1.259-1.682 1.925l7.62-6.815"/></symbol>
+      <symbol id="i-kimi" viewBox="0 0 24 24"><path fill="#1783FF" d="M21.846 0a1.923 1.923 0 110 3.846H20.15a.226.226 0 01-.227-.226V1.923C19.923.861 20.784 0 21.846 0z"/><path fill="currentColor" d="M11.065 11.199l7.257-7.2c.137-.136.06-.41-.116-.41H14.3a.164.164 0 00-.117.051l-7.82 7.756c-.122.12-.302.013-.302-.179V3.82c0-.127-.083-.23-.185-.23H3.186c-.103 0-.186.103-.186.23V19.77c0 .128.083.23.186.23h2.69c.103 0 .186-.102.186-.23v-3.25c0-.069.025-.135.069-.178l2.424-2.406a.158.158 0 01.205-.023l6.484 4.772a7.677 7.677 0 003.453 1.283c.108.012.2-.095.2-.23v-3.06c0-.117-.07-.212-.164-.227a5.028 5.028 0 01-2.027-.807l-5.613-4.064c-.117-.078-.132-.279-.028-.381z"/></symbol>
+      <symbol id="i-kiro" viewBox="0 0 24 24"><path fill="#9046FF" d="M18.8 0H5.2A5.2 5.2 0 000 5.2v13.6A5.2 5.2 0 005.2 24h13.6a5.2 5.2 0 005.2-5.2V5.2A5.2 5.2 0 0018.8 0z"/><path fill="#fff" d="M7.97 16.376c-1.644 3.642 1.86 4.556 4.443 2.424.76 2.39 3.608.607 4.631-1.247 2.251-4.084 1.342-8.249 1.108-9.108-1.6-5.859-9.6-5.869-10.976.03-.323 1.033-.328 2.206-.507 3.423-.09.617-.16 1.009-.393 1.655-.139.373-.323.7-.62 1.257-.458.865-.264 2.53 2.101 1.665l.224-.1h-.01l-.001.001z"/><path fill="#000" d="M12.722 10.985c-.656 0-.755-.785-.755-1.252 0-.423.074-.756.218-.97a.61.61 0 01.537-.283c.229 0 .428.095.567.289.159.218.243.55.243.964 0 .785-.303 1.252-.805 1.252h-.005zm2.703 0c-.656 0-.755-.785-.755-1.252 0-.423.074-.756.219-.97a.61.61 0 01.536-.283c.229 0 .428.095.567.289.159.218.243.55.243.964 0 .785-.303 1.252-.805 1.252h-.005z"/></symbol>
+      <symbol id="i-antigravity" viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M21.751 22.607c1.34 1.005 3.35.335 1.508-1.508C17.73 15.74 18.904 1 12.037 1 5.17 1 6.342 15.74.815 21.1c-2.01 2.009.167 2.511 1.507 1.506 5.192-3.517 4.857-9.714 9.715-9.714 4.857 0 4.522 6.197 9.714 9.715z"/></symbol>
+      <symbol id="i-opencode" viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M16 6H8v12h8V6zm4 16H4V2h16v20z"/></symbol>
+      <symbol id="i-muse" viewBox="0 0 24 24"><path fill="currentColor" d="M5.91 3.869C6.777 3.869 7.396 4.546 7.396 5.607 7.396 6.669 7.225 7.626 6.941 9.659 6.738 11.084 6.389 13.258 6.243 14.162 6.523 13.628 7.178 12.378 7.294 12.144 8.666 9.375 10.096 6.901 10.508 6.246 11.054 5.372 11.535 5.021 12.278 5.021 12.664 5.022 13.124 5.217 13.352 5.477 13.66 5.829 13.725 6.398 13.714 7.019 13.698 7.97 13.574 9.486 13.405 11.177 13.33 11.929 13.185 13.466 13.087 14.496 13.965 12.925 15.591 10.035 16.246 9.025 16.817 8.146 17.392 7.579 18.164 7.579 18.83 7.579 19.651 8.05 19.603 9.302 19.531 11.149 19.264 15.174 19.143 16.979 19.96 15.79 21.033 14.029 21.436 13.367 21.842 12.698 22.26 12.157 22.894 12.139 23.544 12.12 23.979 12.562 23.999 13.244 24.019 13.927 23.612 14.694 23.072 15.565 22.486 16.511 21.831 17.523 21.033 18.468 20.236 19.413 19.502 20.131 18.384 20.131 17.382 20.131 16.677 19.465 16.628 18.246 16.602 17.607 16.723 16.234 16.814 15.16 16.92 13.917 17.048 12.717 17.137 11.923 16.256 13.535 14.402 16.912 13.568 18.23 12.752 19.52 12.355 19.974 11.493 19.975 10.631 19.975 10.253 19.354 10.241 18.42 10.227 17.407 10.988 11.324 11.246 9.297 10.828 10.191 9.801 12.385 9.157 13.69 8.534 14.953 7.489 17.135 6.73 18.393 6.184 19.298 5.57 19.975 4.66 19.975 3.75 19.975 3.236 19.363 3.236 18.379 3.236 17.395 3.521 15.756 3.827 13.723 3.98 12.739 4.155 11.667 4.352 10.53 4.496 9.708 4.746 8.26 4.9 7.371 4.2 8.461 2.941 10.423 2.558 11.014 2.131 11.671 1.749 12.15 1.115 12.15 0.416 12.15 0 11.605 0 10.971 0 10.337 0.322 9.848 0.846 8.988 1.518 7.883 2.726 6.377 3.388 5.586 4.168 4.654 4.947 3.869 5.91 3.869Z"/></symbol>
+      <symbol id="i-search" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></g></symbol>
+      <symbol id="i-chev" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></g></symbol>
+      <symbol id="i-cog" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></g></symbol>
+      <symbol id="i-live" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 8.5h18"/><circle cx="6" cy="6.2" r=".4"/><path d="m10 13 2 2 3.5-3.5"/></g></symbol>
+    </defs>
+  </svg>
+
+  <a class="skip" href="#conteudo">Pular para o conteúdo</a>
+
+  <header class="nav" data-nav>
+    <div class="wrap nav-in">
+      <a class="brand" href="#topo" aria-label="FORGE, início">
+        <span class="brand-tile"><svg viewBox="29 36 44 44" aria-hidden="true" style="stroke-width:4.4"><use href="#logo-glyph"/></svg></span>
+        <span class="brand-name">FORGE</span>
+      </a>
+      <nav aria-label="Seções">
+        <ul class="nav-links">
+          <li><a href="#recursos">Recursos</a></li>
+          <li><a href="#agentes">Agentes</a></li>
+          <li><a href="#fluxos">Fluxos</a></li>
+          <li><a href="#seguranca">Segurança</a></li>
+          <li data-plans-link hidden><a href="#planos">Planos</a></li>
+          <li><a href="#perguntas">Perguntas</a></li>
+        </ul>
+      </nav>
+      <a class="btn btn-primary btn-sm" href="#baixar">Baixar</a>
+    </div>
+  </header>
+
+  <main id="conteudo">
+    <!-- ================================================================ HERO -->
+    <section class="hero" id="topo" aria-labelledby="hero-title">
+      <canvas class="embers" data-embers aria-hidden="true"></canvas>
+      <div class="wrap">
+        <div class="hero-copy reveal">
+          <p class="eyebrow"><span class="dot dot-work" aria-hidden="true"></span> Versão 0.1.0 · pré-lançamento · Windows e macOS</p>
+          <h1 id="hero-title">A ADE para trabalhar <br>com agentes, todo dia.</h1>
+          <p class="lede">Rode o <strong>Claude Code</strong>, o <strong>Codex</strong> e os próximos agentes em paralelo, cada um na sua cópia do código. O Maestro divide o trabalho, você aprova, e terminais, revisão, fluxos e consumo ficam numa janela só.</p>
+          <div class="cta-row">
+            <a class="btn btn-primary" href="#baixar" data-download="win"><svg aria-hidden="true"><use href="#i-download"/></svg>Baixar para Windows</a>
+            <a class="btn btn-ghost" href="#baixar" data-download="mac"><svg aria-hidden="true"><use href="#i-download"/></svg>Baixar para macOS</a>
+          </div>
+          <p class="hero-note">
+            <span><svg aria-hidden="true"><use href="#i-key"/></svg>sem chave de API</span>
+            <span><svg aria-hidden="true"><use href="#i-check"/></svg>usa as assinaturas que você já paga</span>
+            <span><svg aria-hidden="true"><use href="#i-desktop"/></svg>roda na sua máquina</span>
+          </p>
+        </div>
+
+        <div class="hero-shot reveal">
+          <!-- Janela simulada do FORGE: o roteiro de app.js escreve nos quatro terminais e dispara os raios entre eles -->
+          <div class="cockpit app" data-cockpit aria-label="Demonstração simulada do FORGE com quatro agentes trabalhando em paralelo">
+            <div class="win-bar">
+              <span class="win-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span class="win-title mono">FORGE · loja-api · Squad</span>
+              <span class="mascot mascot-sm is-idle" data-mascot data-cockpit-mascot aria-hidden="true"></span>
+              <span class="win-badge" data-global-status><span class="dot dot-idle" aria-hidden="true"></span><span>parado</span></span>
+            </div>
+            <div class="app-body">
+              <aside class="app-side" aria-hidden="true">
+                <div class="app-search"><svg><use href="#i-search"/></svg>Buscar<kbd>Ctrl K</kbd></div>
+                <ul class="app-nav">
+                  <li class="on"><svg><use href="#i-grid"/></svg>Cockpit</li>
+                  <li><svg><use href="#i-flow"/></svg>Fluxos</li>
+                  <li><svg><use href="#i-route"/></svg>Quem faz cada tarefa</li>
+                  <li><svg><use href="#i-users"/></svg>Equipes</li>
+                </ul>
+                <div>
+                  <p class="app-h">Workspaces</p>
+                  <ul class="app-ws">
+                    <li class="on"><span class="ws-led" data-ws-led></span>loja-api<em>4</em></li>
+                    <li><span class="ws-led ok"></span>site<em>2</em></li>
+                    <li><span class="ws-led"></span>app-mobile<em>0</em></li>
+                  </ul>
+                </div>
+                <ul class="app-nav app-side-f">
+                  <li><svg><use href="#i-history"/></svg>Sessões</li>
+                  <li><svg><use href="#i-cog"/></svg>Configurações</li>
+                </ul>
+              </aside>
+              <div class="app-main">
+                <div class="app-tabs" aria-hidden="true">
+                  <span class="on"><svg><use href="#i-grid"/></svg>Todos</span>
+                  <span><svg><use href="#i-claude"/></svg>Maestro</span>
+                  <span><svg class="is-openai"><use href="#i-openai"/></svg>Construtor</span>
+                  <span><svg><use href="#i-claude"/></svg>Batedor</span>
+                  <span><svg><use href="#i-claude"/></svg>Revisor</span>
+                  <span><svg><use href="#i-plus"/></svg></span>
+                </div>
+                <div class="panes" data-panes>
+                  <svg class="bolts" data-bolts aria-hidden="true"></svg>
+                  <article class="pane" data-pane="maestro">
+                    <header class="pane-h"><svg class="plogo" aria-hidden="true"><use href="#i-claude"/></svg><span class="role">Maestro</span><span class="task-chip mono" data-task hidden></span><span class="state" data-state><span class="dot dot-idle" aria-hidden="true"></span><span>ocioso</span></span></header>
+                    <div class="pane-out mono" data-out aria-live="off"></div>
+                    <div class="approve" data-approve hidden>
+                      <span>3 tarefas pendentes</span>
+                      <button type="button" class="btn btn-primary btn-xs" data-approve-btn>Aprovar</button>
+                    </div>
+                    <footer class="pane-f mono"><span data-tokens>0</span> tokens · Opus</footer>
+                  </article>
+                  <article class="pane" data-pane="builder">
+                    <header class="pane-h"><svg class="plogo is-openai" aria-hidden="true"><use href="#i-openai"/></svg><span class="role">Construtor</span><span class="task-chip mono" data-task hidden></span><span class="state" data-state><span class="dot dot-idle" aria-hidden="true"></span><span>ocioso</span></span></header>
+                    <div class="pane-out mono" data-out aria-live="off"></div>
+                    <footer class="pane-f mono"><span data-tokens>0</span> tokens · <span class="wt">forge/construtor-a1</span></footer>
+                  </article>
+                  <article class="pane" data-pane="scout">
+                    <header class="pane-h"><svg class="plogo" aria-hidden="true"><use href="#i-claude"/></svg><span class="role">Batedor</span><span class="task-chip mono" data-task hidden></span><span class="state" data-state><span class="dot dot-idle" aria-hidden="true"></span><span>ocioso</span></span></header>
+                    <div class="pane-out mono" data-out aria-live="off"></div>
+                    <footer class="pane-f mono"><span data-tokens>0</span> tokens · somente leitura</footer>
+                  </article>
+                  <article class="pane" data-pane="review">
+                    <header class="pane-h"><svg class="plogo" aria-hidden="true"><use href="#i-claude"/></svg><span class="role">Revisor</span><span class="task-chip mono" data-task hidden></span><span class="state" data-state><span class="dot dot-idle" aria-hidden="true"></span><span>ocioso</span></span></header>
+                    <div class="pane-out mono" data-out aria-live="off"></div>
+                    <footer class="pane-f mono"><span data-tokens>0</span> tokens · Sonnet</footer>
+                  </article>
+                </div>
+              </div>
+            </div>
+            <div class="app-status">
+              <span class="use" aria-label="Claude: 38% da janela de 5 horas, 12% da semana"><svg aria-hidden="true"><use href="#i-claude"/></svg><span class="ubar" aria-hidden="true"><i style="--u:38%"></i></span><b>38%</b> 5 h · <b>12%</b> semana</span>
+              <span class="use" aria-label="Codex: 21% da janela de 5 horas, 9% da semana"><svg aria-hidden="true" class="is-openai"><use href="#i-openai"/></svg><span class="ubar" aria-hidden="true"><i style="--u:21%"></i></span><b>21%</b> 5 h · <b>9%</b> semana</span>
+              <span class="grow mono" data-summary>4 terminais · aguardando início</span>
+              <button type="button" class="link-btn" data-replay>Rodar de novo</button>
+            </div>
+          </div>
+          <p class="sim-note">Demonstração simulada de uma sessão real: pedido, plano, aprovação, execução em paralelo, revisão e entrega.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================================ FAIXA DE IAS -->
+    <section class="strip" aria-labelledby="strip-title">
+      <div class="wrap">
+        <p class="strip-h" id="strip-title">Funciona com as assinaturas que você já tem</p>
+        <ul class="strip-logos">
+          <li class="on"><svg aria-hidden="true"><use href="#i-claude"/></svg>Claude Code</li>
+          <li class="on"><svg aria-hidden="true" class="is-openai"><use href="#i-openai"/></svg>Codex</li>
+          <li><svg aria-hidden="true"><use href="#i-gemini"/></svg>Gemini</li>
+          <li><svg aria-hidden="true"><use href="#i-cursor"/></svg>Cursor</li>
+          <li><svg aria-hidden="true"><use href="#i-copilot"/></svg>Copilot</li>
+          <li><svg aria-hidden="true"><use href="#i-grok"/></svg>Grok</li>
+          <li><svg aria-hidden="true"><use href="#i-kimi"/></svg>Kimi</li>
+          <li><svg aria-hidden="true"><use href="#i-kiro"/></svg>Kiro</li>
+          <li><svg aria-hidden="true"><use href="#i-antigravity"/></svg>Antigravity</li>
+          <li><svg aria-hidden="true"><use href="#i-opencode"/></svg>OpenCode</li>
+        </ul>
+        <p class="strip-note"><span class="dot dot-ok" aria-hidden="true"></span>disponível hoje <span class="sep" aria-hidden="true">·</span> <span class="dot dot-idle" aria-hidden="true"></span>em breve</p>
+      </div>
+    </section>
+
+    <!-- ================================================================ RECURSOS (abas) -->
+    <section class="section" id="recursos" aria-labelledby="feat-title">
+      <div class="wrap">
+        <div class="section-head center reveal">
+          <p class="kicker">Recursos</p>
+          <h2 id="feat-title">Seu dia de trabalho, com uma equipe de agentes.</h2>
+          <p class="sub">Do pedido ao merge, sem trocar de janela. Cada parte do FORGE foi feita para várias IAs trabalharem ao mesmo tempo, com você no controle.</p>
+        </div>
+
+        <div class="ftabs" data-ftabs>
+          <div class="ftabs-list" role="tablist" aria-label="Recursos do FORGE">
+            <button type="button" role="tab" id="ft-1" aria-controls="fp-1" aria-selected="true" data-fp="maestro"><svg aria-hidden="true"><use href="#i-chat"/></svg>Maestro<span class="bar" aria-hidden="true"><i></i></span></button>
+            <button type="button" role="tab" id="ft-2" aria-controls="fp-2" aria-selected="false" tabindex="-1" data-fp="approve"><svg aria-hidden="true"><use href="#i-approve"/></svg>Aprovação<span class="bar" aria-hidden="true"><i></i></span></button>
+            <button type="button" role="tab" id="ft-3" aria-controls="fp-3" aria-selected="false" tabindex="-1" data-fp="parallel"><svg aria-hidden="true"><use href="#i-lanes"/></svg>Cópias isoladas<span class="bar" aria-hidden="true"><i></i></span></button>
+            <button type="button" role="tab" id="ft-4" aria-controls="fp-4" aria-selected="false" tabindex="-1" data-fp="merge"><svg aria-hidden="true"><use href="#i-merge"/></svg>Revisão e merge<span class="bar" aria-hidden="true"><i></i></span></button>
+            <button type="button" role="tab" id="ft-5" aria-controls="fp-5" aria-selected="false" tabindex="-1" data-fp="accounts"><svg aria-hidden="true"><use href="#i-chart"/></svg>Contas e uso<span class="bar" aria-hidden="true"><i></i></span></button>
+            <button type="button" role="tab" id="ft-6" aria-controls="fp-6" aria-selected="false" tabindex="-1" data-fp="grid"><svg aria-hidden="true"><use href="#i-grid"/></svg>Terminais<span class="bar" aria-hidden="true"><i></i></span></button>
+          </div>
+
+          <div class="ftabs-stage">
+            <!-- Maestro -->
+            <div class="fpanel" role="tabpanel" id="fp-1" aria-labelledby="ft-1">
+              <div class="fp-copy">
+                <h3>Um pedido. O Maestro divide o trabalho.</h3>
+                <p>Escreva o que precisa, do jeito que falaria com uma pessoa. O Maestro lê o projeto, consulta quem faz cada tipo de tarefa e envia partes pequenas, com arquivos separados, para cada agente.</p>
+                <ul class="fp-list">
+                  <li><svg aria-hidden="true"><use href="#i-check"/></svg>Coordena por um servidor MCP local</li>
+                  <li><svg aria-hidden="true"><use href="#i-check"/></svg>Cobra cada entrega e consolida o resultado</li>
+                  <li><svg aria-hidden="true"><use href="#i-check"/></svg>Nunca integra nada sozinho na sua branch</li>
+                </ul>
+              </div>
+              <div class="fp-art">
+                <div class="card stage-card term">
+                  <p class="stage-h mono term-h"><span><svg aria-hidden="true"><use href="#i-claude"/></svg>maestro · Opus · esforço Alto</span><span class="dim">loja-api</span></p>
+                  <p class="mono prompt"><span class="caret-ch">&gt;</span> <span data-type-target></span><span class="cursor" aria-hidden="true"></span></p>
+                  <div class="mono plan" data-plan>
+                    <p class="tool"><b>list_panes</b><span>Construtor ×2 · Batedor · Revisor</span></p>
+                    <p class="tool"><b>list_routes</b><span>16 tipos de tarefa</span></p>
+                    <p class="plan-h">Plano em 4 tarefas, arquivos separados:</p>
+                    <p class="plan-row"><span class="id">task_a1</span><span class="who">Batedor</span><span class="tt">map-risks</span><span class="ai"><svg aria-hidden="true"><use href="#i-claude"/></svg>Sonnet</span></p>
+                    <p class="plan-row"><span class="id">task_b2</span><span class="who">Construtor</span><span class="tt">new-feature</span><span class="ai"><svg aria-hidden="true"><use href="#i-claude"/></svg>Sonnet</span></p>
+                    <p class="plan-row"><span class="id">task_c3</span><span class="who">Construtor</span><span class="tt">write-tests</span><span class="ai"><svg aria-hidden="true" class="is-openai"><use href="#i-openai"/></svg>GPT-5 Codex</span></p>
+                    <p class="plan-row"><span class="id">task_d4</span><span class="who">Revisor</span><span class="tt">review-code</span><span class="ai"><svg aria-hidden="true"><use href="#i-claude"/></svg>Sonnet</span></p>
+                    <p class="tool wait"><b>send_task ×4</b><span>pendentes até você aprovar</span></p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Aprovação -->
+            <div class="fpanel" role="tabpanel" id="fp-2" aria-labelledby="ft-2" hidden>
+              <div class="fp-copy">
+                <h3>Nada roda sem o seu sinal verde.</h3>
+                <p>Cada tarefa mostra quem vai fazer, com qual IA e modelo, e em qual cópia do código. Você aprova uma a uma ou todas de uma vez. O modo autônomo existe, mas só liga se você ligar.</p>
+                <ul class="fp-list">
+                  <li><svg aria-hidden="true"><use href="#i-check"/></svg>Aprovar exige um token criado a cada abertura do app</li>
+                  <li><svg aria-hidden="true"><use href="#i-check"/></svg>Recusar não envia nada ao agente</li>
+                  <li><svg aria-hidden="true"><use href="#i-check"/></svg>Pedidos de permissão dos agentes aparecem como "aguardando você"</li>
+                </ul>
+              </div>
+              <div class="fp-art">
+                <div class="tasks">
+                  <div class="task card"><span class="mono id">task_a1 · map-risks</span><b>Mapear regras de preço e casos de borda</b><span class="who"><svg aria-hidden="true"><use href="#i-claude"/></svg>Batedor · Sonnet · somente leitura</span><span class="badge b-wait" data-badge>pendente</span></div>
+                  <div class="task card"><span class="mono id">task_b2 · new-feature</span><b>Implementar o cupom no checkout</b><span class="who"><svg aria-hidden="true"><use href="#i-claude"/></svg>Construtor · Sonnet · forge/construtor-a1</span><span class="badge b-wait" data-badge>pendente</span></div>
+                  <div class="task card"><span class="mono id">task_c3 · write-tests</span><b>Escrever os testes do cupom</b><span class="who"><svg aria-hidden="true" class="is-openai"><use href="#i-openai"/></svg>Construtor · GPT-5 Codex · forge/construtor-a2</span><span class="badge b-wait" data-badge>pendente</span></div>
+                  <div class="tasks-f"><p class="note">4 tarefas aguardando você</p><button type="button" class="btn btn-primary btn-xs" data-approve-all>Aprovar todas</button></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Cópias isoladas -->
+            <div class="fpanel" role="tabpanel" id="fp-3" aria-labelledby="ft-3" hidden>
+              <div class="fp-copy">
+                <h3>Cada agente na sua própria cópia do código.</h3>
+                <p>Construtores trabalham em worktrees do git separados, ao mesmo tempo, sem pisar no arquivo do outro. O Batedor só lê; o Revisor espera as branches ficarem prontas.</p>
+                <ul class="fp-list">
+                  <li><svg aria-hidden="true"><use href="#i-check"/></svg>Uma cópia por agente ou uma por equipe</li>
+                  <li><svg aria-hidden="true"><use href="#i-check"/></svg>Checagem de conflitos antes de integrar</li>
+                  <li><svg aria-hidden="true"><use href="#i-check"/></svg>Até 50 terminais abertos ao mesmo tempo</li>
+                </ul>
+              </div>
+              <div class="fp-art">
+                <div class="lanes">
+                  <svg class="lanes-git" viewBox="0 0 520 96" aria-hidden="true">
+                    <path class="lg-main" d="M10 80 H510"/>
+                    <path class="lg-b lg-b1" d="M60 80 C90 80 90 22 120 22 H470"/>
+                    <path class="lg-b lg-b2" d="M90 80 C120 80 120 50 150 50 H430"/>
+                    <circle class="lg-c lg-c1" cx="200" cy="22" r="4.5"/><circle class="lg-c lg-c1 d2" cx="300" cy="22" r="4.5"/><circle class="lg-c lg-c1 d3" cx="400" cy="22" r="4.5"/>
+                    <circle class="lg-c lg-c2" cx="240" cy="50" r="4.5"/><circle class="lg-c lg-c2 d2" cx="350" cy="50" r="4.5"/>
+                    <text x="10" y="94" class="lg-t">main</text><text x="476" y="26" class="lg-t">a1</text><text x="436" y="54" class="lg-t">a2</text>
+                  </svg>
+                  <div class="lane card"><div class="lane-h"><b><span class="dot dot-ok" aria-hidden="true"></span><svg aria-hidden="true" class="lane-logo"><use href="#i-claude"/></svg>Batedor</b><span class="mono">somente leitura</span></div><div class="meter ok"><i style="--to:1"></i></div><p class="mono dim" data-ticker="scout">Buscando "price" em src/</p></div>
+                  <div class="lane card"><div class="lane-h"><b><span class="dot dot-work" aria-hidden="true"></span><svg aria-hidden="true" class="lane-logo"><use href="#i-claude"/></svg>Construtor</b><span class="mono">forge/construtor-a1</span></div><div class="meter"><i style="--to:.78"></i></div><p class="mono dim" data-ticker="builder">Lendo src/checkout/total.js</p></div>
+                  <div class="lane card"><div class="lane-h"><b><span class="dot dot-work" aria-hidden="true"></span><svg aria-hidden="true" class="lane-logo is-openai"><use href="#i-openai"/></svg>Construtor</b><span class="mono">forge/construtor-a2</span></div><div class="meter"><i style="--to:.64"></i></div><p class="mono dim" data-ticker="codex">Lendo src/checkout/coupon.js</p></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Revisão e merge -->
+            <div class="fpanel" role="tabpanel" id="fp-4" aria-labelledby="ft-4" hidden>
+              <div class="fp-copy">
+                <h3>Revisado por outro agente. Integrado por você.</h3>
+                <p>Quem revisa não é quem escreveu: o Revisor lê as branches com outro contexto e, se você quiser, com outra IA. Testes rodam de verdade, e a saída fica no terminal.</p>
+                <ul class="fp-list">
+                  <li><svg aria-hidden="true"><use href="#i-check"/></svg>Achados por gravidade, com arquivo e linha</li>
+                  <li><svg aria-hidden="true"><use href="#i-check"/></svg>Relatório de entrega com testes e consumo</li>
+                  <li><svg aria-hidden="true"><use href="#i-check"/></svg>O merge é sempre uma decisão sua</li>
+                </ul>
+              </div>
+              <div class="fp-art">
+                <div class="card stage-card">
+                  <svg class="git-graph" viewBox="0 0 420 130" role="img" aria-label="As duas branches dos construtores voltam para a main depois da revisão">
+                    <path class="g-main" d="M20 100 H400"/>
+                    <path class="g-branch" d="M70 100 C100 100 100 30 130 30 H300 C330 30 330 100 360 100"/>
+                    <path class="g-branch b2" d="M90 100 C115 100 115 64 140 64 H280 C310 64 310 100 340 100"/>
+                    <circle cx="70" cy="100" r="6" class="g-node"/>
+                    <circle cx="170" cy="30" r="5" class="g-node b"/><circle cx="230" cy="30" r="5" class="g-node b"/><circle cx="270" cy="30" r="5" class="g-node b"/>
+                    <circle cx="190" cy="64" r="5" class="g-node c"/><circle cx="245" cy="64" r="5" class="g-node c"/>
+                    <circle cx="360" cy="100" r="7" class="g-node m"/>
+                    <text x="20" y="122" class="g-t">main</text><text x="134" y="18" class="g-t">forge/construtor-a1</text><text x="146" y="84" class="g-t">forge/construtor-a2</text>
+                  </svg>
+                  <ul class="review mono">
+                    <li><span class="ok">✓</span> 14 testes passando · 0 falhando</li>
+                    <li><span class="ok">✓</span> Revisor: 0 bloqueadores nas duas branches</li>
+                    <li><span class="sug">○</span> Sugestão: centralizar arredondamento em money.js</li>
+                    <li><span class="ok">✓</span> Sem conflitos com a main</li>
+                  </ul>
+                  <div class="merge-row"><span class="dim">A integração é sua decisão.</span><span class="btn btn-primary btn-xs fake">Integrar na main</span></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Contas e uso -->
+            <div class="fpanel" role="tabpanel" id="fp-5" aria-labelledby="ft-5" hidden>
+              <div class="fp-copy">
+                <h3>Suas contas, seus limites, à vista.</h3>
+                <p>Entre pelo navegador, cadastre mais de uma conta e escolha a padrão. A barra de status mostra quanto de cada assinatura já foi usado na janela de 5 horas e na semana, e cada terminal do Claude Code mostra os próprios tokens.</p>
+                <ul class="fp-list">
+                  <li><svg aria-hidden="true"><use href="#i-check"/></svg>Conta pessoal e do trabalho, cada uma com seu login</li>
+                  <li><svg aria-hidden="true"><use href="#i-check"/></svg>Custo estimado pela sua tabela de preços</li>
+                  <li><svg aria-hidden="true"><use href="#i-check"/></svg>Sem chave de API e sem cobrança por token do FORGE</li>
+                </ul>
+              </div>
+              <div class="fp-art">
+                <div class="card stage-card">
+                  <p class="stage-h mono">Configurações › Contas</p>
+                  <div class="login-rows">
+                    <div class="login-row" data-login="claude"><span class="prov-logo" aria-hidden="true"><svg><use href="#i-claude"/></svg></span><span class="login-txt"><b>Claude Code</b><small>Conta pessoal · padrão</small></span><span class="login-chip" data-login-chip>conectada</span></div>
+                    <div class="login-row" data-login="claude2"><span class="prov-logo" aria-hidden="true"><svg><use href="#i-claude"/></svg></span><span class="login-txt"><b>Claude Code</b><small>Conta do trabalho</small></span><span class="login-chip" data-login-chip>conectada</span></div>
+                    <div class="login-row" data-login="codex"><span class="prov-logo" aria-hidden="true"><svg class="is-openai"><use href="#i-openai"/></svg></span><span class="login-txt"><b>Codex CLI</b><small>login do próprio Codex</small></span><span class="login-chip" data-login-chip>conectado</span></div>
+                  </div>
+                  <p class="stage-h mono">Uso das assinaturas</p>
+                  <div class="usage" data-usage>
+                    <div class="u-row"><span class="u-name"><svg aria-hidden="true"><use href="#i-claude"/></svg>Claude · 5 h</span><span class="u-bar"><i style="--u:.38"></i></span><b class="mono">38%</b></div>
+                    <div class="u-row"><span class="u-name"><svg aria-hidden="true"><use href="#i-claude"/></svg>Claude · semana</span><span class="u-bar"><i style="--u:.12"></i></span><b class="mono">12%</b></div>
+                    <div class="u-row"><span class="u-name"><svg aria-hidden="true" class="is-openai"><use href="#i-openai"/></svg>Codex · 5 h</span><span class="u-bar"><i style="--u:.21"></i></span><b class="mono">21%</b></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Terminais -->
+            <div class="fpanel" role="tabpanel" id="fp-6" aria-labelledby="ft-6" hidden>
+              <div class="fp-copy">
+                <h3>Terminais reais, do jeito que você trabalha.</h3>
+                <p>Cada agente roda num terminal de verdade. Organize em grade, colunas, linhas ou foco, arraste as divisórias e o layout fica salvo por projeto. O estado de cada um aparece na grade, na barra lateral e no ícone do app.</p>
+                <ul class="fp-list">
+                  <li><svg aria-hidden="true"><use href="#i-check"/></svg>Executando, aguardando você, concluído ou com falha</li>
+                  <li><svg aria-hidden="true"><use href="#i-check"/></svg>Sessões retomadas ao reabrir o app</li>
+                  <li><svg aria-hidden="true"><use href="#i-check"/></svg>Retome ou bifurque conversas do Claude Code</li>
+                </ul>
+              </div>
+              <div class="fp-art">
+                <div class="card stage-card layout-big" data-layout-art>
+                  <div class="la-top"><span class="la-label mono" data-layout-label>grade</span><span class="la-opts mono" aria-hidden="true">grade · colunas · linhas · foco</span></div>
+                  <div class="la-grid" data-layout="grade"><i class="w"></i><i class="o"></i><i></i><i class="a"></i><i class="w"></i><i class="o"></i></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================================ AGENTES -->
+    <section class="section alt" id="agentes" aria-labelledby="ag-title">
+      <div class="wrap ag-grid">
+        <div class="ag-copy reveal">
+          <p class="kicker">Agentes</p>
+          <h2 id="ag-title">Traga a sua assinatura. Use todas juntas.</h2>
+          <p class="sub">O FORGE abre a CLI de cada IA com o login que já é seu: sem chave de API, sem plano novo e sem intermediário. Misture IAs na mesma equipe e deixe cada tarefa com o modelo certo.</p>
+          <ul class="ag-points">
+            <li><span class="ss-ico" aria-hidden="true"><svg><use href="#i-key"/></svg></span><span><b>Login de sempre</b>O navegador abre, você autoriza e o FORGE detecta a conta sozinho.</span></li>
+            <li><span class="ss-ico" aria-hidden="true"><svg><use href="#i-users"/></svg></span><span><b>Duas IAs na mesma equipe</b>Por exemplo: o Claude lidera e revisa, o Codex constrói.</span></li>
+            <li><span class="ss-ico" aria-hidden="true"><svg><use href="#i-route"/></svg></span><span><b>O modelo certo para cada tarefa</b>Opus para achar a causa de um erro, Haiku para documentar, GPT-5 Codex para testes.</span></li>
+          </ul>
+        </div>
+        <div class="ag-list reveal" role="list" aria-label="IAs no FORGE">
+          <div class="ag on" role="listitem"><span class="ag-logo" aria-hidden="true"><svg><use href="#i-claude"/></svg></span><span class="ag-t"><b>Claude Code</b><small>Fable · Opus · Sonnet · Haiku</small></span><span class="ag-chip ok">disponível</span></div>
+          <div class="ag on" role="listitem"><span class="ag-logo" aria-hidden="true"><svg class="is-openai"><use href="#i-openai"/></svg></span><span class="ag-t"><b>Codex CLI</b><small>GPT-5 Codex · GPT-5 · GPT-5 mini</small></span><span class="ag-chip ok">disponível</span></div>
+          <div class="ag" role="listitem"><span class="ag-logo" aria-hidden="true"><svg><use href="#i-gemini"/></svg></span><span class="ag-t"><b>Gemini</b></span><span class="ag-chip">em breve</span></div>
+          <div class="ag" role="listitem"><span class="ag-logo" aria-hidden="true"><svg><use href="#i-antigravity"/></svg></span><span class="ag-t"><b>Antigravity</b></span><span class="ag-chip">em breve</span></div>
+          <div class="ag" role="listitem"><span class="ag-logo" aria-hidden="true"><svg><use href="#i-cursor"/></svg></span><span class="ag-t"><b>Cursor</b></span><span class="ag-chip">em breve</span></div>
+          <div class="ag" role="listitem"><span class="ag-logo" aria-hidden="true"><svg><use href="#i-copilot"/></svg></span><span class="ag-t"><b>Copilot</b></span><span class="ag-chip">em breve</span></div>
+          <div class="ag" role="listitem"><span class="ag-logo" aria-hidden="true"><svg><use href="#i-grok"/></svg></span><span class="ag-t"><b>Grok</b></span><span class="ag-chip">em breve</span></div>
+          <div class="ag" role="listitem"><span class="ag-logo" aria-hidden="true"><svg><use href="#i-kimi"/></svg></span><span class="ag-t"><b>Kimi</b></span><span class="ag-chip">em breve</span></div>
+          <div class="ag" role="listitem"><span class="ag-logo" aria-hidden="true"><svg><use href="#i-kiro"/></svg></span><span class="ag-t"><b>Kiro</b></span><span class="ag-chip">em breve</span></div>
+          <div class="ag" role="listitem"><span class="ag-logo" aria-hidden="true"><svg><use href="#i-opencode"/></svg></span><span class="ag-t"><b>OpenCode</b></span><span class="ag-chip">em breve</span></div>
+          <div class="ag" role="listitem"><span class="ag-logo" aria-hidden="true"><svg><use href="#i-muse"/></svg></span><span class="ag-t"><b>Muse</b></span><span class="ag-chip">em breve</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================================ VITRINE: rotas -->
+    <section class="section" id="rotas" aria-labelledby="rt-title">
+      <div class="wrap">
+        <div class="show-head reveal">
+          <div><p class="kicker">Quem faz cada tarefa</p><h2 id="rt-title">A IA certa, no modelo certo, sem você pensar nisso.</h2></div>
+          <p class="sub">Antes de delegar, o Maestro consulta uma tabela de rotas: 16 tipos de tarefa, cada um com IA, modelo, esforço e skills. O padrão já vem pronto, e você muda qualquer linha.</p>
+        </div>
+
+        <div class="router card reveal" data-router>
+          <div class="rt-pilot">
+            <span class="rt-pilot-ico" aria-hidden="true"><svg viewBox="29 36 44 44" style="stroke-width:4.4"><use href="#logo-glyph"/></svg></span>
+            <span><b>Piloto</b><small>o Maestro</small></span>
+            <span class="rt-pilot-v"><svg aria-hidden="true"><use href="#i-claude"/></svg>Opus · esforço Alto · reserva Sonnet</span>
+          </div>
+          <div class="rt-body" data-rt-body>
+            <svg class="rt-wires" data-rt-wires aria-hidden="true"></svg>
+            <div class="rt-tasks" data-rt-tasks>
+              <p class="rt-g">Desenvolvimento</p>
+              <button type="button" data-rt="fix-bug" data-to="claude:sonnet" data-role="builder" data-effort="medium" data-skills="implementar-em-passos-pequenos,relato-de-conclusao" aria-pressed="true">Consertar um defeito</button>
+              <button type="button" data-rt="new-feature" data-to="claude:sonnet" data-role="builder" data-effort="medium" data-skills="implementar-em-passos-pequenos,relato-de-conclusao" aria-pressed="false">Fazer uma parte nova</button>
+              <button type="button" data-rt="tools" data-to="codex:gpt-5-codex" data-role="builder" data-effort="medium" data-skills="implementar-em-passos-pequenos" aria-pressed="false">Ferramentas e scripts</button>
+              <button type="button" data-rt="release" data-to="claude:sonnet" data-role="builder" data-effort="high" data-skills="relato-de-conclusao" aria-pressed="false">Publicar uma versão</button>
+              <button type="button" data-rt="review-code" data-to="claude:sonnet" data-role="reviewer" data-effort="medium" data-skills="revisar-alteracoes,relato-de-conclusao" aria-pressed="false">Revisar o trabalho de outro</button>
+              <p class="rt-g">Investigação</p>
+              <button type="button" data-rt="map-code" data-to="claude:haiku" data-role="scout" data-effort="medium" data-skills="mapear-codigo" aria-pressed="false">Entender um código</button>
+              <button type="button" data-rt="find-cause" data-to="claude:opus" data-role="scout" data-effort="high" data-skills="mapear-codigo,relato-de-conclusao" aria-pressed="false">Achar a causa de um erro</button>
+              <button type="button" data-rt="map-risks" data-to="claude:sonnet" data-role="scout" data-effort="medium" data-skills="mapear-codigo" aria-pressed="false">Mapear os riscos de uma mudança</button>
+              <p class="rt-g">Testes e segurança</p>
+              <button type="button" data-rt="write-tests" data-to="codex:gpt-5-codex" data-role="builder" data-effort="medium" data-skills="implementar-em-passos-pequenos" aria-pressed="false">Escrever testes</button>
+              <button type="button" data-rt="security" data-to="claude:opus" data-role="reviewer" data-effort="max" data-skills="revisar-alteracoes,relato-de-conclusao" aria-pressed="false">Revisar a segurança</button>
+              <p class="rt-g">Páginas e design</p>
+              <button type="button" data-rt="make-page" data-to="codex:gpt-5-codex" data-role="builder" data-effort="medium" data-skills="implementar-em-passos-pequenos" aria-pressed="false">Fazer uma página</button>
+              <button type="button" data-rt="copy-page" data-to="claude:sonnet" data-role="builder" data-effort="medium" data-skills="implementar-em-passos-pequenos" aria-pressed="false">Copiar uma página que já existe</button>
+              <button type="button" data-rt="copy-style" data-to="claude:opus" data-role="scout" data-effort="high" data-skills="mapear-codigo" aria-pressed="false">Tirar o estilo de um site</button>
+              <p class="rt-g">Texto</p>
+              <button type="button" data-rt="review-text" data-to="claude:haiku" data-role="reviewer" data-effort="low" data-skills="" aria-pressed="false">Revisar um texto</button>
+              <button type="button" data-rt="write-text" data-to="claude:sonnet" data-role="builder" data-effort="medium" data-skills="relato-de-conclusao" aria-pressed="false">Escrever</button>
+              <button type="button" data-rt="docs" data-to="claude:haiku" data-role="builder" data-effort="low" data-skills="" aria-pressed="false">Documentar</button>
+            </div>
+            <div class="rt-models" data-rt-models>
+              <div class="rt-model" data-model="claude:opus"><svg aria-hidden="true"><use href="#i-claude"/></svg><span><b>Opus</b><small>Claude Code</small></span><em class="mono" data-model-n></em></div>
+              <div class="rt-model" data-model="claude:sonnet"><svg aria-hidden="true"><use href="#i-claude"/></svg><span><b>Sonnet</b><small>Claude Code</small></span><em class="mono" data-model-n></em></div>
+              <div class="rt-model" data-model="claude:haiku"><svg aria-hidden="true"><use href="#i-claude"/></svg><span><b>Haiku</b><small>Claude Code</small></span><em class="mono" data-model-n></em></div>
+              <div class="rt-model is-codex" data-model="codex:gpt-5-codex"><svg aria-hidden="true" class="is-openai"><use href="#i-openai"/></svg><span><b>GPT-5 Codex</b><small>Codex CLI</small></span><em class="mono" data-model-n></em></div>
+            </div>
+            <div class="rt-detail" data-rt-detail aria-live="polite">
+              <p class="rt-d-g mono" data-rt-group>Desenvolvimento</p>
+              <h3 data-rt-label>Consertar um defeito</h3>
+              <dl class="rt-dl">
+                <div><dt>Quem</dt><dd data-rt-role>Construtor</dd></div>
+                <div><dt>IA</dt><dd data-rt-prov><svg aria-hidden="true"><use href="#i-claude"/></svg>Claude Code</dd></div>
+                <div><dt>Modelo</dt><dd data-rt-model>Sonnet</dd></div>
+                <div><dt>Esforço</dt><dd><span class="eff" data-rt-eff aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span><span data-rt-effort>Médio</span></dd></div>
+              </dl>
+              <p class="rt-d-h mono">skills da tarefa</p>
+              <div class="rt-skills" data-rt-skills><span>implementar-em-passos-pequenos</span><span>relato-de-conclusao</span></div>
+              <p class="rt-call mono" data-rt-call>send_task(pane, tarefa, task_type: "fix-bug")</p>
+            </div>
+          </div>
+          <p class="rt-foot dim">Padrão de fábrica do FORGE. Troque a IA, o modelo, o esforço ou as skills de qualquer linha. Cada tarefa continua esperando a sua aprovação.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================================ VITRINE: fluxos -->
+    <section class="section alt" id="fluxos" aria-labelledby="flow-title">
+      <div class="wrap">
+        <div class="show-head reveal">
+          <div><p class="kicker">Fluxos</p><h2 id="flow-title">Missões em etapas, com dependências de verdade.</h2></div>
+          <p class="sub">Monte o fluxo uma vez e rode quando quiser. Cada etapa tem papel, IA, modelo e esforço próprios, e só começa quando as anteriores terminam. Tudo em terminais reais, os mesmos do Cockpit.</p>
+        </div>
+
+        <div class="flow card reveal" data-flow>
+          <div class="flow-top">
+            <div class="flow-tabs" role="tablist" aria-label="Exemplos de fluxo">
+              <button type="button" role="tab" aria-selected="true" data-flow-tab="feature"><svg aria-hidden="true"><use href="#i-flow"/></svg>Funcionalidade com testes</button>
+              <button type="button" role="tab" aria-selected="false" tabindex="-1" data-flow-tab="audit"><svg aria-hidden="true"><use href="#i-approve"/></svg>Auditoria com duas IAs</button>
+              <button type="button" role="tab" aria-selected="false" tabindex="-1" data-flow-tab="bug"><svg aria-hidden="true"><use href="#i-bug"/></svg>Bug pela causa</button>
+            </div>
+            <div class="flow-ctl">
+              <span class="mono flow-run" data-flow-run>run_—</span>
+              <span class="mono flow-clock" data-flow-clock>00:00</span>
+              <button type="button" class="btn btn-ghost btn-xs" data-flow-play><svg aria-hidden="true"><use href="#i-play"/></svg><span>Rodar fluxo</span></button>
+            </div>
+          </div>
+          <p class="flow-goal" data-flow-goal>Adicionar cupom de desconto no checkout, com testes e revisão de segurança.</p>
+          <div class="flow-canvas" data-flow-canvas>
+            <svg class="flow-wires" data-flow-wires aria-hidden="true"></svg>
+            <div class="flow-cols" data-flow-cols aria-label="Etapas do fluxo" role="group"><noscript><p class="dim">Com JavaScript desligado, o exemplo animado não aparece. O fluxo de exemplo tem quatro etapas: o Batedor mapeia as regras, dois Construtores (Claude e Codex) trabalham em paralelo e o Revisor confere a segurança antes da entrega.</p></noscript></div>
+          </div>
+          <div class="flow-foot">
+            <div class="flow-par" aria-live="off"><span class="dim">em paralelo agora</span><span class="pips" data-flow-pips></span><span class="mono" data-flow-par>0 de 2</span></div>
+            <ul class="flow-legend" aria-label="Estados">
+              <li><span class="dot dot-idle" aria-hidden="true"></span>na fila</li>
+              <li><span class="dot dot-work" aria-hidden="true"></span>executando</li>
+              <li><span class="dot dot-wait" aria-hidden="true"></span>aguardando você</li>
+              <li><span class="dot dot-ok" aria-hidden="true"></span>concluída</li>
+            </ul>
+          </div>
+          <p class="flow-status mono" data-flow-status role="status">Escolha um exemplo e rode o fluxo.</p>
+        </div>
+
+        <ul class="flow-facts">
+          <li class="reveal"><strong>12</strong><span>etapas por fluxo, num grafo validado: sem ciclo e sem dependência solta</span></li>
+          <li class="reveal"><strong>4</strong><span>etapas em paralelo, no máximo, com o limite que você escolhe</span></li>
+          <li class="reveal"><strong>2</strong><span>IAs no mesmo fluxo hoje, etapa por etapa, e mais a caminho</span></li>
+          <li class="reveal"><strong><svg aria-hidden="true"><use href="#i-refresh"/></svg></strong><span>uma etapa pode continuar no terminal da anterior, com todo o contexto</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ================================================================ VITRINE: entrega -->
+    <section class="section" id="entrega" aria-labelledby="del-title">
+      <div class="wrap del-grid">
+        <div class="reveal">
+          <p class="kicker">Entrega</p>
+          <h2 id="del-title">Não é uma conversa. É trabalho entregue.</h2>
+          <p class="sub">Cada pedido termina em algo que você confere: código numa branch isolada, testes executados, revisão independente e o consumo de cada agente.</p>
+          <ul class="deliv">
+            <li><span class="deliv-ico" aria-hidden="true"><svg><use href="#i-branch"/></svg></span><span><b>Código numa branch própria</b>Nada chega à sua main sem você integrar.</span></li>
+            <li><span class="deliv-ico" aria-hidden="true"><svg><use href="#i-test"/></svg></span><span><b>Testes executados de verdade</b>A suíte do seu projeto, com a saída real no terminal.</span></li>
+            <li><span class="deliv-ico" aria-hidden="true"><svg><use href="#i-review"/></svg></span><span><b>Revisão independente</b>Outro agente, com outro contexto e, se você quiser, outra IA.</span></li>
+          </ul>
+        </div>
+
+        <div class="report card reveal" data-report aria-label="Exemplo de relatório de entrega">
+          <div class="report-h">
+            <div>
+              <p class="mono dim small">Entrega · loja-api</p>
+              <p class="report-title">Adicionar cupom de desconto no checkout</p>
+            </div>
+            <span class="mascot mascot-md" data-mascot data-report-mascot aria-hidden="true"></span>
+          </div>
+          <div class="report-progress">
+            <svg viewBox="0 0 44 44" class="ring" aria-hidden="true"><circle cx="22" cy="22" r="18" class="ring-bg"/><circle cx="22" cy="22" r="18" class="ring-fg" data-ring/></svg>
+            <span class="report-status" data-report-status><span class="dot dot-work" aria-hidden="true"></span> forjando…</span>
+            <span class="report-team" aria-label="IAs usadas: Claude e Codex"><svg aria-hidden="true"><use href="#i-claude"/></svg><svg aria-hidden="true" class="is-openai"><use href="#i-openai"/></svg></span>
+          </div>
+          <ul class="report-list mono" data-report-list>
+            <li data-row><span class="r-ico">✓</span><span class="r-k">Branches</span><span class="r-v">construtor-a1 e a2 · <span class="add">+<span data-num="115">115</span></span> <span class="del">−2</span></span></li>
+            <li data-row><span class="r-ico">✓</span><span class="r-k">Arquivos</span><span class="r-v">3 alterados, 2 deles novos</span></li>
+            <li data-row><span class="r-ico">✓</span><span class="r-k">Testes</span><span class="r-v"><span data-num="14">14</span> passando · 0 falhando</span></li>
+            <li data-row><span class="r-ico">✓</span><span class="r-k">Casos de borda</span><span class="r-v"><span data-num="3">3</span> mapeados pelo batedor</span></li>
+            <li data-row><span class="r-ico">✓</span><span class="r-k">Revisão</span><span class="r-v">0 bloqueadores · 1 sugestão</span></li>
+            <li data-row><span class="r-ico">✓</span><span class="r-k">Consumo</span><span class="r-v"><span data-num="41.8" data-dec="1">41,8</span>k tokens no Claude Code</span></li>
+          </ul>
+          <div class="report-f">
+            <span class="btn btn-primary btn-xs fake" data-report-cta>Pronto para integrar</span>
+            <button type="button" class="link-btn" data-report-replay>Ver de novo</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================================ MAIS RECURSOS -->
+    <section class="section alt" id="mais" aria-labelledby="more-title">
+      <div class="wrap">
+        <div class="section-head center reveal">
+          <p class="kicker">E mais</p>
+          <h2 id="more-title">Tudo o que o dia a dia pede.</h2>
+        </div>
+        <div class="bento">
+          <article class="tile reveal">
+            <div class="tile-art mcp-art mono" aria-hidden="true"><span>list_panes</span><span class="on">send_task</span><span>list_tasks</span><span>report_done</span></div>
+            <h3><svg aria-hidden="true"><use href="#i-route"/></svg>Maestro com MCP</h3>
+            <p>Um servidor MCP local liga o Maestro à equipe: ele envia, cobra e consolida.</p>
+          </article>
+          <article class="tile reveal">
+            <div class="tile-art team-art" aria-hidden="true">
+              <span><svg><use href="#i-claude"/></svg>Maestro</span><span><svg class="is-openai"><use href="#i-openai"/></svg>Construtor ×2</span><span><svg><use href="#i-claude"/></svg>Revisor</span>
+            </div>
+            <h3><svg aria-hidden="true"><use href="#i-users"/></svg>Equipes prontas e as suas</h3>
+            <p>Abra uma equipe pronta ou monte a sua, vaga por vaga: papel, IA, modelo, esforço e skills.</p>
+          </article>
+          <article class="tile reveal">
+            <div class="tile-art live-art mono" aria-hidden="true"><span class="lv-bar"><i></i><i></i><i></i>localhost:5173</span><span class="lv-body"><b></b><b></b><b class="s"></b></span></div>
+            <h3><svg aria-hidden="true"><use href="#i-live"/></svg>Painel Live</h3>
+            <p>Veja o servidor local do projeto ao lado dos terminais, enquanto os agentes trabalham.</p>
+          </article>
+          <article class="tile reveal">
+            <div class="tile-art states-art" data-states-art aria-hidden="true">
+              <span><i class="dot dot-work"></i>executando</span><span><i class="dot dot-wait"></i>aguardando você</span><span><i class="dot dot-ok"></i>concluído</span><span><i class="dot dot-err"></i>falha</span>
+            </div>
+            <h3><svg aria-hidden="true"><use href="#i-eye"/></svg>Estado em tempo real</h3>
+            <p>Quem trabalha, quem precisa de você e o que terminou, sem abrir terminal por terminal.</p>
+          </article>
+          <article class="tile reveal">
+            <div class="tile-art load-art mono" aria-hidden="true"><span>revisor</span><span class="pill">skills</span><span class="pill">MCPs</span><span class="pill">instrução</span></div>
+            <h3><svg aria-hidden="true"><use href="#i-layers"/></svg>Skills por papel</h3>
+            <p>Cada papel recebe as próprias skills e MCPs, sem tocar nos arquivos do seu projeto.</p>
+          </article>
+          <article class="tile reveal">
+            <div class="tile-art auto-art" aria-hidden="true"><span class="switch"><i></i></span><span class="mono">modo autônomo · desligado</span></div>
+            <h3><svg aria-hidden="true"><use href="#i-bolt"/></svg>Autônomo, se você quiser</h3>
+            <p>Sem aprovação por tarefa só quando você liga. O padrão é perguntar.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================================ COMPARAÇÃO -->
+    <section class="section" id="comparar" aria-labelledby="cmp-title">
+      <div class="wrap">
+        <div class="section-head center reveal">
+          <p class="kicker">Comparação</p>
+          <h2 id="cmp-title">Feito para agentes, não adaptado para eles.</h2>
+        </div>
+        <div class="cmp-wrap reveal">
+          <table class="cmp">
+            <caption class="sr">Comparação entre o FORGE e IDEs ou chats com IA</caption>
+            <thead><tr><th scope="col">Recurso</th><th scope="col" class="us">FORGE</th><th scope="col">IDEs e chats com IA</th></tr></thead>
+            <tbody>
+              <tr><th scope="row">Agentes em paralelo</th><td class="us"><span class="yes">✓</span> até 50 terminais</td><td>um por vez, na maioria</td></tr>
+              <tr><th scope="row">Cópia isolada por agente</th><td class="us"><span class="yes">✓</span> worktree do git</td><td>a mesma pasta</td></tr>
+              <tr><th scope="row">Quem divide o trabalho</th><td class="us"><span class="yes">✓</span> o Maestro, com a sua aprovação</td><td>você</td></tr>
+              <tr><th scope="row">Mais de uma IA na mesma tarefa</th><td class="us"><span class="yes">✓</span> Claude e Codex juntos, outras a caminho</td><td>uma por conversa</td></tr>
+              <tr><th scope="row">Modelo por tipo de tarefa</th><td class="us"><span class="yes">✓</span> tabela de rotas editável</td><td>escolha manual</td></tr>
+              <tr><th scope="row">Fluxos com dependências</th><td class="us"><span class="yes">✓</span> até 12 etapas, até 4 em paralelo</td><td>raro</td></tr>
+              <tr><th scope="row">Revisão</th><td class="us"><span class="yes">✓</span> outro agente, até de outra IA</td><td>o mesmo que escreveu</td></tr>
+              <tr><th scope="row">Assinatura</th><td class="us"><span class="yes">✓</span> as que você já paga</td><td>a da ferramenta</td></tr>
+              <tr><th scope="row">Seu código</th><td class="us"><span class="yes">✓</span> fica na sua máquina</td><td>depende da ferramenta</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================================ SEGURANÇA -->
+    <section class="section alt" id="seguranca" aria-labelledby="sec-title">
+      <div class="wrap sec-grid">
+        <div class="reveal">
+          <p class="kicker">Segurança</p>
+          <h2 id="sec-title">Os agentes trabalham para você, na sua máquina.</h2>
+          <ul class="sec-list">
+            <li><span class="sec-ico" aria-hidden="true"><svg><use href="#i-desktop"/></svg></span><span><b>Só local.</b> O FORGE escuta apenas em 127.0.0.1 e valida a origem de cada requisição.</span></li>
+            <li><span class="sec-ico" aria-hidden="true"><svg><use href="#i-approve"/></svg></span><span><b>Você aprova.</b> Cada tarefa fica pendente até o seu sinal, e aprovar exige um token criado a cada abertura do app.</span></li>
+            <li><span class="sec-ico" aria-hidden="true"><svg><use href="#i-file-check"/></svg></span><span><b>Configuração revisada.</b> Arquivos do projeto que executam comandos e não estão no Git pedem a sua confirmação.</span></li>
+            <li><span class="sec-ico" aria-hidden="true"><svg><use href="#i-cloud-off"/></svg></span><span><b>Direto ao provedor.</b> Seu código não passa por servidor do FORGE: cada CLI fala direto com a IA da sua assinatura.</span></li>
+          </ul>
+          <p class="warn-note"><span class="dot dot-wait" aria-hidden="true"></span> Os agentes executam comandos com as suas permissões. Abra no FORGE só projetos em que você confia.</p>
+        </div>
+        <div class="sec-side">
+          <div class="card paths reveal">
+            <svg class="paths-svg" viewBox="0 0 520 230" role="img" aria-labelledby="paths-t">
+              <title id="paths-t">Na sua máquina, o FORGE coordena o Claude Code e o Codex CLI. Cada CLI fala direto com o seu provedor. Seu código não passa por servidor do FORGE.</title>
+              <rect class="p-box" x="8" y="20" width="286" height="200" rx="14"/>
+              <text x="24" y="42" class="p-cap">SUA MÁQUINA</text>
+              <g class="p-node" transform="translate(24 98)"><rect width="104" height="52" rx="10"/><svg x="10" y="14" width="24" height="24" viewBox="29 36 44 44" class="p-glyph"><use href="#logo-glyph"/></svg><text x="42" y="24" class="p-t">FORGE</text><text x="42" y="40" class="p-s">127.0.0.1</text></g>
+              <g class="p-node" transform="translate(168 56)"><rect width="112" height="52" rx="10"/><svg x="10" y="14" width="24" height="24"><use href="#i-claude"/></svg><text x="42" y="24" class="p-t">Claude</text><text x="42" y="40" class="p-s">Code</text></g>
+              <g class="p-node" transform="translate(168 142)"><rect width="112" height="52" rx="10"/><svg x="10" y="14" width="24" height="24" class="p-openai"><use href="#i-openai"/></svg><text x="42" y="24" class="p-t">Codex</text><text x="42" y="40" class="p-s">CLI</text></g>
+              <path class="p-wire" d="M128 116 C148 116 148 82 168 82"/><path class="p-wire" d="M128 132 C148 132 148 168 168 168"/>
+              <path class="p-wire out" d="M280 82 H392"/><path class="p-wire out" d="M280 168 H392"/>
+              <g class="p-node cloud" transform="translate(392 56)"><rect width="120" height="52" rx="26"/><svg x="14" y="14" width="24" height="24" class="p-anthropic"><use href="#i-anthropic"/></svg><text x="46" y="31" class="p-t">Anthropic</text></g>
+              <g class="p-node cloud" transform="translate(392 142)"><rect width="120" height="52" rx="26"/><svg x="14" y="14" width="24" height="24" class="p-openai"><use href="#i-openai"/></svg><text x="46" y="31" class="p-t">OpenAI</text></g>
+              <g class="p-packets" aria-hidden="true">
+                <circle class="pk pk-claude" r="3"><animateMotion dur="1.6s" repeatCount="indefinite" path="M280 82 H392"/></circle>
+                <circle class="pk pk-codex" r="3"><animateMotion dur="1.6s" begin=".8s" repeatCount="indefinite" path="M280 168 H392"/></circle>
+                <circle class="pk" r="2.6"><animateMotion dur="1.4s" begin=".3s" repeatCount="indefinite" path="M128 116 C148 116 148 82 168 82"/></circle>
+                <circle class="pk" r="2.6"><animateMotion dur="1.4s" begin="1s" repeatCount="indefinite" path="M128 132 C148 132 148 168 168 168"/></circle>
+              </g>
+            </svg>
+          </div>
+          <div class="card term sec-term reveal" data-sec-term aria-label="Exemplo de tarefa aguardando aprovação">
+            <p class="stage-h mono">FORGE · tarefas</p>
+            <div class="mono sec-out">
+              <p><span class="dim">maestro →</span> construtor</p>
+              <p class="strong">Tarefa task_b2 · Implementar o cupom no checkout</p>
+              <p class="dim">cópia isolada: forge/construtor-a1</p>
+              <p class="state-line"><span class="dot dot-wait" aria-hidden="true"></span> <span data-sec-state>pendente: aguardando a sua aprovação</span></p>
+            </div>
+            <div class="sec-actions">
+              <button type="button" class="btn btn-primary btn-xs" data-sec-approve>Aprovar</button>
+              <button type="button" class="btn btn-ghost btn-xs" data-sec-reject>Recusar</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================================ PLANOS: preenchidos por PLANOS em app.js; sem planos, a seção fica oculta -->
+    <section class="section" id="planos" aria-labelledby="plans-title" data-plans hidden>
+      <div class="wrap">
+        <div class="section-head center reveal">
+          <p class="kicker">Planos</p>
+          <h2 id="plans-title">Escolha o plano da sua rotina.</h2>
+          <p class="sub">A assinatura de IA continua a sua, com o provedor. O plano do FORGE é o que coordena a equipe.</p>
+          <div class="seg-ctl bill" role="radiogroup" aria-label="Forma de cobrança" data-bill>
+            <button type="button" role="radio" aria-checked="true" data-bill-opt="mensal">Mensal</button>
+            <button type="button" role="radio" aria-checked="false" tabindex="-1" data-bill-opt="anual">Anual <em class="save">economize 20%</em></button>
+          </div>
+        </div>
+        <div class="plans" data-plans-grid></div>
+
+        <div class="pm reveal">
+          <h3 class="pm-title">Compare os planos</h3>
+          <div class="pm-wrap">
+            <table class="pmatrix">
+              <caption class="sr">Recursos de cada plano do FORGE: Grátis, Pro e Equipes</caption>
+              <thead><tr><th scope="col">Recurso</th><th scope="col">Grátis</th><th scope="col" class="hl">Pro</th><th scope="col">Equipes</th></tr></thead>
+              <tbody>
+                <tr class="pm-cat"><th scope="rowgroup" colspan="4"><svg aria-hidden="true"><use href="#i-users"/></svg>Agentes e IAs</th></tr>
+                <tr><th scope="row">Assinaturas de IA (BYO)<small>Claude Code e Codex CLI hoje; Gemini, Cursor, Copilot, Grok e outras assim que integradas</small></th><td><span class="y" aria-label="incluído">✓</span></td><td class="hl"><span class="y" aria-label="incluído">✓</span></td><td><span class="y" aria-label="incluído">✓</span></td></tr>
+                <tr><th scope="row">Terminais em paralelo<small>PTY real, com estado de cada agente</small></th><td>até 4</td><td class="hl">até 50</td><td>até 50 por pessoa</td></tr>
+                <tr><th scope="row">Workspaces<small>um por projeto, com layout salvo</small></th><td>1</td><td class="hl">ilimitados</td><td>ilimitados</td></tr>
+                <tr><th scope="row">Multi-conta por IA<small>pessoal e trabalho, com conta padrão</small></th><td><span class="n" aria-label="não incluído">—</span></td><td class="hl"><span class="y" aria-label="incluído">✓</span></td><td><span class="y" aria-label="incluído">✓</span></td></tr>
+
+                <tr class="pm-cat"><th scope="rowgroup" colspan="4"><svg aria-hidden="true"><use href="#i-route"/></svg>Orquestração</th></tr>
+                <tr><th scope="row">Maestro via MCP<small>list_panes, send_task, list_tasks e report_done</small></th><td><span class="y" aria-label="incluído">✓</span></td><td class="hl"><span class="y" aria-label="incluído">✓</span></td><td><span class="y" aria-label="incluído">✓</span></td></tr>
+                <tr><th scope="row">Aprovação por tarefa<small>com token de sessão a cada abertura do app</small></th><td><span class="y" aria-label="incluído">✓</span></td><td class="hl"><span class="y" aria-label="incluído">✓</span></td><td><span class="y" aria-label="incluído">✓</span></td></tr>
+                <tr><th scope="row">Modo autônomo<small>sem aprovação por tarefa, só se você ligar</small></th><td><span class="n" aria-label="não incluído">—</span></td><td class="hl"><span class="y" aria-label="incluído">✓</span></td><td><span class="y" aria-label="incluído">✓</span></td></tr>
+                <tr><th scope="row">Fluxos em DAG<small>dependências, paralelismo e continueFrom no mesmo terminal</small></th><td><span class="n" aria-label="não incluído">—</span></td><td class="hl">12 etapas · 4 em paralelo</td><td>12 etapas · 4 em paralelo</td></tr>
+
+                <tr class="pm-cat"><th scope="rowgroup" colspan="4"><svg aria-hidden="true"><use href="#i-layers"/></svg>Harness, skills e times</th></tr>
+                <tr><th scope="row">Harness de roteamento<small>16 tipos de tarefa com IA, modelo, esforço e skills; piloto do Maestro</small></th><td>padrão de fábrica</td><td class="hl">editável</td><td>editável e compartilhado</td></tr>
+                <tr><th scope="row">Agentes personalizados<small>instrução própria, usada pelo harness</small></th><td><span class="n" aria-label="não incluído">—</span></td><td class="hl">até 20</td><td>até 20, compartilhados</td></tr>
+                <tr><th scope="row">Skills prontas e loadouts<small>skills e MCPs por papel, sem tocar no seu projeto</small></th><td>skills do papel</td><td class="hl">16 skills prontas</td><td>16 skills prontas</td></tr>
+                <tr><th scope="row">Times prontos<small>Web, Backend, Full stack, Bugs, Pesquisa, Construção e Auditoria</small></th><td>Dupla, Squad e Squad de 6</td><td class="hl">+ 7 times prontos e times seus</td><td>+ times compartilhados</td></tr>
+                <tr><th scope="row">Exportar e importar o harness<small>leve as suas rotas e agentes para outra máquina</small></th><td><span class="n" aria-label="não incluído">—</span></td><td class="hl"><span class="y" aria-label="incluído">✓</span></td><td><span class="y" aria-label="incluído">✓</span></td></tr>
+
+                <tr class="pm-cat"><th scope="rowgroup" colspan="4"><svg aria-hidden="true"><use href="#i-branch"/></svg>Código e Git</th></tr>
+                <tr><th scope="row">Worktrees isolados<small>por agente ou por equipe, com checagem de conflitos</small></th><td><span class="y" aria-label="incluído">✓</span></td><td class="hl"><span class="y" aria-label="incluído">✓</span></td><td><span class="y" aria-label="incluído">✓</span></td></tr>
+                <tr><th scope="row">Revisão por outro agente<small>com outro contexto e, se quiser, outra IA</small></th><td><span class="y" aria-label="incluído">✓</span></td><td class="hl"><span class="y" aria-label="incluído">✓</span></td><td><span class="y" aria-label="incluído">✓</span></td></tr>
+                <tr><th scope="row">Relatório de entrega<small>branches, testes, revisão e consumo</small></th><td><span class="n" aria-label="não incluído">—</span></td><td class="hl"><span class="y" aria-label="incluído">✓</span></td><td><span class="y" aria-label="incluído">✓</span></td></tr>
+
+                <tr class="pm-cat"><th scope="rowgroup" colspan="4"><svg aria-hidden="true"><use href="#i-chart"/></svg>Visibilidade</th></tr>
+                <tr><th scope="row">Estado em tempo real<small>executando, aguardando você, concluído, falha</small></th><td><span class="y" aria-label="incluído">✓</span></td><td class="hl"><span class="y" aria-label="incluído">✓</span></td><td><span class="y" aria-label="incluído">✓</span></td></tr>
+                <tr><th scope="row">Limites das assinaturas<small>janela de 5 h e semana, na barra de status</small></th><td><span class="y" aria-label="incluído">✓</span></td><td class="hl"><span class="y" aria-label="incluído">✓</span></td><td><span class="y" aria-label="incluído">✓</span></td></tr>
+                <tr><th scope="row">Telemetria de tokens e custo<small>por agente, com a sua tabela de preços</small></th><td><span class="n" aria-label="não incluído">—</span></td><td class="hl"><span class="y" aria-label="incluído">✓</span></td><td><span class="y" aria-label="incluído">✓</span></td></tr>
+                <tr><th scope="row">Sessões<small>histórico e retomada da equipe ao reabrir</small></th><td>retomar</td><td class="hl">retomar e bifurcar</td><td>retomar e bifurcar</td></tr>
+                <tr><th scope="row">Painel Live<small>preview do servidor local ao lado dos terminais</small></th><td><span class="n" aria-label="não incluído">—</span></td><td class="hl"><span class="y" aria-label="incluído">✓</span></td><td><span class="y" aria-label="incluído">✓</span></td></tr>
+
+                <tr class="pm-cat"><th scope="rowgroup" colspan="4"><svg aria-hidden="true"><use href="#i-key"/></svg>Conta</th></tr>
+                <tr><th scope="row">Gestão de assentos<small>adicione e remova pessoas</small></th><td><span class="n" aria-label="não incluído">—</span></td><td class="hl"><span class="n" aria-label="não incluído">—</span></td><td><span class="y" aria-label="incluído">✓</span></td></tr>
+                <tr><th scope="row">Faturamento<small>cobrança em reais</small></th><td>—</td><td class="hl">individual</td><td>único para a empresa</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <p class="plans-note dim">Preços em reais. A assinatura de IA (Claude ou ChatGPT) é contratada à parte, com o próprio provedor.</p>
+      </div>
+    </section>
+
+    <!-- ================================================================ PERGUNTAS -->
+    <section class="section" id="perguntas" aria-labelledby="faq-title">
+      <div class="wrap faq-grid">
+        <div class="reveal">
+          <p class="kicker">Perguntas</p>
+          <h2 id="faq-title">Perguntas frequentes.</h2>
+        </div>
+        <div class="faq reveal" data-faq>
+          <details><summary>O que é o FORGE?<svg aria-hidden="true"><use href="#i-chev"/></svg></summary><p>Um app de desktop para Windows e macOS que coordena agentes de IA de programação. Ele abre vários terminais lado a lado, cada um com um agente, e um Maestro que divide o pedido entre eles, com a sua aprovação, cópias isoladas do código, revisão e relatório de entrega.</p></details>
+          <details><summary>O que é uma ADE e como ela difere de uma IDE?<svg aria-hidden="true"><use href="#i-chev"/></svg></summary><p>ADE é um ambiente de desenvolvimento com agentes. Uma IDE foi feita para você editar arquivos; uma ADE é feita para você coordenar vários agentes que editam, testam e revisam ao mesmo tempo, e para você decidir o que entra no código.</p></details>
+          <details><summary>Preciso de chave de API?<svg aria-hidden="true"><use href="#i-chev"/></svg></summary><p>Não. O FORGE usa a CLI de cada IA com o login da sua assinatura. O consumo sai do seu plano, e o FORGE mostra quanto cada agente usou.</p></details>
+          <details><summary>Quais IAs funcionam?<svg aria-hidden="true"><use href="#i-chev"/></svg></summary><p>Hoje, Claude Code e Codex CLI, inclusive juntos na mesma equipe. Gemini, Antigravity, Cursor, Copilot, Grok, Kimi, Kiro, OpenCode e Muse estão em integração e aparecem no app como "em breve".</p></details>
+          <details><summary>Meu código passa por algum servidor do FORGE?<svg aria-hidden="true"><use href="#i-chev"/></svg></summary><p>Não. O FORGE roda na sua máquina e escuta só em 127.0.0.1. Quem fala com a Anthropic é o Claude Code, e com a OpenAI, o Codex CLI, como já acontece quando você os usa sozinhos.</p></details>
+          <details><summary>Os agentes mexem na minha branch principal?<svg aria-hidden="true"><use href="#i-chev"/></svg></summary><p>Não. Cada construtor trabalha numa cópia isolada (worktree do git) e faz commits na própria branch. A integração na main é sempre feita por você.</p></details>
+          <details><summary>Preciso aprovar tudo?<svg aria-hidden="true"><use href="#i-chev"/></svg></summary><p>Por padrão, sim: cada tarefa do Maestro espera o seu sinal. Existe um modo autônomo para quem quiser, e ele só liga se você ligar.</p></details>
+          <details><summary>Em quais sistemas roda?<svg aria-hidden="true"><use href="#i-chev"/></svg></summary><p>Windows 10 e 11 (instalador ou versão portátil) e macOS (pacote para Intel; Apple Silicon em validação). Para começar a trabalhar, conecte pelo menos uma assinatura de IA: Claude ou ChatGPT (Codex). O Git precisa estar instalado para as cópias isoladas do código.</p></details>
+          <details><summary>Quanto custa?<svg aria-hidden="true"><use href="#i-chev"/></svg></summary><p>Tem o plano Grátis para experimentar, o Pro por R$ 49 por mês (ou R$ 468 por ano) e o Equipes por R$ 89 por usuário ao mês (ou R$ 852 por usuário ao ano). A assinatura de IA é à parte e continua sua, com o provedor. Veja a seção <a href="#planos">Planos</a>.</p></details>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================================ CHAMADA FINAL -->
+    <section class="section final alt" id="baixar" aria-labelledby="dl-title">
+      <div class="wrap final-grid">
+        <div class="final-art reveal" aria-hidden="true">
+          <span class="mascot mascot-lg" data-mascot data-mascot-bolts>
+            <svg viewBox="4 30 92 54" style="stroke-width:1.25"><use href="#logo-paths"/></svg>
+          </span>
+        </div>
+        <div class="reveal">
+          <p class="kicker">Comece agora</p>
+          <h2 id="dl-title">Ponha a sua equipe de agentes para trabalhar.</h2>
+          <p class="sub">Baixe o FORGE, conecte a assinatura de IA que você já usa e escolha a pasta do projeto. Em poucos minutos a equipe está pronta.</p>
+          <div class="cta-row">
+            <a class="btn btn-primary" href="#baixar" data-download="win"><svg aria-hidden="true"><use href="#i-download"/></svg>Baixar para Windows</a>
+            <a class="btn btn-ghost" href="#baixar" data-download="mac"><svg aria-hidden="true"><use href="#i-download"/></svg>Baixar para macOS</a>
+          </div>
+          <p class="dl-note" data-dl-note role="status"></p>
+          <ul class="req mono">
+            <li>Windows 10/11 x64 · instalador ou versão portátil</li>
+            <li>macOS · pacote Intel (x64); Apple Silicon em validação</li>
+            <li>Uma assinatura de IA conectada · Claude ou ChatGPT (Codex)</li>
+            <li>Git instalado · para as cópias isoladas do código</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <div class="wrap">
+      <div class="foot-grid">
+        <div class="foot-brand">
+          <a class="brand" href="#topo" aria-label="FORGE, voltar ao início">
+            <span class="brand-tile"><svg viewBox="29 36 44 44" aria-hidden="true" style="stroke-width:4.4"><use href="#logo-glyph"/></svg></span>
+            <span class="brand-name">FORGE</span>
+          </a>
+          <p class="dim">A ADE para trabalhar com agentes, na sua máquina. Para Windows e macOS.</p>
+        </div>
+        <nav class="foot-col" aria-label="Produto"><p class="foot-h">Produto</p><ul><li><a href="#recursos">Recursos</a></li><li><a href="#agentes">Agentes</a></li><li><a href="#fluxos">Fluxos</a></li><li data-plans-link hidden><a href="#planos">Planos</a></li><li><a href="#baixar">Baixar</a></li></ul></nav>
+        <nav class="foot-col" aria-label="Saiba mais"><p class="foot-h">Saiba mais</p><ul><li><a href="#rotas">Quem faz cada tarefa</a></li><li><a href="#seguranca">Segurança</a></li><li><a href="#comparar">Comparação</a></li><li><a href="#perguntas">Perguntas frequentes</a></li></ul></nav>
+        <nav class="foot-col" aria-label="Legal"><p class="foot-h">Legal</p><ul><li><a href="termos.html">Termos de Uso</a></li><li><a href="privacidade.html">Privacidade</a></li><li><a href="reembolso.html">Reembolso</a></li></ul></nav>
+      </div>
+      <div class="foot-bottom">
+        <p class="dim small">© 2026 FORGE. Todos os direitos reservados.</p>
+        <p class="dim small tm">Claude e Claude Code são marcas da Anthropic; OpenAI, ChatGPT e Codex, da OpenAI; as demais marcas de IA pertencem aos respectivos donos. Os logotipos indicam compatibilidade ou integração planejada; o FORGE não é afiliado nem endossado por essas empresas.</p>
+      </div>
+    </div>
+  </footer>
+
+  <script src="app.js" defer></script>
+</body>
+</html>
