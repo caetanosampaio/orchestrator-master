@@ -90,7 +90,8 @@ const HOST = '127.0.0.1'; // somente local
 const lock = acquireInstanceLock({ dir: store.dataDir, autoRelease: true });
 if (!lock.ok) { console.error(`[forge] ${lock.message}`); process.exit(1); }
 let livePreview = null; // gerenciador do preview do painel Live (criado junto das rotas); o encerramento o fecha
-installShutdown({ lock, executor: claudeCodeExecutor, children: [planner, verifier, { killActiveSync: () => worktrees.killActiveSync() }, { killActiveSync: () => terminals.killAllSync() }, { killActiveSync: () => logins.killActiveSync() }, { killActiveSync: () => { void livePreview?.close(); } }], store }); // ao sair: encerra os filhos (executor, Planner, verificador), grava o que está pendente e libera a trava
+let flowsManager = null; // Missions v2 (criado junto das rotas): o encerramento para o runner e o agendador das automações antes de matar os terminais
+installShutdown({ lock, executor: claudeCodeExecutor, children: [planner, verifier, { killActiveSync: () => worktrees.killActiveSync() }, { killActiveSync: () => terminals.killAllSync() }, { killActiveSync: () => logins.killActiveSync() }, { killActiveSync: () => { void livePreview?.close(); } }, { killActiveSync: () => flowsManager?.stop() }], store }); // ao sair: encerra os filhos (executor, Planner, verificador), grava o que está pendente e libera a trava
 const db = store.load();
 // Configuração efetiva de planejamento e retentativas (I4): ambiente > db.settings > padrão (desligados). Lida a cada mensagem do chat e a cada laço do ciclo.
 const orchestration = () => resolveOrchestration({ settings: db.settings });
@@ -467,7 +468,8 @@ setupTerminals(app, { manager: terminals });
 livePreview = createPreviewManager({ db, dataDir: store.dataDir }); // painel Live: preview da pasta do workspace (somente leitura) em listener próprio 127.0.0.1:<porta efêmera>, origem diferente da API
 setupLivePreview(app, { db, manager: livePreview }); // POST/GET /api/live/preview (Origin + token de sessão no desktop)
 setupLiveChanges(app, { db, service: createChangesService({ db }) }); // GET /api/live/changes: arquivos criados/alterados (git status/numstat ou varredura por mtime)
-setupFlows(app, { db, terminals, maestro }); // Missions v2: /api/flows (missões em etapas com agentes em terminais reais; recover() converte run órfão de um boot anterior em `failed`)
+flowsManager = setupFlows(app, { db, terminals, maestro, worktrees }); // Missions v2: /api/flows (missões em etapas com agentes em terminais reais; recover() deixa run órfão de um boot anterior `interrupted`, esperando Retomar) + agendador das automações (o boot não inicia nada: horário vencido vira pulo). `worktrees` liga o modo Git (branch da missão + worktree por etapa); recoverGit() concilia os diários em segundo plano, depois do a conciliação dos worktrees acima
+maestro.setPlanner(flowsManager.plannerPort()); // missões por briefing: mission_options/propose_mission do papel planner (o maestro.js não importa flows.js)
 // Limite real de uso por conta (5 h e semana), somente leitura, sem caminhos/ids/e-mails; a interface consulta a cada ~15-30 s (memo de 2 s). Mesmo apiGuard (Host/Origin) das demais rotas de /api.
 app.get('/api/limits', (req, res) => { try { res.set('Cache-Control', 'no-store').json(rateLimits.view()); } catch { bad(res, 'Não foi possível ler os limites de uso.', 500); } });
 // Tokens por provider e por dia (Claude Code de TODAS as contas + Codex), lidos dos transcripts/rollouts em disco: só contagens, somente leitura, varredura incremental em segundo plano (provider-activity.js). ?days=30|90|0 (0 = desde o início).

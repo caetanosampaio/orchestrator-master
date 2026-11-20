@@ -15,10 +15,10 @@ const step = (over = {}) => ({ title: 'Etapa', prompt: 'Faça algo', provider: '
 const flowBody = (over = {}) => ({ workspaceId: 'ws_1', title: 'Missão', goal: 'Objetivo', steps: [step()], ...over });
 const bad = (body, re, opts = { create: true }) => { const r = F.validateFlowInput(body, opts); assert.ok(r.error, `deveria recusar: ${String(JSON.stringify(body)).slice(0, 120)}`); assert.match(r.error, re); };
 
-test('criação válida: padrões (project, maxParallel 1, fullAccess false, goal vazio) e normalização das etapas', () => {
+test('criação válida: padrões (project, maxParallel 1, fullAccess false, goal vazio, sem agenda, autoIntegrate true) e normalização das etapas', () => {
   const r = F.validateFlowInput({ workspaceId: 'ws_1', title: '  Missão  ', steps: [step({ title: ' A ' })] }, { create: true });
   assert.equal(r.error, undefined);
-  assert.deepEqual({ ...r.value, steps: undefined }, { title: 'Missão', goal: '', fullAccess: false, maxParallel: 1, workspaceId: 'ws_1', kind: 'project', steps: undefined });
+  assert.deepEqual({ ...r.value, steps: undefined }, { title: 'Missão', goal: '', fullAccess: false, maxParallel: 1, workspaceId: 'ws_1', kind: 'project', schedule: null, autoIntegrate: true, steps: undefined });
   assert.deepEqual(r.value.steps, [{ id: 's1', title: 'A', prompt: 'Faça algo', provider: 'claude', role: 'builder', model: null, effort: null, dependsOn: [], continueFrom: null }]);
   const full = F.validateFlowInput(flowBody({ kind: 'automation', fullAccess: true, maxParallel: 4, schedule: null, goal: 'a\nb' }), { create: true });
   assert.equal(full.error, undefined); assert.deepEqual([full.value.kind, full.value.fullAccess, full.value.maxParallel, full.value.goal], ['automation', true, 4, 'a\nb']);
@@ -52,7 +52,9 @@ test('texto: título e prompt obrigatórios, tipos, caracteres de controle, prop
 test('workspaceId, kind, schedule, fullAccess (booleano estrito)', () => {
   for (const w of [undefined, null, '', 5, {}, 'w'.repeat(81)]) bad(flowBody({ workspaceId: w }), /workspaceId/);
   bad(flowBody({ kind: 'cron' }), /kind/); bad(flowBody({ kind: 1 }), /kind/);
-  bad(flowBody({ schedule: '* * * * *' }), /schedule/); bad(flowBody({ schedule: {} }), /schedule/);
+  // fatia 2: a agenda passou a ser aceita, mas só em automação e só nos formatos dos presets (texto de cron e objeto vazio continuam recusados)
+  bad(flowBody({ schedule: '* * * * *' }), /automação/); bad(flowBody({ schedule: {} }), /automação/);
+  bad(flowBody({ kind: 'automation', schedule: '* * * * *' }), /schedule/); bad(flowBody({ kind: 'automation', schedule: {} }), /schedule/);
   for (const f of ['true', 1, 'yes', {}, [], 0]) bad(flowBody({ fullAccess: f }), /fullAccess/);
   assert.equal(F.validateFlowInput(flowBody({ fullAccess: false }), { create: true }).value.fullAccess, false);
   assert.equal(F.validateFlowInput(flowBody({ fullAccess: true }), { create: true }).value.fullAccess, true);
@@ -111,16 +113,69 @@ test('continueFrom: só uma etapa ANTERIOR da cadeia de dependências, alvo úni
   assert.match(F.validateSteps([s('s1', { effort: 'low' }), s('s2', { dependsOn: ['s1'], continueFrom: 's1' })]).error, /mesmo/);
 });
 
-test('edição (parcial): só campos permitidos; nada vazio; workspaceId/kind/schedule/id não editáveis; archived booleano; validações iguais', () => {
+test('edição (parcial): só campos permitidos; nada vazio; workspaceId/id/scheduleState não editáveis; kind e schedule validados; archived booleano; validações iguais', () => {
   const v = (b) => F.validateFlowInput(b, { create: false });
   assert.deepEqual(v({ title: ' Novo ' }).value, { title: 'Novo' });
   assert.deepEqual(v({ archived: true, maxParallel: 3, fullAccess: true, goal: '' }).value, { archived: true, maxParallel: 3, fullAccess: true, goal: '' });
   assert.equal(v({ steps: [step()] }).value.steps.length, 1);
   assert.match(v({}).error, /Nada para alterar/);
-  for (const k of ['workspaceId', 'kind', 'schedule', 'id', 'createdAt']) assert.match(v({ [k]: 'x', title: 'a' }).error, /não permitidas/, k);
+  for (const k of ['workspaceId', 'id', 'createdAt', 'scheduleState', 'nextRunAt', 'scheduleSkips']) assert.match(v({ [k]: 'x', title: 'a' }).error, /não permitidas/, k);
+  // fatia 2: kind e schedule passaram a ser editáveis, mas valores inválidos continuam recusados
+  assert.match(v({ kind: 'x', title: 'a' }).error, /kind/); assert.match(v({ schedule: 'x', title: 'a' }).error, /automação/);
   assert.match(v({ archived: 'sim' }).error, /archived/); assert.match(v({ title: '' }).error, /title/); assert.match(v({ maxParallel: 9 }).error, /maxParallel/);
   assert.match(v({ fullAccess: 'true' }).error, /fullAccess/);
   assert.match(v({ steps: [step({ role: 'maestro' })] }).error, /role/); assert.match(v({ steps: [] }).error, /1 a 12/);
+});
+
+test('agenda na criação: só em automação; presets normalizados (enabled ausente = true, dias ordenados); formatos inválidos recusados', () => {
+  const ok = (sch) => { const r = F.validateFlowInput(flowBody({ kind: 'automation', schedule: sch }), { create: true }); assert.equal(r.error, undefined, JSON.stringify(sch)); return r.value.schedule; };
+  assert.deepEqual(ok({ kind: 'interval', everyHours: 4 }), { enabled: true, kind: 'interval', everyHours: 4 });
+  assert.deepEqual(ok({ enabled: false, kind: 'daily', time: '09:00' }), { enabled: false, kind: 'daily', time: '09:00' });
+  assert.deepEqual(ok({ kind: 'weekly', days: [3, 1], time: '08:30' }), { enabled: true, kind: 'weekly', days: [1, 3], time: '08:30' });
+  assert.equal(ok(null), null); assert.equal(ok(undefined), null);
+  for (const k of ['project', undefined]) bad(flowBody({ kind: k, schedule: { kind: 'interval', everyHours: 4 } }), /só vale para missões de automação/);
+  assert.equal(F.validateFlowInput(flowBody({ schedule: null }), { create: true }).value.schedule, null, 'projeto com agenda nula vale');
+  const auto = (sch) => flowBody({ kind: 'automation', schedule: sch });
+  for (const h of [0, 169, 1.5, '4', null]) bad(auto({ kind: 'interval', everyHours: h }), /everyHours/);
+  for (const t of ['9:00', '24:00', '12:60', '', 900]) bad(auto({ kind: 'daily', time: t }), /HH:MM/);
+  for (const d of [[], [7], [-1], [1, 1], 'seg', [1.5]]) bad(auto({ kind: 'weekly', days: d, time: '08:00' }), /days|repetidos/);
+  bad(auto({ kind: 'monthly', time: '08:00' }), /schedule.kind/); bad(auto({ kind: 'interval', everyHours: 4, cron: '* * * * *' }), /não permitidas na agenda/);
+  bad(auto({ kind: 'interval', everyHours: 4, enabled: 'sim' }), /enabled/); bad(auto([{ kind: 'interval', everyHours: 4 }]), /objeto/);
+});
+
+test('autoIntegrate: booleano estrito; padrão true na criação; na edição só quando vier', () => {
+  assert.equal(F.validateFlowInput(flowBody(), { create: true }).value.autoIntegrate, true);
+  assert.equal(F.validateFlowInput(flowBody({ autoIntegrate: false }), { create: true }).value.autoIntegrate, false);
+  assert.equal(F.validateFlowInput(flowBody({ autoIntegrate: true }), { create: true }).value.autoIntegrate, true);
+  for (const a of ['true', 'false', 1, 0, null, {}, []]) bad(flowBody({ autoIntegrate: a }), /autoIntegrate/);
+  const v = (b) => F.validateFlowInput(b, { create: false });
+  assert.deepEqual(v({ autoIntegrate: false }).value, { autoIntegrate: false });
+  assert.equal('autoIntegrate' in v({ title: 'x' }).value, false, 'edição sem o campo não o altera');
+  for (const a of ['false', 0, null]) assert.match(v({ autoIntegrate: a }).error, /autoIntegrate/);
+});
+
+test('edição de kind/schedule contra o resultado MESCLADO (current): coerência e 400 claro ao virar projeto com agenda', () => {
+  const sch = { enabled: true, kind: 'interval', everyHours: 4 };
+  const proj = { kind: 'project', schedule: null }, auto = { kind: 'automation', schedule: sch };
+  const v = (b, current) => F.validateFlowInput(b, { create: false, current });
+  assert.deepEqual(v({ schedule: { kind: 'daily', time: '07:00' } }, auto).value, { schedule: { enabled: true, kind: 'daily', time: '07:00' } }, 'agenda nova numa automação');
+  assert.match(v({ schedule: { kind: 'daily', time: '07:00' } }, proj).error, /automação/, 'agenda num projeto');
+  assert.deepEqual(v({ kind: 'automation', schedule: sch }, proj).value, { kind: 'automation', schedule: sch }, 'projeto vira automação com agenda no mesmo corpo');
+  assert.deepEqual(v({ kind: 'automation' }, proj).value, { kind: 'automation' }, 'automação sem agenda vale (schedule null)');
+  assert.match(v({ kind: 'project' }, auto).error, /schedule: null/, 'virar projeto sem zerar a agenda = 400, nunca apaga em silêncio');
+  assert.deepEqual(v({ kind: 'project', schedule: null }, auto).value, { kind: 'project', schedule: null });
+  assert.match(v({ kind: 'project', schedule: sch }, auto).error, /automação/);
+  assert.deepEqual(v({ kind: 'project' }, { kind: 'automation', schedule: null }).value, { kind: 'project' }, 'automação sem agenda vira projeto sem nada a zerar');
+  assert.deepEqual(v({ schedule: null }, auto).value, { schedule: null }, 'remover a agenda');
+  assert.equal(v({ kind: 'automation', schedule: { kind: 'interval', everyHours: 0 } }, proj).error.includes('everyHours'), true);
+  // corpo completo do cliente (draftToBody em modo edição) passa
+  const full = { kind: 'automation', title: 'M', goal: '', fullAccess: false, maxParallel: 1, schedule: { enabled: true, kind: 'weekly', days: [1, 3], time: '08:30' }, autoIntegrate: true, steps: [step({ id: 's1' })] };
+  const r = v(full, proj); assert.equal(r.error, undefined); assert.deepEqual([r.value.kind, r.value.schedule.kind, r.value.autoIntegrate], ['automation', 'weekly', true]);
+});
+
+test('runSafePatch: só schedule/autoIntegrate (ao menos um) é aceito com run ativo', () => {
+  assert.equal(F.runSafePatch({ schedule: null }), true); assert.equal(F.runSafePatch({ autoIntegrate: false }), true); assert.equal(F.runSafePatch({ schedule: null, autoIntegrate: true }), true);
+  for (const b of [{}, null, [], 'x', { schedule: null, title: 'x' }, { kind: 'automation', schedule: null }, { autoIntegrate: true, steps: [] }]) assert.equal(F.runSafePatch(b), false, JSON.stringify(b));
 });
 
 test('composeStepText: contexto + etapa em uma linha; limite do Maestro respeitado sem cortar o prompt (degraus 1, 2, 3 e recusa clara)', () => {
