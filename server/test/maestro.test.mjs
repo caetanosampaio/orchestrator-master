@@ -528,6 +528,7 @@ test('relatório automático: o agente trabalhou e voltou a ficar pronto sem cha
   w.tick(10_000); b.lastOutputAt = '2026-11-03T12:00:03.000Z'; w.watchers.shift()();
   const t = w.m.snapshot().tasks[0];
   assert.equal(t.status, 'done'); assert.match(t.summary, /^Relatório automático \(sem report_done\)/); assert.match(t.summary, /Criei teste\.txt Testes: 3 passando/);
+  assert.equal(w.m.taskState(id).auto, true, 'o runner de missões sabe que a conclusão foi automática (não confirmada pelo agente)');
   assert.ok(!t.summary.includes('\x1b'), 'sem ANSI');
   assert.match(lastTyped(w), new RegExp(`^Relatório de ${w.ft.panes.get(B1).title} \\(${id}, texto do agente\\): «Relatório automático`));
   assert.equal(w.watchers.length, 0, 'sem tarefa entregue o vigia para');
@@ -561,6 +562,7 @@ test('relatório automático: terminal que acabou antes de concluir avisa o Maes
   while (w2.timers.length) w2.timers.shift()();
   const r = w2.call(builderOf(w2), 'report_done', { task_id: id2, summary: 'Feito de verdade.' });
   assert.equal(r.isError, undefined); assert.equal(w2.m.snapshot().tasks[0].summary, 'Feito de verdade.');
+  assert.equal(w2.m.taskState(id2).auto, false, 'report_done tardio confirma a conclusão');
   assert.match(lastTyped(w2), /«Feito de verdade\.»/);
   assert.equal(w2.call(builderOf(w2), 'report_done', { task_id: id2, summary: 'de novo' }).isError, true, 'concluída de verdade: não muda mais');
   assert.ok(id && id2);

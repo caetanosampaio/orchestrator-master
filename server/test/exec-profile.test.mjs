@@ -73,7 +73,7 @@ test('estático: a lista TOOLS do maestro.js não cita perfil nem permissão (o 
   assert.ok(a > 0 && b > a, 'achou o bloco TOOLS');
   const block = src.slice(a, b);
   assert.doesNotMatch(block, /perfil|profile|permiss|bypass|confirma[cç]ão/i);
-  assert.deepEqual([...block.matchAll(/name: '([a-z_]+)'/g)].map((m) => m[1]), ['list_panes', 'send_task', 'list_routes', 'read_pane_output', 'list_tasks', 'report_done']);
+  assert.deepEqual([...block.matchAll(/name: '([a-z_]+)'/g)].map((m) => m[1]), ['list_panes', 'send_task', 'list_routes', 'read_pane_output', 'list_tasks', 'report_done', 'mission_options', 'propose_mission']); // as duas últimas: só do Planejador de missões (propõe, nunca cria nem executa)
   for (const f of ['maestro.js', 'planner.js', 'chat.js']) assert.doesNotMatch(read(f), /permission-profile|setupPermissionProfile/, `${f} não importa nem monta a rota do perfil`);
 });
 

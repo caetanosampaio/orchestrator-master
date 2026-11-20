@@ -35,7 +35,7 @@ test('dispatch: entrega pelo caminho do Maestro SEM aprovação (nem modo autôn
   assert.match(typed(w)[0][1], new RegExp(`^\\[Tarefa ${r.taskId} do maestro\\] Crie o arquivo a\\.txt .*report_done.*${r.taskId}`));
   assert.equal(w.written.some((x) => x[1] === '\r'), false, 'o Enter vai depois, pelo temporizador');
   w.timers.shift()(); assert.equal(w.written.at(-1)[1], '\r');
-  assert.deepEqual(w.m.taskState(r.taskId), { status: 'delivered', summary: null, note: null, doneAt: null });
+  assert.deepEqual(w.m.taskState(r.taskId), { status: 'delivered', summary: null, note: null, doneAt: null, auto: false });
   const snap = w.m.snapshot().tasks[0]; assert.equal(snap.status, 'delivered'); assert.equal(snap.from, null); assert.equal(snap.decidedBy, 'flow');
 });
 
@@ -90,7 +90,7 @@ test('taskState: id inexistente/inválido = null; report_done do destino => done
   const r = w.m.dispatch({ to: B1, text: 'x' });
   const done = w.m.rpc({ terminalId: B1, role: 'builder' }, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'report_done', arguments: { task_id: r.taskId, summary: 'Feito: a.txt' } } });
   assert.match(done.result.content[0].text, /^Concluída/);
-  const s = w.m.taskState(r.taskId); assert.equal(s.status, 'done'); assert.equal(s.summary, 'Feito: a.txt'); assert.ok(s.doneAt);
+  const s = w.m.taskState(r.taskId); assert.equal(s.status, 'done'); assert.equal(s.summary, 'Feito: a.txt'); assert.ok(s.doneAt); assert.equal(s.auto, false, 'report_done = conclusão confirmada');
   const w2 = world(); const r2 = w2.m.dispatch({ to: B1, text: 'y' }); w2.panes.get(B1).status = 'exited';
   const s2 = w2.m.taskState(r2.taskId); assert.equal(s2.status, 'failed'); assert.match(s2.note, /terminal acabou/); assert.equal(s2.summary, null);
 });
@@ -101,5 +101,5 @@ test('o Maestro existente não mudou: send_task continua pendente (sem aprovaç�
   const r = call('send_task', { pane_id: B1, task: 'tarefa normal' });
   assert.match(r.content[0].text, /AGUARDANDO aprovação/); assert.equal(w.written.length, 0);
   assert.equal(w.m.snapshot().tasks[0].status, 'pending');
-  assert.deepEqual(Object.keys(w.m).sort(), ['authenticate', 'decide', 'dispatch', 'isAutonomous', 'issue', 'revoke', 'rpc', 'serverName', 'setAutonomous', 'snapshot', 'taskState']);
+  assert.deepEqual(Object.keys(w.m).sort(), ['authenticate', 'decide', 'dispatch', 'isAutonomous', 'issue', 'revoke', 'rpc', 'serverName', 'setAutonomous', 'setPlanner', 'snapshot', 'taskState']); // setPlanner: porta do planejador de missões (docs/missions-v2-briefing.md), ligada no boot
 });
