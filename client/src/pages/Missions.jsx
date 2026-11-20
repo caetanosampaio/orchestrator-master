@@ -3,7 +3,7 @@ import '../flows.css';
 import { useStore } from '../store.jsx';
 import { buildWorkflow, currentRun, describeFailure, focusInTerminal, integrationInfo, integrationProblems, nodeDetail, pickFlowId, proposalAutoOpen, proposalNotices, proposalRows, runActions, waitingSteps } from '../flows-view.js';
 import FlowSidebar, { BackToCockpit } from '../components/FlowSidebar.jsx';
-import FlowHeader, { AckDialog, DiscardDialog, FlowAttention } from '../components/FlowHeader.jsx';
+import FlowHeader, { AckDialog, DiscardDialog, FlowAttention, PushDialog } from '../components/FlowHeader.jsx';
 import FlowWorkflow from '../components/FlowWorkflow.jsx';
 import FlowSidePanel from '../components/FlowSidePanel.jsx';
 import FlowRuns from '../components/FlowRuns.jsx';
@@ -164,6 +164,25 @@ export default function Missions({ onOpenCockpit, data, stream = null, onBack = 
       ? run_('cleanup', () => actions.cleanup(flow.id, ra.runId), 'Limpeza das cópias refeita. Se alguma ainda sobrou, o motivo aparece no topo da missão.')
       : run_('cleanup', () => actions.discard(flow.id, ra.runId, { deleteBranch: false }), 'Cópias da execução limpas. A branch da missão continua no repositório.');
   };
+  // Enviar ao remoto (depois da integração): abre a prévia do servidor (o que iria e para onde) e só envia com o `digest` dela. Nada sai sem esta confirmação.
+  const [pushDlg, setPushDlg] = useState(null);
+  const loadPush = async (runId) => {
+    setPushDlg({ runId, loading: true, preview: null, error: null });
+    try { const preview = await actions.pushPreview(flow.id, runId); setPushDlg({ runId, loading: false, preview, error: null }); }
+    catch (e) { setPushDlg({ runId, loading: false, preview: null, error: describeFailure(e, 'item').message }); }
+  };
+  const onPush = () => { if (flow && run?.id && !busy) loadPush(run.id); };
+  const confirmPush = async (digest) => {
+    const d = pushDlg;
+    if (!flow || !d?.preview || busy) return;
+    setBusy('push');
+    try { await actions.push(flow.id, d.runId, digest); notify(`Enviado para ${d.preview.branch ?? 'o remoto'}.`); setPushDlg(null); }
+    catch (e) {
+      // a lista mudou (alguém enviou antes, você commitou de novo): a prévia é refeita para você conferir de novo; nada foi enviado
+      if (e?.code === 'changed') { notify('O que seria enviado mudou. Confira a lista nova.', 'error'); await loadPush(d.runId); }
+      else notify(describeFailure(e, 'item').message, 'error');
+    } finally { setBusy(null); refresh(); }
+  };
   const onRemove = () => {
     if (!flow || !window.confirm(`Excluir a missão “${flow.title}”? O histórico de execuções dela também sai.`)) return undefined;
     return run_('remove', () => actions.remove(flow.id), 'Missão excluída.').then(() => { setNodeId(null); });
@@ -215,11 +234,11 @@ export default function Missions({ onOpenCockpit, data, stream = null, onBack = 
   // Proposta nova: abre o formulário preenchido SÓ se nada estiver aberto; com um formulário aberto, vira aviso dentro dele (nunca sobrescreve o que o usuário edita).
   // Com o foco num terminal (o usuário digitando no Planejador), não abre: fica na faixa com "Revisar" e um aviso, sem roubar o foco nem receber um Enter.
   useEffect(() => {
-    const plan = proposalAutoOpen({ rows: propRows, seen: seenRef.current, formOpen: !!form, blocked: !!ack || !!discarding || briefing, terminalFocused: focusInTerminal(document.activeElement) });
+    const plan = proposalAutoOpen({ rows: propRows, seen: seenRef.current, formOpen: !!form, blocked: !!ack || !!discarding || !!pushDlg || briefing, terminalFocused: focusInTerminal(document.activeElement) });
     if (plan.markSeen.length) markSeen(plan.markSeen);
     if (plan.open) openForm({ mode: 'create', proposal: plan.open.proposal, key: plan.open.id });
     else if (plan.held) notify(`Proposta do Planejador pronta: “${plan.held.title}”. Clique em Revisar na faixa do topo de Missões.`);
-  }, [propRows, form, ack, discarding, briefing, markSeen, openForm, notify]);
+  }, [propRows, form, ack, discarding, pushDlg, briefing, markSeen, openForm, notify]);
   const [dismissingId, setDismissingId] = useState(null);
   const dismissProposal = async (id) => {
     try { await actions.dismissProposal(id); } catch (e) { if (e?.status !== 404) throw e; } // 404 = já não estava pendente (usada, substituída ou expirada)
@@ -288,7 +307,7 @@ export default function Missions({ onOpenCockpit, data, stream = null, onBack = 
           <div className="fl-scroll"><div className="fl-center">
             {failure && <p className="fl-note err" role="status">{failure.message}</p>}
             <FlowHeader flow={flow} workspaceName={workspaceName} now={now} busy={busy} onStart={onStart} onCancel={onCancel} onEdit={() => openForm({ mode: 'edit', flow })} onEditSchedule={() => openForm({ mode: 'schedule', flow })}
-              onRemove={onRemove} onPickStep={pickNode} onResume={onResume} onIntegrate={onIntegrate} onDiscard={onDiscard} onCleanup={onCleanup} />
+              onRemove={onRemove} onPickStep={pickNode} onResume={onResume} onIntegrate={onIntegrate} onDiscard={onDiscard} onCleanup={onCleanup} onPush={onPush} />
             <FlowAttention items={waiting} problems={problems} interrupted={!!ra?.canResume} ready={readyInfo} onOpenTerminal={openTerminal} onDecide={onDecide} deciding={deciding}
               onRetry={onRetryStep} onDiscardStep={onDiscardStep} onResume={onResume} onIntegrate={onIntegrate} onDiscard={onDiscard} busy={busy} />
             <FlowWorkflow key={flow.id} workflow={workflow} selectedId={nodeId} onSelect={pickNode} />
@@ -298,9 +317,10 @@ export default function Missions({ onOpenCockpit, data, stream = null, onBack = 
         )}
         {stream && <FlowTerminals tabs={dockTabs} open={dockOpen && dockTabs.length > 0} wanted={dockWanted} onWanted={setDockWanted} onOpen={openTerminal} onClose={() => setDockOpen(false)} onCloseTab={closePlanner} stream={stream} label={dockLabel} />}
       </div>
-      {detail && <FlowSidePanel key={flow.id} detail={detail} onClose={closePanel} onOpenTerminal={openTerminal} onDecide={onDecide} deciding={deciding} onRetryStep={onRetryStep} onDiscardStep={onDiscardStep} busy={busy} />}
+      {detail && <FlowSidePanel key={flow.id} detail={detail} onClose={closePanel} onOpenTerminal={openTerminal} onDecide={onDecide} deciding={deciding} onRetryStep={onRetryStep} onDiscardStep={onDiscardStep} onPush={onPush} busy={busy} />}
       {ack && <AckDialog key={`${ack.kind}-${ack.stepId ?? ack.runId}-${ack.rev ?? 0}`} ack={ack} busy={busy} onConfirm={confirmAck} onClose={() => setAck(null)} />}
       {discarding && <DiscardDialog info={discarding.info} busy={busy} onConfirm={confirmDiscard} onClose={() => setDiscarding(null)} />}
+      {pushDlg && <PushDialog dlg={pushDlg} busy={busy === 'push'} onConfirm={confirmPush} onClose={() => setPushDlg(null)} />}
       {briefing && <FlowBriefing workspaces={workspaces ?? []} activeWorkspaceId={state?.activeWorkspace?.id ?? null} onClose={() => setBriefing(false)} onSubmit={startBriefing} />}
       {form && (
         <FlowForm key={`${form.mode}-${form.key ?? form.flow?.id ?? 'novo'}`} mode={form.mode} flow={form.flow ?? null} workspaces={workspaces ?? []} activeWorkspaceId={state?.activeWorkspace?.id ?? null} roles={roles} onClose={() => setForm(null)} onSubmit={submitForm}

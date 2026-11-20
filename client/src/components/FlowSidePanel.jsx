@@ -11,7 +11,7 @@ const MODE_LABEL = { ff: 'avanço direto (fast-forward)', merge: 'commit de merg
  * Painel lateral do nó selecionado: texto da etapa, resumo ou erro, tempos, branch/integração da etapa (modo Git) e "Abrir terminal"; na Entrega, a integração final.
  * Esc fecha; o foco vai para o título ao abrir.
  */
-export default function FlowSidePanel({ detail, onClose, onOpenTerminal, onDecide, deciding = null, onRetryStep, onDiscardStep, busy = null }) {
+export default function FlowSidePanel({ detail, onClose, onOpenTerminal, onDecide, deciding = null, onRetryStep, onDiscardStep, onPush = null, busy = null }) {
   const head = useRef(null);
   const closeRef = useRef(onClose); closeRef.current = onClose;
   useEffect(() => { head.current?.focus({ preventScroll: true }); }, [detail?.id]);
@@ -100,7 +100,16 @@ export default function FlowSidePanel({ detail, onClose, onOpenTerminal, onDecid
               {info?.at && <Fact k="quando">{fmtWhen(info.at)}</Fact>}
               {info?.branch && <Fact k="branch"><code>{info.branch}</code></Fact>}
               {info?.baseBranch && <Fact k="destino"><code>{info.baseBranch}</code></Fact>}
+              {/* envio ao remoto (só depois da integração): estado, commit enviado e quando */}
+              {d.push && <Fact k="remoto"><span className={`fl-t-${d.push.tone} fl-st-t`}>{d.push.label}</span>{d.push.state === 'pushed' && d.push.commitShort ? <> · <code>{d.push.commitShort}</code></> : null}{d.push.at && d.push.state !== 'none' ? ` · ${fmtWhen(d.push.at)}` : ''}{d.push.by && d.push.state === 'pushed' ? (d.push.by === 'auto' ? ' (automático)' : ' (por você)') : ''}</Fact>}
             </dl>
+            {d.push?.needsYou && <p className="fl-text wait">{d.push.error ?? 'O envio não saiu; o motivo não foi informado.'}</p>}
+            {d.push?.canPush && onPush && (
+              <div className="fl-panel-f">
+                <button type="button" className="fl-btn" onClick={onPush} disabled={!!busy}><Icon name="send" size={12} /><span>{d.push.state === 'failed' ? 'Tentar enviar de novo' : 'Enviar ao remoto'}</span></button>
+                <p className="fl-hint">Mostra os commits e o destino antes de enviar. Usa o login do Git desta máquina; nenhuma IA envolvida.</p>
+              </div>
+            )}
             {d.gitNotes?.fallbackText && <p className="fl-text wait">{d.gitNotes.fallbackText}.</p>}
             {d.gitNotes?.rebasedText && <p className="fl-text">{d.gitNotes.rebasedText}.</p>}
             {d.leftovers?.length > 0 && (

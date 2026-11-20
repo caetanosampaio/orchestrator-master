@@ -55,6 +55,12 @@
 .fl-chip { display: inline-flex; align-items: center; gap: 5px; flex: none; max-width: 100%; height: 22px; padding: 0 8px; border: 1px solid var(--fl-hair); border-radius: 6px; background: rgba(255, 255, 255, .04); color: var(--fl-mute-2); font: 500 11.5px var(--sans); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fl-chip svg { flex: none; color: var(--fl-mute); }
 .fl-chip.warn { color: var(--text, #d8d8d8); } .fl-chip.warn svg { color: var(--fl-wait-t); }
+.fl-chip.err { color: var(--text, #d8d8d8); } .fl-chip.err svg { color: var(--fl-err-t); } /* envio que falhou: a cor só no ícone */
+.fl-chip .fl-spin { width: 9px; height: 9px; }
+/* confirmação do envio ao remoto: lista curta de commits (sha em mono + assunto), rolando dentro do diálogo */
+.fl-push-list { list-style: none; margin: 0; padding: 0 0 0 10px; max-height: 220px; overflow-y: auto; border-left: 1px solid var(--fl-hair-2); font-size: 12.5px; }
+.fl-push-list li { display: flex; gap: 8px; align-items: baseline; padding: 3px 0; line-height: 1.45; overflow-wrap: anywhere; } .fl-push-list li code { flex: none; }
+.fl-push-wait { display: flex; align-items: center; gap: 8px; color: var(--fl-mute-2); }
 .fl-chip.mono { font-family: var(--mono) !important; font-size: 11px; } /* branch: código em mono (o forge.css força sans nos selos) */
 
 /* ---------- barra lateral das Missões (no lugar da do Cockpit, mesmo desenho: .fx-side) ---------- */

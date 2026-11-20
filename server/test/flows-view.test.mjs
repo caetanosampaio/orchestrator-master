@@ -269,7 +269,7 @@ test('corpo da API: ids s1..sN, vazio vira null, fullAccess só booleano estrito
   d = addStep(d); d = patchStep(d, 'k2', { title: 'B', prompt: 'faça B', provider: 'codex', role: 'reviewer', continueFrom: 'k1' });
   const body = draftToBody(d);
   assert.deepEqual(body, {
-    workspaceId: 'ws_1', kind: 'project', title: 'Missão', goal: 'obj', fullAccess: false, maxParallel: 2, schedule: null, autoIntegrate: true, verifyCommand: null, // fatia 2: projeto não leva agenda; sem verificação = null
+    workspaceId: 'ws_1', kind: 'project', title: 'Missão', goal: 'obj', fullAccess: false, maxParallel: 2, schedule: null, autoIntegrate: true, autoPush: false, verifyCommand: null, // fatia 2: projeto não leva agenda; sem verificação = null
     steps: [
       { id: 's1', title: 'A', prompt: 'faça A', provider: 'claude', role: 'builder', model: 'opus', effort: null, dependsOn: [], continueFrom: null },
       { id: 's2', title: 'B', prompt: 'faça B', provider: 'codex', role: 'reviewer', model: null, effort: null, dependsOn: ['s1'], continueFrom: 's1' },
@@ -619,8 +619,8 @@ test('fatia 2: rascunho do formulário com tipo, agenda e integração automáti
   assert.equal(draftToBody({ ...d, autoIntegrate: false }).autoIntegrate, false);
   assert.equal(draftToBody({ ...d, autoIntegrate: 'true' }).autoIntegrate, false, 'texto nunca liga a integração automática');
   assert.equal(draftToBody({ ...auto, kind: 'project' }).schedule, null, 'projeto não leva agenda');
-  assert.deepEqual(FV.draftToScheduleBody(auto), { schedule: { enabled: true, kind: 'weekly', days: [1, 3], time: '08:30' }, autoIntegrate: true });
-  assert.deepEqual(FV.draftToScheduleBody({ ...d, autoIntegrate: false }), { schedule: null, autoIntegrate: false });
+  assert.deepEqual(FV.draftToScheduleBody(auto), { schedule: { enabled: true, kind: 'weekly', days: [1, 3], time: '08:30' }, autoIntegrate: true, autoPush: false });
+  assert.deepEqual(FV.draftToScheduleBody({ ...d, autoIntegrate: false }), { schedule: null, autoIntegrate: false, autoPush: false });
   // editar: ida e volta
   const fd = flowToDraft(flow({ kind: 'automation', autoIntegrate: false, schedule: { enabled: true, kind: 'interval', everyHours: 4 } }));
   assert.deepEqual([fd.kind, fd.autoIntegrate, fd.schedule.kind, fd.schedule.everyHours], ['automation', false, 'interval', 4]);
@@ -709,7 +709,7 @@ test('fatia 2 (tela): use-flows chama as rotas novas; o ack só vai com confirma
     '/steps/${encodeURIComponent(stepId)}/integration`, { action, ...ackBody(opts) })']) assert.ok(hook.includes(t), t);
   assert.ok(/opts\?\.acknowledgeProjectConfig === true && Array\.isArray\(opts\.acknowledgedFiles\)\s*\? \{ acknowledgeProjectConfig: true, acknowledgedFiles: strList\(opts\.acknowledgedFiles\) \} : \{\}/.test(hook), 'ack só com true estrito e SEMPRE com a lista vista, nunca por padrão');
   assert.equal(hook.match(/acknowledgeProjectConfig: true/g).length, 1, 'nenhum outro lugar do hook liga o ack');
-  assert.ok(hook.includes('{ schedule: body?.schedule ?? null, autoIntegrate: body?.autoIntegrate === true }'), 'updateSchedule não repassa outros campos');
+  assert.ok(hook.includes('{ schedule: body?.schedule ?? null, autoIntegrate: body?.autoIntegrate === true, autoPush: body?.autoPush === true }'), 'updateSchedule não repassa outros campos');
   assert.ok(hook.includes("typeof data.code === 'string' ? { code: data.code } : {}") && hook.includes('files: strList(data.files)'), 'a tela recebe code e a lista de arquivos do 409');
 });
 
@@ -965,7 +965,7 @@ test('briefing (tela): rotas no hook, botões "Nova por briefing", diálogo, avi
   assert.ok(/const swap = \(row\) => \{[\s\S]*?window\.confirm\(/.test(form) && /const dismiss = async \(\) => \{[\s\S]*?window\.confirm\(/.test(form));
   assert.ok(form.includes("mode === 'create' && proposal ? proposalToDraft(proposal)"), 'formulário nasce da proposta (acesso total desligado)');
   // página: abre só sem formulário aberto (proposalAutoOpen com formOpen), avisos via proposalNotices, troca remonta pela chave
-  assert.ok(page.includes('proposalAutoOpen({ rows: propRows, seen: seenRef.current, formOpen: !!form, blocked: !!ack || !!discarding || briefing, terminalFocused: focusInTerminal(document.activeElement) })'));
+  assert.ok(page.includes('proposalAutoOpen({ rows: propRows, seen: seenRef.current, formOpen: !!form, blocked: !!ack || !!discarding || !!pushDlg || briefing, terminalFocused: focusInTerminal(document.activeElement) })'));
   assert.ok(page.includes('notices={proposalNotices(propRows, form.proposal ?? null, { seenAtOpen: form.seenAtOpen })}') && page.includes("key={`${form.mode}-${form.key ?? form.flow?.id ?? 'novo'}`}"));
   assert.ok(page.includes('<ProposalTray ') && /onTrayDismiss = async \(r\) => \{\s*if \(!window\.confirm\(/.test(page), 'faixa de propostas com Descartar confirmado');
   // nada é criado nem iniciado sozinho: o efeito só abre o formulário; create só no submit do formulário
@@ -1208,4 +1208,45 @@ test('verificação: formulário e telas usam o contrato (campo, dica sem shell,
   for (const src of [form, head, panel]) assert.ok(!src.includes('dangerouslySetInnerHTML'), 'nunca HTML');
   const css = fs.readFileSync(path.join(here, '../../client/src/flows.css'), 'utf8');
   assert.match(css, /\.fl-vres-out \{[^}]*overflow: auto;[^}]*white-space: pre-wrap;/);
+});
+
+test('envio ao remoto (pushInfo): só para run integrado; estados, rótulos, motivo e quando o botão Enviar faz sentido; linha da Entrega', () => {
+  const S = 'a'.repeat(40);
+  const done = (push, o = {}) => run([rs('s1', 'completed'), rs('s2', 'completed')], { status: 'completed', git: { mode: 'git', baseBranch: 'main', integration: { by: 'auto', mode: 'ff', to: S, at: T0 }, ...(push === undefined ? {} : { push }) }, ...o });
+  assert.equal(FV.pushInfo(run([rs('s1', 'running')])), null, 'run ativo');
+  assert.equal(FV.pushInfo(run([], { status: 'ready_to_integrate', git: { mode: 'git' } })), null, 'antes de integrar');
+  assert.equal(FV.pushInfo(run([], { status: 'completed', git: { mode: 'git', integration: { mode: 'empty' } } })), null, 'sem alterações');
+  assert.equal(FV.pushInfo(run([], { status: 'completed' })), null, 'modo pasta');
+  const none = FV.pushInfo(done()); assert.deepEqual([none.state, none.canPush, none.needsYou, none.label], ['none', true, false, 'não enviada ao remoto']);
+  const ok = FV.pushInfo(done({ state: 'pushed', by: 'auto', branch: 'origin/main', to: S, at: T0, commits: [{ sha: S, subject: 'x' }] }));
+  assert.deepEqual([ok.state, ok.tone, ok.label, ok.commitShort, ok.canPush, ok.by], ['pushed', 'ok', 'enviada para origin/main', 'aaaaaaa', false, 'auto']); assert.equal(ok.commits[0].sha, 'a'.repeat(12));
+  const blk = FV.pushInfo(done({ state: 'blocked', code: 'verify_not_passed', error: 'Envio automático não feito: a verificação não passou.' }));
+  assert.deepEqual([blk.tone, blk.canPush, blk.needsYou, blk.label], ['wait', true, true, 'envio pendente']); assert.match(blk.error, /verificação/);
+  const bad = FV.pushInfo(done({ state: 'failed', error: 'e'.repeat(900) })); assert.deepEqual([bad.tone, bad.needsYou], ['err', true]); assert.ok(bad.error.length <= 300);
+  assert.deepEqual([FV.pushInfo(done({ state: 'pushing' })).canPush, FV.pushInfo(done({ state: 'estranho' })).state], [false, 'none']);
+  // Entrega: a linha leva o envio quando houve tentativa
+  const f = flow({ lastRun: done({ state: 'pushed', branch: 'origin/main', to: S }) });
+  const node = buildWorkflow(f, f.lastRun).nodes.find((n) => n.id === 'delivery'); assert.match(node.line, /integrada em main · enviada para origin\/main/);
+  const plain = buildWorkflow(flow({ lastRun: done() }), done()).nodes.find((n) => n.id === 'delivery'); assert.doesNotMatch(plain.line, /enviad/);
+  const d = nodeDetail(f, f.lastRun, 'delivery'); assert.equal(d.push.state, 'pushed'); assert.equal(d.runId, 'run_1');
+});
+
+test('formulário: autoPush nasce desligado, vem da missão, exige comando de verificação e vai no corpo (inclusive no PATCH com run ativo)', () => {
+  const d0 = emptyDraft({ workspaceId: 'ws_1' }); assert.equal(d0.autoPush, false);
+  const d = { ...d0, title: 'M', steps: [{ ...d0.steps[0], title: 'A', prompt: 'p' }] };
+  assert.ok(validateDraft({ ...d, autoPush: true }).errors.some((e) => e.field === 'autoPush'), 'sem verificação = erro');
+  assert.ok(!validateDraft({ ...d, autoPush: true, verifyText: 'npm test' }).errors.some((e) => e.field === 'autoPush'));
+  assert.equal(draftToBody({ ...d, autoPush: true, verifyText: 'npm test' }).autoPush, true); assert.equal(draftToBody({ ...d, autoPush: 'sim' }).autoPush, false, 'booleano estrito');
+  assert.equal(flowToDraft(flow({ autoPush: true })).autoPush, true); assert.equal(flowToDraft(flow({})).autoPush, false, 'missão antiga');
+  assert.deepEqual(FV.draftToScheduleBody({ kind: 'project', autoIntegrate: true, autoPush: true }), { schedule: null, autoIntegrate: true, autoPush: true });
+});
+
+test('envio ao remoto (tela): diálogo com a lista e o destino, botão só com a prévia que permite, Enviar ao remoto no cabeçalho e no painel, nada de HTML cru', () => {
+  const src = (f) => fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'client', 'src', f), 'utf8');
+  const head = src('components/FlowHeader.jsx'), page = src('pages/Missions.jsx'), panel = src('components/FlowSidePanel.jsx'), form = src('components/FlowForm.jsx'), hook = src('use-flows.js');
+  assert.match(head, /export function PushDialog/); assert.ok(head.includes("const PUSH_WARN = new Set(['local_unpushed', 'foreign_commits', 'target_changed', 'target_unknown', 'unsafe_config']);"), 'avisos = os USER_OK do servidor'); assert.ok(head.includes('{p.url ? <> em <code>{p.url}</code></> : null}'), 'mostra a URL de destino'); assert.match(head, /disabled=\{!p\?\.canPush \|\| !!busy\}/); assert.match(head, /onConfirm\(p\.digest\)/); assert.match(head, /Enviar ao remoto/);
+  assert.match(page, /actions\.push\(flow\.id, d\.runId, digest\)/); assert.match(page, /e\?\.code === 'changed'/); assert.match(panel, /onPush/);
+  assert.match(form, /function AutoPush/); assert.match(form, /disabled=\{!hasVerify && !checked\}/);
+  assert.match(hook, /pushPreview: \(id, runId\) => api\.get/); assert.match(hook, /\/push`, \{ expect \}/); assert.match(hook, /autoPush: body\?\.autoPush === true/);
+  for (const s of [head, page, panel, form]) assert.ok(!s.includes('dangerouslySetInnerHTML'));
 });

@@ -258,6 +258,26 @@ export function integrationInfo(run) {
   };
 }
 
+/**
+ * Envio ao remoto de um run INTEGRADO (modo Git): null antes da integração, em runs sem alterações e no modo pasta. `state`: pushed | pushing | blocked (regra: espera você) |
+ * failed | none (ainda não enviado). `canPush`: o botão Enviar agora faz sentido (o servidor confere tudo de novo na prévia).
+ */
+export const PUSH_STATES = Object.freeze(['pushing', 'pushed', 'blocked', 'failed']);
+export function pushInfo(run) {
+  const git = run?.git && typeof run.git === 'object' ? run.git : null;
+  const integ = git?.integration && typeof git.integration === 'object' ? git.integration : null;
+  if (!git || git.mode !== 'git' || run?.status !== 'completed' || !integ || integ.mode === 'empty') return null;
+  const p = git.push && typeof git.push === 'object' ? git.push : null, state = PUSH_STATES.includes(p?.state) ? p.state : 'none';
+  const branch = str(p?.branch) || null;
+  const label = state === 'pushed' ? (branch ? `enviada para ${branch}` : 'enviada ao remoto') : state === 'pushing' ? 'enviando ao remoto…' : state === 'blocked' ? 'envio pendente' : state === 'failed' ? 'envio falhou' : 'não enviada ao remoto';
+  const tone = state === 'pushed' ? 'ok' : state === 'pushing' ? 'work' : state === 'failed' ? 'err' : state === 'blocked' ? 'wait' : 'idle';
+  return {
+    state, label, tone, branch, by: p?.by === 'auto' || p?.by === 'user' ? p.by : null, code: str(p?.code) || null, error: state === 'blocked' || state === 'failed' ? clip(p?.error, 300) || null : null,
+    commitShort: shortSha(p?.to), at: p?.at ?? null, commits: arr(p?.commits).filter((c) => c && typeof c.sha === 'string').map((c) => ({ sha: c.sha.slice(0, 12), subject: clip(c.subject, 160) })), more: Number.isInteger(p?.more) ? p.more : 0,
+    canPush: state !== 'pushed' && state !== 'pushing', needsYou: state === 'blocked' || state === 'failed',
+  };
+}
+
 // ---------- comando de verificação (opcional, definido só pelo usuário no formulário) ----------
 export const VERIFY_TIMEOUT_MIN = 10, VERIFY_TIMEOUT_MAX = 1800, VERIFY_TIMEOUT_DEFAULT = 300, MAX_VERIFY_TEXT = 1000;
 export const VERIFY_SHELL_HINT = 'Sem shell: |, && e > não funcionam (cada parte vira um argumento do programa).';
@@ -561,7 +581,8 @@ function deliveryState(run) {
   const pick = (state, line) => ({ state, label: meta(state).label, tone: meta(state).tone, line });
   if (!run) return pick('pending', null);
   if (s === 'completed') {
-    if (info?.state === 'integrated' && info.mode !== 'empty') return pick('completed', info.baseBranch ? `integrada em ${info.baseBranch}` : 'integrada na branch do workspace');
+    const p = pushInfo(run), sent = p && p.state !== 'none' ? ` · ${p.label}` : ''; // o envio ao remoto, quando houve tentativa
+    if (info?.state === 'integrated' && info.mode !== 'empty') return pick('completed', `${info.baseBranch ? `integrada em ${info.baseBranch}` : 'integrada na branch do workspace'}${sent}`);
     return pick('completed', 'todas as etapas concluídas');
   }
   if (s === 'ready_to_integrate') return pick('ready_to_integrate', info?.baseBranch ? `pronta para integrar em ${info.baseBranch}` : 'pronta para integrar');
@@ -641,7 +662,7 @@ export function nodeDetail(flow, run, nodeId, { now = Date.now(), roles = FALLBA
       counts: { total: steps.length, completed: count('completed'), failed: count('failed'), skipped: count('skipped'), cancelled: count('cancelled') },
       failures: rs.filter((x) => x?.status === 'failed').map((x) => ({ id: x.stepId, title: defs.get(x.stepId)?.title ?? x.stepId, error: x.error ?? null })),
       startedAt: run?.startedAt ?? null, finishedAt: run?.finishedAt ?? null, durationMs: runDuration(run, now), runStatus: run?.status ?? null,
-      line: n.line, integration: integrationInfo(run), gitNotes: runGitNotes(run), leftovers: leftoverRows(run),
+      line: n.line, integration: integrationInfo(run), push: pushInfo(run), runId: run?.id ?? null, gitNotes: runGitNotes(run), leftovers: leftoverRows(run),
     };
   }
   const def = steps.find((s) => s.id === nodeId);
@@ -702,7 +723,7 @@ export function describeFailure(err, ctx = 'list') {
 const blankStep = (key, deps = []) => ({ key, title: '', prompt: '', provider: 'claude', role: 'builder', model: '', effort: '', dependsOn: deps, continueFrom: '' });
 /** `kind`: 'project' | 'automation' (só automação leva agenda). `autoIntegrate` nasce ligado (padrão do servidor); `schedule` é o rascunho de `emptySchedule()`. */
 export function emptyDraft({ workspaceId = '', kind = 'project' } = {}) {
-  return { workspaceId, kind: kind === 'automation' ? 'automation' : 'project', title: '', goal: '', fullAccess: false, maxParallel: 1, autoIntegrate: true, schedule: emptySchedule(), ...verifyToDraft(null), steps: [blankStep('k1')], nextKey: 2 };
+  return { workspaceId, kind: kind === 'automation' ? 'automation' : 'project', title: '', goal: '', fullAccess: false, maxParallel: 1, autoIntegrate: true, autoPush: false, schedule: emptySchedule(), ...verifyToDraft(null), steps: [blankStep('k1')], nextKey: 2 };
 }
 /** Nova etapa ao fim; por padrão depende da anterior (sequência), e o usuário desmarca para criar um ramo paralelo. */
 export function addStep(draft) {
@@ -738,6 +759,7 @@ export function flowToDraft(flow) {
     workspaceId: flow?.workspaceId ?? '', title: str(flow?.title), goal: str(flow?.goal), fullAccess: flow?.fullAccess === true, maxParallel: Math.min(4, Math.max(1, Number(flow?.maxParallel) || 1)),
     kind: flow?.kind === 'automation' ? 'automation' : 'project', schedule: scheduleToDraft(flow?.schedule), autoIntegrate: flow?.autoIntegrate !== false, // missão antiga sem o campo = true
     ...verifyToDraft(flow?.verifyCommand), // sem o campo = sem verificação
+    autoPush: flow?.autoPush === true, // missão antiga sem o campo = desligado
 
     steps: steps.length ? steps.map((s) => ({ key: keyOf.get(s.id), title: str(s.title), prompt: str(s.prompt), provider: s.provider ?? 'claude', role: s.role ?? 'builder', model: s.model ?? '', effort: s.effort ?? '', dependsOn: arr(s.dependsOn).map((d) => keyOf.get(d)).filter(Boolean), continueFrom: s.continueFrom ? keyOf.get(s.continueFrom) ?? '' : '' })) : [blankStep('k1')],
     nextKey: steps.length + 1,
@@ -757,6 +779,7 @@ export function validateDraft(draft, { mode = 'create' } = {}) {
   if (kind !== 'project' && kind !== 'automation') add('kind', 'Escolha o tipo: projeto ou automação.');
   if (kind === 'automation') for (const e of validateScheduleDraft(draft?.schedule).errors) add(e.field, e.message);
   for (const e of validateVerifyDraft(draft)) add(e.field, e.message);
+  if (draft?.autoPush === true && !str(draft?.verifyText).trim()) add('autoPush', 'O envio automático exige um comando de verificação: só envia depois de ele passar.');
   const steps = arr(draft?.steps);
   if (!steps.length) add('steps', 'Adicione ao menos uma etapa.');
   if (steps.length > MAX_STEPS) add('steps', `No máximo ${MAX_STEPS} etapas por missão.`);
@@ -783,7 +806,7 @@ export function draftToBody(draft, { mode = 'create', proposalId = null } = {}) 
   const kind = draft.kind === 'automation' ? 'automation' : 'project';
   const body = {
     kind, title: str(draft.title).trim(), goal: str(draft.goal).trim(), fullAccess: draft.fullAccess === true, maxParallel: Number(draft.maxParallel) || 1,
-    schedule: kind === 'automation' ? draftToSchedule(draft.schedule) : null, autoIntegrate: draft.autoIntegrate === true, verifyCommand: draftToVerify(draft),
+    schedule: kind === 'automation' ? draftToSchedule(draft.schedule) : null, autoIntegrate: draft.autoIntegrate === true, autoPush: draft.autoPush === true, verifyCommand: draftToVerify(draft),
     steps: arr(draft.steps).map((s) => ({
       id: ids.get(s.key), title: str(s.title).trim(), prompt: str(s.prompt).trim(), provider: s.provider, role: s.role, model: s.model || null, effort: s.effort || null,
       dependsOn: arr(s.dependsOn).map((d) => ids.get(d)).filter(Boolean), continueFrom: s.continueFrom ? ids.get(s.continueFrom) ?? null : null,
@@ -792,9 +815,9 @@ export function draftToBody(draft, { mode = 'create', proposalId = null } = {}) 
   // `proposalId` só no create e só no formato do servidor: serve para baixar a proposta do Planejador depois da criação (não muda a missão)
   return mode === 'create' ? { workspaceId: draft.workspaceId, ...body, ...(isProposalId(proposalId) ? { proposalId } : {}) } : body;
 }
-/** PATCH só com agenda e integração automática: o único aceito com run ativo (os demais campos dão 409). */
+/** PATCH só com agenda, integração automática e envio automático: o único aceito com run ativo (os demais campos dão 409). */
 export function draftToScheduleBody(draft) {
-  return { schedule: draft?.kind === 'automation' ? draftToSchedule(draft.schedule) : null, autoIntegrate: draft?.autoIntegrate === true };
+  return { schedule: draft?.kind === 'automation' ? draftToSchedule(draft.schedule) : null, autoIntegrate: draft?.autoIntegrate === true, autoPush: draft?.autoPush === true };
 }
 
 // ---------- criar por briefing: terminal planejador e propostas (docs/missions-v2-briefing.md) ----------

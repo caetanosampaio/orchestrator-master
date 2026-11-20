@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Icon } from './ui.jsx';
 import Dialog from './Dialog.jsx';
 import StatusGlyph from './StatusGlyph.jsx';
-import { currentRun, flowProgress, flowState, FLOW_STATE_META, integrationInfo, KIND_LABEL, LEFTOVERS_HINT, NOT_INFORMED, nextRunLabel, runActions, runDuration, runGitNotes, fmtDuration, fmtWhen, runStepMeta, scheduleLabel } from '../flows-view.js';
+import { currentRun, flowProgress, flowState, FLOW_STATE_META, integrationInfo, KIND_LABEL, LEFTOVERS_HINT, NOT_INFORMED, nextRunLabel, pushInfo, runActions, runDuration, runGitNotes, fmtDuration, fmtWhen, runStepMeta, scheduleLabel } from '../flows-view.js';
 
 const GLYPH = { ok: 'done', skip: 'off' }; // tom de missão/etapa -> glifo do shell (os outros tons têm o mesmo nome)
 export const toneGlyph = (tone) => GLYPH[tone] ?? tone;
@@ -260,18 +260,62 @@ export function DiscardDialog({ info, busy, onConfirm, onClose }) {
   );
 }
 
+/**
+ * Confirmação de ENVIAR AO REMOTO: a prévia do servidor (o que iria e para onde) e o botão, que só envia com o `digest` desta prévia. `dlg` = { loading, preview, error }.
+ * Os textos dos commits vêm do Git (o React escapa). Commits locais anteriores à missão aparecem com aviso: iriam junto.
+ */
+// avisos que o envio MANUAL aceita com a sua confirmação (o servidor, flow-push.js USER_OK, é quem decide; aqui só separa aviso de impedimento)
+const PUSH_WARN = new Set(['local_unpushed', 'foreign_commits', 'target_changed', 'target_unknown', 'unsafe_config']);
+export function PushDialog({ dlg, busy, onConfirm, onClose }) {
+  const p = dlg?.preview ?? null, reasons = Array.isArray(p?.reasons) ? p.reasons : [];
+  const warns = reasons.filter((r) => PUSH_WARN.has(r.code)), blocking = reasons.filter((r) => !PUSH_WARN.has(r.code));
+  const n = (p?.commits?.length ?? 0) + (p?.more ?? 0);
+  return (
+    <Dialog title="Enviar para o remoto" onClose={onClose} id="fl-push">
+      <div className="fl-confirm">
+        {dlg?.loading && <p className="fl-push-wait"><i className="fl-spin" aria-hidden="true" /><span>Consultando o remoto…</span></p>}
+        {dlg?.error && <p className="fl-callout wait" role="alert">{dlg.error}</p>}
+        {p && p.already && <p>O commit integrado já está em <code>{p.branch}</code>: não há nada a enviar.</p>}
+        {p && !p.already && blocking.length > 0 && (
+          <div className="fl-callout wait" role="alert"><p><b>Não dá para enviar agora:</b></p><ul className="fl-reasons">{blocking.map((r, i) => <li key={`${r.code}-${i}`}>{r.message}</li>)}</ul></div>
+        )}
+        {p && !p.already && p.commits?.length > 0 && (
+          <>
+            <p>{n === 1 ? 'Vai enviar 1 commit' : `Vai enviar ${n} commits`} para <code>{p.branch}</code>{p.url ? <> em <code>{p.url}</code></> : null}, sem forçar. Nada mais (outras branches e tags ficam onde estão).</p>
+            {warns.length > 0 && (
+              <div className="fl-callout wait" role="note"><p><b>Confira antes de enviar:</b></p><ul className="fl-reasons">{warns.map((r, i) => <li key={`${r.code}-${i}`}>{r.message}</li>)}</ul></div>
+            )}
+            <ul className="fl-push-list">
+              {p.commits.map((c) => <li key={c.sha}><code>{c.sha.slice(0, 7)}</code><span>{c.subject || <span className="dim">(sem mensagem)</span>}</span></li>)}
+              {p.more > 0 && <li className="dim">e mais {p.more}</li>}
+            </ul>
+          </>
+        )}
+        <p className="dim">Usa o login do Git desta máquina. Nenhuma IA envolvida.</p>
+        <div className="fl-form-foot">
+          <button type="button" className="fl-btn" onClick={onClose}>Cancelar</button>
+          <button type="button" className="fl-btn fl-btn-primary" data-autofocus onClick={() => onConfirm(p.digest)} disabled={!p?.canPush || !!busy}>
+            {busy ? <Busy on /> : <Icon name="send" size={12} />}<span>{p?.branch ? `Enviar para ${p.branch}` : 'Enviar'}</span>
+          </button>
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
 function Busy({ on }) { return on ? <i className="fl-spin" aria-hidden="true" /> : null; }
 
 /**
  * Cabeçalho compacto: título, estado, ações do run (por `runActions`), metadados, objetivo e a faixa de progresso (um segmento por etapa).
  * Com run ativo, Editar vira "Editar agenda"/"Editar integração": o servidor só aceita mudar agenda e integração automática nesse momento.
  */
-export default function FlowHeader({ flow, workspaceName, now, busy, onStart, onCancel, onEdit, onEditSchedule, onRemove, onPickStep, onResume, onIntegrate, onDiscard, onCleanup }) {
+export default function FlowHeader({ flow, workspaceName, now, busy, onStart, onCancel, onEdit, onEditSchedule, onRemove, onPickStep, onResume, onIntegrate, onDiscard, onCleanup, onPush }) {
   const run = currentRun(flow), active = flow.activeRun ?? null;
   const state = flowState(flow), meta = FLOW_STATE_META[state], progress = flowProgress(flow, run);
   const ra = runActions(flow), info = integrationInfo(run), notes = runGitNotes(run);
   const dur = runDuration(run, now);
   const runBy = new Map((run?.steps ?? []).map((s) => [s.stepId, s]));
+  const pi = active ? null : pushInfo(run); // envio ao remoto do último run integrado
   const auto = flow.kind === 'automation';
   const sched = auto && flow.schedule && flow.schedule.enabled !== false ? flow.schedule : null;
   const B = (key) => <Busy on={busy === key} />;
@@ -296,6 +340,7 @@ export default function FlowHeader({ flow, workspaceName, now, busy, onStart, on
           {ra.canIntegrate && ra.canDiscard && <button type="button" className="fl-btn fl-btn-danger" onClick={onDiscard} disabled={!!busy}>{B('discard')}<span>Descartar</span></button>}
           {ra.canResume && <button type="button" className="fl-btn fl-btn-primary" onClick={onResume} disabled={!!busy}>{B('resume')}<Icon name="play" size={12} /><span>Retomar</span></button>}
           {ra.canIntegrate && <button type="button" className="fl-btn fl-btn-primary" onClick={onIntegrate} disabled={!!busy}>{B('integrate')}<Icon name="check" size={12} /><span>Integrar</span></button>}
+          {pi?.canPush && onPush && <button type="button" className="fl-btn" onClick={onPush} disabled={!!busy} title="Envia o commit integrado para a branch remota que a sua acompanha (mostra a lista antes).">{B('push')}<Icon name="send" size={12} /><span>Enviar ao remoto</span></button>}
           {!active && <button type="button" className="fl-btn fl-btn-primary" onClick={onStart} disabled={!!busy}>{B('start')}<Icon name="play" size={12} /><span>{run ? 'Executar de novo' : 'Iniciar'}</span></button>}
         </div>
       </div>
@@ -315,10 +360,15 @@ export default function FlowHeader({ flow, workspaceName, now, busy, onStart, on
         {flow.autoIntegrate !== false
           ? <span className="fl-chip" title="Em workspace Git, integra na sua branch ao terminar, se não houver conflito e a pasta estiver limpa.">integração automática</span>
           : <span className="fl-chip" title="Ao terminar, a execução espera você clicar em Integrar.">integração manual</span>}
+        {flow.autoPush === true && <span className="fl-chip" title="Depois da integração final, envia o commit integrado para a branch remota (sem forçar), só com a verificação aprovada."><Icon name="send" size={11} />envio automático</span>}
+        {pi?.state === 'pushed' && <span className="fl-chip" title={pi.at ? `Enviada em ${fmtWhen(pi.at)}${pi.by === 'auto' ? ' (automático)' : ' (por você)'}` : undefined}><Icon name="check" size={11} />{pi.label}{pi.commitShort ? ` · ${pi.commitShort}` : ''}</span>}
       </div>
       {/* modo pasta (sem cópia isolada) e recomeço a partir de outra ponta: avisos do run, em texto (o motivo vem do servidor) */}
       {notes.fallbackText && <p className="fl-gitnote" role="note"><span className="fl-chip warn"><Icon name="alert" size={11} />modo pasta</span> {notes.fallbackText}.</p>}
       {notes.rebasedText && <p className="fl-gitnote" role="note"><span className="fl-chip">recomeço</span> {notes.rebasedText}.</p>}
+      {/* envio que não saiu (regra ou falha): o motivo do servidor, em texto; o botão Enviar ao remoto fica nas ações */}
+      {pi?.needsYou && <p className="fl-gitnote" role="note"><span className={`fl-chip ${pi.state === 'failed' ? 'err' : 'warn'}`}><Icon name="alert" size={11} />{pi.label}</span> {pi.error ?? 'Motivo não informado.'}</p>}
+      {pi?.state === 'pushing' && <p className="fl-gitnote" role="status"><span className="fl-chip"><i className="fl-spin" aria-hidden="true" />{pi.label}</span></p>}
       {ra.leftovers.length > 0 && (
         <div className="fl-leftovers" role="note" aria-label="Cópias de trabalho que não saíram">
           <p className="fl-notice-h"><Icon name="alert" size={13} /><span><b>{ra.leftovers.length === 1 ? '1 cópia de trabalho não saiu' : `${ra.leftovers.length} cópias de trabalho não saíram`}</b> na última limpeza:</span></p>

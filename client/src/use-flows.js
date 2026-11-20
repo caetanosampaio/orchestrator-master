@@ -75,10 +75,13 @@ export function useFlows({ intervalMs = 2500 } = {}) {
     integrate: (id, runId, opts) => act(() => post(`${runUrl(id, runId)}/integrate`, ackBody(opts))),
     discard: (id, runId, { deleteBranch = false } = {}) => act(() => post(`${runUrl(id, runId)}/discard`, { deleteBranch: deleteBranch === true })),
     cleanup: (id, runId) => act(() => post(`${runUrl(id, runId)}/cleanup`, {})),
+    // envio ao remoto depois da integração: a prévia só lê (consulta o remoto); o envio exige o `digest` da prévia que você viu
+    pushPreview: (id, runId) => api.get(`${runUrl(id, runId)}/push`),
+    push: (id, runId, expect) => act(() => post(`${runUrl(id, runId)}/push`, { expect })),
     // action = 'retry' | 'discard'
     stepIntegration: (id, runId, stepId, action, opts) => act(() => post(`${runUrl(id, runId)}/steps/${encodeURIComponent(stepId)}/integration`, { action, ...ackBody(opts) })),
-    // único PATCH aceito com run ativo: SÓ agenda e integração automática (os demais campos dariam 409)
-    updateSchedule: (id, body) => act(() => patch(`/api/flows/${encodeURIComponent(id)}`, { schedule: body?.schedule ?? null, autoIntegrate: body?.autoIntegrate === true })),
+    // único PATCH aceito com run ativo: SÓ agenda, integração automática e envio automático (os demais campos dariam 409)
+    updateSchedule: (id, body) => act(() => patch(`/api/flows/${encodeURIComponent(id)}`, { schedule: body?.schedule ?? null, autoIntegrate: body?.autoIntegrate === true, autoPush: body?.autoPush === true })),
     // criar por briefing: abre o terminal do Planejador ({ terminalId, session }); nada é criado nem iniciado aqui
     startBriefing: (body) => post('/api/flows/briefing', briefingBody(body)),
     dismissProposal: (id) => act(() => post(`/api/flows/proposals/${encodeURIComponent(id)}/dismiss`, {})),

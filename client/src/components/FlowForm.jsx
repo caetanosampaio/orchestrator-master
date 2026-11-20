@@ -114,6 +114,28 @@ function AutoIntegrate({ checked, onChange, unattended = false }) {
 }
 
 /**
+ * Envio automático ao remoto (padrão desligado): depois da integração final, só com o comando de verificação aprovado. Sem verificação o interruptor fica travado (o servidor também recusa).
+ * Nenhuma IA envolvida: é o Git desta máquina, com as credenciais dela.
+ */
+function AutoPush({ checked, onChange, hasVerify, errOf }) {
+  const errs = errOf('autoPush');
+  return (
+    <div className="fl-autoint">
+      <label className="fl-check">
+        <input type="checkbox" checked={checked} disabled={!hasVerify && !checked} onChange={(e) => onChange(e.target.checked)} aria-describedby="fl-autopush-d" aria-invalid={errs.length ? true : undefined} />
+        <span><b>Enviar para o remoto (push) depois de integrar</b> <span className="dim">(só com a verificação aprovada)</span></span>
+      </label>
+      <p id="fl-autopush-d" className="fl-hint">
+        {hasVerify
+          ? 'Depois da integração final, o commit integrado vai para a branch remota que a sua acompanha (ex.: origin/main), sem forçar. Se a verificação não passar, ou o remoto tiver commits que você não tem, nada é enviado e a missão mostra Enviar agora.'
+          : 'Defina um comando de verificação abaixo para liberar: o envio automático só acontece depois de ele passar.'}
+      </p>
+      {errs.length > 0 && <span className="fl-err" role="alert">{errs[0]}</span>}
+    </div>
+  );
+}
+
+/**
  * Comando de verificação opcional (ex.: npm test): roda numa cópia isolada da branch da missão antes da integração final automática (modo Git); só integra se passar.
  * Sem shell: o texto vira uma lista de argumentos (tokenizeCommand). Operadores de shell digitados só geram aviso (iriam como argumentos literais).
  */
@@ -278,9 +300,10 @@ export default function FlowForm({ mode = 'create', flow = null, workspaces, act
       <Dialog title={auto ? 'Editar agenda' : 'Editar integração'} onClose={onClose} id="flow-form" size="lg">
         <form className="fl-form" onSubmit={submit} noValidate>
           <ProposalNotices proposal={null} notices={notices} onSwap={swap} />
-          <p className="dim fl-form-lead">A missão “{flow?.title}” tem uma execução ativa: agora só a agenda e a integração automática podem mudar. O resto fica para quando a execução terminar. Mudar a agenda recalcula a próxima execução a partir de agora.</p>
+          <p className="dim fl-form-lead">A missão “{flow?.title}” tem uma execução ativa: agora só a agenda, a integração automática e o envio automático podem mudar. O resto fica para quando a execução terminar. Mudar a agenda recalcula a próxima execução a partir de agora.</p>
           {auto && <ScheduleEditor sd={draft.schedule} onChange={(schedule) => set({ schedule })} fullAccess={draft.fullAccess} errOf={fieldErr} />}
           <AutoIntegrate checked={draft.autoIntegrate === true} onChange={(v) => set({ autoIntegrate: v })} unattended={auto && draft.fullAccess === true} />
+          <AutoPush checked={draft.autoPush === true} onChange={(v) => set({ autoPush: v })} hasVerify={!!String(draft.verifyText ?? '').trim()} errOf={fieldErr} />
           {foot}
         </form>
       </Dialog>
@@ -329,6 +352,7 @@ export default function FlowForm({ mode = 'create', flow = null, workspaces, act
         {auto && <ScheduleEditor sd={draft.schedule} onChange={(schedule) => set({ schedule })} fullAccess={draft.fullAccess} errOf={fieldErr} />}
         <AutoIntegrate checked={draft.autoIntegrate === true} onChange={(v) => set({ autoIntegrate: v })} unattended={auto && draft.fullAccess === true} />
         <VerifyEditor text={draft.verifyText ?? ''} timeout={draft.verifyTimeout} onChange={set} errOf={fieldErr} />
+        <AutoPush checked={draft.autoPush === true} onChange={(v) => set({ autoPush: v })} hasVerify={!!String(draft.verifyText ?? '').trim()} errOf={fieldErr} />
 
         <section aria-label="Etapas" className="fl-steps">
           <p className="fl-label">Etapas <span className="fl-count">{draft.steps.length}/{MAX_STEPS}</span></p>
