@@ -175,3 +175,22 @@ test('entradas inválidas e falhas do Git viram error (nunca lança) e não deix
   assert.equal(r.status, 'error'); assert.match(r.outputTail, /git sumiu/);
   assert.deepEqual(leftovers(), []);
 });
+
+test('signal abortado: o processo é encerrado, status error "Verificação cancelada." e a cópia apagada; já abortado antes = nem clona', async () => {
+  const pf = path.join(tmp, 'hang-abort.pid'); fs.rmSync(pf, { force: true });
+  const ac = new AbortController();
+  const p = fv.run(repo, SHA, { args: [NODE, 'hang.js', pf], timeoutSec: 1800, signal: ac.signal });
+  for (let i = 0; i < 100 && !fs.existsSync(pf); i++) await new Promise((res) => setTimeout(res, 50));
+  const pid = Number(fs.readFileSync(pf, 'utf8')); assert.ok(pid > 0);
+  ac.abort();
+  const r = await p;
+  assert.equal(r.status, 'error'); assert.equal(r.exitCode, null); assert.match(r.outputTail, /Verificação cancelada/); assert.match(r.outputTail, /iniciou/);
+  for (let i = 0; i < 50 && alive(pid); i++) await new Promise((res) => setTimeout(res, 100));
+  assert.equal(alive(pid), false, 'o processo foi encerrado');
+  assert.deepEqual(leftovers(), [], 'a cópia foi apagada também após cancelar');
+  const pre = new AbortController(); pre.abort();
+  let clones = 0;
+  const fv2 = createFlowVerify({ tmpRoot, runGit: async () => { clones++; return { code: 1, err: 'não deveria' }; } });
+  const r2 = await fv2.run(repo, SHA, { args: [NODE, 'ok.js'], signal: pre.signal });
+  assert.equal(r2.status, 'error'); assert.match(r2.outputTail, /Verificação cancelada/); assert.equal(clones, 0); assert.deepEqual(leftovers(), []);
+});

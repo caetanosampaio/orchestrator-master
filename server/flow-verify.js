@@ -72,6 +72,7 @@ function resolveCommand(args, platform) {
   return { command: exe, args: rest };
 }
 
+const CANCELLED = 'Verificação cancelada.';
 const noteTail = (text, note) => `${String(text).slice(-Math.max(0, KEEP_CHARS - note.length - 1))}\n${note}`;
 
 /**
@@ -79,7 +80,10 @@ const noteTail = (text, note) => `${String(text).slice(-Math.max(0, KEEP_CHARS -
  * `maxOutputBytes` e `timeoutScale` (multiplica o timeout) também são só para os testes.
  */
 export function createFlowVerify({ runGit = git, spawnProc = spawn, tmpRoot = os.tmpdir(), maxOutputBytes = MAX_OUTPUT_BYTES, timeoutScale = 1, platform = process.platform } = {}) {
-  /** Nunca lança. Devolve { status: 'pass'|'fail'|'timeout'|'error', command, exitCode, durationMs, outputTail, truncated, at }. */
+  /**
+   * Nunca lança. Devolve { status: 'pass'|'fail'|'timeout'|'error', command, exitCode, durationMs, outputTail, truncated, at }.
+   * `opts.signal` (AbortSignal, opcional): abortar = a árvore do processo é encerrada e o resultado é `error` ("Verificação cancelada."); a cópia é apagada do mesmo jeito.
+   */
   async function run(repoPath, sha, opts = {}) {
     const checked = validateVerifyCommand({ args: opts?.args, timeoutSec: opts?.timeoutSec });
     const command = Array.isArray(opts?.args) ? opts.args.map(String).join(' ').slice(0, 400) : '';
@@ -94,6 +98,8 @@ export function createFlowVerify({ runGit = git, spawnProc = spawn, tmpRoot = os
     const { args, timeoutSec } = checked.value;
     const resolved = resolveCommand(args, platform);
     if (resolved.error) return result('error', { text: resolved.error });
+    const signal = opts?.signal ?? null;
+    if (signal?.aborted) return result('error', { text: CANCELLED });
 
     let dir = null;
     try {
@@ -103,7 +109,8 @@ export function createFlowVerify({ runGit = git, spawnProc = spawn, tmpRoot = os
       if (clone.code !== 0) return result('error', { text: `Não foi possível criar a cópia isolada do repositório: ${clone.timedOut ? 'tempo esgotado' : (clone.err || 'falha ao executar o Git')}` });
       const co = await runGit(copy, ['checkout', '--quiet', '--detach', sha], { timeout: 120_000 });
       if (co.code !== 0) return result('error', { text: `Não foi possível posicionar a cópia no commit ${sha.slice(0, 12)}: ${co.timedOut ? 'tempo esgotado' : (co.err || 'falha ao executar o Git')}` });
-      return await execute(copy, resolved, timeoutSec, result);
+      if (signal?.aborted) return result('error', { text: CANCELLED });
+      return await execute(copy, resolved, timeoutSec, result, signal);
     } catch (e) {
       return result('error', { text: `Falha ao preparar a verificação: ${e?.message ?? e}` });
     } finally {
@@ -111,15 +118,15 @@ export function createFlowVerify({ runGit = git, spawnProc = spawn, tmpRoot = os
     }
   }
 
-  function execute(cwd, spec, timeoutSec, result) {
+  function execute(cwd, spec, timeoutSec, result, signal = null) {
     const limit = Math.max(Math.round(timeoutSec * 1000 * timeoutScale), 50);
     const t0 = Date.now();
     return new Promise((resolve) => {
-      let child, done = false, timedOut = false, overflow = false, bytes = 0, tail = '';
+      let child, done = false, timedOut = false, overflow = false, aborted = false, bytes = 0, tail = '';
       const dec = new StringDecoder('utf8');
       let timer = null, failSafe = null;
       const finish = (exitCode, spawnError) => {
-        if (done) return; done = true; clearTimeout(timer); clearTimeout(failSafe);
+        if (done) return; done = true; clearTimeout(timer); clearTimeout(failSafe); signal?.removeEventListener?.('abort', onAbort);
         try { child.removeAllListeners(); child.stdout?.removeAllListeners(); child.stderr?.removeAllListeners(); child.on('error', () => {}); } catch { /* já limpo */ }
         const durationMs = Date.now() - t0, total = bytes;
         if (spawnError) {
@@ -129,6 +136,7 @@ export function createFlowVerify({ runGit = git, spawnProc = spawn, tmpRoot = os
           return resolve(result('error', { durationMs, text: msg }));
         }
         const text = (tail + dec.end()).trim();
+        if (aborted) return resolve(result('error', { exitCode: null, durationMs, total, text: noteTail(text, `[${CANCELLED} Processo encerrado.]`) }));
         if (timedOut) return resolve(result('timeout', { exitCode: null, durationMs, total, text: noteTail(text, `[tempo máximo excedido (${Math.round(limit / 1000)} s); processo encerrado]`) }));
         if (overflow) return resolve(result('fail', { exitCode: null, durationMs, total, text: noteTail(text, `[a saída passou de ${maxOutputBytes} bytes; processo encerrado]`) }));
         resolve(result(exitCode === 0 ? 'pass' : 'fail', { exitCode, durationMs, total, text }));
@@ -140,9 +148,11 @@ export function createFlowVerify({ runGit = git, spawnProc = spawn, tmpRoot = os
         killTree(child).then(() => { if (!done) failSafe = setTimeout(() => finish(null), 3000); });
       };
       timer = setTimeout(() => { timedOut = true; stop(); }, limit);
+      function onAbort() { if (done || aborted || timedOut || overflow) return; aborted = true; stop(); }
+      signal?.addEventListener?.('abort', onAbort, { once: true });
       const feed = (chunk) => {
         bytes += chunk.length;
-        if (overflow || timedOut) return; // depois do corte, o restante é descartado
+        if (overflow || timedOut || aborted) return; // depois do corte, o restante é descartado
         tail = (tail + dec.write(chunk)).slice(-KEEP_CHARS);
         if (bytes > maxOutputBytes) { overflow = true; stop(); }
       };
