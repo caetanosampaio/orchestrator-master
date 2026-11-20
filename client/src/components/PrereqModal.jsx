@@ -13,15 +13,15 @@ function Inline({ text }) {
 }
 
 /**
- * "Antes de começar": popup central, com o fundo escurecido e desfocado, mostrado quando falta algo para o FORGE funcionar (Claude Code, login da conta, Git).
- * Com o Claude Code ausente BLOQUEIA o uso; "Continuar mesmo assim" só aparece depois de uma verificação que continuou falhando (um falso negativo nunca prende o usuário).
+ * "Antes de começar": popup central, com o fundo escurecido e desfocado, mostrado quando falta algo para o FORGE funcionar (uma IA suportada, login da conta, Git).
+ * Sem NENHUMA IA instalada (nem Claude Code nem Codex) BLOQUEIA o uso; "Continuar mesmo assim" só aparece depois de uma verificação que continuou falhando (um falso negativo nunca prende o usuário).
  * Pendências informativas (login, Git) podem ser dispensadas na hora. Dispensar vale até o conjunto de pendências mudar. Some sozinho quando tudo é resolvido.
  */
 export default function PrereqModal({ onOpenAccounts = null, suspended = false }) {
-  const { state, refresh } = useStore();
+  const { state, terminals, refresh } = useStore();
   const [busy, setBusy] = useState(false), [tries, setTries] = useState(0), [ignored, setIgnored] = useState('');
   const box = useRef(null), primary = useRef(null);
-  const issues = prereqIssues(state), key = issueKey(issues), blocking = hasBlocking(issues);
+  const issues = prereqIssues(state, terminals?.providers), key = issueKey(issues), blocking = hasBlocking(issues);
   // `suspended`: outro diálogo (por exemplo Configurações > Contas, aberto pelo botão "Entrar na conta") está na tela: o popup se afasta e volta quando ele fechar, se ainda houver pendência
   const open = !suspended && issues.length > 0 && ignored !== key;
   const can = canContinue({ issues, tries });
@@ -46,7 +46,7 @@ export default function PrereqModal({ onOpenAccounts = null, suspended = false }
 
   if (!open) return null;
   const recheck = async () => { setBusy(true); try { await api.get('/api/state?fresh=1').catch(() => {}); await refresh(); } finally { setBusy(false); setTries((t) => t + 1); } };
-  const hasLogin = issues.some((i) => i.id === 'login');
+  const hasLogin = issues.some((i) => i.id === 'login'); // só o login do Claude abre Configurações > Contas; o do Codex é feito no terminal (`codex login`)
   return (
     <div className="oc-modal prereq-modal" data-testid="prereq-modal">
       <div className="oc-dialog" role="alertdialog" aria-modal="true" aria-labelledby="prereq-t" aria-describedby="prereq-d" ref={box} tabIndex={-1}>
@@ -62,7 +62,7 @@ export default function PrereqModal({ onOpenAccounts = null, suspended = false }
               </li>
             ))}
           </ul>
-          {issues.some((i) => i.id !== 'login') ? <p className="dim small prereq-hint">{RESTART_HINT}</p> : null}
+          {issues.some((i) => i.id !== 'login' && i.id !== 'codexLogin') ? <p className="dim small prereq-hint">{RESTART_HINT}</p> : null}
           <div className="prereq-actions">
             {hasLogin && onOpenAccounts ? <button type="button" className="btn" onClick={onOpenAccounts}>Entrar na conta</button> : null}
             <button type="button" className="btn primary" onClick={recheck} disabled={busy} ref={primary}>{busy ? 'Verificando…' : 'Verificar novamente'}</button>

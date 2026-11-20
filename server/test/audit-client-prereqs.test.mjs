@@ -7,17 +7,40 @@ const ok = { available: true, version: '1.0.0', detail: '' };
 const off = (detail = 'não encontrado') => ({ available: false, version: null, detail });
 const login = (loggedIn, known = true) => ({ known, loggedIn: known ? loggedIn : null, detail: '' });
 const st = (p) => ({ prereqs: { claude: ok, git: ok, login: login(true), ...p } });
-const ids = (s) => prereqIssues(s).map((i) => i.id);
+// provedores de /api/terminals: o Codex só entra na decisão com a lista carregada (array); o padrão aqui é "sem Codex"
+const noCodex = [{ id: 'claude', available: false }, { id: 'codex', available: false }];
+const withCodex = (auth) => [{ id: 'claude', available: false }, { id: 'codex', available: true, ...(auth ? { auth } : {}) }];
+const ids = (s, providers = noCodex) => prereqIssues(s, providers).map((i) => i.id);
 
 test('tudo certo, ou servidor ainda sem resposta: nenhuma pendência (o popup não aparece)', () => {
   assert.deepEqual(prereqIssues(st({})), []);
   assert.deepEqual(prereqIssues(null), []); assert.deepEqual(prereqIssues(undefined), []); assert.deepEqual(prereqIssues('x'), []);
 });
 
-test('Claude Code ausente: pendência BLOQUEANTE e primeira da lista', () => {
-  const [c] = prereqIssues(st({ claude: off() }));
-  assert.equal(c.id, 'claude'); assert.equal(c.blocking, true); assert.equal(hasBlocking([c]), true);
-  assert.match(c.title, /Claude Code não encontrado/); assert.ok(c.steps.length >= 3);
+test('nenhuma IA (Claude Code e Codex ausentes): pendência BLOQUEANTE e primeira da lista', () => {
+  const [c] = prereqIssues(st({ claude: off() }), noCodex);
+  assert.equal(c.id, 'agent'); assert.equal(c.blocking, true); assert.equal(hasBlocking([c]), true);
+  assert.match(c.title, /Nenhuma IA encontrada/); assert.ok(c.steps.length >= 3);
+  assert.match(c.text, /Claude Code ou Codex CLI/);
+});
+
+test('Claude Code ausente mas Codex instalado: NÃO bloqueia (basta uma IA); só avisa se o Codex não estiver conectado', () => {
+  assert.deepEqual(ids(st({ claude: off() }), withCodex()), [], 'Codex disponível: nada a avisar');
+  assert.deepEqual(ids(st({ claude: off() }), withCodex({ known: true, loggedIn: true })), []);
+  assert.deepEqual(ids(st({ claude: off() }), withCodex({ known: false, loggedIn: null })), [], 'login desconhecido: sem aviso falso');
+  const [x] = prereqIssues(st({ claude: off() }), withCodex({ known: true, loggedIn: false }));
+  assert.equal(x.id, 'codexLogin'); assert.equal(x.blocking, false); assert.equal(hasBlocking([x]), false);
+  assert.equal(canContinue({ issues: [x], tries: 0 }), true);
+});
+
+test('Claude Code instalado: Codex ausente ou desconectado não gera pendência', () => {
+  assert.deepEqual(prereqIssues(st({}), noCodex), []);
+  assert.deepEqual(prereqIssues(st({}), [{ id: 'codex', available: true, auth: { known: true, loggedIn: false } }]), []);
+});
+
+test('Claude Code ausente com os provedores ainda não carregados: espera (sem bloqueio piscando para quem usa só Codex)', () => {
+  assert.deepEqual(prereqIssues(st({ claude: off() })), []); assert.deepEqual(prereqIssues(st({ claude: off() }), null), []); assert.deepEqual(prereqIssues(st({ claude: off() }), undefined), []);
+  assert.deepEqual(prereqIssues(st({ claude: off(), git: off() }), null).map((i) => i.id), ['git'], 'o resto continua sendo avisado');
 });
 
 test('login: só avisa com o Claude Code instalado e quando o servidor TEM certeza; é informativo (não bloqueia)', () => {
@@ -25,31 +48,31 @@ test('login: só avisa com o Claude Code instalado e quando o servidor TEM certe
   assert.equal(prereqIssues(st({ login: login(false) }))[0].blocking, false);
   assert.deepEqual(ids(st({ login: login(false, false) })), [], 'macOS/desconhecido: sem aviso falso');
   assert.deepEqual(ids(st({ login: login(true) })), []);
-  assert.deepEqual(ids(st({ claude: off(), login: login(false) })), ['claude'], 'sem o Claude Code o login é irrelevante');
+  assert.deepEqual(ids(st({ claude: off(), login: login(false) })), ['agent'], 'sem o Claude Code o login do Claude é irrelevante');
   assert.deepEqual(ids({ prereqs: { claude: ok, git: ok } }), [], 'servidor sem o campo login: sem aviso');
 });
 
-test('Git ausente: informativo; ordem fixa claude, login, git', () => {
+test('Git ausente: informativo; ordem fixa IA, login, git', () => {
   const [g] = prereqIssues(st({ git: off() }));
   assert.equal(g.id, 'git'); assert.equal(g.blocking, false);
-  assert.deepEqual(ids(st({ claude: off(), git: off() })), ['claude', 'git']);
+  assert.deepEqual(ids(st({ claude: off(), git: off() })), ['agent', 'git']);
   assert.deepEqual(ids(st({ login: login(false), git: off() })), ['login', 'git']);
 });
 
 test('servidor antigo (sem prereqs): cai no probe antigo do Claude Code; Git e login não são avisados', () => {
-  assert.deepEqual(ids({ executor: { available: false, detail: 'x' } }), ['claude']);
+  assert.deepEqual(ids({ executor: { available: false, detail: 'x' } }), ['agent']);
   assert.deepEqual(ids({ executor: { available: true } }), []);
 });
 
 test('o detalhe do servidor só aparece quando acrescenta algo (não repete "não encontrado")', () => {
-  const [c, g] = prereqIssues(st({ claude: off('Claude Code não encontrado no PATH'), git: off('Git não encontrado no PATH. Instale em https://git-scm.com/downloads') }));
+  const [c, g] = prereqIssues(st({ claude: off('Claude Code não encontrado no PATH'), git: off('Git não encontrado no PATH. Instale em https://git-scm.com/downloads') }), noCodex);
   assert.equal(c.detail, ''); assert.equal(g.detail, '');
-  const [x] = prereqIssues(st({ claude: off('Claude Code não pôde ser iniciado com segurança (caminho do claude.cmd inválido).') }));
+  const [x] = prereqIssues(st({ claude: off('Claude Code não pôde ser iniciado com segurança (caminho do claude.cmd inválido).') }), noCodex);
   assert.match(x.detail, /caminho do claude\.cmd inválido/);
 });
 
 test('"Continuar mesmo assim": pendência informativa sempre pode ser dispensada; a bloqueante só depois de uma verificação que continuou falhando', () => {
-  const info = prereqIssues(st({ git: off() })), blocking = prereqIssues(st({ claude: off() }));
+  const info = prereqIssues(st({ git: off() })), blocking = prereqIssues(st({ claude: off() }), noCodex);
   assert.equal(canContinue({ issues: info, tries: 0 }), true);
   assert.equal(canContinue({ issues: blocking, tries: 0 }), false, 'sem verificar de novo, o popup bloqueia');
   assert.equal(canContinue({ issues: blocking, tries: 1 }), true, 'um falso negativo nunca prende o usuário fora do app');
@@ -66,7 +89,7 @@ test('texto do popup: sem links inventados (o único é o do Git) e com a orient
   const urls = all.match(/https?:\/\/[^\s"')]+/g) ?? [];
   assert.deepEqual([...new Set(urls)].map((u) => u.replace(/[.,;]+$/, '')), ['https://git-scm.com/downloads']);
   assert.match(RESTART_HINT, /feche o FORGE por completo e abra de novo/);
-  for (const k of ['claude', 'login', 'git']) { assert.ok(PREREQ[k].title && PREREQ[k].text && PREREQ[k].steps.length >= 2, k); assert.ok(Object.isFrozen(PREREQ[k])); }
+  for (const k of ['agent', 'codexLogin', 'login', 'git']) { assert.ok(PREREQ[k].title && PREREQ[k].text && PREREQ[k].steps.length >= 2, k); assert.ok(Object.isFrozen(PREREQ[k])); }
 });
 
 test('inlineParts: `código` e links https viram elementos; nada de HTML cru e nenhum outro protocolo vira link', () => {

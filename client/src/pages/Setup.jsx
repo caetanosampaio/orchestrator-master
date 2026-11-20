@@ -27,13 +27,13 @@ function Scene() {
 }
 
 /** Uma ferramenta no passo "Ferramentas": glifo de estado, nome, detalhe e se é obrigatória. */
-function ToolRow({ logo, name, ok, required, detail }) {
+function ToolRow({ logo, name, ok, required, detail, label }) {
   return (
     <li className={`fx-setup-tool${ok ? ' ok' : ''}`}>
       <StatusGlyph state={ok ? 'done' : required ? 'failed' : 'idle'} size={15} />
       {logo ? <ProviderLogo id={logo} size={16} /> : <Icon name="layers" size={16} />}
       <span className="fx-setup-tool-t"><b>{name}</b><span>{detail}</span></span>
-      <span className={`fx-chip${required && !ok ? ' warn' : ''}`}>{required ? 'obrigatório' : 'opcional'}</span>
+      <span className={`fx-chip${required && !ok ? ' warn' : ''}`}>{label ?? (required ? 'obrigatório' : 'opcional')}</span>
     </li>
   );
 }
@@ -52,9 +52,10 @@ export default function Setup({ onFinish }) {
   const [path, setPath] = useState(''), [wsName, setWsName] = useState(''), [check, setCheck] = useState(null), [busy, setBusy] = useState(false);
   const step = STEPS[i];
   const p = state?.prereqs ?? {};
-  const issues = useMemo(() => prereqIssues(state), [state]);
+  const issues = useMemo(() => prereqIssues(state, terminals?.providers), [state, terminals]);
   const claudeOk = p.claude ? p.claude.available === true : state?.executor?.available !== false;
   const codex = (terminals?.providers ?? []).find((x) => x.id === 'codex');
+  const anyAi = claudeOk || codex?.available === true; // nenhuma IA é obrigatória em si: basta uma delas
   const loginOk = !(p.login?.known === true && p.login.loggedIn === false);
   const go = (n) => { setDir(n > i ? 1 : -1); setI(Math.max(0, Math.min(STEPS.length - 1, n))); };
   const finish = () => { setPref('setupDone', true); onFinish?.(); };
@@ -98,10 +99,10 @@ export default function Setup({ onFinish }) {
           </>}
           {step.id === 'tools' && <>
             <h1 id="fx-setup-t">As ferramentas da forja</h1>
-            <p className="fx-setup-lead">O Forge abre os agentes que já estão instalados neste computador. Só o Claude Code é obrigatório.</p>
+            <p className="fx-setup-lead">O Forge abre os agentes que já estão instalados neste computador. Você precisa de pelo menos uma IA, a que preferir.</p>
             <ul className="fx-setup-tools">
-              <ToolRow logo="claude" name="Claude Code" required ok={claudeOk} detail={claudeOk ? (p.claude?.version || 'instalado') : 'não encontrado'} />
-              <ToolRow logo="codex" name="Codex CLI" ok={!!codex?.available} detail={codex?.available ? 'instalado' : 'não encontrado (pode instalar depois)'} />
+              <ToolRow logo="claude" name="Claude Code" required={!anyAi} label={anyAi ? 'opcional' : 'precisa de uma IA'} ok={claudeOk} detail={claudeOk ? (p.claude?.version || 'instalado') : 'não encontrado'} />
+              <ToolRow logo="codex" name="Codex CLI" required={!anyAi} label={anyAi ? 'opcional' : 'precisa de uma IA'} ok={!!codex?.available} detail={codex?.available ? 'instalado' : 'não encontrado (pode instalar depois)'} />
               <ToolRow name="Git" ok={p.git?.available !== false} detail={p.git?.available === false ? 'não encontrado: worktrees e relatórios ficam desligados' : (p.git?.version || 'instalado')} />
             </ul>
             {issues.filter((x) => x.id !== 'login').map((x) => <p key={x.id} className="fx-setup-note">{x.steps[0]}</p>)}
@@ -109,7 +110,7 @@ export default function Setup({ onFinish }) {
               <button type="button" className="btn quiet" onClick={() => go(0)}>Voltar</button>
               <span className="grow" />
               <button type="button" className="btn" onClick={recheck} disabled={checking}>{checking ? 'Verificando…' : 'Verificar de novo'}</button>
-              <button type="button" className="btn primary" data-autofocus="" onClick={() => go(2)}>{claudeOk ? 'Continuar' : 'Continuar mesmo assim'}<Icon name="arrowRight" size={14} /></button>
+              <button type="button" className="btn primary" data-autofocus="" onClick={() => go(2)}>{anyAi ? 'Continuar' : 'Continuar mesmo assim'}<Icon name="arrowRight" size={14} /></button>
             </div>
           </>}
           {step.id === 'account' && <>

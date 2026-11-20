@@ -8,12 +8,13 @@ Central local para coordenar agentes de IA no desenvolvimento de software. O FOR
 
 | Requisito | Para quê | Como conferir |
 |---|---|---|
-| **Claude Code** instalado e com login feito | Agente principal. O FORGE **não** inclui nem substitui o Claude Code, e sem ele o app não libera o uso. | `claude --version`; depois rode `claude` uma vez para entrar, ou use **Configurações > Contas > Entrar**. |
+| **Uma assinatura de IA que o FORGE suporta**, com a CLI dela instalada e o login feito | O FORGE **não** inclui nem substitui a IA: cada agente é a CLI da sua própria assinatura. Basta **uma**; hoje são o Claude Code e o Codex CLI, e dá para ter os dois. | Veja as duas linhas abaixo. |
+| **Claude Code** (se for usar) | Agente da assinatura Claude. | `claude --version`; depois rode `claude` uma vez para entrar, ou use **Configurações > Contas > Entrar**. |
+| **Codex CLI** (se for usar) | Agente da assinatura ChatGPT/Codex. | `codex --version`. Instale com `npm i -g @openai/codex` e entre com `codex login` num terminal. |
 | **Git** | Worktrees, relatórios e histórico. | `git --version` (download: https://git-scm.com/downloads) |
-| **Codex CLI** (opcional) | Segundo agente, ao lado do Claude Code. | `codex --version`. Instale com `npm i -g @openai/codex` e entre com `codex login` num terminal. |
 | Windows 10/11 (x64) ou macOS (pacote para Intel/x64; em Apple Silicon ainda não foi validado) | Sistemas dos instaladores. | |
 
-Quando falta algo, o FORGE abre o popup **"Antes de começar"** (com o fundo escurecido) explicando o que fazer: Claude Code não encontrado (bloqueia o uso até você instalar), conta do Claude Code não conectada e Git não encontrado. O Codex é opcional e não bloqueia nada: se ele estiver instalado mas sem login, o seletor de agente avisa "não conectado".
+Quando falta algo, o FORGE abre o popup **"Antes de começar"** (com o fundo escurecido) explicando o que fazer: nenhuma IA encontrada (bloqueia o uso até você instalar o Claude Code ou o Codex CLI), conta não conectada e Git não encontrado. Com **pelo menos uma** IA instalada nada bloqueia: se só o Codex estiver instalado, o app libera o uso e apenas avisa quando ele estiver sem login; com o Claude Code instalado, o Codex é opcional e o seletor de agente mostra "não conectado" quando falta o login.
 
 **Custos:** cada agente é uma sessão da CLI na **sua** conta, então o uso consome o **seu** plano ou os seus créditos. O FORGE mostra tokens e custo estimado por terminal **do Claude Code** (o custo usa a tabela de preços que você informa em `pricing.json`; não há preços embutidos). Para terminais do Codex ainda não há tokens nem custo.
 
@@ -24,8 +25,8 @@ Quando falta algo, o FORGE abre o popup **"Antes de começar"** (com o fundo esc
 
 ## Primeiros passos
 
-1. Instale o Claude Code e o Git (veja a tabela acima). Se quiser usar o Codex, instale-o também e rode `codex login` num terminal.
-2. Entre na sua conta do Claude Code pelo FORGE: **Configurações > Contas > Entrar**. O FORGE abre o navegador para você autorizar e detecta sozinho quando a conta conecta. Você pode cadastrar mais de uma conta e escolher a padrão. A mesma aba mostra se o Codex está conectado (o login dele é do próprio Codex CLI).
+1. Instale o Git e a CLI de pelo menos uma IA (veja a tabela acima): o Claude Code, o Codex CLI ou os dois.
+2. Conecte a sua conta. No Claude Code, use **Configurações > Contas > Entrar**: o FORGE abre o navegador para você autorizar e detecta sozinho quando a conta conecta, e dá para cadastrar mais de uma e escolher a padrão. No Codex, rode `codex login` num terminal (o login dele é do próprio Codex CLI); a mesma aba mostra se ele está conectado.
 3. Clique em **+** ao lado de *Workspaces* para escolher a pasta do seu projeto.
 4. Escolha o agente dos terminais novos (Claude Code ou Codex) e abra uma equipe (Dupla, Squad, Squad de 6 ou Construtor). Cada terminal é uma sessão da CLI escolhida naquela pasta; com *Worktree* ligado, cada equipe trabalha numa cópia isolada do código.
 5. O ícone da marca (o elmo) acende e solta faíscas enquanto houver alguma tarefa rodando, e esfria quando termina.
