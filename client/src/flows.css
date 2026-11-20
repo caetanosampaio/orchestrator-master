@@ -221,6 +221,17 @@
 .fl-hint.warn { color: var(--fl-wait-t, #f5a35c); }
 .fl-autoint { display: flex; flex-direction: column; gap: 6px; }
 
+/* comando de verificação: campo em mono (é um comando), tempo limite estreito ao lado; saída do run em <pre> rolável, texto puro */
+.fl-verify { display: flex; flex-direction: column; gap: 8px; min-width: 0; margin: 0; padding: 12px 14px 14px; border: 1px solid var(--fl-hair-2, rgba(255, 255, 255, .12)); border-radius: 10px; }
+.fl-verify legend { padding: 0 6px; color: var(--text, #d8d8d8); }
+.fl-grid-verify { display: grid; grid-template-columns: minmax(0, 1fr) 140px; gap: 12px; }
+.fl-form input.mono { font-family: var(--mono); font-size: 12.5px; }
+.fl-verify code, .fl-vres code { padding: 1px 4px; border-radius: 4px; background: rgba(255, 255, 255, .07); color: var(--text, #d8d8d8); font: 400 .92em var(--mono); overflow-wrap: anywhere; }
+.fl-vres { display: flex; flex-direction: column; gap: 6px; width: 100%; min-width: 0; }
+.fl-vres-h { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; margin: 0; font-size: 12.5px; }
+.fl-vres-out { box-sizing: border-box; width: 100%; max-height: 240px; margin: 0; padding: 8px 10px; overflow: auto; border: 1px solid var(--fl-hair-2, rgba(255, 255, 255, .12)); border-radius: 6px; background: var(--field, #181818); color: var(--text, #d8d8d8); font: 400 12px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 4; }
+.fl-vres-out:focus-visible { outline: 2px solid var(--fl-wait, #f08c3a); outline-offset: 1px; }
+
 .fl-steps { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; } .fl-steps > .fl-btn { align-self: flex-start; }
 .fl-step { width: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 12px; margin: 0; padding: 12px 14px 14px; border: 1px solid var(--fl-hair-2, rgba(255, 255, 255, .12)); border-radius: 10px; min-width: 0; }
 .fl-step.bad { border-color: rgba(239, 95, 95, .55); }
@@ -353,7 +364,7 @@
   .fl-page, .fl-page.has-panel { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
   .fl-panel { border-left: 0; border-top: 1px solid var(--fl-hair); max-height: 60vh; }
   .fl-center { padding: 0 16px 24px; } .fl-actions { margin-left: 0; } .fl-title { font-size: 18px; } .fl-head { padding-top: 16px; }
-  .fl-grid2, .fl-grid4 { grid-template-columns: minmax(0, 1fr); } .fl-form { padding: 16px; }
+  .fl-grid2, .fl-grid4, .fl-grid-verify { grid-template-columns: minmax(0, 1fr); } .fl-form { padding: 16px; }
 }
 @media (max-width: 520px) {
   .fl-wf .fl-phase { grid-template-columns: 22px auto 0; column-gap: 10px; } /* celular: a trilha encolhe e a coluna da direita some, para o cartão caber sem rolagem */

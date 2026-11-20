@@ -5,6 +5,7 @@ import { api } from '../api.js';
 import {
   addStep, ancestorKeys, blocksImplicitSubmit, draftToBody, draftToScheduleBody, emptyDraft, flowToDraft, stepRoles, MAX_EVERY_HOURS, MAX_STEPS, MAX_TEXT, MAX_TITLE, patchStep, proposalNoticeLines, proposalToDraft,
   PROVIDER_LABEL, PROVIDERS, removeStep, toggleDependency, toggleScheduleDay, validateDraft, validateScheduleDraft, WEEKDAY_SHORT,
+  MAX_VERIFY_TEXT, VERIFY_SHELL_HINT, VERIFY_TIMEOUT_MAX, VERIFY_TIMEOUT_MIN, verifyShellOps,
 } from '../flows-view.js';
 
 /**
@@ -109,6 +110,35 @@ function AutoIntegrate({ checked, onChange, unattended = false }) {
       <p id="fl-autoint-d" className="fl-hint">Em workspace Git, cada etapa trabalha numa cópia isolada (só arquivos versionados; alterações não commitadas na sua pasta não entram). Sua pasta só muda na integração final, e só se estiver limpa.{!checked && ' Desligada, a execução termina “pronta para integrar” e espera você.'}</p>
       {warn && <p id="fl-autoint-w" className="fl-policy-warn" role="note"><b>Atenção:</b> {UNATTENDED_POLICY_WARNING}</p>}
     </div>
+  );
+}
+
+/**
+ * Comando de verificação opcional (ex.: npm test): roda numa cópia isolada da branch da missão antes da integração final automática (modo Git); só integra se passar.
+ * Sem shell: o texto vira uma lista de argumentos (tokenizeCommand). Operadores de shell digitados só geram aviso (iriam como argumentos literais).
+ */
+function VerifyEditor({ text, timeout, onChange, errOf }) {
+  const E = (f) => { const m = errOf(f); return m.length ? <span className="fl-err" role="alert">{m[0]}</span> : null; };
+  const ops = verifyShellOps(text), on = text.trim() !== '';
+  return (
+    <fieldset className="fl-verify">
+      <legend className="fl-label">Verificação antes de integrar <span className="dim">(opcional)</span></legend>
+      <div className="fl-grid-verify">
+        <label>Comando de verificação
+          <input className="mono" value={text} maxLength={MAX_VERIFY_TEXT} spellCheck={false} autoComplete="off" placeholder="Ex.: npm test" onChange={(e) => onChange({ verifyText: e.target.value })}
+            aria-describedby={`fl-verify-d fl-verify-h${ops.length ? ' fl-verify-w' : ''}`} aria-invalid={errOf('verifyText').length ? true : undefined} />
+          {E('verifyText')}
+        </label>
+        <label>Tempo limite (s)
+          <input type="number" inputMode="numeric" min={VERIFY_TIMEOUT_MIN} max={VERIFY_TIMEOUT_MAX} step={1} value={timeout ?? ''} disabled={!on}
+            onChange={(e) => onChange({ verifyTimeout: e.target.value === '' ? '' : Number(e.target.value) })} aria-invalid={errOf('verifyTimeout').length ? true : undefined} />
+          {E('verifyTimeout')}
+        </label>
+      </div>
+      <p id="fl-verify-d" className="fl-hint">Em workspace Git, antes da integração final automática o comando roda numa cópia isolada da branch da missão. Só integra se passar; se falhar, a execução fica “pronta para integrar” com o fim da saída. Vazio = sem verificação.</p>
+      <p id="fl-verify-h" className="fl-hint" role="note">{VERIFY_SHELL_HINT}</p>
+      {ops.length > 0 && <p id="fl-verify-w" className="fl-hint warn" role="note">O comando tem {ops.map((o, i) => <React.Fragment key={o}>{i ? ' ' : ''}<code>{o}</code></React.Fragment>)}: sem shell, isso vai como argumento do programa e não como operador.</p>}
+    </fieldset>
   );
 }
 
@@ -298,6 +328,7 @@ export default function FlowForm({ mode = 'create', flow = null, workspaces, act
 
         {auto && <ScheduleEditor sd={draft.schedule} onChange={(schedule) => set({ schedule })} fullAccess={draft.fullAccess} errOf={fieldErr} />}
         <AutoIntegrate checked={draft.autoIntegrate === true} onChange={(v) => set({ autoIntegrate: v })} unattended={auto && draft.fullAccess === true} />
+        <VerifyEditor text={draft.verifyText ?? ''} timeout={draft.verifyTimeout} onChange={set} errOf={fieldErr} />
 
         <section aria-label="Etapas" className="fl-steps">
           <p className="fl-label">Etapas <span className="fl-count">{draft.steps.length}/{MAX_STEPS}</span></p>
