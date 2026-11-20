@@ -53,6 +53,8 @@ export default function App() {
   const { error, toast, state, openWorkspaceIds, act, workspaces, terminals, workingIds, setHiddenTerminals } = useStore();
   const [view, setView] = useState(() => (location.hash.startsWith('#/settings') ? 'settings' : location.hash.startsWith('#/missions') ? 'missions' : location.hash.startsWith('#/cockpit') ? 'cockpit' : 'home')); // página: 'home' (Início, a de abertura: #/ ou #/home) | 'cockpit' (terminais) | 'missions' (central de missões) | 'settings' (Configurações; #/settings: link antigo)
   const backTo = useRef(view === 'settings' ? 'home' : view); // de onde as Configurações foram abertas: o "Voltar" retorna para lá
+  const cockpitFrom = useRef(view === 'cockpit' ? 'cockpit' : 'home'); // última página do Cockpit (Início ou Terminais): o "Voltar ao Cockpit" das Missões retorna para lá
+  useEffect(() => { if (view === 'home' || view === 'cockpit') cockpitFrom.current = view; }, [view]);
   const missionsData = useMissions({ intervalMs: view === 'missions' ? 2500 : 6000 }); // mais devagar fora da página: só alimenta o indicador do botão Missions
   // Missões v2 (flows): um único polling serve a página Missões e o indicador da barra lateral (visível em qualquer página). `flowsSeenAt` = quando você viu Missões pela última vez: run que termina depois disso aparece como "concluída/falhou" na sidebar até você abrir a página.
   const flowsData = useFlows({ intervalMs: 2500 });
@@ -88,12 +90,14 @@ export default function App() {
   const openWorkspaces = useCallback(() => { setNavOpen(false); setDialog('workspaces'); }, []);
   const closeDialog = useCallback(() => setDialog(null), []);
   const closeSettings = useCallback(() => goView(backTo.current === 'settings' ? 'cockpit' : backTo.current), [goView]);
+  const backToCockpit = useCallback(() => goView(cockpitFrom.current), [goView]); // Missões é uma página à parte: o botão do topo da lista volta ao centro do FORGE
 
   const openSessions = useCallback(() => { setNavOpen(false); setDialog('sessions'); }, []);
   const side = { onOpenWorkspaces: openWorkspaces, onOpenSessions: openSessions, onOpenSettings: openSettings, view, onView: goView, flows: flowsData.flows, flowsSeenAt, hiddenIds: flowTermIds, onOpenTerminal: (t) => setFocusReq({ id: t.id, at: Date.now() }), desktop };
   const settings = view === 'settings';
   const showSetup = prefs.setupDone !== true && ui.status.state !== 'loading';
-  const showSide = !settings && !narrow && !sideHidden;
+  const missions = view === 'missions'; // Missões tem a própria barra lateral (lista de missões + "Voltar ao Cockpit"), também como gaveta nas telas estreitas
+  const showSide = !settings && !missions && !narrow && !sideHidden;
   const menu = narrow ? () => setNavOpen(true) : sideHidden ? toggleSide : null; // telas estreitas: gaveta; barra recolhida: reabre
   return (
     <div className={`oc-app fx-app${desktop ? ' is-desktop' : ''}${settings ? ' in-settings' : ''}`}>
@@ -101,9 +105,9 @@ export default function App() {
       {settings && <DesktopTitleBar />}
       <div className="fx-body">
         {showSide && <Sidebar {...side} onCollapse={toggleSide} />}
-        {narrow && navOpen && !settings && <><div className="oc-scrim fx-scrim" onClick={closeNav} aria-hidden="true" /><Sidebar modal onClose={closeNav} {...side} /></>}
+        {narrow && navOpen && !settings && !missions && <><div className="oc-scrim fx-scrim" onClick={closeNav} aria-hidden="true" /><Sidebar modal onClose={closeNav} {...side} /></>}
         <div className="fx-main">
-          {menu && view !== 'cockpit' && !settings && <button type="button" ref={menuRef} className="fx-ibtn fx-reopen" onClick={menu} aria-label={narrow ? 'Abrir a navegação' : 'Mostrar a barra lateral'} title={narrow ? 'Navegação' : 'Mostrar a barra lateral'}><Icon name={narrow ? 'menu' : 'panel'} size={15} /></button>}
+          {menu && view !== 'cockpit' && !settings && !missions && <button type="button" ref={menuRef} className="fx-ibtn fx-reopen" onClick={menu} aria-label={narrow ? 'Abrir a navegação' : 'Mostrar a barra lateral'} title={narrow ? 'Navegação' : 'Mostrar a barra lateral'}><Icon name={narrow ? 'menu' : 'panel'} size={15} /></button>}
           {error && <div className="banner err" role="alert">{error}</div>}
           {(ui.status.state === 'offline' || ui.status.state === 'error') && <div className="banner err" role="status" data-testid="ui-sync-note">{ui.status.message}</div>}
           {state?.persistence && !state.persistence.ok && (
@@ -116,7 +120,7 @@ export default function App() {
                 Escondido, o contêiner mede 0 e o terminal não se reajusta (TerminalGrid só ajusta acima de 40px): nenhum redimensionamento vai ao servidor. */}
             <div className="oc-view fx-view" hidden={view !== 'cockpit'}><Cockpit stream={termStream} hiddenIds={flowTermIds} flows={flowsData.flows} liveHint={liveHint} liveVisible={view === 'cockpit'} onOpenWorkspaces={openWorkspaces} onOpenSettings={openSettings} onOpenSessions={openSessions} liveOpen={liveOpen} onToggleLive={toggleLive} narrow={narrow || sideHidden} onMenu={menu} menuIcon={narrow ? 'menu' : 'panel'} focusRequest={focusReq} onFocusHandled={() => setFocusReq(null)} /></div>
             {view === 'home' && <div className="fx-view fx-page"><Home onOpenWorkspaces={openWorkspaces} onOpenWorkspace={openCockpit} missions={missionsData.missions} /></div>}
-            {view === 'missions' && <div className="fx-view fx-page"><Missions onOpenCockpit={openCockpit} data={flowsData} stream={termStream} /></div>}
+            {view === 'missions' && <div className="fx-view fx-page"><Missions onOpenCockpit={openCockpit} data={flowsData} stream={termStream} onBack={backToCockpit} backLabel={cockpitFrom.current === 'cockpit' ? 'Terminais' : 'Início'} narrow={narrow} /></div>}
             {settings && <Settings key={settingsKey} initial={settingsTab} onClose={closeSettings} onOpenWorkspaces={openWorkspaces} />}
           </main>
         </div>

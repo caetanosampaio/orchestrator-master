@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useFlowRuns } from '../use-flows.js';
 import { historyRows, fmtDuration, fmtWhen, skipRows } from '../flows-view.js';
+import { StateTag } from './FlowHeader.jsx';
 
 /** Integração resumida de um run no histórico: "integrada automaticamente · abcdef1"; sem integração (modo pasta, run antigo) = traço. */
 const integrationText = (i) => (i ? [i.label ?? i.state, i.commitShort].filter(Boolean).join(' · ') : '—');
@@ -30,7 +31,7 @@ export default function FlowRuns({ flow, now }) {
                 <tr key={r.id}>
                   <td>{fmtWhen(r.startedAt)}</td>
                   <td>{r.trigger}</td>
-                  <td><span className={`fl-state fl-t-${r.tone}`}><i aria-hidden="true" />{r.label}</span></td>
+                  <td><StateTag tone={r.tone} label={r.label} /></td>
                   <td>{r.progress}</td>
                   <td>{fmtDuration(r.durationMs)}</td>
                   {/* onde as etapas trabalharam: cópia isolada (Git) ou a pasta do workspace (modo pasta, com o motivo); recomeço a partir de outra ponta como nota */}

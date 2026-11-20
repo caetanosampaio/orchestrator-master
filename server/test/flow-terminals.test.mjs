@@ -52,7 +52,7 @@ test('aba ativa: a pedida; senão a que espera você; senão a em execução; se
 
 test('fiação: App compartilha UMA conexão e esconde os terminais de missões; Missões abre o dock; encerrar o terminal não é oferecido', () => {
   const app = src('App.jsx'), cockpit = src('pages/Cockpit.jsx'), grid = src('components/TerminalGrid.jsx'), sb = src('components/Sidebar.jsx'), page = src('pages/Missions.jsx'), dock = src('components/FlowTerminals.jsx');
-  for (const t of ['const flowTermIds = useMemo(() => flowTerminalIds(flowsData.flows)', '<Cockpit stream={termStream} hiddenIds={flowTermIds}', '<Missions onOpenCockpit={openCockpit} data={flowsData} stream={termStream} />', 'hiddenIds: flowTermIds']) assert.ok(app.includes(t), t);
+  for (const t of ['const flowTermIds = useMemo(() => flowTerminalIds(flowsData.flows)', '<Cockpit stream={termStream} hiddenIds={flowTermIds}', '<Missions onOpenCockpit={openCockpit} data={flowsData} stream={termStream} ', 'hiddenIds: flowTermIds']) assert.ok(app.includes(t), t);
   assert.ok(cockpit.includes('stream: shared = null'), 'o Cockpit usa a conexão do App quando existe');
   assert.ok(grid.includes('withoutFlowTerminals(terminals?.sessions, hiddenIds)'), 'a grade do Cockpit não monta terminais de missões');
   assert.ok(sb.includes('withoutFlowTerminals(terminals?.sessions, hiddenIds)'), 'a barra lateral não aninha terminais de missões nos workspaces');

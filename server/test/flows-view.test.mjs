@@ -335,7 +335,7 @@ test('indicador da barra lateral: aguardando > trabalhando > falhou/concluída (
 test('a barra lateral mostra o estado das Missões (flows) em qualquer página; um só polling serve a página e a sidebar', () => {
   const src = (f) => fs.readFileSync(path.join(here, '../../client/src', f), 'utf8');
   const app = src('App.jsx'), sb = src('components/Sidebar.jsx'), page = src('pages/Missions.jsx');
-  for (const t of ['const flowsData = useFlows({ intervalMs: 2500 })', 'flows: flowsData.flows, flowsSeenAt', '<Missions onOpenCockpit={openCockpit} data={flowsData} stream={termStream} />']) assert.ok(app.includes(t), t);
+  for (const t of ['const flowsData = useFlows({ intervalMs: 2500 })', 'flows: flowsData.flows, flowsSeenAt', '<Missions onOpenCockpit={openCockpit} data={flowsData} stream={termStream} ']) assert.ok(app.includes(t), t);
   for (const t of ["flowsActivity(flows, { seenAt: view === 'missions' ? Infinity : flowsSeenAt })", '<StatusGlyph state={fa.state}', 'role="status" aria-label={fa.title}']) assert.ok(sb.includes(t), t);
   assert.ok(!page.includes("from '../use-flows.js'") && !page.includes('useFlows('), 'a página recebe os dados do App (sem um segundo polling)');
 });
@@ -1007,4 +1007,31 @@ test('revisão briefing: histórico mostra o Planejador como não restaurável p
   const SH = await import('../../client/src/session-history.js');
   const { others } = SH.historyRows({ history: [{ id: 'r1', workspaceId: 'ws_1', title: 'Planejador de missão', role: 'planner', state: 'exited', resumable: false, blockedReason: 'planner_session' }], workspaceId: 'ws_1' });
   assert.deepEqual([others[0].blockedCode, others[0].blockedShort, others[0].resumable], ['planner_session', 'planejador: abra pela missão', false]);
+});
+
+// ---------- Missões como página à parte: só a barra das Missões, "Voltar ao Cockpit" e o workflow no desenho do Cockpit ----------
+test('Missões: a barra lateral do Cockpit some (também a gaveta e o botão de reabrir); a das Missões tem "Voltar ao Cockpit" para Início/Terminais e vira gaveta no celular', () => {
+  const app = readSrc('App.jsx'), page = readSrc('pages/Missions.jsx'), side = readSrc('components/FlowSidebar.jsx');
+  assert.ok(app.includes("const missions = view === 'missions';") && app.includes('const showSide = !settings && !missions && !narrow && !sideHidden;'), 'sem a barra do Cockpit em Missões');
+  assert.ok(app.includes('{narrow && navOpen && !settings && !missions && <>'), 'a gaveta do Cockpit não abre em Missões');
+  assert.ok(app.includes("{menu && view !== 'cockpit' && !settings && !missions && <button"), 'o botão de reabrir/menu do Cockpit não aparece em Missões');
+  assert.ok(app.includes("const cockpitFrom = useRef(view === 'cockpit' ? 'cockpit' : 'home');") && app.includes("if (view === 'home' || view === 'cockpit') cockpitFrom.current = view;"), 'lembra de onde veio (Início por padrão)');
+  assert.ok(app.includes('const backToCockpit = useCallback(() => goView(cockpitFrom.current), [goView]);') && app.includes('onBack={backToCockpit}') && app.includes('narrow={narrow}'));
+  assert.ok(side.includes('aria-label="Voltar ao Cockpit"') && side.includes('title={`Voltar ao Cockpit (${backLabel})`}') && side.includes('{onBack && <BackToCockpit'), 'botão com rótulo acessível e dica');
+  assert.ok(side.includes("{ role: 'dialog', 'aria-modal': true, 'aria-label': 'Missões' }") && side.includes("if (e.key === 'Escape') { e.preventDefault(); onClose?.(); return; }"), 'gaveta modal: Esc fecha, foco preso');
+  assert.ok(side.includes('const pick = (id) => { onPick(id); if (modal) onClose?.(); };') && side.includes('if (modal) onClose?.(false);'), 'escolher fecha a gaveta; criar fecha sem roubar o foco do diálogo');
+  assert.ok(page.includes('{(!narrow || listOpen) && (') && page.includes('modal={narrow} onClose={closeList}') && page.includes('aria-label="Abrir a lista de missões"') && page.includes('<BackToCockpit onBack={onBack} backLabel={backLabel} />'), 'celular: lista em gaveta aberta pelo topo, com o mesmo Voltar');
+});
+
+test('Missões: estados com o glifo do shell (sem caixa alta), "acesso total" em selo neutro com ícone, workflow com trilha de fases, Entrega com bandeira e nada de brilho', () => {
+  const head = readSrc('components/FlowHeader.jsx'), wf = readSrc('components/FlowWorkflow.jsx'), css = readSrc('flows.css'), panel = readSrc('components/FlowSidePanel.jsx'), runs = readSrc('components/FlowRuns.jsx');
+  assert.ok(head.includes('export function StateTag') && head.includes('<StatusGlyph state={toneGlyph(tone)} size={12} />'), 'estado = glifo + texto');
+  for (const [n, s] of [['cabeçalho', head], ['painel', panel], ['histórico', runs]]) assert.ok(s.includes('<StateTag tone='), `${n} usa o StateTag`);
+  assert.ok(head.includes('<span className="fl-chip warn" title="Os terminais desta missão sobem sem pedir confirmação de permissão."><Icon name="alert" size={11} />acesso total</span>'), 'acesso total: selo neutro + ícone');
+  const rule = (sel) => { const at = css.indexOf(`\n${sel} {`); return at < 0 ? '' : css.slice(at, css.indexOf('}', at)); }; // corpo da regra que começa a linha com o seletor
+  assert.ok(rule('.fl-chip').includes('background: rgba(255, 255, 255, .04)') && !/background:[^;]*(245, 158, 11|240, 140, 58)/.test(rule('.fl-chip.warn')), 'o selo de aviso não é preenchido de âmbar');
+  assert.ok(!/text-transform: uppercase/.test(css), 'sem caixa alta gritante');
+  assert.ok(wf.includes('className="fl-rail"') && wf.includes('<FlagIcon') && wf.includes('<ProviderLogo id={a.provider} size={12} />') && wf.includes('edgePathDown(x1, y1 + 3, x2, y2 - 3, my, 12)'), 'trilha, bandeira, logo do agente e curvas suaves');
+  assert.ok(css.includes('.fl-wf .mwf-node { position: relative;') && css.includes('.fl-wf .fl-e-done path') && css.includes('.fl-wf .fl-node-meter'), 'desenho escopado em .fl-wf');
+  assert.ok(!/(box-shadow|text-shadow|drop-shadow|filter)\s*[:(]/i.test(css.replace(/\/\*[\s\S]*?\*\//g, '')), 'sem brilho');
 });

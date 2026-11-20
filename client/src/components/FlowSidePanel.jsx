@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { Icon } from './ui.jsx';
 import { fmtDuration, fmtWhen, LEFTOVERS_HINT, NOT_INFORMED } from '../flows-view.js';
-import { FileList, IntegrationProblem, StepDecision } from './FlowHeader.jsx';
+import { FileList, IntegrationProblem, StateTag, StepDecision } from './FlowHeader.jsx';
 
 const Fact = ({ k, children }) => <div className="fl-fact"><dt>{k}</dt><dd>{children}</dd></div>;
 // modos da integração final gravados pelo servidor (git.integration.mode)
@@ -31,9 +31,9 @@ export default function FlowSidePanel({ detail, onClose, onOpenTerminal, onDecid
         <div className="fl-panel-id">
           <p className="fl-kicker"><i aria-hidden="true" />{d.kind === 'delivery' ? 'Entrega' : 'Etapa'}</p>
           <h2 tabIndex={-1} ref={head}>{d.title}</h2>
-          <span className={`fl-state fl-t-${d.tone}`}><i aria-hidden="true" />{d.stateLabel}</span>
+          <StateTag tone={d.tone} label={d.stateLabel} />
         </div>
-        <button type="button" className="fl-plus" onClick={onClose} aria-label="Fechar o painel (Esc)" title="Fechar (Esc)"><Icon name="close" size={14} /></button>
+        <button type="button" className="fx-ibtn" onClick={onClose} aria-label="Fechar o painel (Esc)" title="Fechar (Esc)"><Icon name="close" size={14} /></button>
       </header>
       <div className="fl-panel-b">
         {d.kind === 'step' ? (

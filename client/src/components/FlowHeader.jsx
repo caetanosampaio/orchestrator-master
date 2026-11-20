@@ -1,7 +1,16 @@
 import React, { useState } from 'react';
 import { Icon } from './ui.jsx';
 import Dialog from './Dialog.jsx';
+import StatusGlyph from './StatusGlyph.jsx';
 import { currentRun, flowProgress, flowState, FLOW_STATE_META, integrationInfo, KIND_LABEL, LEFTOVERS_HINT, NOT_INFORMED, nextRunLabel, runActions, runDuration, runGitNotes, fmtDuration, fmtWhen, runStepMeta, scheduleLabel } from '../flows-view.js';
+
+const GLYPH = { ok: 'done', skip: 'off' }; // tom de missão/etapa -> glifo do shell (os outros tons têm o mesmo nome)
+export const toneGlyph = (tone) => GLYPH[tone] ?? tone;
+
+/** Estado (missão, etapa ou run) como no Cockpit: o glifo animado do shell e o texto, num selo neutro. O texto diz o estado; o glifo só reforça. */
+export function StateTag({ tone, label, className = '' }) {
+  return <span className={`fl-state fl-t-${tone}${className ? ` ${className}` : ''}`}><StatusGlyph state={toneGlyph(tone)} size={12} />{label}</span>;
+}
 
 /** Botões da decisão humana sobre uma etapa que parou sem confirmar (aceitar conclui, recusar falha e pula os dependentes). */
 export function StepDecision({ onDecide, busy, disabled = false, title }) {
@@ -178,44 +187,48 @@ export default function FlowHeader({ flow, workspaceName, now, busy, onStart, on
       <div className="fl-head-row">
         <div className="fl-head-id">
           <h1 className="fl-title">{flow.title}</h1>
-          <span className={`fl-state fl-t-${meta.tone}`}><i aria-hidden="true" />{meta.label}</span>
+          <StateTag tone={meta.tone} label={meta.label} />
         </div>
+        {/* secundárias à esquerda, a ação principal por último (como no Início e no Cockpit) */}
         <div className="fl-actions">
-          {ra.canResume && <button type="button" className="fl-btn fl-btn-primary" onClick={onResume} disabled={!!busy}>{B('resume')}<Icon name="play" size={12} /><span>Retomar</span></button>}
-          {ra.canIntegrate && <button type="button" className="fl-btn fl-btn-primary" onClick={onIntegrate} disabled={!!busy}>{B('integrate')}<Icon name="check" size={12} /><span>Integrar</span></button>}
-          {ra.canIntegrate && ra.canDiscard && <button type="button" className="fl-btn fl-btn-danger" onClick={onDiscard} disabled={!!busy}>{B('discard')}<span>Descartar</span></button>}
-          {ra.canCancel && <button type="button" className="fl-btn fl-btn-danger" onClick={onCancel} disabled={!!busy}>{B('cancel')}<Icon name="stop" size={12} /><span>Cancelar</span></button>}
-          {!active && <button type="button" className="fl-btn fl-btn-primary" onClick={onStart} disabled={!!busy}>{B('start')}<Icon name="play" size={12} /><span>{run ? 'Executar de novo' : 'Iniciar'}</span></button>}
+          <button type="button" className="fl-btn fl-btn-ghost" onClick={onRemove} disabled={!!active || !!busy} title={active ? 'Cancele, integre ou descarte a execução para excluir.' : undefined}>{B('remove')}<span>Excluir</span></button>
+          {active
+            ? <button type="button" className="fl-btn" onClick={onEditSchedule} disabled={!!busy} title="Com a execução ativa, só a agenda e a integração automática podem mudar."><Icon name="pencil" size={12} /><span>{auto ? 'Editar agenda' : 'Editar integração'}</span></button>
+            : <button type="button" className="fl-btn" onClick={onEdit} disabled={!!busy}><Icon name="pencil" size={12} /><span>Editar</span></button>}
           {/* run cancelado/falho em modo Git: descarta sem apagar a branch; concluído com sobras: refaz a limpeza segura */}
           {!ra.canIntegrate && (ra.canDiscard || ra.canCleanup) && (
             <button type="button" className="fl-btn" onClick={onCleanup} disabled={!!busy} title="Remove as cópias de trabalho (worktrees) desta execução que puderem sair com segurança.">{B('cleanup')}<span>Limpar cópias</span></button>
           )}
-          {active
-            ? <button type="button" className="fl-btn" onClick={onEditSchedule} disabled={!!busy} title="Com a execução ativa, só a agenda e a integração automática podem mudar."><Icon name="pencil" size={12} /><span>{auto ? 'Editar agenda' : 'Editar integração'}</span></button>
-            : <button type="button" className="fl-btn" onClick={onEdit} disabled={!!busy}><span>Editar</span></button>}
-          <button type="button" className="fl-btn fl-btn-ghost" onClick={onRemove} disabled={!!active || !!busy} title={active ? 'Cancele, integre ou descarte a execução para excluir.' : undefined}>{B('remove')}<span>Excluir</span></button>
+          {ra.canCancel && <button type="button" className="fl-btn fl-btn-danger" onClick={onCancel} disabled={!!busy}>{B('cancel')}<Icon name="stop" size={12} /><span>Cancelar</span></button>}
+          {ra.canIntegrate && ra.canDiscard && <button type="button" className="fl-btn fl-btn-danger" onClick={onDiscard} disabled={!!busy}>{B('discard')}<span>Descartar</span></button>}
+          {ra.canResume && <button type="button" className="fl-btn fl-btn-primary" onClick={onResume} disabled={!!busy}>{B('resume')}<Icon name="play" size={12} /><span>Retomar</span></button>}
+          {ra.canIntegrate && <button type="button" className="fl-btn fl-btn-primary" onClick={onIntegrate} disabled={!!busy}>{B('integrate')}<Icon name="check" size={12} /><span>Integrar</span></button>}
+          {!active && <button type="button" className="fl-btn fl-btn-primary" onClick={onStart} disabled={!!busy}>{B('start')}<Icon name="play" size={12} /><span>{run ? 'Executar de novo' : 'Iniciar'}</span></button>}
         </div>
       </div>
       <p className="fl-meta">
         <span>{workspaceName ?? 'sem workspace'}</span>
         <span>{KIND_LABEL[flow.kind] ?? NOT_INFORMED}</span>
         <span>{flow.maxParallel > 1 ? `até ${flow.maxParallel} etapas em paralelo` : 'uma etapa por vez'}</span>
-        {flow.fullAccess === true && <span className="fl-chip warn" title="Os terminais desta missão sobem sem pedir confirmação de permissão.">acesso total</span>}
-        {auto && <span className="fl-chip" title="Agenda da automação (roda só com o FORGE aberto).">agenda: {scheduleLabel(flow.schedule)}</span>}
-        {sched && <span className="fl-chip" title="Próxima execução agendada (horário local).">próxima: {nextRunLabel(flow.nextRunAt)}</span>}
-        {info?.branch && <span className="fl-chip" title="Branch da missão: as etapas integram aqui antes da integração final.">branch {info.branch}</span>}
-        {flow.autoIntegrate !== false
-          ? <span className="fl-chip" title="Em workspace Git, integra na sua branch ao terminar, se não houver conflito e a pasta estiver limpa.">integração automática</span>
-          : <span className="fl-chip" title="Ao terminar, a execução espera você clicar em Integrar.">integração manual</span>}
         <span className="fl-dur">{run ? `${run.status === 'running' ? 'rodando há' : 'durou'} ${fmtDuration(dur)}` : 'nunca executada'}</span>
         {run && <span>início {fmtWhen(run.startedAt)}</span>}
       </p>
+      {/* selos neutros; "acesso total" leva só um pequeno ícone de aviso (o texto diz o que é) */}
+      <div className="fl-tags">
+        {flow.fullAccess === true && <span className="fl-chip warn" title="Os terminais desta missão sobem sem pedir confirmação de permissão."><Icon name="alert" size={11} />acesso total</span>}
+        {auto && <span className="fl-chip" title="Agenda da automação (roda só com o FORGE aberto)."><Icon name="clock" size={11} />agenda: {scheduleLabel(flow.schedule)}</span>}
+        {sched && <span className="fl-chip" title="Próxima execução agendada (horário local).">próxima: {nextRunLabel(flow.nextRunAt)}</span>}
+        {info?.branch && <span className="fl-chip mono" title="Branch da missão: as etapas integram aqui antes da integração final.">branch {info.branch}</span>}
+        {flow.autoIntegrate !== false
+          ? <span className="fl-chip" title="Em workspace Git, integra na sua branch ao terminar, se não houver conflito e a pasta estiver limpa.">integração automática</span>
+          : <span className="fl-chip" title="Ao terminar, a execução espera você clicar em Integrar.">integração manual</span>}
+      </div>
       {/* modo pasta (sem cópia isolada) e recomeço a partir de outra ponta: avisos do run, em texto (o motivo vem do servidor) */}
-      {notes.fallbackText && <p className="fl-gitnote" role="note"><span className="fl-chip warn">modo pasta</span> {notes.fallbackText}.</p>}
+      {notes.fallbackText && <p className="fl-gitnote" role="note"><span className="fl-chip warn"><Icon name="alert" size={11} />modo pasta</span> {notes.fallbackText}.</p>}
       {notes.rebasedText && <p className="fl-gitnote" role="note"><span className="fl-chip">recomeço</span> {notes.rebasedText}.</p>}
       {ra.leftovers.length > 0 && (
         <div className="fl-leftovers" role="note" aria-label="Cópias de trabalho que não saíram">
-          <p><b>{ra.leftovers.length === 1 ? '1 cópia de trabalho não saiu' : `${ra.leftovers.length} cópias de trabalho não saíram`}</b> na última limpeza:</p>
+          <p className="fl-notice-h"><Icon name="alert" size={13} /><span><b>{ra.leftovers.length === 1 ? '1 cópia de trabalho não saiu' : `${ra.leftovers.length} cópias de trabalho não saíram`}</b> na última limpeza:</span></p>
           <ul>{ra.leftovers.map((l) => <li key={l.key}>{l.worktreeId ? <code>{l.worktreeId}</code> : 'cópia'}: {l.reason}</li>)}</ul>
           {ra.canCleanup && <p className="fl-hint">{LEFTOVERS_HINT}</p>}
         </div>

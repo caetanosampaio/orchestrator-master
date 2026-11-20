@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import '../flows.css';
 import { useStore } from '../store.jsx';
 import { buildWorkflow, currentRun, describeFailure, focusInTerminal, integrationInfo, integrationProblems, nodeDetail, pickFlowId, proposalAutoOpen, proposalNotices, proposalRows, runActions, waitingSteps } from '../flows-view.js';
-import FlowSidebar from '../components/FlowSidebar.jsx';
+import FlowSidebar, { BackToCockpit } from '../components/FlowSidebar.jsx';
 import FlowHeader, { AckDialog, DiscardDialog, FlowAttention } from '../components/FlowHeader.jsx';
 import FlowWorkflow from '../components/FlowWorkflow.jsx';
 import FlowSidePanel from '../components/FlowSidePanel.jsx';
@@ -25,7 +25,7 @@ const readSeen = () => { try { const v = JSON.parse(sessionStorage.getItem(SEEN_
  * à direita, o painel do nó selecionado. Tudo vem de /api/flows (polling ~2,5 s): nada é simulado; o que o servidor não informa aparece como "não informado".
  * O ciclo Planner/Executor antigo não é mais usado aqui (o código do servidor fica dormente). `data` = o resultado de useFlows, que o App mantém (um só polling para a página e para a barra lateral).
  */
-export default function Missions({ onOpenCockpit, data, stream = null }) {
+export default function Missions({ onOpenCockpit, data, stream = null, onBack = null, backLabel = 'Início', narrow = false }) {
   const { flows, failure, refresh, actions, proposals } = data; // o App mantém um único polling de /api/flows (também usado pelo indicador da barra lateral); as propostas vêm junto
   const { workspaces, state, terminals, notify, loadTerminals } = useStore();
   const [selectedId, setSelectedId] = useState(readSel), [nodeId, setNodeId] = useState(null);
@@ -235,6 +235,13 @@ export default function Missions({ onOpenCockpit, data, stream = null }) {
     setForm(null);
   };
 
+  // Telas estreitas: a lista de missões vira gaveta (como a navegação do Cockpit), aberta pelo botão do topo; escolher uma missão fecha a gaveta.
+  // `refocus` = devolver o foco ao botão que abriu (não quando a gaveta fecha para abrir um diálogo: o diálogo cuida do foco).
+  const [listOpen, setListOpen] = useState(false);
+  const listBtn = useRef(null);
+  const closeList = useCallback((refocus = true) => { setListOpen(false); if (refocus) setTimeout(() => listBtn.current?.focus(), 0); }, []);
+  useEffect(() => { if (!narrow) setListOpen(false); }, [narrow]);
+
   const unavailable = flows === null && failure;
   const hasDock = !!stream && dockTabs.length > 0;
   const newButtons = (
@@ -245,8 +252,22 @@ export default function Missions({ onOpenCockpit, data, stream = null }) {
   );
   return (
     <div className={`fl-page${detail ? ' has-panel' : ''}`}>
-      <FlowSidebar flows={flows} workspaces={workspaces ?? []} selectedId={selectedId} onPick={select} onNew={() => openForm({ mode: 'create' })} onBriefing={() => setBriefing(true)} failure={failure} />
+      {(!narrow || listOpen) && (
+        <>
+          {narrow && <div className="fl-scrim" onClick={() => closeList()} aria-hidden="true" />}
+          <FlowSidebar flows={flows} workspaces={workspaces ?? []} selectedId={selectedId} onPick={select} onNew={() => openForm({ mode: 'create' })} onBriefing={() => setBriefing(true)} failure={failure}
+            onBack={onBack} backLabel={backLabel} modal={narrow} onClose={closeList} />
+        </>
+      )}
       <div className={`fl-main${hasDock ? ' has-dock' : ''}`}>
+        {narrow && (
+          <div className="fl-topbar">
+            {onBack && <BackToCockpit onBack={onBack} backLabel={backLabel} />}
+            <button type="button" ref={listBtn} className="fl-topbar-list" onClick={() => setListOpen(true)} aria-expanded={listOpen} aria-label="Abrir a lista de missões" title="Lista de missões">
+              <Icon name="menu" size={15} /><span>Missões</span>
+            </button>
+          </div>
+        )}
         <ProposalTray rows={trayRows} onOpen={openProposal} onDismiss={onTrayDismiss} busyId={dismissingId} />
         {flows === null ? (
           <div className="fl-center"><p className={`fl-note${unavailable ? ' err' : ''}`} role="status">{unavailable ? failure.message : 'Carregando…'}</p></div>
