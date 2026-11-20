@@ -254,7 +254,113 @@ export function integrationInfo(run) {
     state: done ? 'integrated' : pend || run?.status === 'ready_to_integrate' ? 'pending' : 'none', label,
     by, byLabel: by === 'auto' ? 'automática' : by === 'user' ? 'por você' : null, mode, at: done?.at ?? null, commitShort: shortSha(done?.to) ?? shortSha(done?.missionTip),
     reasons, conflicts: strList(pend?.conflicts), files: strList(pend?.files), needsAck: reasons.some((r) => r.code === 'project_config_changed'), checkedAt: pend?.checkedAt ?? null,
-    branch: str(git.branch) || null, baseBranch: str(git.baseBranch) || null,
+    branch: str(git.branch) || null, baseBranch: str(git.baseBranch) || null, verification: verificationView(run),
+  };
+}
+
+// ---------- comando de verificação (opcional, definido só pelo usuário no formulário) ----------
+export const VERIFY_TIMEOUT_MIN = 10, VERIFY_TIMEOUT_MAX = 1800, VERIFY_TIMEOUT_DEFAULT = 300, MAX_VERIFY_TEXT = 1000;
+export const VERIFY_SHELL_HINT = 'Sem shell: |, && e > não funcionam (cada parte vira um argumento do programa).';
+const SHELL_OP_RE = /^(\|\|?|&&?|;|>>?|<|\d?>&\d|\d>>?)$/;
+const strArgs = (v) => arr(v).filter((x) => typeof x === 'string');
+
+/**
+ * Separa o texto do comando em argumentos, como uma linha de comando simples: espaço separa; aspas duplas ou simples agrupam (e somem); aspas vazias geram um argumento
+ * vazio. Sem escapes nem expansão (barra invertida é literal: caminhos do Windows passam inteiros). Retorna string[] ([] para texto vazio) ou null se uma aspa ficou aberta.
+ */
+export function tokenizeCommand(text) {
+  const out = [];
+  let cur = '', inTok = false, quote = null;
+  for (const ch of String(text ?? '')) {
+    if (quote) { if (ch === quote) quote = null; else cur += ch; continue; }
+    if (ch === '"' || ch === "'") { quote = ch; inTok = true; continue; }
+    if (/\s/.test(ch)) { if (inTok) { out.push(cur); cur = ''; inTok = false; } continue; }
+    cur += ch; inTok = true;
+  }
+  if (quote) return null;
+  if (inTok) out.push(cur);
+  return out;
+}
+
+/** Um argumento como texto que `tokenizeCommand` lê de volta igual (usado para mostrar o comando e no rascunho de edição). */
+export function quoteArg(arg) {
+  const a = String(arg ?? '');
+  if (a && !/[\s"']/.test(a)) return a;
+  if (!a.includes('"')) return `"${a}"`;
+  if (!a.includes("'")) return `'${a}'`;
+  return a.split('"').map((p) => `"${p}"`).join(`'"'`);
+}
+export const argsToText = (args) => strArgs(args).map(quoteArg).join(' ');
+
+const verifyTimeoutOf = (v) => { const t = Number(v); return Number.isInteger(t) && t >= VERIFY_TIMEOUT_MIN && t <= VERIFY_TIMEOUT_MAX ? t : VERIFY_TIMEOUT_DEFAULT; };
+/** Rascunho do comando de verificação: texto e tempo limite (s). Missão sem comando = texto vazio e o tempo padrão. */
+export function verifyToDraft(vc) {
+  const args = vc && typeof vc === 'object' ? strArgs(vc.args) : [];
+  return { verifyText: args.length ? argsToText(args) : '', verifyTimeout: verifyTimeoutOf(vc?.timeoutSec) };
+}
+
+/** `flow.verifyCommand` a partir do rascunho: texto vazio (ou só espaços) = null; senão { args, timeoutSec }. Aspa aberta = null (a validação já barra o envio). */
+export function draftToVerify(draft) {
+  const args = tokenizeCommand(str(draft?.verifyText));
+  if (!args || !args.length) return null;
+  return { args, timeoutSec: verifyTimeoutOf(draft?.verifyTimeout) };
+}
+
+/** Erros do comando de verificação (mesmo formato de validateDraft). Texto vazio não confere nada: o comando é opcional. */
+export function validateVerifyDraft(draft) {
+  const errors = [], text = str(draft?.verifyText);
+  if (!text.trim()) return errors;
+  const args = tokenizeCommand(text);
+  if (text.length > MAX_VERIFY_TEXT) errors.push({ field: 'verifyText', message: `O comando passa de ${MAX_VERIFY_TEXT} caracteres.` });
+  else if (!args) errors.push({ field: 'verifyText', message: 'Feche as aspas do comando de verificação.' });
+  else if (!args[0]) errors.push({ field: 'verifyText', message: 'O comando de verificação começa pelo programa a rodar (ex.: npm).' });
+  const t = draft?.verifyTimeout, n = Number(t);
+  if (t === '' || t == null || !Number.isInteger(n) || n < VERIFY_TIMEOUT_MIN || n > VERIFY_TIMEOUT_MAX) {
+    errors.push({ field: 'verifyTimeout', message: `O tempo limite vai de ${VERIFY_TIMEOUT_MIN} a ${VERIFY_TIMEOUT_MAX} segundos.` });
+  }
+  return errors;
+}
+
+/** Operadores de shell digitados no comando (iriam como argumentos literais, não como shell). Só para avisar; não bloqueia. */
+export function verifyShellOps(text) {
+  const args = tokenizeCommand(text);
+  return args ? [...new Set(args.filter((a) => SHELL_OP_RE.test(a)))] : [];
+}
+
+export const VERIFY_STATUS_META = Object.freeze({
+  pass: { label: 'passou', tone: 'ok' },
+  fail: { label: 'falhou', tone: 'err' },
+  timeout: { label: 'tempo esgotado', tone: 'err' },
+  error: { label: 'erro ao rodar', tone: 'err' },
+});
+// ANSI (cores, cursor, títulos) e controles que não sejam quebra de linha ou tab: a saída aparece como texto puro e legível
+// eslint-disable-next-line no-control-regex
+const ANSI_RE = /\u001b\[[0-?]*[ -/]*[@-~]|\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)|\u001b[@-Z\\-_]/g;
+// eslint-disable-next-line no-control-regex
+const CTRL_RE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g;
+export const cleanOutput = (v) => str(v).replace(ANSI_RE, '').replace(/\r\n?/g, '\n').replace(CTRL_RE, '');
+
+/**
+ * Resultado da verificação antes da integração final (`run.git.verification`), para a tela. null se não houve verificação. Texto puro (o React escapa; nada vira HTML).
+ * `failed` = não passou (falhou, tempo esgotado, erro ou status desconhecido): a missão fica pronta para integrar e a decisão é sua (Integrar continua disponível).
+ */
+export function verificationView(run) {
+  const git = run?.git && typeof run.git === 'object' ? run.git : null;
+  const v = git?.verification && typeof git.verification === 'object' ? git.verification : null;
+  if (!v) return null;
+  const status = Object.hasOwn(VERIFY_STATUS_META, v.status) ? v.status : null;
+  const meta = status ? VERIFY_STATUS_META[status] : { label: NOT_INFORMED, tone: 'idle' };
+  const command = Array.isArray(v.command) ? argsToText(v.command) : str(v.command).trim();
+  const exitCode = Number.isInteger(v.exitCode) ? v.exitCode : null, durationMs = isNum(v.durationMs) && v.durationMs >= 0 ? v.durationMs : null;
+  const decide = 'a missão não foi integrada automaticamente. Integrar continua disponível se você decidir seguir.';
+  const message = status === 'pass' ? 'A verificação passou.'
+    : status === 'fail' ? `A verificação falhou${exitCode !== null ? ` (código de saída ${exitCode})` : ''}: ${decide}`
+      : status === 'timeout' ? `A verificação passou do tempo limite e foi encerrada: ${decide}`
+        : status === 'error' ? `Não foi possível rodar o comando de verificação (programa não encontrado ou erro ao iniciar): ${decide}`
+          : 'O resultado da verificação não foi reconhecido; confira a branch da missão antes de integrar.';
+  return {
+    status, label: meta.label, tone: meta.tone, failed: status !== 'pass', message, command: command || NOT_INFORMED, exitCode, durationMs,
+    output: cleanOutput(v.outputTail), truncated: v.truncated === true, at: v.at ?? null,
   };
 }
 
@@ -596,7 +702,7 @@ export function describeFailure(err, ctx = 'list') {
 const blankStep = (key, deps = []) => ({ key, title: '', prompt: '', provider: 'claude', role: 'builder', model: '', effort: '', dependsOn: deps, continueFrom: '' });
 /** `kind`: 'project' | 'automation' (só automação leva agenda). `autoIntegrate` nasce ligado (padrão do servidor); `schedule` é o rascunho de `emptySchedule()`. */
 export function emptyDraft({ workspaceId = '', kind = 'project' } = {}) {
-  return { workspaceId, kind: kind === 'automation' ? 'automation' : 'project', title: '', goal: '', fullAccess: false, maxParallel: 1, autoIntegrate: true, schedule: emptySchedule(), steps: [blankStep('k1')], nextKey: 2 };
+  return { workspaceId, kind: kind === 'automation' ? 'automation' : 'project', title: '', goal: '', fullAccess: false, maxParallel: 1, autoIntegrate: true, schedule: emptySchedule(), ...verifyToDraft(null), steps: [blankStep('k1')], nextKey: 2 };
 }
 /** Nova etapa ao fim; por padrão depende da anterior (sequência), e o usuário desmarca para criar um ramo paralelo. */
 export function addStep(draft) {
@@ -631,6 +737,7 @@ export function flowToDraft(flow) {
   return {
     workspaceId: flow?.workspaceId ?? '', title: str(flow?.title), goal: str(flow?.goal), fullAccess: flow?.fullAccess === true, maxParallel: Math.min(4, Math.max(1, Number(flow?.maxParallel) || 1)),
     kind: flow?.kind === 'automation' ? 'automation' : 'project', schedule: scheduleToDraft(flow?.schedule), autoIntegrate: flow?.autoIntegrate !== false, // missão antiga sem o campo = true
+    ...verifyToDraft(flow?.verifyCommand), // sem o campo = sem verificação
 
     steps: steps.length ? steps.map((s) => ({ key: keyOf.get(s.id), title: str(s.title), prompt: str(s.prompt), provider: s.provider ?? 'claude', role: s.role ?? 'builder', model: s.model ?? '', effort: s.effort ?? '', dependsOn: arr(s.dependsOn).map((d) => keyOf.get(d)).filter(Boolean), continueFrom: s.continueFrom ? keyOf.get(s.continueFrom) ?? '' : '' })) : [blankStep('k1')],
     nextKey: steps.length + 1,
@@ -649,6 +756,7 @@ export function validateDraft(draft, { mode = 'create' } = {}) {
   const kind = draft?.kind ?? 'project'; // rascunho antigo sem tipo = projeto
   if (kind !== 'project' && kind !== 'automation') add('kind', 'Escolha o tipo: projeto ou automação.');
   if (kind === 'automation') for (const e of validateScheduleDraft(draft?.schedule).errors) add(e.field, e.message);
+  for (const e of validateVerifyDraft(draft)) add(e.field, e.message);
   const steps = arr(draft?.steps);
   if (!steps.length) add('steps', 'Adicione ao menos uma etapa.');
   if (steps.length > MAX_STEPS) add('steps', `No máximo ${MAX_STEPS} etapas por missão.`);
@@ -668,13 +776,14 @@ export function validateDraft(draft, { mode = 'create' } = {}) {
 /**
  * Corpo de POST/PATCH /api/flows. Vazio de modelo/esforço = null (padrão do agente). `fullAccess` e `autoIntegrate` só vão `true` se marcados (booleano estrito: texto nunca
  * liga; o rascunho nasce com `autoIntegrate: true`). `kind` vai nos dois modos (o PATCH valida contra o resultado mesclado); `schedule` só em automação, senão null. PATCH não leva workspace.
+ * `verifyCommand` vai nos dois modos: null (sem verificação; no PATCH, remove a que havia) ou { args, timeoutSec }.
  */
 export function draftToBody(draft, { mode = 'create', proposalId = null } = {}) {
   const ids = new Map(arr(draft.steps).map((s, i) => [s.key, `s${i + 1}`]));
   const kind = draft.kind === 'automation' ? 'automation' : 'project';
   const body = {
     kind, title: str(draft.title).trim(), goal: str(draft.goal).trim(), fullAccess: draft.fullAccess === true, maxParallel: Number(draft.maxParallel) || 1,
-    schedule: kind === 'automation' ? draftToSchedule(draft.schedule) : null, autoIntegrate: draft.autoIntegrate === true,
+    schedule: kind === 'automation' ? draftToSchedule(draft.schedule) : null, autoIntegrate: draft.autoIntegrate === true, verifyCommand: draftToVerify(draft),
     steps: arr(draft.steps).map((s) => ({
       id: ids.get(s.key), title: str(s.title).trim(), prompt: str(s.prompt).trim(), provider: s.provider, role: s.role, model: s.model || null, effort: s.effort || null,
       dependsOn: arr(s.dependsOn).map((d) => ids.get(d)).filter(Boolean), continueFrom: s.continueFrom ? ids.get(s.continueFrom) ?? null : null,
@@ -749,11 +858,11 @@ export function proposalRows(list, { workspaces = [] } = {}) {
 
 /**
  * Rascunho do formulário "Nova missão" a partir de uma proposta do Planejador: mesmo caminho da edição (flowToDraft), mas o workspace é SEMPRE o da proposta (o do pane,
- * nunca um campo do agente) e o acesso total vem SEMPRE desligado (só o usuário liga).
+ * nunca um campo do agente), o acesso total vem SEMPRE desligado (só o usuário liga) e o comando de verificação vem SEMPRE vazio (só o usuário define um comando a rodar).
  */
 export function proposalToDraft(proposal) {
   const flow = proposal?.flow && typeof proposal.flow === 'object' ? proposal.flow : {};
-  return { ...flowToDraft(flow), workspaceId: str(proposal?.workspaceId), fullAccess: false };
+  return { ...flowToDraft(flow), workspaceId: str(proposal?.workspaceId), fullAccess: false, ...verifyToDraft(null) };
 }
 
 /**

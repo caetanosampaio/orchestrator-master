@@ -58,6 +58,24 @@ export function FileList({ files, label, max = MAX_LIST }) {
 }
 
 /**
+ * Resultado do comando de verificação antes da integração final (`verificationView`): estado, comando e o fim da saída num <pre> rolável (texto puro: o React escapa,
+ * nada vira HTML). Não passou = aviso claro; a decisão de integrar continua com você.
+ */
+export function VerificationResult({ v }) {
+  if (!v) return null;
+  const facts = [v.exitCode !== null ? `código de saída ${v.exitCode}` : null, v.durationMs !== null ? `durou ${fmtDuration(v.durationMs)}` : null, v.at ? fmtWhen(v.at) : null].filter(Boolean);
+  return (
+    <div className="fl-vres">
+      <p className="fl-vres-h"><span className="fl-label">Verificação</span><StateTag tone={v.tone} label={v.label} /><code>{v.command}</code>{facts.length > 0 && <span className="dim">{facts.join(' · ')}</span>}</p>
+      {v.failed ? <p className="fl-callout" role="note"><b>Atenção:</b> {v.message}</p> : <p className="dim">{v.message}</p>}
+      {v.output
+        ? <pre className="fl-vres-out" tabIndex={0} aria-label={v.truncated ? 'Fim da saída da verificação (cortada no início)' : 'Saída da verificação'}>{v.truncated ? `… (início cortado)\n${v.output}` : v.output}</pre>
+        : <p className="dim">Sem saída registrada.</p>}
+    </div>
+  );
+}
+
+/**
  * Integração de etapa travada (conflito, bloqueio ou erro): o que aconteceu, onde resolver e as ações. Usado no aviso do topo e no painel da etapa.
  * O texto vem de `stepIntegration().message` (pela causa do servidor): só o bloqueio do guard de configuração (`needsAck`) fala em arquivos sensíveis e pede confirmação.
  */
@@ -143,6 +161,7 @@ export function FlowAttention({ items = [], problems = [], interrupted = false, 
                   <ul className="fl-reasons">{ready.reasons.map((r, i) => <li key={`${r.code ?? 'r'}-${i}`}>{r.message}</li>)}</ul>
                 </>
               )}
+              <VerificationResult v={ready.verification} />
               <FileList files={ready.conflicts} label="Arquivos em conflito" />
               {ready.needsAck && <p>Inclui configuração executável ou arquivo sensível: Integrar pede a sua confirmação explícita, com a lista dos arquivos.</p>}
             </div>

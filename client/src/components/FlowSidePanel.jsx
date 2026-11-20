@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { Icon } from './ui.jsx';
 import { fmtDuration, fmtWhen, LEFTOVERS_HINT, NOT_INFORMED } from '../flows-view.js';
-import { FileList, IntegrationProblem, StateTag, StepDecision } from './FlowHeader.jsx';
+import { FileList, IntegrationProblem, StateTag, StepDecision, VerificationResult } from './FlowHeader.jsx';
 
 const Fact = ({ k, children }) => <div className="fl-fact"><dt>{k}</dt><dd>{children}</dd></div>;
 // modos da integração final gravados pelo servidor (git.integration.mode)
@@ -115,6 +115,8 @@ export default function FlowSidePanel({ detail, onClose, onOpenTerminal, onDecid
                 <ul className="fl-fails">{info.reasons.map((r, i) => <li key={`${r.code ?? 'r'}-${i}`}>{r.message}</li>)}</ul>
               </section>
             )}
+            {/* comando de verificação antes da integração final (só quando a missão tem um e ele rodou) */}
+            {info?.verification && <section><VerificationResult v={info.verification} /></section>}
             {info?.state === 'pending' && <FileList files={info.conflicts} label="Arquivos em conflito" />}
             {info?.state === 'pending' && <FileList files={info.files} label="Configuração ou arquivos sensíveis alterados" />}
             {d.failures.length > 0 && (

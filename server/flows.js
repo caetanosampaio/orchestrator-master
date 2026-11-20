@@ -28,6 +28,11 @@
 // No modo Git cada etapa tem a sua cópia e não há essa serialização.
 // A etapa recebe, além do contexto da missão, o resumo das etapas das quais depende (texto de agente, marcado como referência), para não começar às cegas.
 //
+// Verificação opcional (flow.verifyCommand = null | { args, timeoutSec }; só o USUÁRIO define: o planejador nunca, e não muda com run ativo): no modo Git, ANTES da integração final, o comando roda
+// numa cópia isolada da ponta da branch da missão (flow-verify.js) e o resultado fica em run.git.verification = { status: pass|fail|timeout|error, command, exitCode, durationMs, outputTail, truncated,
+// at, tip }. Passou = o fluxo de sempre; não passou = ready_to_integrate com run.error "Verificação falhou: …" e NADA é integrado, mesmo com autoIntegrate (Integrar pelo usuário continua liberado).
+// Enquanto roda, run.git.verifying = { startedAt, command } fica gravado: reinício no meio = ready_to_integrate sem integrar; cancelar no meio encerra o processo.
+//
 // Agenda (fatia 2, decisão 3): só missões `automation` têm `schedule`; `scheduleState` é só do servidor (gravado aqui ao criar/editar a agenda e pelo agendador de flow-schedule.js,
 // que recebe a porta `schedulerPort()` e é ligado em setupFlows). Run iniciado pela agenda = startRun(flowId, { trigger: 'schedule', scheduledFor }). Nada roda no boot.
 //
@@ -45,6 +50,7 @@ import { validateSchedule, freshScheduleState, readScheduleState, createFlowSche
 import { git as realGit, worktreeProblem } from './worktrees.js';
 import { createFlowGit, missionBranchFor } from './flow-git.js';
 import { detectLimitStop } from './limit-stop.js';
+import { createFlowVerify, validateVerifyCommand, VERIFY_TAIL } from './flow-verify.js';
 
 export const MAX_STEPS = 12, MAX_FLOWS = 50, MAX_RUNS = 200, MAX_PARALLEL = 4, MAX_TITLE = 120, MAX_GOAL = 2000, MAX_PROMPT = 2000, MAX_RUNS_LISTED = 20;
 export const POLL_MS = 1000, DISPATCH_WAIT_MS = 30 * 60 * 1000, MIN_GOAL_CONTEXT = 60, MIN_DEP_CONTEXT = 80;
@@ -57,7 +63,7 @@ export const STEP_ROLES = Object.freeze(Object.keys(ROLES).filter((r) => r !== '
 // Missões por briefing (docs/missions-v2-briefing.md): propostas do planejador, SÓ em memória (somem no reinício).
 export const MAX_PROPOSALS = 20, PROPOSAL_TTL_MS = 24 * 60 * 60 * 1000, PLANNER_TITLE = 'Planejador de missão';
 const PROPOSAL_ID_RE = /^prop_[0-9a-f]{8}$/;
-const PLANNER_DENIED_KEYS = ['workspaceId', 'fullAccess', 'proposalId']; // do agente nunca: o workspace é o do pane, o acesso total só o usuário liga e o id da proposta é do servidor
+const PLANNER_DENIED_KEYS = ['workspaceId', 'fullAccess', 'proposalId', 'verifyCommand']; // do agente nunca: o workspace é o do pane, o acesso total e o comando de verificação só o usuário define e o id da proposta é do servidor
 const BRIEFING_KEYS = ['workspaceId', 'provider', 'model', 'effort', 'acknowledgeProjectConfig']; // acknowledgeProjectConfig: o usuário confirmou a configuração de projeto não revisada (mesmo 409 project_config_unreviewed do Cockpit)
 // o que cada papel de etapa faz (mission_options): curto, para o planejador escolher; papel novo sem texto aqui cai no rótulo
 const ROLE_WHAT = Object.freeze({ builder: 'Edita arquivos: implementa a etapa e roda os testes.', reviewer: 'Só lê: revisa as alterações e aponta defeitos, regressões e testes ausentes.', scout: 'Só lê: investiga o código e mapeia arquivos, dependências e riscos.' });
@@ -105,14 +111,16 @@ const okv = (status, body) => ({ ok: true, status, body });
 const PERSIST_ERROR = 'o banco não pôde ser gravado; nada foi alterado.';
 
 // ---------- validação ----------
-const FLOW_CREATE_KEYS = ['workspaceId', 'title', 'goal', 'kind', 'fullAccess', 'maxParallel', 'schedule', 'autoIntegrate', 'steps', 'proposalId']; // proposalId: só baixa a proposta do planejador (não vai para a missão)
-const FLOW_PATCH_KEYS = ['title', 'goal', 'kind', 'fullAccess', 'maxParallel', 'archived', 'schedule', 'autoIntegrate', 'steps'];
+const FLOW_CREATE_KEYS = ['workspaceId', 'title', 'goal', 'kind', 'fullAccess', 'maxParallel', 'schedule', 'autoIntegrate', 'verifyCommand', 'steps', 'proposalId']; // proposalId: só baixa a proposta do planejador (não vai para a missão)
+const FLOW_PATCH_KEYS = ['title', 'goal', 'kind', 'fullAccess', 'maxParallel', 'archived', 'schedule', 'autoIntegrate', 'verifyCommand', 'steps'];
 export const RUN_SAFE_PATCH_KEYS = Object.freeze(['schedule', 'autoIntegrate']); // únicos campos editáveis com run ativo (não mudam o que o run está executando)
 export const SCHEDULE_SKIPS_LISTED = 5;
 /** PATCH só com campos de RUN_SAFE_PATCH_KEYS (ao menos um)? */
 export const runSafePatch = (body) => isObj(body) && Object.keys(body).length > 0 && Object.keys(body).every((k) => RUN_SAFE_PATCH_KEYS.includes(k));
 /** Agenda que vale de fato: só em automação e só se válida (o banco pode ter sido editado à mão); senão null. */
 const effectiveSchedule = (f) => (f?.kind === 'automation' ? validateSchedule(f.schedule, 'automation').value ?? null : null);
+/** Comando de verificação que vale de fato (o banco pode ter sido editado à mão): inválido ou ausente = null (sem verificação). */
+const effectiveVerify = (f) => validateVerifyCommand(f?.verifyCommand).value ?? null;
 const STEP_KEYS = ['id', 'title', 'prompt', 'provider', 'role', 'model', 'effort', 'dependsOn', 'continueFrom'];
 const unknownKeys = (o, allowed) => Object.keys(o).filter((k) => !allowed.includes(k));
 
@@ -213,6 +221,7 @@ export function validateFlowInput(body, { create, current = null }) {
   if (create || body.schedule !== undefined) { const s = validateSchedule(body.schedule, kind); if (s.error) return s; v.schedule = s.value; }
   else if (v.kind !== undefined && kind !== 'automation' && current?.schedule != null) return { error: 'Missão de projeto não tem agenda: para mudar o tipo para projeto, envie também schedule: null.' };
   if (create || body.autoIntegrate !== undefined) { if (body.autoIntegrate !== undefined && typeof body.autoIntegrate !== 'boolean') return { error: 'autoIntegrate deve ser verdadeiro ou falso.' }; v.autoIntegrate = body.autoIntegrate !== false; }
+  if (create || body.verifyCommand !== undefined) { const c = validateVerifyCommand(body.verifyCommand); if (c.error) return { error: `verifyCommand: ${c.error}` }; v.verifyCommand = c.value; } // null remove
   if (!create && body.archived !== undefined) { if (typeof body.archived !== 'boolean') return { error: 'archived deve ser verdadeiro ou falso.' }; v.archived = body.archived; }
   if (create || body.steps !== undefined) { const s = validateSteps(body.steps); if (s.error) return s; v.steps = s.steps; }
   if (!create && !Object.keys(v).length) return { error: 'Nada para alterar: informe ao menos um campo.' };
@@ -275,7 +284,7 @@ function depsContext(deps, room) {
  * `setTimer`/`clearTimer`/`now`/`uid`/`pollMs`/`dispatchWaitMs`/`maxSessions` são injetáveis para os testes (sem processos nem relógio reais).
  * `flowGit` (createFlowGit de flow-git.js): liga o MODO GIT dos runs novos; null = comportamento da fatia 1 (tudo na pasta do workspace). `runGit`: só a leitura da ref da missão na retomada.
  */
-export function createFlows({ db, terminals, maestro, flowGit = null, runGit = realGit, persist = store.saveOrThrow, now = store.now, uid = store.uid, setTimer = setInterval, clearTimer = clearInterval, pollMs = POLL_MS, dispatchWaitMs = DISPATCH_WAIT_MS, maxSessions = MAX_SESSIONS, onError = (e) => console.error('[flows]', e?.code || e?.message || e) } = {}) {
+export function createFlows({ db, terminals, maestro, flowGit = null, flowVerify = null, runGit = realGit, persist = store.saveOrThrow, now = store.now, uid = store.uid, setTimer = setInterval, clearTimer = clearInterval, pollMs = POLL_MS, dispatchWaitMs = DISPATCH_WAIT_MS, maxSessions = MAX_SESSIONS, onError = (e) => console.error('[flows]', e?.code || e?.message || e) } = {}) {
   // bancos antigos não têm as coleções; leitura tolerante: só ficam objetos com id no formato do servidor
   const clean = (list, re) => (Array.isArray(list) ? list.filter((x) => isObj(x) && typeof x.id === 'string' && re.test(x.id)) : []);
   db.flows = clean(db.flows, FLOW_ID_RE); db.flowRuns = clean(db.flowRuns, RUN_ID_RE);
@@ -286,6 +295,8 @@ export function createFlows({ db, terminals, maestro, flowGit = null, runGit = r
   const activeMsg = (run, what) => (run.status === 'interrupted' ? `Há uma execução interrompida nesta missão: retome-a ou cancele-a antes de ${what}.` : run.status === 'ready_to_integrate' ? `Há uma execução esperando a integração nesta missão: integre-a ou descarte-a antes de ${what}.` : null);
   // mutex por run (runId -> operação): o runner (advance) e as rotas que mexem no run inteiro (retomar; no modo Git também integrar/descartar) nunca trabalham ao mesmo tempo no mesmo run
   const ops = new Map();
+  const verifier = flowVerify ?? createFlowVerify(); // injetável (testes); o real só roda com verifyCommand definido pelo usuário
+  const verifyAborts = new Map(); // runId -> AbortController da verificação em curso (cancelar encerra o processo)
   const ms = () => Date.parse(now()) || Date.now();
   const peekT = (id) => { try { return (terminals.peek ? terminals.peek(id) : terminals.get(id)) ?? null; } catch { return null; } };
   // Estado COMPLETO do terminal (describe: traz workspaceId); o peek é leve e não tem o workspace. Só para o contexto do planejador.
@@ -325,7 +336,7 @@ export function createFlows({ db, terminals, maestro, flowGit = null, runGit = r
     const mine = runs().filter((r) => r.flowId === f.id), last = mine.at(-1) ?? null, active = mine.find((r) => ACTIVE_RUN.has(r.status)) ?? null, ws = wsOf(f.workspaceId);
     const { scheduleState, ...pub } = structuredClone(f), st = readScheduleState(scheduleState), sch = effectiveSchedule(f);
     return {
-      ...pub, autoIntegrate: f.autoIntegrate !== false, nextRunAt: sch?.enabled ? st.nextRunAt : null, scheduleSkips: st.skips.slice(-SCHEDULE_SKIPS_LISTED).reverse().map(skipView),
+      ...pub, autoIntegrate: f.autoIntegrate !== false, verifyCommand: effectiveVerify(f), nextRunAt: sch?.enabled ? st.nextRunAt : null, scheduleSkips: st.skips.slice(-SCHEDULE_SKIPS_LISTED).reverse().map(skipView),
       workspaceName: ws ? (ws.displayName || ws.name || null) : null, lastRun: last ? runView(last) : null, activeRun: active ? runView(active) : null,
     };
   };
@@ -347,7 +358,7 @@ export function createFlows({ db, terminals, maestro, flowGit = null, runGit = r
     const v = validateFlowInput(body, { create: true }); if (v.error) return fail(400, v.error);
     if (!wsOf(v.value.workspaceId)) return fail(400, 'Espaço de trabalho não encontrado.');
     if (flows().length >= MAX_FLOWS) return fail(409, `Limite de ${MAX_FLOWS} missões atingido; remova alguma antes de criar outra.`);
-    const t = now(), f = { id: uid('flow'), workspaceId: v.value.workspaceId, title: v.value.title, goal: v.value.goal, kind: v.value.kind, fullAccess: v.value.fullAccess, maxParallel: v.value.maxParallel, schedule: v.value.schedule, autoIntegrate: v.value.autoIntegrate, steps: v.value.steps, createdAt: t, updatedAt: t, archived: false };
+    const t = now(), f = { id: uid('flow'), workspaceId: v.value.workspaceId, title: v.value.title, goal: v.value.goal, kind: v.value.kind, fullAccess: v.value.fullAccess, maxParallel: v.value.maxParallel, schedule: v.value.schedule, autoIntegrate: v.value.autoIntegrate, verifyCommand: v.value.verifyCommand, steps: v.value.steps, createdAt: t, updatedAt: t, archived: false };
     if (f.schedule) f.scheduleState = freshScheduleState(f.schedule, ms(), null); // próximo horário a partir de agora (agenda desligada: nextRunAt null)
     flows().push(f);
     try { persist(); } catch { flows().pop(); return fail(500, `Não foi possível criar a missão: ${PERSIST_ERROR}`); }
@@ -423,7 +434,7 @@ export function createFlows({ db, terminals, maestro, flowGit = null, runGit = r
     const ctx = plannerContext(caller); if (ctx.error) return { ok: false, error: ctx.error };
     if (!isObj(args)) return { ok: false, error: 'Os argumentos devem ser um objeto com a missão.' };
     const denied = PLANNER_DENIED_KEYS.filter((k) => Object.hasOwn(args, k));
-    if (denied.length) return { ok: false, error: `Propriedades não permitidas: ${denied.join(', ')}. O espaço de trabalho é o deste terminal e o acesso total só o usuário liga.` };
+    if (denied.length) return { ok: false, error: `Propriedades não permitidas: ${denied.join(', ')}. O espaço de trabalho é o deste terminal; o acesso total e o comando de verificação só o usuário define.` };
     const v = validateFlowInput({ ...args, workspaceId: ctx.ws.id, fullAccess: false }, { create: true });
     if (v.error) return { ok: false, error: v.error };
     sweepProposals();
@@ -545,12 +556,14 @@ export function createFlows({ db, terminals, maestro, flowGit = null, runGit = r
     const owned = [...(run.ownedTerminalIds ?? [])];
     const ok = apply(run, () => {
       const t = now(); run.status = 'cancelled'; run.finishedAt = t; run.error = 'Cancelada pelo usuário.';
+      if (isObj(run.git) && run.git.verifying) { const { verifying, ...g } = run.git; run.git = g; } // verificação em curso: o processo é encerrado logo abaixo e o resultado é ignorado
       for (const rs of run.steps) {
         if (rs.status === 'pending') rs.status = 'cancelled';
         else if (ACTIVE_STEP.has(rs.status) || rs.status === 'interrupted') { rs.status = 'cancelled'; rs.finishedAt = t; if (rs.unconfirmed) rs.unconfirmed = false; if (rs.resumePending) rs.resumePending = false; }
       }
     });
     if (!ok) return fail(500, `Não foi possível cancelar a execução: ${PERSIST_ERROR}`);
+    verifyAborts.get(run.id)?.abort();
     for (const id of owned) closeTerminal(id); // só os criados por este run; os que o usuário abriu nunca entram aqui (run interrompido: a lista foi zerada no boot)
     return okv(200, runView(run));
   }
@@ -1034,8 +1047,61 @@ export function createFlows({ db, terminals, maestro, flowGit = null, runGit = r
     apply(run, () => { run.status = 'ready_to_integrate'; run.error = error ? clip(error, 500) : null; if (pending) run.git = { ...run.git, pending }; }, { rollback: false });
   }
 
-  /** Fim do run em modo Git. `autoIntegrate` (padrão true): integração final automática (`by: 'auto'`, que NUNCA reconhece configuração alterada); senão espera Integrar. */
+  const VERIFY_STATUS = new Set(['pass', 'fail', 'timeout', 'error']);
+  const verifyLine = (cmd) => cmd.args.join(' ').slice(0, 400);
+  /** Resultado do verificador (injetável) normalizado para o contrato de run.git.verification, mais a ponta verificada (`tip`). */
+  function verificationOf(r, cmd, tip) {
+    const x = isObj(r) ? r : {};
+    return {
+      status: VERIFY_STATUS.has(x.status) ? x.status : 'error', command: typeof x.command === 'string' ? x.command.slice(0, 400) : verifyLine(cmd),
+      exitCode: Number.isInteger(x.exitCode) ? x.exitCode : null, durationMs: Number.isFinite(x.durationMs) && x.durationMs >= 0 ? Math.round(x.durationMs) : 0,
+      outputTail: typeof x.outputTail === 'string' ? x.outputTail.slice(-VERIFY_TAIL) : '', truncated: x.truncated === true, at: typeof x.at === 'string' ? x.at : now(), tip: typeof tip === 'string' ? tip : null,
+    };
+  }
+  /**
+   * Roda a verificação na ponta da branch da missão. Grava a marca `verifying` ANTES (sem gravar, não roda) e o resultado DEPOIS (sem gravar, a marca fica e o próximo passo verifica de novo).
+   * A mesma ponta já aprovada (ex.: a integração seguinte não gravou) não roda de novo. Devolve a verificação gravada ou null (nada a fazer agora: não gravou ou o run foi cancelado).
+   */
+  async function verifyTip(run, cmd) {
+    const tip = run.git?.tip, prev = run.git?.verification;
+    if (isObj(prev) && prev.status === 'pass' && typeof tip === 'string' && prev.tip === tip) return prev;
+    if (!apply(run, () => { run.git = { ...run.git, verification: null, verifying: { startedAt: now(), command: verifyLine(cmd) } }; })) return null;
+    const ac = new AbortController(); verifyAborts.set(run.id, ac);
+    let r;
+    try { r = await verifier.run(run.git.repoPath, tip, { args: cmd.args, timeoutSec: cmd.timeoutSec, signal: ac.signal }); }
+    catch (e) { r = { status: 'error', exitCode: null, durationMs: 0, outputTail: `Falha ao executar a verificação: ${clip(e?.message ?? e, 300)}`, truncated: false }; }
+    finally { if (verifyAborts.get(run.id) === ac) verifyAborts.delete(run.id); }
+    if (run.status !== 'running') return null; // cancelado durante a verificação: o cancelamento já gravou o run (e o processo foi encerrado)
+    const verification = verificationOf(r, cmd, tip);
+    if (!apply(run, () => { const { verifying, ...g } = run.git; run.git = { ...g, verification }; })) return null;
+    return verification;
+  }
+  const verifyFailMsg = (v) => {
+    const last = String(v.outputTail).trim().split(/\r?\n/).at(-1) || 'sem detalhe';
+    const why = v.status === 'timeout' ? 'o tempo máximo foi excedido' : v.status === 'error' ? `não foi possível executar o comando (${clip(last, 200)})` : `o comando terminou com código ${v.exitCode ?? 'desconhecido'}`;
+    return `Verificação falhou: ${why}. Nada foi integrado; confira a saída do comando e clique em Integrar (ou Descartar).`;
+  };
+  /** Diagnóstico da integração final (somente leitura) para quem vai esperar Integrar. */
+  async function finalPending(run) {
+    const a = await flowGit.assessFinal(run);
+    return { reasons: Array.isArray(a?.reasons) ? a.reasons : [], conflicts: Array.isArray(a?.conflicts) ? a.conflicts : [], files: Array.isArray(a?.files) ? a.files : [], checkedAt: now() };
+  }
+
+  /**
+   * Fim do run em modo Git. Com `verifyCommand`, a verificação vem ANTES de tudo: não passou = ready_to_integrate com o motivo e nada é integrado. `autoIntegrate` (padrão true):
+   * integração final automática (`by: 'auto'`, que NUNCA reconhece configuração alterada); senão espera Integrar.
+   */
   async function finishGit(run, flow) {
+    const cmd = effectiveVerify(flow);
+    if (cmd) { // roda sob o passo comum (ops 'advance'): cancelar no meio é permitido e encerra o processo
+      const v = await verifyTip(run, cmd);
+      if (!v || run.status !== 'running') return;
+      if (v.status !== 'pass') {
+        let pending = null; try { pending = await finalPending(run); } catch (e) { onError(e); }
+        if (run.status === 'running') toReady(run, verifyFailMsg(v), pending);
+        return;
+      }
+    }
     ops.set(run.id, 'final'); // cancelar no meio da integração final = 409
     try {
       if (flow.autoIntegrate !== false) {
@@ -1045,8 +1111,7 @@ export function createFlows({ db, terminals, maestro, flowGit = null, runGit = r
         toReady(run, r?.code === 'inconsistent' ? `A integração automática terminou em um estado inesperado da sua pasta (${run.git?.inconsistency?.reason ?? r.error}); nada foi desfeito. Inspecione o repositório.` : `Integração automática não feita: ${r?.error ?? 'recusada'}`);
         return;
       }
-      const a = await flowGit.assessFinal(run);
-      toReady(run, null, { reasons: Array.isArray(a?.reasons) ? a.reasons : [], conflicts: Array.isArray(a?.conflicts) ? a.conflicts : [], files: Array.isArray(a?.files) ? a.files : [], checkedAt: now() });
+      toReady(run, null, await finalPending(run));
     } finally { if (ops.get(run.id) === 'final') ops.set(run.id, 'advance'); }
   }
 
@@ -1262,6 +1327,16 @@ export function createFlows({ db, terminals, maestro, flowGit = null, runGit = r
       if (run.status !== 'running') continue;
       n++;
       const t = now();
+      if (isObj(run.git) && isObj(run.git.verifying)) { // caiu no meio da verificação: nunca integra sem verificar (espera Integrar ou Descartar)
+        const { verifying, ...g } = run.git;
+        if (!run.steps.some((rs) => ACTIVE_STEP.has(rs.status))) {
+          const verification = { status: 'error', command: typeof verifying.command === 'string' ? verifying.command : '', exitCode: null, durationMs: 0, outputTail: 'O servidor reiniciou durante a verificação; o comando não terminou.', truncated: false, at: t, tip: typeof g.tip === 'string' ? g.tip : null };
+          run.git = { ...g, verification }; run.status = 'ready_to_integrate'; run.ownedTerminalIds = [];
+          run.error = 'Verificação falhou: o servidor reiniciou durante a verificação. Nada foi integrado; clique em Integrar (ou Descartar).';
+          continue;
+        }
+        run.git = g;
+      }
       for (const rs of run.steps) {
         if (!ACTIVE_STEP.has(rs.status)) continue;
         if (rs.unconfirmed === true) { rs.status = 'waiting'; rs.agentBusy = false; continue; } // o agente morreu com o servidor: volta a esperar a decisão
