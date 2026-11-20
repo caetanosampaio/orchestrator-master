@@ -12,16 +12,37 @@ export function StateTag({ tone, label, className = '' }) {
   return <span className={`fl-state fl-t-${tone}${className ? ` ${className}` : ''}`}><StatusGlyph state={toneGlyph(tone)} size={12} />{label}</span>;
 }
 
-/** Botões da decisão humana sobre uma etapa que parou sem confirmar (aceitar conclui, recusar falha e pula os dependentes). */
-export function StepDecision({ onDecide, busy, disabled = false, title }) {
+/**
+ * Botões da decisão humana sobre uma etapa que parou sem confirmar: aceitar conclui, continuar manda o agente seguir na mesma conversa, recusar falha e pula os dependentes.
+ * `limit` (parou no limite de uso da conta): o trabalho pode estar pela metade, então Continuar é a ação principal e aceitar vira "Já terminou". A principal fica por último.
+ */
+export function StepDecision({ onDecide, busy, disabled = false, title, limit = false }) {
   const off = disabled || !!busy; // uma decisão por vez (a página ignora cliques enquanto outra está em curso)
+  const btn = (decision, kind, label, { icon = null, hint } = {}) => (
+    <button type="button" className={`fl-btn${kind ? ` fl-btn-${kind}` : ''}`} onClick={() => onDecide(decision)} disabled={off} aria-busy={busy === decision || undefined} title={hint}>
+      {busy === decision ? <Busy on /> : icon ? <Icon name={icon} size={12} /> : null}<span>{label}</span>
+    </button>
+  );
   return (
     <span className="fl-decide" role="group" aria-label={`Decidir a etapa ${title}`}>
-      <button type="button" className="fl-btn fl-btn-primary" onClick={() => onDecide('accept')} disabled={off}><Busy on={busy === 'accept'} /><span>Aceitar como concluída</span></button>
-      <button type="button" className="fl-btn fl-btn-ghost" onClick={() => onDecide('reject')} disabled={off}><Busy on={busy === 'reject'} /><span>Recusar</span></button>
+      {btn('reject', 'ghost', 'Recusar', { hint: 'A etapa fica como falha e as que dependem dela são puladas' })}
+      {limit ? (
+        <>
+          {btn('accept', '', 'Já terminou', { icon: 'check', hint: 'Aceitar como concluída: o agente terminou antes do limite' })}
+          {btn('continue', 'primary', 'Continuar', { icon: 'play', hint: 'O agente segue de onde parou, na mesma conversa' })}
+        </>
+      ) : (
+        <>
+          {btn('continue', '', 'Pedir para continuar', { icon: 'play', hint: 'O agente segue de onde parou, na mesma conversa' })}
+          {btn('accept', 'primary', 'Aceitar como concluída', { icon: 'check' })}
+        </>
+      )}
     </span>
   );
 }
+
+/** Ponto de estado de um item do aviso (pulsa com movimento permitido). Decorativo: o texto ao lado diz o que é. */
+const AttnDot = () => <span className="fl-attn-dot" aria-hidden="true" />;
 
 const MAX_LIST = 30; // listas longas de arquivos não empurram os botões para fora da tela
 /** Lista curta de caminhos (texto puro; o React escapa). Passou do limite: "e mais N". */
@@ -62,30 +83,59 @@ export function IntegrationProblem({ p, onRetry, onDiscardStep, onOpenTerminal, 
 }
 
 /**
- * Aviso fixo com tudo que espera você no run ativo: permissão pedida no terminal, etapa que parou sem confirmar (aceitar/recusar), integração de etapa travada
+ * Aviso fixo com tudo que espera você no run ativo, um cartão por item: permissão pedida no terminal, etapa que parou sem confirmar (aceitar/continuar/recusar; no limite
+ * de uso da conta, Continuar é a ação principal), integração de etapa travada
  * (conflito/bloqueio/erro), missão interrompida pelo reinício do servidor (Retomar) e missão pronta para integrar (motivos do servidor; Integrar/Descartar).
  */
 export function FlowAttention({ items = [], problems = [], interrupted = false, ready = null, onOpenTerminal, onDecide, deciding = null, onRetry, onDiscardStep, onResume, onIntegrate, onDiscard, busy = null }) {
-  if (!items.length && !problems.length && !interrupted && !ready) return null;
+  const total = items.length + problems.length + (interrupted ? 1 : 0) + (ready ? 1 : 0);
+  if (!total) return null;
+  let order = 0; // posição de cada cartão: escalona a entrada (CSS var --i)
+  const at = () => ({ '--i': order++ });
   return (
     <section className="fl-attn" aria-label="Aguardando você" role="status">
-      <p className="fl-kicker"><i aria-hidden="true" />Aguardando você</p>
+      <div className="fl-attn-h">
+        <p className="fl-kicker"><i aria-hidden="true" />Aguardando você</p>
+        <span className="fl-count">{total === 1 ? '1 item' : `${total} itens`}</span>
+      </div>
       <ul>
         {interrupted && (
-          <li>
-            <span><b>Missão interrompida</b>: o servidor do FORGE reiniciou durante a execução. Nada continua sozinho; clique em Retomar para os agentes seguirem de onde pararam.</span>
-            {onResume && <button type="button" className="fl-btn fl-btn-primary" onClick={onResume} disabled={!!busy}><Busy on={busy === 'resume'} /><Icon name="play" size={12} /><span>Retomar</span></button>}
+          <li className="fl-attn-card" style={at()}>
+            <div className="fl-attn-top">
+              <AttnDot />
+              <div className="fl-attn-txt">
+                <p className="fl-attn-t"><b>Missão interrompida</b></p>
+                <p className="fl-attn-why">O servidor do FORGE reiniciou durante a execução. Nada continua sozinho; clique em Retomar para os agentes seguirem de onde pararam.</p>
+              </div>
+            </div>
+            {onResume && (
+              <div className="fl-attn-acts">
+                <button type="button" className="fl-btn fl-btn-primary fl-push" onClick={onResume} disabled={!!busy} aria-busy={busy === 'resume' || undefined}><Busy on={busy === 'resume'} /><Icon name="play" size={12} /><span>Retomar</span></button>
+              </div>
+            )}
           </li>
         )}
         {problems.map((p) => (
-          <li key={`int-${p.stepId}`} className="fl-attn-int">
-            <span><b>{p.title}</b>: {p.label}.</span>
+          <li key={`int-${p.stepId}`} className="fl-attn-card" style={at()}>
+            <div className="fl-attn-top">
+              <AttnDot />
+              <div className="fl-attn-txt">
+                <p className="fl-attn-t"><b>{p.title}</b></p>
+                <p className="fl-attn-why">{p.label}.</p>
+              </div>
+            </div>
             <div className="fl-attn-body"><IntegrationProblem p={p} onRetry={onRetry} onDiscardStep={onDiscardStep} onOpenTerminal={onOpenTerminal} busy={busy} /></div>
           </li>
         ))}
         {ready && (
-          <li className="fl-attn-int">
-            <span><b>Pronta para integrar</b>: todas as etapas terminaram{ready.branch ? <> na branch <code>{ready.branch}</code></> : null}. {ready.baseBranch ? <>Integre em <code>{ready.baseBranch}</code> ou descarte.</> : 'Integre na sua branch ou descarte.'}</span>
+          <li className="fl-attn-card" style={at()}>
+            <div className="fl-attn-top">
+              <AttnDot />
+              <div className="fl-attn-txt">
+                <p className="fl-attn-t"><b>Pronta para integrar</b></p>
+                <p className="fl-attn-why">Todas as etapas terminaram{ready.branch ? <> na branch <code>{ready.branch}</code></> : null}. {ready.baseBranch ? <>Integre em <code>{ready.baseBranch}</code> ou descarte.</> : 'Integre na sua branch ou descarte.'}</p>
+              </div>
+            </div>
             <div className="fl-attn-body">
               {ready.reasons.length > 0 && (
                 <>
@@ -95,22 +145,46 @@ export function FlowAttention({ items = [], problems = [], interrupted = false, 
               )}
               <FileList files={ready.conflicts} label="Arquivos em conflito" />
               {ready.needsAck && <p>Inclui configuração executável ou arquivo sensível: Integrar pede a sua confirmação explícita, com a lista dos arquivos.</p>}
-              <span className="fl-decide" role="group" aria-label="Integrar ou descartar a execução">
-                {onIntegrate && <button type="button" className="fl-btn fl-btn-primary" onClick={onIntegrate} disabled={!!busy}><Busy on={busy === 'integrate'} /><Icon name="check" size={12} /><span>Integrar</span></button>}
-                {onDiscard && <button type="button" className="fl-btn fl-btn-ghost" onClick={onDiscard} disabled={!!busy}><Busy on={busy === 'discard'} /><span>Descartar</span></button>}
-              </span>
             </div>
+            {(onIntegrate || onDiscard) && (
+              <div className="fl-attn-acts">
+                <span className="fl-decide fl-push" role="group" aria-label="Integrar ou descartar a execução">
+                  {onDiscard && <button type="button" className="fl-btn fl-btn-ghost" onClick={onDiscard} disabled={!!busy} aria-busy={busy === 'discard' || undefined}><Busy on={busy === 'discard'} /><span>Descartar</span></button>}
+                  {onIntegrate && <button type="button" className="fl-btn fl-btn-primary" onClick={onIntegrate} disabled={!!busy} aria-busy={busy === 'integrate' || undefined}><Busy on={busy === 'integrate'} /><Icon name="check" size={12} /><span>Integrar</span></button>}
+                </span>
+              </div>
+            )}
           </li>
         )}
         {items.map((w) => (
-          <li key={w.stepId}>
-            {w.unconfirmed
-              ? <span><b>{w.title}</b>: o agente parou sem confirmar que terminou. Confira o terminal e decida; a próxima etapa só começa depois disso.</span>
-              : <span><b>{w.title}</b>: o agente pediu uma permissão e espera a sua resposta no terminal.</span>}
-            {w.terminalId
-              ? <button type="button" className={`fl-btn${w.unconfirmed ? '' : ' fl-btn-primary'}`} onClick={() => onOpenTerminal(w.terminalId)}><Icon name="terminal" size={13} /><span>Abrir terminal</span></button>
-              : <span className="dim">terminal não informado</span>}
-            {w.unconfirmed && onDecide && w.runId && <StepDecision title={w.title} disabled={!!deciding} busy={deciding?.stepId === w.stepId ? deciding.decision : null} onDecide={(d) => onDecide(w.runId, w.stepId, d)} />}
+          <li key={w.stepId} className={`fl-attn-card${w.limit ? ' is-limit' : ''}`} style={at()}>
+            <div className="fl-attn-top">
+              <AttnDot />
+              <div className="fl-attn-txt">
+                <p className="fl-attn-t">
+                  <b>{w.title}</b>
+                  {w.limit && <span className="fl-chip warn" title={w.limitResets ? `Reseta ${w.limitResets} (como aparece no terminal)` : 'O terminal não mostrou o horário de reset'}><Icon name="clock" size={11} />{w.limitResets ? `reseta ${w.limitResets}` : 'limite de uso'}</span>}
+                </p>
+                <p className="fl-attn-why">
+                  {w.limit ? 'Parou no limite de uso da conta e o trabalho pode estar pela metade. Quando o limite liberar, clique em Continuar: o agente segue de onde parou.'
+                    : w.unconfirmed ? 'O agente parou sem confirmar que terminou. Abra o terminal: se ele concluiu, aceite; se parou no meio, peça para continuar.'
+                      : 'O agente pediu uma permissão e espera a sua resposta no terminal.'}
+                </p>
+                {w.error && <p className="fl-attn-err" role="alert">{w.error}</p>}
+              </div>
+            </div>
+            {w.unconfirmed && w.summary && (
+              <details className="fl-tail">
+                <summary><Icon name="chevronRight" size={12} /><span>Ver o fim do terminal</span></summary>
+                <pre className="fl-tail-pre" tabIndex={0} role="region" aria-label={`Fim do terminal de ${w.title}`}>{w.summary}</pre>
+              </details>
+            )}
+            <div className="fl-attn-acts">
+              {w.terminalId
+                ? <button type="button" className={`fl-btn${w.unconfirmed ? '' : ' fl-btn-primary'}`} onClick={() => onOpenTerminal(w.terminalId)}><Icon name="terminal" size={13} /><span>Abrir terminal</span></button>
+                : <span className="fl-hint">terminal não informado</span>}
+              {w.unconfirmed && onDecide && w.runId && <StepDecision title={w.title} limit={w.limit} disabled={!!deciding} busy={deciding?.stepId === w.stepId ? deciding.decision : null} onDecide={(d) => onDecide(w.runId, w.stepId, d, { limit: w.limit === true })} />}
+            </div>
           </li>
         ))}
       </ul>

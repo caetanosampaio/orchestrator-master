@@ -391,6 +391,71 @@ test('etapa sem confirmação com o agente ocupado (agentBusy): não pede decis�
   const wf = fs.readFileSync(path.join(here, '../../client/src/components/FlowWorkflow.jsx'), 'utf8'); assert.ok(wf.includes('n.waiting && !n.unconfirmed'), 'leitor de tela sem texto contraditório');
 });
 
+// ---------- etapa que parou no LIMITE de uso da conta (stopReason: 'limit', limitResets): Continuar é a ação principal ----------
+test('parou no limite: LIMIT_META em runStepMeta, buildWorkflow e nodeDetail; linha do nó com e sem horário de reset', () => {
+  const lim = rs('s2', 'waiting', { unconfirmed: true, stopReason: 'limit', limitResets: '3pm (America/Sao_Paulo)', terminalId: 'term_9', summary: "You've hit your limit · resets 3pm" });
+  const f = flow({ activeRun: run([rs('s1', 'completed'), lim]) });
+  assert.deepEqual(FV.LIMIT_META, { label: 'parou no limite', tone: 'wait' });
+  assert.deepEqual(FV.runStepMeta(lim), FV.LIMIT_META);
+  const node = buildWorkflow(f).nodes.find((n) => n.id === 's2');
+  assert.deepEqual([node.state, node.stateLabel, node.tone, node.waiting, node.unconfirmed, node.limit, node.lineKind], ['waiting', 'parou no limite', 'wait', true, true, true, 'wait']);
+  assert.equal(node.line, 'parou no limite da conta (reseta 3pm (America/Sao_Paulo)): clique em Continuar');
+  const noReset = flow({ activeRun: run([rs('s1', 'completed'), { ...lim, limitResets: null }]) });
+  assert.equal(buildWorkflow(noReset).nodes.find((n) => n.id === 's2').line, 'parou no limite da conta: clique em Continuar');
+  const d = nodeDetail(f, f.activeRun, 's2');
+  assert.deepEqual([d.stateLabel, d.tone, d.unconfirmed, d.canDecide, d.limit, d.limitResets, d.runId], ['parou no limite', 'wait', true, true, true, '3pm (America/Sao_Paulo)', 'run_1']);
+  assert.deepEqual([nodeDetail(noReset, noReset.activeRun, 's2').limit, nodeDetail(noReset, noReset.activeRun, 's2').limitResets], [true, null]);
+  // limite só vale com a etapa sem confirmação: agente ocupado, etapa rodando ou concluída não viram "parou no limite"
+  for (const other of [{ ...lim, agentBusy: true }, { ...lim, status: 'running' }, { ...lim, status: 'completed' }, { ...lim, unconfirmed: false }]) {
+    assert.notDeepEqual(FV.runStepMeta(other), FV.LIMIT_META, JSON.stringify([other.status, other.agentBusy, other.unconfirmed]));
+    const g = flow({ activeRun: run([rs('s1', 'completed'), other]) });
+    assert.deepEqual([nodeDetail(g, g.activeRun, 's2').limit, nodeDetail(g, g.activeRun, 's2').limitResets, buildWorkflow(g).nodes.find((n) => n.id === 's2').limit], [false, null, false]);
+  }
+});
+
+test('parou no limite: waitingSteps leva limit e limitResets (texto curto do terminal; vazio, não-texto ou só espaços = null; longo é cortado)', () => {
+  const at = (o) => waitingSteps(flow({ activeRun: run([rs('s2', 'waiting', { unconfirmed: true, stopReason: 'limit', ...o })]) }))[0];
+  assert.deepEqual([at({ limitResets: '3pm (America/Sao_Paulo)' }).limit, at({ limitResets: '3pm (America/Sao_Paulo)' }).limitResets], [true, '3pm (America/Sao_Paulo)']);
+  for (const v of [null, undefined, '', '   ', 42, {}, ['3pm'], true]) assert.equal(at({ limitResets: v }).limitResets, null, String(v));
+  const long = at({ limitResets: `${'x'.repeat(200)}` }).limitResets;
+  assert.ok(long.length <= FV.MAX_LIMIT_RESETS && long.endsWith('…'), 'cortado em ~60 caracteres');
+  assert.equal(at({ limitResets: '  3pm\n(America/Sao_Paulo)  ' }).limitResets, '3pm (America/Sao_Paulo)', 'espaços e quebras viram um espaço só');
+  // motivo desconhecido ou permissão: sem limite
+  assert.deepEqual([at({ stopReason: 'other', limitResets: '3pm' }).limit, at({ stopReason: 'other', limitResets: '3pm' }).limitResets], [false, null]);
+  const perm = waitingSteps(flow({ activeRun: run([rs('s2', 'waiting', { stopReason: 'limit', limitResets: '3pm' })]) }))[0];
+  assert.deepEqual([perm.unconfirmed, perm.limit, perm.limitResets], [false, false, null], 'pedido de permissão não é parada no limite');
+  // "Continuar" que não reabriu o terminal: o motivo do servidor vai para o cartão (curto); sem decisão pendente, não
+  assert.equal(at({ error: 'Não foi possível reabrir o terminal da etapa: x' }).error, 'Não foi possível reabrir o terminal da etapa: x');
+  assert.ok(at({ error: 'e'.repeat(900) }).error.length <= 300); for (const v of [null, '', '  ', 7]) assert.equal(at({ error: v }).error, null, String(v));
+  assert.equal(waitingSteps(flow({ activeRun: run([rs('s2', 'waiting', { error: 'velho' })]) }))[0].error, null);
+});
+
+test('run antigo sem stopReason/limitResets: comportamento genérico (confirme a conclusão, linha "parou sem confirmar", sem limite)', () => {
+  const old = rs('s2', 'waiting', { unconfirmed: true, terminalId: 'term_9', summary: 'Relatório automático' }); // sem os campos novos
+  const f = flow({ activeRun: run([rs('s1', 'completed'), old]) });
+  assert.deepEqual(FV.runStepMeta(old), FV.UNCONFIRMED_META);
+  const node = buildWorkflow(f).nodes.find((n) => n.id === 's2');
+  assert.deepEqual([node.stateLabel, node.limit], ['confirme a conclusão', false]);
+  assert.match(node.line, /parou sem confirmar/); assert.doesNotMatch(node.line, /limite/);
+  const w = waitingSteps(f)[0]; assert.deepEqual([w.unconfirmed, w.limit, w.limitResets], [true, false, null]);
+  const d = nodeDetail(f, f.activeRun, 's2'); assert.deepEqual([d.stateLabel, d.limit, d.limitResets, d.canDecide], ['confirme a conclusão', false, null, true]);
+  assert.equal(buildWorkflow(flow({ activeRun: run([rs('s1', 'completed'), { ...old, stopReason: null, limitResets: null }]) })).nodes.find((n) => n.id === 's2').stateLabel, 'confirme a conclusão', 'stopReason null = genérico');
+});
+
+test('parou no limite (tela): Continuar como ação principal no limite, "Pedir para continuar" no genérico; aceitar no limite pede confirmação; continuar não', () => {
+  const read = (p) => fs.readFileSync(path.join(here, '../../client/src', p), 'utf8'); // readSrc é declarado mais abaixo no arquivo
+  const head = read('components/FlowHeader.jsx'), panel = read('components/FlowSidePanel.jsx'), page = read('pages/Missions.jsx'), css = read('flows.css');
+  assert.ok(head.includes("btn('continue', 'primary', 'Continuar'") && head.includes("btn('accept', '', 'Já terminou'"), 'limite: Continuar principal, Já terminou secundário');
+  assert.ok(head.includes("btn('continue', '', 'Pedir para continuar'") && head.includes("btn('accept', 'primary', 'Aceitar como concluída'"), 'genérico: aceitar principal, continuar secundário');
+  assert.ok(head.includes('limit={w.limit}') && head.includes('onDecide(w.runId, w.stepId, d, { limit: w.limit === true })') && head.includes('w.limitResets'), 'o aviso passa o limite adiante');
+  assert.ok(head.includes('<details className="fl-tail">') && head.includes('Ver o fim do terminal') && head.includes('{w.summary}</pre>'), 'fim do terminal em texto puro, recolhido');
+  assert.ok(!/dangerouslySetInnerHTML/.test(head + panel), 'texto do terminal nunca vira HTML');
+  assert.ok(panel.includes('onDecide(d.runId, d.id, x, { limit: d.limit === true })') && panel.includes("'Fim do terminal (parou no limite)'"));
+  assert.ok(/decision === 'accept' && opts\?\.limit === true && !window\.confirm\('O agente parou pelo limite da conta/.test(page), 'aceitar no limite pede confirmação');
+  assert.ok(!/decision === 'continue' && !window\.confirm/.test(page) && page.includes("'Pedido enviado: o agente continua de onde parou.'"), 'continuar sem confirmação, com aviso de sucesso');
+  assert.ok(css.includes('@keyframes fl-wait-edge') && css.includes('.fl-attn-card {') && css.includes('.fl-tail-pre {'), 'estilo dos cartões e da borda respirando');
+});
+
 // ---------- fatia 2: paralelo isolado, integração, retomada e agenda (dados no formato das seções A e B de docs/missions-v2-fatia2.md) ----------
 const SHA = 'abcdef1234567890abcdef1234567890abcdef12';
 const gitOf = (o = {}) => ({ mode: 'git', fallbackReason: null, baseBranch: 'main', baseCommit: '1111111', branch: 'orch/run_1', tip: SHA, state: 'ready', op: null, integration: null, pending: null, leftovers: [], cleanedAt: null, branchDeleted: false, discardedAt: null, ...o });

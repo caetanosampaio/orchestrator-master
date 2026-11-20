@@ -42,9 +42,11 @@ export default function FlowSidePanel({ detail, onClose, onOpenTerminal, onDecid
               <p className="fl-callout wait" role="status">O agente pediu uma permissão e espera a sua resposta no terminal.</p>
             )}
             {d.unconfirmed && (
-              <div className="fl-callout wait" role="status">
-                <p>O agente parou sem confirmar que terminou (não chamou report_done). Pode ter acabado ou estar esperando uma resposta. Confira o terminal: se ele concluir sozinho, a etapa avança; senão, decida.</p>
-                {d.canDecide && onDecide && <StepDecision title={d.title} disabled={!!deciding} busy={deciding?.stepId === d.id ? deciding.decision : null} onDecide={(x) => onDecide(d.runId, d.id, x)} />}
+              <div className={`fl-callout wait${d.limit ? ' is-limit' : ''}`} role="status">
+                {d.limit
+                  ? <p><b>Parou no limite de uso da conta</b>{d.limitResets ? <> · reseta {d.limitResets}</> : null}. O trabalho pode estar pela metade: quando o limite liberar, clique em Continuar e o agente segue de onde parou.</p>
+                  : <p>O agente parou sem confirmar que terminou (não chamou report_done). Se ele concluiu, aceite; se parou no meio, peça para continuar. Se ele terminar sozinho, a etapa avança.</p>}
+                {d.canDecide && onDecide && <StepDecision title={d.title} limit={d.limit === true} disabled={!!deciding} busy={deciding?.stepId === d.id ? deciding.decision : null} onDecide={(x) => onDecide(d.runId, d.id, x, { limit: d.limit === true })} />}
               </div>
             )}
             {d.state === 'interrupted' && (
@@ -74,7 +76,7 @@ export default function FlowSidePanel({ detail, onClose, onOpenTerminal, onDecid
             </dl>
             {/* erro INTEIRO, como veio do servidor (ex.: configuração não revisada na cópia), com as quebras de linha; o nó do workflow só mostra o começo */}
             {d.error && <section><p className="fl-label">Erro</p><p className="fl-text err pre">{d.error}</p></section>}
-            {d.summary && <section><p className="fl-label">{d.unconfirmed ? 'Fim do terminal (relatório automático)' : d.completedBy === 'user' ? 'Fim do terminal (relatório automático, aceito por você; não é repassado à próxima etapa)' : 'Resumo do agente'}</p><p className="fl-text">{d.summary}</p></section>}
+            {d.summary && <section><p className="fl-label">{d.unconfirmed ? (d.limit ? 'Fim do terminal (parou no limite)' : 'Fim do terminal (relatório automático)') : d.completedBy === 'user' ? 'Fim do terminal (relatório automático, aceito por você; não é repassado à próxima etapa)' : 'Resumo do agente'}</p><p className="fl-text">{d.summary}</p></section>}
             {!d.error && !d.summary && d.state === 'completed' && <p className="fl-text dim">Resumo {NOT_INFORMED}.</p>}
             <section><p className="fl-label">Texto da etapa</p><p className="fl-text pre">{d.prompt ?? NOT_INFORMED}</p></section>
             <div className="fl-panel-f">

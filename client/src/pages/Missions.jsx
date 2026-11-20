@@ -87,12 +87,16 @@ export default function Missions({ onOpenCockpit, data, stream = null, onBack = 
     return run_('cancel', () => actions.cancel(flow.id, active.id), 'Missão cancelada.');
   };
   // Etapa que parou sem report_done: a decisão é sua e fica registrada no servidor. Recusar falha a etapa e pula as que dependem dela, por isso pede confirmação.
+  // Continuar manda o agente seguir na mesma conversa (sem confirmação: não perde nada). Aceitar uma etapa que parou no LIMITE da conta pede confirmação: o trabalho
+  // pode estar pela metade. `opts.limit` vem do aviso e do painel (o servidor continua sendo quem decide).
   const [deciding, setDeciding] = useState(null);
-  const onDecide = async (runId, stepId, decision) => {
+  const onDecide = async (runId, stepId, decision, opts = {}) => {
     if (!flow || deciding) return;
     if (decision === 'reject' && !window.confirm('Recusar esta etapa? Ela fica como falha e as etapas que dependem dela são puladas.')) return;
+    if (decision === 'accept' && opts?.limit === true && !window.confirm('O agente parou pelo limite da conta e o trabalho pode estar incompleto. Aceitar como concluída mesmo assim?')) return;
+    const ok = decision === 'continue' ? 'Pedido enviado: o agente continua de onde parou.' : decision === 'accept' ? 'Etapa aceita como concluída.' : 'Etapa recusada.';
     setDeciding({ stepId, decision });
-    try { await run_('decide', () => actions.decide(flow.id, runId, stepId, decision), decision === 'accept' ? 'Etapa aceita como concluída.' : 'Etapa recusada.'); } finally { setDeciding(null); }
+    try { await run_('decide', () => actions.decide(flow.id, runId, stepId, decision), ok); } finally { setDeciding(null); }
   };
   // ---------- fatia 2: retomar, integrar, descartar, limpar cópias e resolver a integração de etapa ----------
   const onResume = () => {

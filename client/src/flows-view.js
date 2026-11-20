@@ -96,9 +96,17 @@ export const stepMeta = (state) => STEP_STATE_META[state] ?? { label: state ? St
  * trabalhar ou pedir permissão (`agentBusy`), não é hora de decidir: a etapa aparece como trabalhando/aguardando permissão, como qualquer outra.
  */
 export const UNCONFIRMED_META = Object.freeze({ label: 'confirme a conclusão', tone: 'wait' });
+/** Etapa sem confirmação cujo terminal termina na mensagem de limite de uso da conta (`stopReason: 'limit'`): o trabalho pode estar pela metade, então a ação é Continuar. */
+export const LIMIT_META = Object.freeze({ label: 'parou no limite', tone: 'wait' });
+export const MAX_LIMIT_RESETS = 60;
 const isUnconfirmed = (rs) => rs?.status === 'waiting' && rs?.unconfirmed === true && rs?.agentBusy !== true;
-/** Rótulo e cor do estado de uma etapa do run, considerando a etapa que espera a sua confirmação. */
-export const runStepMeta = (rs) => (isUnconfirmed(rs) ? UNCONFIRMED_META : stepMeta(rs?.status ?? 'pending'));
+// run antigo sem `stopReason` (ou motivo desconhecido) = caso genérico
+const isLimitStop = (rs) => isUnconfirmed(rs) && rs?.stopReason === 'limit';
+// horário de reset como o terminal mostrou (texto do terminal: só exibido como dado); vazio, não-texto ou fora do limite = null
+const limitResetsOf = (rs) => (isLimitStop(rs) ? clip(str(rs.limitResets), MAX_LIMIT_RESETS) || null : null);
+const unconfirmedMeta = (rs) => (isLimitStop(rs) ? LIMIT_META : UNCONFIRMED_META);
+/** Rótulo e cor do estado de uma etapa do run, considerando a etapa que espera a sua confirmação (e a que parou no limite da conta). */
+export const runStepMeta = (rs) => (isUnconfirmed(rs) ? unconfirmedMeta(rs) : stepMeta(rs?.status ?? 'pending'));
 
 // ---------- tempo ----------
 export function fmtDuration(ms) {
@@ -366,14 +374,20 @@ export function flowProgress(flow, run = currentRun(flow)) {
 }
 
 /**
- * Etapas esperando o usuário no run ativo (para o aviso no topo e o atalho de abrir o terminal). `unconfirmed` = o agente parou sem confirmar (decida: aceitar ou recusar);
- * senão, o agente pediu uma permissão no terminal. `runId` vai junto para a decisão.
+ * Etapas esperando o usuário no run ativo (para o aviso no topo e o atalho de abrir o terminal). `unconfirmed` = o agente parou sem confirmar (decida: aceitar, continuar
+ * ou recusar); senão, o agente pediu uma permissão no terminal. `limit` = parou no limite de uso da conta (a ação natural é Continuar), com `limitResets` (texto curto do
+ * terminal ou null). `runId` vai junto para a decisão.
  */
 export function waitingSteps(flow) {
   const run = flow?.activeRun ?? null;
   if (!run || run.status !== 'running') return [];
   const defs = new Map(arr(flow.steps).map((s) => [s.id, s]));
-  return runSteps(run).filter((s) => s?.status === 'waiting').map((s) => ({ stepId: s.stepId, runId: run.id ?? null, title: defs.get(s.stepId)?.title ?? s.stepId, terminalId: s.terminalId ?? null, startedAt: s.startedAt ?? null, unconfirmed: isUnconfirmed(s), summary: isUnconfirmed(s) ? s.summary ?? null : null }));
+  return runSteps(run).filter((s) => s?.status === 'waiting').map((s) => ({
+    stepId: s.stepId, runId: run.id ?? null, title: defs.get(s.stepId)?.title ?? s.stepId, terminalId: s.terminalId ?? null, startedAt: s.startedAt ?? null,
+    unconfirmed: isUnconfirmed(s), summary: isUnconfirmed(s) ? s.summary ?? null : null, limit: isLimitStop(s), limitResets: limitResetsOf(s),
+    // "Continuar" que não conseguiu reabrir o terminal: a etapa volta a esperar você com o motivo do servidor
+    error: isUnconfirmed(s) && typeof s.error === 'string' && s.error.trim() ? clip(s.error, 300) : null,
+  }));
 }
 
 // ---------- lista ----------
@@ -421,7 +435,11 @@ const firstLine = (t) => clip(String(t ?? '').split('\n').find((l) => l.trim()) 
 function nodeLine(def, st) {
   switch (st.state) {
     case 'running': return { line: firstLine(def.prompt) || null, lineKind: 'task' };
-    case 'waiting': return { line: st.unconfirmed ? 'o agente parou sem confirmar que terminou: aceite ou recuse' : 'o agente espera a sua resposta no terminal', lineKind: 'wait' };
+    case 'waiting': return {
+      line: st.limit ? `parou no limite da conta${st.limitResets ? ` (reseta ${st.limitResets})` : ''}: clique em Continuar`
+        : st.unconfirmed ? 'o agente parou sem confirmar que terminou: confira e decida' : 'o agente espera a sua resposta no terminal',
+      lineKind: 'wait',
+    };
     case 'completed': return st.summary ? { line: clip(st.summary, 110), lineKind: 'summary' } : { line: 'sem resumo informado', lineKind: 'note' };
     case 'failed': return { line: clip(st.error, 110) || 'falhou sem motivo informado', lineKind: 'error' };
     case 'skipped': return { line: 'pulada: uma etapa da qual depende falhou', lineKind: 'note' };
@@ -457,10 +475,10 @@ export function buildWorkflow(flow, run = currentRun(flow), { roles = FALLBACK_R
   const depth = depths(steps), ids = new Set(steps.map((s) => s.id)), rowIn = new Map();
   const nodes = steps.map((def) => {
     const col = depth.get(def.id) ?? 0, row = rowIn.get(col) ?? 0; rowIn.set(col, row + 1);
-    const rs = runStep(run, def.id), state = rs?.status && STEP_STATE_META[rs.status] ? rs.status : 'pending', meta = isUnconfirmed(rs) ? UNCONFIRMED_META : STEP_STATE_META[state];
-    const st = { state, summary: rs?.summary, error: rs?.error, unconfirmed: isUnconfirmed(rs) };
+    const rs = runStep(run, def.id), state = rs?.status && STEP_STATE_META[rs.status] ? rs.status : 'pending', meta = isUnconfirmed(rs) ? unconfirmedMeta(rs) : STEP_STATE_META[state];
+    const st = { state, summary: rs?.summary, error: rs?.error, unconfirmed: isUnconfirmed(rs), limit: isLimitStop(rs), limitResets: limitResetsOf(rs) };
     return {
-      id: def.id, kind: 'step', col, row, title: str(def.title) || def.id, state, stateLabel: meta.label, tone: meta.tone, waiting: state === 'waiting', unconfirmed: st.unconfirmed,
+      id: def.id, kind: 'step', col, row, title: str(def.title) || def.id, state, stateLabel: meta.label, tone: meta.tone, waiting: state === 'waiting', unconfirmed: st.unconfirmed, limit: st.limit,
       agent: { provider: def.provider ?? null, providerLabel: providerLabel(def.provider), role: def.role ?? null, roleLabel: roleLabel(def.role, roles), model: def.model || null, effort: def.effort || null },
       terminalId: rs?.terminalId ?? null, ...nodeLine(def, st), integration: stepIntegration(rs),
     };
@@ -522,12 +540,12 @@ export function nodeDetail(flow, run, nodeId, { now = Date.now(), roles = FALLBA
   }
   const def = steps.find((s) => s.id === nodeId);
   if (!def) return null;
-  const rs = runStep(run, nodeId), state = rs?.status && STEP_STATE_META[rs.status] ? rs.status : 'pending', unconfirmed = isUnconfirmed(rs), meta = unconfirmed ? UNCONFIRMED_META : STEP_STATE_META[state];
+  const rs = runStep(run, nodeId), state = rs?.status && STEP_STATE_META[rs.status] ? rs.status : 'pending', unconfirmed = isUnconfirmed(rs), meta = unconfirmed ? unconfirmedMeta(rs) : STEP_STATE_META[state];
   const title = (id) => steps.find((s) => s.id === id)?.title ?? id;
   const live = state === 'running' || state === 'waiting';
   return {
     kind: 'step', id: def.id, title: str(def.title) || def.id, state, stateLabel: meta.label, tone: meta.tone, hasRun: !!run,
-    runId: run?.id ?? null, unconfirmed, canDecide: unconfirmed && run?.status === 'running',
+    runId: run?.id ?? null, unconfirmed, canDecide: unconfirmed && run?.status === 'running', limit: isLimitStop(rs), limitResets: limitResetsOf(rs),
     completedBy: rs?.completedBy === 'user' || rs?.completedBy === 'agent' ? rs.completedBy : null, decidedAt: rs?.decidedAt ?? null,
     agent: { providerLabel: providerLabel(def.provider), roleLabel: roleLabel(def.role, roles), model: def.model || null, effort: def.effort || null },
     prompt: str(def.prompt) || null,
