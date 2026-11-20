@@ -32,7 +32,9 @@ export function resolveWorktreeIsolation({ env = process.env, settings = {} } = 
 // ---------- Git: argumentos fixos, sem shell, sem hooks, sem prompts ----------
 const NO_HOOKS = path.join(os.tmpdir(), 'orch-no-hooks-dir'); // diretório que não existe: hooks do repositório nunca rodam por causa do orquestrador
 const BASE_ARGS = ['-c', `core.hooksPath=${NO_HOOKS}`, '-c', 'gc.auto=0', '-c', 'core.fsmonitor=false', '-c', 'core.quotepath=false'];
-const IDENT = { GIT_AUTHOR_NAME: 'FORGE', GIT_AUTHOR_EMAIL: 'forge@localhost', GIT_COMMITTER_NAME: 'FORGE', GIT_COMMITTER_EMAIL: 'forge@localhost' }; // só grava commits novos; os antigos mantêm o autor anterior
+const IDENT = Object.freeze({ GIT_AUTHOR_NAME: 'FORGE', GIT_AUTHOR_EMAIL: 'forge@localhost', GIT_COMMITTER_NAME: 'FORGE', GIT_COMMITTER_EMAIL: 'forge@localhost' }); // só grava commits novos; os antigos mantêm o autor anterior
+/** Identidade dos commits do orquestrador (a mesma dos snapshots e integrações), para os módulos que gravam commits no mesmo repositório (flow-git). */
+export const GIT_IDENT = IDENT;
 const GIT_ENV_SCRUB = ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR', 'GIT_OBJECT_DIRECTORY', 'GIT_NAMESPACE', 'GIT_CEILING_DIRECTORIES'];
 /** Nunca rejeita: devolve { code, out, err, failed, timedOut }. `failed` = o Git NÃO pôde responder (não encontrado no PATH, tempo esgotado, saída além do limite): o resultado é DESCONHECIDO (code -1),
  *  diferente de um código de saída ≠ 0, que é uma resposta válida do Git ("não é um repositório", "não é ancestral"...). */
@@ -54,11 +56,17 @@ const PORCELAIN_LINE = /^[ MTADRCU?!]{2} \S/; // formato de `git status --porcel
 // Um comando Git por vez em cada repositório (index.lock) e uma integração por vez.
 const locks = new Map();
 const withLock = (key, fn) => { const prev = locks.get(key) ?? Promise.resolve(); const run = prev.then(fn, fn); locks.set(key, run.catch(() => {})); return run; };
+/** O MESMO lock por repositório usado pelo gerenciador: quem mexe no mesmo repositório (flow-git) serializa com create/snapshot/integrate/cleanup. Chave = `repoKey(caminho)`. */
+export const withRepoLock = withLock;
 
 const norm = (p) => { const r = path.resolve(String(p)).replace(/\\/g, '/'); return process.platform === 'win32' ? r.toLowerCase() : r; };
+/** Chave do lock de um repositório (caminho normalizado; no Windows sem distinção de caixa). */
+export const repoKey = norm;
 const samePath = (a, b) => norm(a) === norm(b);
 const real = (p) => { try { return fs.realpathSync.native(p); } catch { return null; } };
 const BRANCH_RE = /^orch\/wt_[0-9a-f]{8}$/, ID_RE = /^wt_[0-9a-f]{8}$/, SHA_RE = /^[0-9a-f]{40,64}$/;
+const FLOW_BRANCH_RE = /^orch\/run_[0-9a-f]{8}$/; // branch da missão (Missions v2): a única base aceita por create({ from })
+const FLOW_ID_RE = /^[A-Za-z0-9_-]{1,64}$/; // runId/stepId gravados no registro (chamadas internas; nada vem do cliente)
 const NPM_NAME_RE = /^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/; // nome de pacote npm válido (impede "../" e caminhos absolutos)
 
 export const WT_STATES = Object.freeze(['creating', 'ready', 'in_use', 'finished', 'integrated', 'failed', 'inconsistent', 'removed']);
@@ -79,7 +87,7 @@ export const usableWorktree = (r, workspaceId) => worktreeProblem(r, workspaceId
 const MAX_HISTORY = 100, MAX_ATTEMPTS = 20, MAX_ROUNDS = 20;
 
 /** Repositório do workspace: precisa ser a RAIZ do worktree PRINCIPAL, com HEAD em uma branch e ao menos um commit. `unknown: true` = o Git não pôde responder. */
-async function resolveRepo(wsPath, run = git) {
+export async function resolveRepo(wsPath, run = git) {
   const p = real(wsPath);
   if (!p) return { error: 'o workspace não existe' };
   const unknown = (x) => ({ error: `não foi possível consultar o Git (${why(x)})`, unknown: true });
@@ -97,6 +105,27 @@ async function resolveRepo(wsPath, run = git) {
   if (c.failed) return unknown(c);
   if (c.code !== 0 || !SHA_RE.test(c.out.trim())) return { error: 'o repositório ainda não tem nenhum commit' };
   return { path: p, key: norm(p), commonDir: path.resolve(p, common), branch: b.out.trim(), commit: c.out.trim() };
+}
+
+/** ÚNICO ponto que interpreta `git status`: limpo, sujo ou DESCONHECIDO. Falha de execução, tempo esgotado, código ≠ 0 ou saída fora do formato porcelain (inclusive truncada)
+ *  são "unknown": nunca "clean". Quem decide integrar, registrar snapshot, reaproveitar ou limpar precisa tratar "unknown" como bloqueio. */
+export async function dirtyStateOf(dir, run = git) {
+  const s = await run(dir, ['status', '--porcelain=v1', '--untracked-files=all']);
+  const unknown = (reason) => ({ state: 'unknown', files: [], reason });
+  if (s.failed) return unknown(s.timedOut ? 'o git status excedeu o tempo' : `o git status não pôde ser executado (${why(s)})`);
+  if (s.code !== 0) return unknown(`o git status terminou com código ${s.code}${s.err ? `: ${clip(s.err, 120)}` : ''}`);
+  const out = String(s.out ?? '');
+  if (out && !out.endsWith('\n')) return unknown('a saída do git status veio incompleta');
+  const files = lines(out);
+  if (files.some((l) => !PORCELAIN_LINE.test(l))) return unknown('a saída do git status não está no formato esperado');
+  return { state: files.length ? 'dirty' : 'clean', files, reason: null };
+}
+/** { known, head }: `known: false` = o Git não respondeu; `known: true, head: null` = respondeu que não há commit. */
+export async function probeHeadOf(dir, run = git) {
+  const h = await run(dir, ['rev-parse', '--verify', '-q', 'HEAD^{commit}']);
+  if (h.failed) return { known: false, head: null, reason: why(h) };
+  const v = h.out.trim();
+  return { known: true, head: h.code === 0 && SHA_RE.test(v) ? v : null, reason: null };
 }
 
 /** Árvore (objeto Git) do CONTEÚDO atual do worktree, incluindo arquivos novos e respeitando .gitignore, via índice temporário: não mexe no índice nem em refs. */
@@ -234,7 +263,7 @@ export function createWorktreeManager({ db, root = null, now = store.now, runGit
   const all = () => db.worktrees;
   const get = (id) => all().find((w) => w.id === id) ?? null;
   const rootFor = (repoPath) => root ?? path.join(path.dirname(repoPath), `${path.basename(repoPath)}.orch-worktrees`);
-  const mission = (r) => db.missions.find((m) => m.id === r.missionId) ?? null;
+  const mission = (r) => (db.missions ?? []).find((m) => m.id === r.missionId) ?? null; // banco sem a coleção legada (worktree de missão v2) não pode quebrar cleanup/snapshot
 
   /** Registro estruturado e LIMITADO (recuperável do banco) + linha na atividade. */
   function audit(r, event, detail = {}) {
@@ -275,27 +304,10 @@ export function createWorktreeManager({ db, root = null, now = store.now, runGit
     return end();
   }
 
-  /** ÚNICO ponto que interpreta `git status`: limpo, sujo ou DESCONHECIDO. Falha de execução, tempo esgotado, código ≠ 0 ou saída fora do formato porcelain (inclusive truncada)
-   *  são "unknown": nunca "clean". Quem decide integrar, registrar snapshot, reaproveitar ou limpar precisa tratar "unknown" como bloqueio. */
-  async function dirtyState(dir) {
-    const s = await G(dir, ['status', '--porcelain=v1', '--untracked-files=all']);
-    const unknown = (reason) => ({ state: 'unknown', files: [], reason });
-    if (s.failed) return unknown(s.timedOut ? 'o git status excedeu o tempo' : `o git status não pôde ser executado (${why(s)})`);
-    if (s.code !== 0) return unknown(`o git status terminou com código ${s.code}${s.err ? `: ${clip(s.err, 120)}` : ''}`);
-    const out = String(s.out ?? '');
-    if (out && !out.endsWith('\n')) return unknown('a saída do git status veio incompleta');
-    const files = lines(out);
-    if (files.some((l) => !PORCELAIN_LINE.test(l))) return unknown('a saída do git status não está no formato esperado');
-    return { state: files.length ? 'dirty' : 'clean', files, reason: null };
-  }
+  // mesma interpretação do nível do módulo, com o Git do gerenciador (os testes injetam falhas por runGit)
+  const dirtyState = (dir) => dirtyStateOf(dir, G);
   const unknownText = (st) => `não foi possível determinar o estado do Git (${st.reason})`;
-  /** { known, head }: `known: false` = o Git não respondeu; `known: true, head: null` = respondeu que não há commit. */
-  const probeHead = async (dir) => {
-    const h = await G(dir, ['rev-parse', '--verify', '-q', 'HEAD^{commit}']);
-    if (h.failed) return { known: false, head: null, reason: why(h) };
-    const v = h.out.trim();
-    return { known: true, head: h.code === 0 && SHA_RE.test(v) ? v : null, reason: null };
-  };
+  const probeHead = (dir) => probeHeadOf(dir, G);
   const headOf = async (dir) => (await probeHead(dir)).head;
 
   /** Ciclo ligado ao worktree: o atual da missão OU um dos anteriores (mission.pastCycles), sempre pela identidade gravada (o id do ciclo em worktree.cycleId). Nunca por semelhança.
@@ -308,24 +320,38 @@ export function createWorktreeManager({ db, root = null, now = store.now, runGit
   }
 
   // ---------- criação ----------
-  async function create({ mission: m, workspace }) {
+  /** Sem `from`: parte do HEAD da branch atual do workspace (comportamento original). Com `from` (Missions v2, chamada INTERNA do servidor): parte da ponta da branch da missão
+   *  (`orch/run_xxxxxxxx`), conferida no Git dentro do lock; a pasta do usuário não é tocada. `flow` liga o registro ao run/etapa (`flow: { runId, stepIds }`). */
+  async function create({ mission: m, workspace, from = null, flow = null }) {
     if (!m?.id || !workspace?.path) return fail(400, 'Missão ou workspace ausente.');
+    const str = (v, re) => typeof v === 'string' && re.test(v); // nunca String(v): String(undefined) passaria em FLOW_ID_RE
+    if (from != null && (!str(from?.branch, FLOW_BRANCH_RE) || !str(from?.commit, SHA_RE))) return fail(400, 'Worktree não criado: a base informada (branch da missão e commit) é inválida.', { code: 'invalid_base' });
+    if (flow != null && (!str(flow?.runId, FLOW_ID_RE) || !str(flow?.stepId, FLOW_ID_RE))) return fail(400, 'Worktree não criado: identificação do run ou da etapa inválida.', { code: 'invalid_flow' });
     const repo = await resolveRepo(workspace.path, G);
     if (repo.error) return fail(409, `Worktree não criado: ${repo.error}.`);
     return withLock(repo.key, async () => {
       const cur = await resolveRepo(workspace.path, G); // revalida DENTRO do lock: outra operação pode ter mudado a branch
       if (cur.error) return fail(409, `Worktree não criado: ${cur.error}.`);
+      if (from) { // a ponta da branch da missão precisa ser EXATAMENTE a esperada: outra integração pode tê-la movido
+        const ref = await G(cur.path, ['rev-parse', '--verify', '-q', `refs/heads/${from.branch}^{commit}`]);
+        if (ref.failed) return fail(409, `Worktree não criado: não foi possível consultar a branch "${from.branch}" (${why(ref)}).`, { code: 'git_unknown' });
+        if (ref.code !== 0) return fail(409, `Worktree não criado: a branch "${from.branch}" não existe no repositório.`, { code: 'base_missing' });
+        if (ref.out.trim() !== from.commit) return fail(409, `Worktree não criado: a branch "${from.branch}" está em ${ref.out.trim().slice(0, 12)}, não no commit esperado ${from.commit.slice(0, 12)}.`, { code: 'base_moved' });
+      }
+      const base = from ? { branch: from.branch, commit: from.commit } : { branch: cur.branch, commit: cur.commit };
       const id = store.uid('wt'), branch = `orch/${id}`, dir = rootFor(cur.path), wtPath = path.join(dir, id);
       if (!BRANCH_RE.test(branch) || !ID_RE.test(id)) return fail(500, 'Identificador de worktree inesperado.');
       if (!norm(wtPath).startsWith(`${norm(dir)}/`) || fs.existsSync(wtPath)) return fail(409, 'O caminho do worktree é inválido ou já existe.');
       if (samePath(wtPath, cur.path) || norm(wtPath).startsWith(`${norm(cur.path)}/`)) return fail(409, 'O worktree não pode ficar dentro do workspace principal.');
-      const baseDirty = (await dirtyState(cur.path)).state !== 'clean'; // informativo: na dúvida (estado desconhecido) o aviso "base com alterações" é mantido
-      const r = { id, missionId: m.id, cycleId: null, workspaceId: workspace.id, repoPath: cur.path, path: wtPath, branch, baseBranch: cur.branch, baseCommit: cur.commit, headCommit: cur.commit, baseDirty,
-        state: 'creating', op: { kind: 'create', at: now() }, current: null, rounds: [], attempts: [], history: [], integratedCommit: null, createdAt: now(), updatedAt: now() };
-      all().push(r); audit(r, 'create_started', { base: cur.commit.slice(0, 12), baseBranch: cur.branch });
+      // informativo: na dúvida (estado desconhecido) o aviso "base com alterações" é mantido. Com `from` a base é um commit da branch da missão: a pasta do usuário não entra.
+      const baseDirty = from ? false : (await dirtyState(cur.path)).state !== 'clean';
+      const r = { id, missionId: m.id, cycleId: null, workspaceId: workspace.id, repoPath: cur.path, path: wtPath, branch, baseBranch: base.branch, baseCommit: base.commit, headCommit: base.commit, baseDirty,
+        state: 'creating', op: { kind: 'create', at: now() }, current: null, rounds: [], attempts: [], history: [], integratedCommit: null, createdAt: now(), updatedAt: now(),
+        ...(flow ? { flow: { runId: flow.runId, stepIds: [flow.stepId] } } : {}) };
+      all().push(r); audit(r, 'create_started', { base: base.commit.slice(0, 12), baseBranch: base.branch });
       try { store.saveOrThrow(); } catch (e) { all().pop(); return fail(503, `O banco não pôde ser gravado (${e?.code || e?.message || 'erro'}); nenhum worktree foi criado.`); }
       try { fs.mkdirSync(dir, { recursive: true }); } catch (e) { return abortCreate(r, `não foi possível criar a pasta de worktrees (${e.code || e.message})`, false); }
-      const add = await G(cur.path, ['worktree', 'add', '-b', branch, wtPath, cur.commit]);
+      const add = await G(cur.path, ['worktree', 'add', '-b', branch, wtPath, base.commit]);
       if (add.code !== 0) return abortCreate(r, `git worktree add falhou: ${clip(add.err, 200)}`, true);
       const problems = await inspect(r);
       if (problems.length) return abortCreate(r, `o worktree criado não passou na validação: ${problems.map((p) => p.code).join(', ')}`, true);
@@ -352,7 +378,7 @@ export function createWorktreeManager({ db, root = null, now = store.now, runGit
     const repo = await resolveRepo(workspace.path, G);
     if (repo.error) return fail(409, `Worktree não criado: ${repo.error}.`);
     for (const r of all()) {
-      if (r.op || r.missionId !== m.id || r.workspaceId !== workspace.id || r.cycleId !== null || r.state !== 'ready' || r.baseCommit !== repo.commit || r.baseBranch !== repo.branch) continue;
+      if (r.op || r.flow || r.missionId !== m.id || r.workspaceId !== workspace.id || r.cycleId !== null || r.state !== 'ready' || r.baseCommit !== repo.commit || r.baseBranch !== repo.branch) continue;
       const problems = await inspect(r), unk = unknownOf(problems);
       if (unk) return fail(409, `Worktree não reaproveitado: ${unk}.`);
       if (problems.length) continue;
@@ -594,6 +620,64 @@ export function createWorktreeManager({ db, root = null, now = store.now, runGit
     });
   }
 
+  // ---------- Missions v2: commit e avanço do worktree de uma etapa (chamadas INTERNAS do servidor; nada vem do cliente) ----------
+  /** Pré-condições comuns: registro de flow, utilizável, sem operação e íntegro no Git. Devolve null (ok) ou a recusa. */
+  async function flowGuard(r, what) {
+    if (!r.flow) return fail(409, `${what}: o worktree não pertence a uma etapa de missão.`, { code: 'not_flow' });
+    if (!USABLE.includes(r.state) || r.op) return fail(409, `${what}: o worktree está em "${r.state}"${r.op ? ` (operação ${r.op.kind} em andamento)` : ''}.`, { code: 'worktree_busy' });
+    const problems = await inspect(r);
+    if (problems.length) return fail(409, `${what}: o worktree não passou na validação (${problems.map((p) => p.code).join(', ')}).`, { code: unknownOf(problems) ? 'git_unknown' : 'worktree_invalid' });
+    return null;
+  }
+
+  /** Registra o trabalho da etapa em um commit NA BRANCH DO WORKTREE. Limpo => nada é commitado. `{ ok, committed, head }`. */
+  async function commitFlowWork(id, { message = '' } = {}) {
+    const r = get(id); if (!r) return fail(404, 'Worktree não encontrado.');
+    return withLock(norm(r.repoPath), async () => {
+      const no = await flowGuard(r, 'Commit não registrado'); if (no) return no;
+      const st = await dirtyState(r.path);
+      if (st.state === 'unknown') return fail(409, `Commit não registrado: ${unknownText(st)}. Nada foi alterado.`, { code: 'git_unknown' });
+      if (st.state === 'clean') {
+        const hp = await probeHead(r.path); if (!hp.known || !hp.head) return fail(409, `Commit não registrado: não foi possível ler o HEAD do worktree (${hp.reason ?? 'sem commit'}).`, { code: 'git_unknown' });
+        if (r.headCommit !== hp.head) { r.headCommit = hp.head; saveSoft(); }
+        return { ok: true, committed: false, head: hp.head, record: r };
+      }
+      if ((await G(r.path, ['add', '-A', '--', '.'])).code !== 0) return fail(500, 'git add falhou no worktree.');
+      // uma linha, sem caracteres de controle, até 200 caracteres
+      const text = clip(String(message ?? '').replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim(), 200) || `Etapa ${r.flow.stepIds.at(-1) ?? ''} do run ${r.flow.runId} (worktree ${r.id})`;
+      const c = await G(r.path, ['commit', '--no-verify', '-q', '-m', text], { env: IDENT });
+      if (c.code !== 0) return fail(409, `O commit no worktree falhou: ${clip(c.err, 200)}`, { code: 'commit_failed' });
+      const head = await headOf(r.path);
+      if (!head) return fail(500, 'O commit foi feito, mas o HEAD do worktree não pôde ser lido.', { code: 'git_unknown' });
+      r.headCommit = head; audit(r, 'flow_commit', { head: head.slice(0, 12) }); saveSoft();
+      return { ok: true, committed: true, head, record: r };
+    });
+  }
+
+  /** Avança a branch do worktree até `commit` (por exemplo, a nova ponta da branch da missão) SÓ por fast-forward e com o worktree limpo. Nada é sobrescrito. */
+  async function fastForwardFlow(id, commit) {
+    const r = get(id); if (!r) return fail(404, 'Worktree não encontrado.');
+    if (typeof commit !== 'string' || !SHA_RE.test(commit)) return fail(400, 'Avanço recusado: commit inválido.', { code: 'invalid_commit' });
+    return withLock(norm(r.repoPath), async () => {
+      const no = await flowGuard(r, 'Avanço recusado'); if (no) return no;
+      const st = await dirtyState(r.path);
+      if (st.state === 'unknown') return fail(409, `Avanço recusado: ${unknownText(st)}. Nada foi alterado.`, { code: 'git_unknown' });
+      if (st.state === 'dirty') return fail(409, `Avanço recusado: o worktree tem ${st.files.length} alteração(ões) não commitadas. Nada foi alterado.`, { code: 'worktree_dirty' });
+      const hp = await probeHead(r.path); if (!hp.known || !hp.head) return fail(409, `Avanço recusado: não foi possível ler o HEAD do worktree (${hp.reason ?? 'sem commit'}).`, { code: 'git_unknown' });
+      const anc = await G(r.path, ['merge-base', '--is-ancestor', hp.head, commit]);
+      if (anc.failed) return fail(409, `Avanço recusado: não foi possível comparar os commits (${why(anc)}).`, { code: 'git_unknown' });
+      if (anc.code === 1) return fail(409, 'Avanço recusado: o commit não é um fast-forward do worktree. Nada foi alterado.', { code: 'not_fast_forward' });
+      if (anc.code !== 0) return fail(409, 'Avanço recusado: commit desconhecido no repositório. Nada foi alterado.', { code: 'invalid_commit' });
+      if (hp.head === commit) { if (r.headCommit !== commit) { r.headCommit = commit; saveSoft(); } return { ok: true, advanced: false, head: commit, record: r }; }
+      const mg = await G(r.path, ['merge', '--ff-only', '--no-edit', commit]);
+      const after = await probeHead(r.path);
+      if (after.known && after.head === commit) { r.headCommit = commit; audit(r, 'flow_fast_forward', { from: hp.head.slice(0, 12), to: commit.slice(0, 12) }); saveSoft(); return { ok: true, advanced: true, head: commit, record: r }; }
+      if (after.known && after.head === hp.head) return fail(409, `Avanço recusado pelo Git: ${clip(mg.err, 200)}. Nada foi alterado.`, { code: 'merge_failed' });
+      r.state = 'inconsistent'; audit(r, 'flow_fast_forward_inconsistent', { reason: `HEAD ${after.head?.slice(0, 12) ?? 'ilegível'} fora do esperado` }); saveSoft();
+      return fail(500, 'O avanço terminou em um estado INESPERADO do worktree; nada foi desfeito automaticamente.', { code: 'inconsistent', record: r });
+    });
+  }
+
   // ---------- integração ----------
   async function integrate(id, { digest, authorizedBy = 'user' } = {}) {
     const r = get(id); if (!r) return fail(404, 'Worktree não encontrado.');
@@ -809,10 +893,11 @@ export function createWorktreeManager({ db, root = null, now = store.now, runGit
   }
 
   const describe = (r) => ({ id: r.id, missionId: r.missionId, cycleId: r.cycleId, workspaceId: r.workspaceId, path: r.path, branch: r.branch, baseBranch: r.baseBranch, baseCommit: r.baseCommit, headCommit: r.headCommit,
-    integratedCommit: r.integratedCommit ?? null, state: r.state, op: r.op ? { kind: r.op.kind, at: r.op.at } : null, current: r.current, baseDirty: !!r.baseDirty, diagnostic: r.diagnostic ?? null, prepare: r.prepare ? { ...r.prepare, reason: r.prepare.reason == null ? null : redactSecrets(r.prepare.reason), outputTail: r.prepare.outputTail == null ? r.prepare.outputTail : redactSecrets(r.prepare.outputTail) } : null, rounds: (r.rounds ?? []).slice(-5), attempts: (r.attempts ?? []).slice(-5), history: (r.history ?? []).slice(-20), createdAt: r.createdAt, updatedAt: r.updatedAt });
+    integratedCommit: r.integratedCommit ?? null, state: r.state, op: r.op ? { kind: r.op.kind, at: r.op.at } : null, current: r.current, baseDirty: !!r.baseDirty, diagnostic: r.diagnostic ?? null, prepare: r.prepare ? { ...r.prepare, reason: r.prepare.reason == null ? null : redactSecrets(r.prepare.reason), outputTail: r.prepare.outputTail == null ? r.prepare.outputTail : redactSecrets(r.prepare.outputTail) } : null, rounds: (r.rounds ?? []).slice(-5), attempts: (r.attempts ?? []).slice(-5), history: (r.history ?? []).slice(-20), createdAt: r.createdAt, updatedAt: r.updatedAt,
+    flow: r.flow ? { runId: r.flow.runId, stepIds: [...(r.flow.stepIds ?? [])] } : null });
   const list = ({ missionId = null } = {}) => all().filter((r) => !missionId || r.missionId === missionId).map(describe);
 
-  return { create, ensureFor, planPrepare: planPrepareFor, prepare, killActiveSync, link, get, list, describe, workspaceFor, environmentFor, markInUse, noteRound, release, check, snapshot, integrate, cleanup, revalidate, recover, inspect };
+  return { create, ensureFor, planPrepare: planPrepareFor, prepare, killActiveSync, link, get, list, describe, workspaceFor, environmentFor, markInUse, noteRound, release, check, snapshot, integrate, cleanup, revalidate, recover, inspect, commitFlowWork, fastForwardFlow };
 }
 
 // ---------- API ----------
