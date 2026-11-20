@@ -33,6 +33,10 @@
 // at, tip }. Passou = o fluxo de sempre; não passou = ready_to_integrate com run.error "Verificação falhou: …" e NADA é integrado, mesmo com autoIntegrate (Integrar pelo usuário continua liberado).
 // Enquanto roda, run.git.verifying = { startedAt, command } fica gravado: reinício no meio = ready_to_integrate sem integrar; cancelar no meio encerra o processo.
 //
+// Envio ao remoto (flow-push.js; flow.autoPush, padrão false, só o USUÁRIO liga e só com verifyCommand): depois da integração final, o commit integrado vai para a branch remota que a sua
+// acompanha, sem --force. Automático só com a verificação aprovada na ponta integrada; senão `blocked` e o envio manual (GET/POST .../push, atado ao digest da prévia) continua disponível.
+// Resultado em run.git.push; falha no envio nunca desfaz a integração. Nenhuma IA envolvida: é o Git da máquina, com as credenciais dela.
+//
 // Agenda (fatia 2, decisão 3): só missões `automation` têm `schedule`; `scheduleState` é só do servidor (gravado aqui ao criar/editar a agenda e pelo agendador de flow-schedule.js,
 // que recebe a porta `schedulerPort()` e é ligado em setupFlows). Run iniciado pela agenda = startRun(flowId, { trigger: 'schedule', scheduledFor }). Nada roda no boot.
 //
@@ -50,6 +54,7 @@ import { validateSchedule, freshScheduleState, readScheduleState, createFlowSche
 import { git as realGit, worktreeProblem } from './worktrees.js';
 import { createFlowGit, missionBranchFor } from './flow-git.js';
 import { detectLimitStop } from './limit-stop.js';
+import { createFlowPush, pushBlocking } from './flow-push.js';
 import { createFlowVerify, validateVerifyCommand, VERIFY_TAIL } from './flow-verify.js';
 
 export const MAX_STEPS = 12, MAX_FLOWS = 50, MAX_RUNS = 200, MAX_PARALLEL = 4, MAX_TITLE = 120, MAX_GOAL = 2000, MAX_PROMPT = 2000, MAX_RUNS_LISTED = 20;
@@ -63,7 +68,7 @@ export const STEP_ROLES = Object.freeze(Object.keys(ROLES).filter((r) => r !== '
 // Missões por briefing (docs/missions-v2-briefing.md): propostas do planejador, SÓ em memória (somem no reinício).
 export const MAX_PROPOSALS = 20, PROPOSAL_TTL_MS = 24 * 60 * 60 * 1000, PLANNER_TITLE = 'Planejador de missão';
 const PROPOSAL_ID_RE = /^prop_[0-9a-f]{8}$/;
-const PLANNER_DENIED_KEYS = ['workspaceId', 'fullAccess', 'proposalId', 'verifyCommand']; // do agente nunca: o workspace é o do pane, o acesso total e o comando de verificação só o usuário define e o id da proposta é do servidor
+const PLANNER_DENIED_KEYS = ['workspaceId', 'fullAccess', 'proposalId', 'verifyCommand', 'autoPush']; // do agente nunca: o workspace é o do pane, o acesso total e o comando de verificação só o usuário define e o id da proposta é do servidor
 const BRIEFING_KEYS = ['workspaceId', 'provider', 'model', 'effort', 'acknowledgeProjectConfig']; // acknowledgeProjectConfig: o usuário confirmou a configuração de projeto não revisada (mesmo 409 project_config_unreviewed do Cockpit)
 // o que cada papel de etapa faz (mission_options): curto, para o planejador escolher; papel novo sem texto aqui cai no rótulo
 const ROLE_WHAT = Object.freeze({ builder: 'Edita arquivos: implementa a etapa e roda os testes.', reviewer: 'Só lê: revisa as alterações e aponta defeitos, regressões e testes ausentes.', scout: 'Só lê: investiga o código e mapeia arquivos, dependências e riscos.' });
@@ -111,9 +116,9 @@ const okv = (status, body) => ({ ok: true, status, body });
 const PERSIST_ERROR = 'o banco não pôde ser gravado; nada foi alterado.';
 
 // ---------- validação ----------
-const FLOW_CREATE_KEYS = ['workspaceId', 'title', 'goal', 'kind', 'fullAccess', 'maxParallel', 'schedule', 'autoIntegrate', 'verifyCommand', 'steps', 'proposalId']; // proposalId: só baixa a proposta do planejador (não vai para a missão)
-const FLOW_PATCH_KEYS = ['title', 'goal', 'kind', 'fullAccess', 'maxParallel', 'archived', 'schedule', 'autoIntegrate', 'verifyCommand', 'steps'];
-export const RUN_SAFE_PATCH_KEYS = Object.freeze(['schedule', 'autoIntegrate']); // únicos campos editáveis com run ativo (não mudam o que o run está executando)
+const FLOW_CREATE_KEYS = ['workspaceId', 'title', 'goal', 'kind', 'fullAccess', 'maxParallel', 'schedule', 'autoIntegrate', 'autoPush', 'verifyCommand', 'steps', 'proposalId']; // proposalId: só baixa a proposta do planejador (não vai para a missão)
+const FLOW_PATCH_KEYS = ['title', 'goal', 'kind', 'fullAccess', 'maxParallel', 'archived', 'schedule', 'autoIntegrate', 'autoPush', 'verifyCommand', 'steps'];
+export const RUN_SAFE_PATCH_KEYS = Object.freeze(['schedule', 'autoIntegrate', 'autoPush']); // únicos campos editáveis com run ativo (não mudam o que o run está executando)
 export const SCHEDULE_SKIPS_LISTED = 5;
 /** PATCH só com campos de RUN_SAFE_PATCH_KEYS (ao menos um)? */
 export const runSafePatch = (body) => isObj(body) && Object.keys(body).length > 0 && Object.keys(body).every((k) => RUN_SAFE_PATCH_KEYS.includes(k));
@@ -222,6 +227,11 @@ export function validateFlowInput(body, { create, current = null }) {
   else if (v.kind !== undefined && kind !== 'automation' && current?.schedule != null) return { error: 'Missão de projeto não tem agenda: para mudar o tipo para projeto, envie também schedule: null.' };
   if (create || body.autoIntegrate !== undefined) { if (body.autoIntegrate !== undefined && typeof body.autoIntegrate !== 'boolean') return { error: 'autoIntegrate deve ser verdadeiro ou falso.' }; v.autoIntegrate = body.autoIntegrate !== false; }
   if (create || body.verifyCommand !== undefined) { const c = validateVerifyCommand(body.verifyCommand); if (c.error) return { error: `verifyCommand: ${c.error}` }; v.verifyCommand = c.value; } // null remove
+  if (create || body.autoPush !== undefined) { if (body.autoPush !== undefined && typeof body.autoPush !== 'boolean') return { error: 'autoPush deve ser verdadeiro ou falso.' }; v.autoPush = body.autoPush === true; } // padrão: desligado
+  // envio automático ao remoto só com verificação: código de agente não sai da máquina sem o comando de verificação ter passado (flow-push.js)
+  const pushOn = v.autoPush ?? current?.autoPush === true;
+  const verifyOn = v.verifyCommand !== undefined ? v.verifyCommand != null : (validateVerifyCommand(current?.verifyCommand).value ?? null) !== null;
+  if (pushOn && !verifyOn) return { error: v.autoPush === true ? 'autoPush exige um comando de verificação (verifyCommand): o envio automático só acontece depois de a verificação passar.' : 'Esta missão envia ao remoto automaticamente: para remover o comando de verificação, desligue também o envio automático (autoPush: false).' };
   if (!create && body.archived !== undefined) { if (typeof body.archived !== 'boolean') return { error: 'archived deve ser verdadeiro ou falso.' }; v.archived = body.archived; }
   if (create || body.steps !== undefined) { const s = validateSteps(body.steps); if (s.error) return s; v.steps = s.steps; }
   if (!create && !Object.keys(v).length) return { error: 'Nada para alterar: informe ao menos um campo.' };
@@ -284,7 +294,7 @@ function depsContext(deps, room) {
  * `setTimer`/`clearTimer`/`now`/`uid`/`pollMs`/`dispatchWaitMs`/`maxSessions` são injetáveis para os testes (sem processos nem relógio reais).
  * `flowGit` (createFlowGit de flow-git.js): liga o MODO GIT dos runs novos; null = comportamento da fatia 1 (tudo na pasta do workspace). `runGit`: só a leitura da ref da missão na retomada.
  */
-export function createFlows({ db, terminals, maestro, flowGit = null, flowVerify = null, runGit = realGit, persist = store.saveOrThrow, now = store.now, uid = store.uid, setTimer = setInterval, clearTimer = clearInterval, pollMs = POLL_MS, dispatchWaitMs = DISPATCH_WAIT_MS, maxSessions = MAX_SESSIONS, onError = (e) => console.error('[flows]', e?.code || e?.message || e) } = {}) {
+export function createFlows({ db, terminals, maestro, flowGit = null, flowVerify = null, flowPush = null, runGit = realGit, persist = store.saveOrThrow, now = store.now, uid = store.uid, setTimer = setInterval, clearTimer = clearInterval, pollMs = POLL_MS, dispatchWaitMs = DISPATCH_WAIT_MS, maxSessions = MAX_SESSIONS, onError = (e) => console.error('[flows]', e?.code || e?.message || e) } = {}) {
   // bancos antigos não têm as coleções; leitura tolerante: só ficam objetos com id no formato do servidor
   const clean = (list, re) => (Array.isArray(list) ? list.filter((x) => isObj(x) && typeof x.id === 'string' && re.test(x.id)) : []);
   db.flows = clean(db.flows, FLOW_ID_RE); db.flowRuns = clean(db.flowRuns, RUN_ID_RE);
@@ -296,6 +306,7 @@ export function createFlows({ db, terminals, maestro, flowGit = null, flowVerify
   // mutex por run (runId -> operação): o runner (advance) e as rotas que mexem no run inteiro (retomar; no modo Git também integrar/descartar) nunca trabalham ao mesmo tempo no mesmo run
   const ops = new Map();
   const verifier = flowVerify ?? createFlowVerify(); // injetável (testes); o real só roda com verifyCommand definido pelo usuário
+  const pusher = flowPush ?? createFlowPush({ now }); // envio ao remoto depois da integração final (flow-push.js); injetável nos testes
   const verifyAborts = new Map(); // runId -> AbortController da verificação em curso (cancelar encerra o processo)
   const ms = () => Date.parse(now()) || Date.now();
   const peekT = (id) => { try { return (terminals.peek ? terminals.peek(id) : terminals.get(id)) ?? null; } catch { return null; } };
@@ -336,7 +347,7 @@ export function createFlows({ db, terminals, maestro, flowGit = null, flowVerify
     const mine = runs().filter((r) => r.flowId === f.id), last = mine.at(-1) ?? null, active = mine.find((r) => ACTIVE_RUN.has(r.status)) ?? null, ws = wsOf(f.workspaceId);
     const { scheduleState, ...pub } = structuredClone(f), st = readScheduleState(scheduleState), sch = effectiveSchedule(f);
     return {
-      ...pub, autoIntegrate: f.autoIntegrate !== false, verifyCommand: effectiveVerify(f), nextRunAt: sch?.enabled ? st.nextRunAt : null, scheduleSkips: st.skips.slice(-SCHEDULE_SKIPS_LISTED).reverse().map(skipView),
+      ...pub, autoIntegrate: f.autoIntegrate !== false, autoPush: f.autoPush === true, verifyCommand: effectiveVerify(f), nextRunAt: sch?.enabled ? st.nextRunAt : null, scheduleSkips: st.skips.slice(-SCHEDULE_SKIPS_LISTED).reverse().map(skipView),
       workspaceName: ws ? (ws.displayName || ws.name || null) : null, lastRun: last ? runView(last) : null, activeRun: active ? runView(active) : null,
     };
   };
@@ -358,7 +369,7 @@ export function createFlows({ db, terminals, maestro, flowGit = null, flowVerify
     const v = validateFlowInput(body, { create: true }); if (v.error) return fail(400, v.error);
     if (!wsOf(v.value.workspaceId)) return fail(400, 'Espaço de trabalho não encontrado.');
     if (flows().length >= MAX_FLOWS) return fail(409, `Limite de ${MAX_FLOWS} missões atingido; remova alguma antes de criar outra.`);
-    const t = now(), f = { id: uid('flow'), workspaceId: v.value.workspaceId, title: v.value.title, goal: v.value.goal, kind: v.value.kind, fullAccess: v.value.fullAccess, maxParallel: v.value.maxParallel, schedule: v.value.schedule, autoIntegrate: v.value.autoIntegrate, verifyCommand: v.value.verifyCommand, steps: v.value.steps, createdAt: t, updatedAt: t, archived: false };
+    const t = now(), f = { id: uid('flow'), workspaceId: v.value.workspaceId, title: v.value.title, goal: v.value.goal, kind: v.value.kind, fullAccess: v.value.fullAccess, maxParallel: v.value.maxParallel, schedule: v.value.schedule, autoIntegrate: v.value.autoIntegrate, autoPush: v.value.autoPush, verifyCommand: v.value.verifyCommand, steps: v.value.steps, createdAt: t, updatedAt: t, archived: false };
     if (f.schedule) f.scheduleState = freshScheduleState(f.schedule, ms(), null); // próximo horário a partir de agora (agenda desligada: nextRunAt null)
     flows().push(f);
     try { persist(); } catch { flows().pop(); return fail(500, `Não foi possível criar a missão: ${PERSIST_ERROR}`); }
@@ -986,7 +997,8 @@ export function createFlows({ db, terminals, maestro, flowGit = null, flowVerify
       try { store.log('flow', `Execução ${run.id}: a branch da missão não chegou a ser criada e a base mudou desde a primeira tentativa (${rebasedFrom.baseBranch ?? '?'}@${rebasedFrom.baseCommit.slice(0, 12)} → ${p.baseBranch}@${String(p.baseCommit).slice(0, 12)}); a missão parte da base nova.`, { runId: run.id }); } catch { /* sem banco carregado */ }
     }
     const c = await flowGit.createMissionBranch(run, p);
-    if (c.ok || c.code === 'persistence_failed' || run.status !== 'running') return; // sem gravar o diário nada foi criado: o próximo passo tenta de novo
+    if (c.ok) { await snapshotPushTarget(run); return; }
+    if (c.code === 'persistence_failed' || run.status !== 'running') return; // sem gravar o diário nada foi criado: o próximo passo tenta de novo
     if (c.code === 'git_unknown' && creating(run)) return; // o diário foi gravado e o Git não respondeu depois: o próximo passo concilia (settleCreating)
     failRun(run, null, `Não foi possível criar a branch da missão: ${c.error}`);
   }
@@ -1042,6 +1054,87 @@ export function createFlows({ db, terminals, maestro, flowGit = null, flowVerify
     closeIdleTerminals(run);
     try { const c = await flowGit.cleanupRun(run); if (!c?.ok) onError(new Error(c?.error ?? 'limpeza recusada')); } catch (e) { onError(e); }
   }
+
+  // ---------- envio ao remoto (flow-push.js), DEPOIS da integração final ----------
+  // `run.git.push` = { state: 'pushing'|'pushed'|'blocked'|'failed', by, code, error, remote, branch, from, to, commits, more, already, at }. Falha no envio nunca desfaz a integração.
+  const BLOCKED_PUSH = new Set(['not_integrated', 'nothing', 'no_upstream', 'branch_moved', 'no_remote_branch', 'remote_ahead', 'local_unpushed', 'verify_not_passed', 'foreign_commits', 'target_changed', 'target_unknown', 'unsafe_config']); // regra, não erro: espera você
+  const pushJobs = new Map(); // runId -> promessa do envio em curso (um por vez por execução; independente de `ops`, porque roda com o run já concluído)
+  /**
+   * Destino do envio gravado no INÍCIO do run (logo depois de criar a branch da missão, antes de qualquer agente rodar): remoto, branch e hash da URL de envio. Na hora de enviar,
+   * destino diferente (um agente mudou o remoto, a pushurl ou um insteadOf) bloqueia o automático. Só configuração local, sem rede. Nunca lança nem falha o run.
+   */
+  async function snapshotPushTarget(run) {
+    try {
+      const t = await pusher.target(run.git?.repoPath, run.git?.baseBranch);
+      const pushTarget = t?.ok ? { remote: t.remote, mergeRef: t.mergeRef, branch: t.branch, url: t.url, urlHash: t.urlHash, at: now() } : { remote: null, mergeRef: null, branch: null, url: null, urlHash: null, reason: clip(t?.message, 200) || null, at: now() };
+      if (isObj(run.git)) apply(run, () => { run.git = { ...run.git, pushTarget }; }, { rollback: false });
+    } catch (e) { onError(e); }
+  }
+  function pushRecord(by, r) {
+    const a = (r.ok ? r : r.assessment) ?? {};
+    return {
+      state: r.ok ? 'pushed' : BLOCKED_PUSH.has(r.code) ? 'blocked' : 'failed', by, code: r.ok ? null : r.code ?? 'push_failed', error: r.ok ? null : clip(r.error, 500) || 'Envio não feito.',
+      remote: a.remote ?? null, branch: a.branch ?? null, url: a.url ?? null, from: a.from ?? null, to: a.to ?? null, commits: Array.isArray(a.commits) ? a.commits : [], more: Number.isInteger(a.more) ? a.more : 0,
+      already: r.ok && r.already === true, at: now(),
+    };
+  }
+  /** Um envio (marca `pushing` gravada ANTES: sem gravar, não envia; reinício no meio = "falhou, confira" no boot). { busy } | { persistFailed } | { r }. */
+  async function pushRun(run, by, expect = null) {
+    if (pushJobs.has(run.id)) return { busy: true };
+    let release; pushJobs.set(run.id, new Promise((res) => { release = res; }));
+    try {
+      const prev = run.git?.push, hadPrev = run.git ? Object.hasOwn(run.git, 'push') : false;
+      if (!apply(run, () => { run.git = { ...run.git, push: { ...(isObj(prev) ? prev : {}), state: 'pushing', by, at: now() } }; })) return { persistFailed: true };
+      let r; try { r = await pusher.push(run, { by, expect }); } catch (e) { r = { ok: false, code: 'push_failed', error: `Envio não feito: ${clip(e?.message ?? e, 200)}.` }; }
+      if (!r?.ok && r?.code === 'changed') { // nada foi enviado: volta exatamente ao que era
+        apply(run, () => { const { push, ...g } = run.git; run.git = hadPrev ? { ...g, push: prev } : g; }, { rollback: false });
+        return { r };
+      }
+      apply(run, () => { run.git = { ...run.git, push: pushRecord(by, r ?? { ok: false }) }; }, { rollback: false });
+      return { r };
+    } finally { pushJobs.delete(run.id); release(); }
+  }
+  /**
+   * Envio AUTOMÁTICO depois da integração final (automática ou pelo seu clique): só com `autoPush` na missão E a verificação desta execução aprovada na ponta integrada.
+   * Integrou por cima de uma verificação que falhou (ou sem verificação) = não envia; fica `blocked` e o envio manual continua disponível. Nunca lança.
+   */
+  async function autoPushAfter(run, flow) {
+    try {
+      if (flow?.autoPush !== true || !gitOn(run) || run.status !== 'completed' || !run.git?.integration) return;
+      const v = run.git.verification, integ = run.git.integration;
+      if (!effectiveVerify(flow) || !isObj(v) || v.status !== 'pass' || v.tip !== run.git.tip) {
+        apply(run, () => { run.git = { ...run.git, push: pushRecord('auto', { ok: false, code: 'verify_not_passed', error: 'Envio automático não feito: a verificação desta execução não passou (ou não rodou). Se quiser enviar mesmo assim, use Enviar agora.' }) }; }, { rollback: false });
+        return;
+      }
+      // só o que foi verificado: integração por avanço direto, com o commit enviado = a ponta verificada (merge ou "já estava" levariam commits que não são da missão)
+      if (integ.mode !== 'ff' || integ.to !== v.tip) {
+        apply(run, () => { run.git = { ...run.git, push: pushRecord('auto', { ok: false, code: 'foreign_commits', error: 'Envio automático não feito: a integração juntou commits da sua branch que não são da missão e não foram verificados. Use Enviar agora para ver a lista e decidir.' }) }; }, { rollback: false });
+        return;
+      }
+      await pushRun(run, 'auto');
+    } catch (e) { onError(e); }
+  }
+  /** Prévia do envio manual (só leitura; consulta o remoto): o que iria, para onde, e o código (`digest`) que o envio exige. */
+  async function pushPreview(flowId, runId) {
+    const { run, no } = runAndFlow(flowId, runId); if (no) return no;
+    if (!gitOn(run) || run.status !== 'completed' || !run.git?.integration) return fail(409, 'Só uma execução integrada na sua branch pode ser enviada.', 'not_integrated');
+    let a; try { a = await pusher.assess(run); } catch (e) { return fail(500, `Não foi possível avaliar o envio: ${clip(e?.message ?? e, 200)}`); }
+    const blocking = pushBlocking(a, 'user');
+    return okv(200, { remote: a.remote, branch: a.branch, url: a.url, from: a.from, to: a.to, commits: a.commits, more: a.more, already: a.already, reasons: a.reasons, digest: a.digest, canPush: !a.already && !blocking.length });
+  }
+  /** ENVIAR AGORA (clique do usuário): só com `expect` = digest da prévia que você viu. Motivos de regra continuam valendo, exceto os commits locais anteriores (você os viu na lista). */
+  async function pushNow(flowId, runId, body) {
+    const { run, no } = runAndFlow(flowId, runId); if (no) return no;
+    if (!isObj(body) || unknownKeys(body, ['expect']).length || typeof body.expect !== 'string' || !/^[0-9a-f]{32}$/.test(body.expect)) return fail(400, 'Envie { expect } com o código da prévia do envio (a lista de commits que você viu).');
+    if (!gitOn(run) || run.status !== 'completed' || !run.git?.integration) return fail(409, 'Só uma execução integrada na sua branch pode ser enviada.', 'not_integrated');
+    const x = await pushRun(run, 'user', body.expect);
+    if (x.busy) return fail(409, 'Já há um envio em andamento nesta execução; espere ele terminar.', 'busy');
+    if (x.persistFailed) return fail(500, `Não foi possível enviar: ${PERSIST_ERROR}`);
+    if (!x.r?.ok) return fail(409, x.r?.error ?? 'Envio não feito.', x.r?.code ?? 'push_failed');
+    return okv(200, runView(run));
+  }
+  /** Testes: espera os envios em curso. */
+  const pushIdle = () => Promise.all([...pushJobs.values()]);
   /** Run concluído e integrado na branch da missão, mas sem integração final: espera você (Integrar ou Descartar). `pending`: diagnóstico novo (senão o que o flow-git gravou). */
   function toReady(run, error, pending = null) {
     apply(run, () => { run.status = 'ready_to_integrate'; run.error = error ? clip(error, 500) : null; if (pending) run.git = { ...run.git, pending }; }, { rollback: false });
@@ -1106,7 +1199,7 @@ export function createFlows({ db, terminals, maestro, flowGit = null, flowVerify
     try {
       if (flow.autoIntegrate !== false) {
         const r = await flowGit.integrateFinal(run, { by: 'auto' });
-        if (r?.ok) { markIntegrated(run); await afterIntegrated(run); return; }
+        if (r?.ok) { markIntegrated(run); await afterIntegrated(run); void autoPushAfter(run, flow); return; } // envio em segundo plano: não segura o runner
         if (r?.code === 'persistence_failed') return; // nada foi feito: o próximo passo tenta de novo
         toReady(run, r?.code === 'inconsistent' ? `A integração automática terminou em um estado inesperado da sua pasta (${run.git?.inconsistency?.reason ?? r.error}); nada foi desfeito. Inspecione o repositório.` : `Integração automática não feita: ${r?.error ?? 'recusada'}`);
         return;
@@ -1216,7 +1309,7 @@ export function createFlows({ db, terminals, maestro, flowGit = null, flowVerify
    * se a lista recalculada agora tiver arquivo fora dela, 409 `project_config_changed` com a lista atual.
    */
   async function integrateRun(flowId, runId, body) {
-    const { run, no } = runAndFlow(flowId, runId); if (no) return no;
+    const { f, run, no } = runAndFlow(flowId, runId); if (no) return no;
     if (body !== undefined && body !== null && !isObj(body)) return fail(400, 'O corpo da requisição deve ser um objeto JSON.');
     const extra = isObj(body) ? unknownKeys(body, ['acknowledgeProjectConfig', 'acknowledgedFiles']) : [];
     if (extra.length) return fail(400, `Propriedades não permitidas: ${extra.join(', ').slice(0, 80)}.`);
@@ -1230,6 +1323,7 @@ export function createFlows({ db, terminals, maestro, flowGit = null, flowVerify
         return fail(409, r?.error ?? 'Integração recusada.', r?.code ?? 'not_ready', gitExtra(r));
       }
       markIntegrated(run); await afterIntegrated(run);
+      void autoPushAfter(run, f); // envio em segundo plano (só com autoPush e a verificação aprovada): a resposta do Integrar não espera o remoto
       return okv(200, runView(run));
     });
   }
@@ -1322,7 +1416,10 @@ export function createFlows({ db, terminals, maestro, flowGit = null, flowVerify
    * (o boot não pode quebrar por isso). Modo Git: `recoverGit()` assíncrono concilia os diários de integração depois deste passo.
    */
   function recover() {
-    let n = 0;
+    let n = 0, pushFixed = 0;
+    for (const run of runs()) { // envio ao remoto interrompido pelo reinício: o resultado é desconhecido; repetir é seguro (o envio confere o remoto antes)
+      if (isObj(run.git?.push) && run.git.push.state === 'pushing') { run.git = { ...run.git, push: { ...run.git.push, state: 'failed', code: 'interrupted', error: 'O servidor reiniciou durante o envio: confira o remoto e envie de novo (repetir é seguro).', at: now() } }; pushFixed++; }
+    }
     for (const run of runs()) {
       if (run.status !== 'running') continue;
       n++;
@@ -1348,7 +1445,7 @@ export function createFlows({ db, terminals, maestro, flowGit = null, flowVerify
       }
       run.status = 'interrupted'; run.interruptedAt = t; run.error = INTERRUPTED_ERROR; run.ownedTerminalIds = [];
     }
-    if (n) { try { persist(); } catch (e) { onError(e); } }
+    if (n || pushFixed) { try { persist(); } catch (e) { onError(e); } }
     return n;
   }
 
@@ -1375,7 +1472,7 @@ export function createFlows({ db, terminals, maestro, flowGit = null, flowVerify
     };
   }
 
-  return { list, get, create, update, remove, startRun, listRuns, getRun, cancelRun, resumeRun, decideStep, integrateRun, discardRun, cleanupRunCopies, stepIntegration, tick, recover, recoverGit, schedulerPort, plannerPort, openBriefing, listProposals, dismissProposal, stop: stopTimer };
+  return { list, get, create, update, remove, startRun, listRuns, getRun, cancelRun, resumeRun, decideStep, integrateRun, discardRun, pushPreview, pushNow, pushIdle, cleanupRunCopies, stepIntegration, tick, recover, recoverGit, schedulerPort, plannerPort, openBriefing, listProposals, dismissProposal, stop: stopTimer };
 }
 
 // ---------- rotas ----------
@@ -1417,6 +1514,9 @@ export function setupFlows(app, deps = {}) {
   app.post('/api/flows/:id/runs/:runId/steps/:stepId/decision', (req, res) => send(res, flows.decideStep(req.params.id, req.params.runId, req.params.stepId, req.body)));
   // modo Git (fatia 2): integração final, descarte, limpeza das cópias e integração de uma etapa que espera você
   app.post('/api/flows/:id/runs/:runId/integrate', asyncRoute(async (req, res) => send(res, await flows.integrateRun(req.params.id, req.params.runId, req.body))));
+  // envio ao remoto depois da integração: prévia (só leitura; consulta o remoto) e Enviar agora (exige o digest da prévia)
+  app.get('/api/flows/:id/runs/:runId/push', asyncRoute(async (req, res) => send(res, await flows.pushPreview(req.params.id, req.params.runId))));
+  app.post('/api/flows/:id/runs/:runId/push', asyncRoute(async (req, res) => send(res, await flows.pushNow(req.params.id, req.params.runId, req.body))));
   app.post('/api/flows/:id/runs/:runId/discard', asyncRoute(async (req, res) => send(res, await flows.discardRun(req.params.id, req.params.runId, req.body))));
   app.post('/api/flows/:id/runs/:runId/cleanup', asyncRoute(async (req, res) => send(res, await flows.cleanupRunCopies(req.params.id, req.params.runId, req.body))));
   app.post('/api/flows/:id/runs/:runId/steps/:stepId/integration', asyncRoute(async (req, res) => send(res, await flows.stepIntegration(req.params.id, req.params.runId, req.params.stepId, req.body))));

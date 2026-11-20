@@ -18,7 +18,7 @@ const bad = (body, re, opts = { create: true }) => { const r = F.validateFlowInp
 test('criação válida: padrões (project, maxParallel 1, fullAccess false, goal vazio, sem agenda, autoIntegrate true) e normalização das etapas', () => {
   const r = F.validateFlowInput({ workspaceId: 'ws_1', title: '  Missão  ', steps: [step({ title: ' A ' })] }, { create: true });
   assert.equal(r.error, undefined);
-  assert.deepEqual({ ...r.value, steps: undefined }, { title: 'Missão', goal: '', fullAccess: false, maxParallel: 1, workspaceId: 'ws_1', kind: 'project', schedule: null, autoIntegrate: true, verifyCommand: null, steps: undefined });
+  assert.deepEqual({ ...r.value, steps: undefined }, { title: 'Missão', goal: '', fullAccess: false, maxParallel: 1, workspaceId: 'ws_1', kind: 'project', schedule: null, autoIntegrate: true, autoPush: false, verifyCommand: null, steps: undefined });
   assert.deepEqual(r.value.steps, [{ id: 's1', title: 'A', prompt: 'Faça algo', provider: 'claude', role: 'builder', model: null, effort: null, dependsOn: [], continueFrom: null }]);
   const full = F.validateFlowInput(flowBody({ kind: 'automation', fullAccess: true, maxParallel: 4, schedule: null, goal: 'a\nb' }), { create: true });
   assert.equal(full.error, undefined); assert.deepEqual([full.value.kind, full.value.fullAccess, full.value.maxParallel, full.value.goal], ['automation', true, 4, 'a\nb']);
