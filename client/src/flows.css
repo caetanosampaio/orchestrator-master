@@ -333,6 +333,7 @@
 .fl-wf .fl-caret { display: inline-block; width: 6px; height: 11px; margin-left: 3px; vertical-align: -1px; border-radius: 1px; background: var(--fl-work); }
 .fl-wf .fl-node-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; margin-top: 1px; padding-top: 8px; border-top: 1px solid var(--fl-hair); }
 .fl-wf .fl-node-state { flex: none; color: var(--st-t); font: 500 11.5px var(--sans); }
+.fl-wf .fl-node-tok { margin-left: auto; flex: none; color: var(--fl-mute-2); font: 400 11px var(--mono); font-variant-numeric: tabular-nums; } /* tokens da etapa (entrada + saída), como no Cockpit */
 .fl-wf .fl-int { display: inline-flex; align-items: center; gap: 5px; min-width: 0; height: 20px; padding: 0 7px; border-radius: 6px; background: rgba(255, 255, 255, .06); color: var(--fl-mute-2); font: 500 11px var(--sans); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fl-wf .fl-int svg { flex: none; color: var(--st); }
 /* trabalhando: um fio fino no topo do cartão (varre com movimento permitido; parado, fica aceso) */

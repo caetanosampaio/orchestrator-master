@@ -309,7 +309,7 @@ function Busy({ on }) { return on ? <i className="fl-spin" aria-hidden="true" />
  * Cabeçalho compacto: título, estado, ações do run (por `runActions`), metadados, objetivo e a faixa de progresso (um segmento por etapa).
  * Com run ativo, Editar vira "Editar agenda"/"Editar integração": o servidor só aceita mudar agenda e integração automática nesse momento.
  */
-export default function FlowHeader({ flow, workspaceName, now, busy, onStart, onCancel, onEdit, onEditSchedule, onRemove, onPickStep, onResume, onIntegrate, onDiscard, onCleanup, onPush }) {
+export default function FlowHeader({ flow, workspaceName, now, busy, usage = null, onStart, onCancel, onEdit, onEditSchedule, onRemove, onPickStep, onResume, onIntegrate, onDiscard, onCleanup, onPush }) {
   const run = currentRun(flow), active = flow.activeRun ?? null;
   const state = flowState(flow), meta = FLOW_STATE_META[state], progress = flowProgress(flow, run);
   const ra = runActions(flow), info = integrationInfo(run), notes = runGitNotes(run);
@@ -353,6 +353,7 @@ export default function FlowHeader({ flow, workspaceName, now, busy, onStart, on
       </p>
       {/* selos neutros; "acesso total" leva só um pequeno ícone de aviso (o texto diz o que é) */}
       <div className="fl-tags">
+        {usage?.has && <span className="fl-chip" title={usage.title}>{usage.tokens} tokens{usage.accounts.length ? ` · ${usage.accounts.join(', ')}` : ''}</span>}
         {flow.fullAccess === true && <span className="fl-chip warn" title="Os terminais desta missão sobem sem pedir confirmação de permissão."><Icon name="alert" size={11} />acesso total</span>}
         {auto && <span className="fl-chip" title="Agenda da automação (roda só com o FORGE aberto)."><Icon name="clock" size={11} />agenda: {scheduleLabel(flow.schedule)}</span>}
         {sched && <span className="fl-chip" title="Próxima execução agendada (horário local).">próxima: {nextRunLabel(flow.nextRunAt)}</span>}

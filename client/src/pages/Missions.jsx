@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import '../flows.css';
 import { useStore } from '../store.jsx';
-import { buildWorkflow, currentRun, describeFailure, focusInTerminal, integrationInfo, integrationProblems, nodeDetail, pickFlowId, proposalAutoOpen, proposalNotices, proposalRows, runActions, waitingSteps } from '../flows-view.js';
+import { buildWorkflow, currentRun, describeFailure, flowUsage, focusInTerminal, integrationInfo, integrationProblems, nodeDetail, pickFlowId, proposalAutoOpen, proposalNotices, proposalRows, runActions, waitingSteps } from '../flows-view.js';
 import FlowSidebar, { BackToCockpit } from '../components/FlowSidebar.jsx';
 import FlowHeader, { AckDialog, DiscardDialog, FlowAttention, PushDialog } from '../components/FlowHeader.jsx';
 import FlowWorkflow from '../components/FlowWorkflow.jsx';
@@ -27,7 +27,7 @@ const readSeen = () => { try { const v = JSON.parse(sessionStorage.getItem(SEEN_
  */
 export default function Missions({ onOpenCockpit, data, stream = null, onBack = null, backLabel = 'Início', narrow = false, side = null }) { // side: navegação da barra (o mesmo desenho da do Cockpit)
   const { flows, failure, refresh, actions, proposals } = data; // o App mantém um único polling de /api/flows (também usado pelo indicador da barra lateral); as propostas vêm junto
-  const { workspaces, state, terminals, notify, loadTerminals } = useStore();
+  const { workspaces, state, terminals, notify, loadTerminals, accounts } = useStore();
   const [selectedId, setSelectedId] = useState(readSel), [nodeId, setNodeId] = useState(null);
   // null | { mode: 'create' } | { mode: 'create', proposal, key } (proposta do Planejador) | { mode: 'edit', flow } | { mode: 'schedule', flow } (só agenda/integração, com run ativo);
   // todos com `seenAtOpen` (propostas já vistas ao abrir; ver openForm)
@@ -56,7 +56,8 @@ export default function Missions({ onOpenCockpit, data, stream = null, onBack = 
 
   const workspace = flow ? (workspaces ?? []).find((w) => w.id === flow.workspaceId) ?? null : null;
   const workspaceName = flow ? (flow.workspaceName || workspace?.displayName || workspace?.name || null) : null;
-  const workflow = useMemo(() => (flow ? buildWorkflow(flow, run, { roles: roles ?? undefined }) : null), [flow, run, roles]);
+  const workflow = useMemo(() => (flow ? buildWorkflow(flow, run, { roles: roles ?? undefined, sessions: terminals?.sessions, accounts }) : null), [flow, run, roles, terminals?.sessions, accounts]);
+  const usage = useMemo(() => (flow ? flowUsage(flow, run, terminals?.sessions, accounts) : null), [flow, run, terminals?.sessions, accounts]); // tokens da missão (entrada + saída) e a conta debitada: entram no limite da conta como os do Cockpit
   const detail = useMemo(() => (flow && nodeId ? nodeDetail(flow, run, nodeId, { now, roles: roles ?? undefined }) : null), [flow, run, nodeId, now, roles]);
   useEffect(() => { if (nodeId && flow && !detail) setNodeId(null); }, [nodeId, flow, detail]);
   const waiting = useMemo(() => (flow ? waitingSteps(flow) : []), [flow]);
@@ -306,7 +307,7 @@ export default function Missions({ onOpenCockpit, data, stream = null, onBack = 
           <>
           <div className="fl-scroll"><div className="fl-center">
             {failure && <p className="fl-note err" role="status">{failure.message}</p>}
-            <FlowHeader flow={flow} workspaceName={workspaceName} now={now} busy={busy} onStart={onStart} onCancel={onCancel} onEdit={() => openForm({ mode: 'edit', flow })} onEditSchedule={() => openForm({ mode: 'schedule', flow })}
+            <FlowHeader flow={flow} workspaceName={workspaceName} now={now} busy={busy} usage={usage} onStart={onStart} onCancel={onCancel} onEdit={() => openForm({ mode: 'edit', flow })} onEditSchedule={() => openForm({ mode: 'schedule', flow })}
               onRemove={onRemove} onPickStep={pickNode} onResume={onResume} onIntegrate={onIntegrate} onDiscard={onDiscard} onCleanup={onCleanup} onPush={onPush} />
             <FlowAttention items={waiting} problems={problems} interrupted={!!ra?.canResume} ready={readyInfo} onOpenTerminal={openTerminal} onDecide={onDecide} deciding={deciding}
               onRetry={onRetryStep} onDiscardStep={onDiscardStep} onResume={onResume} onIntegrate={onIntegrate} onDiscard={onDiscard} busy={busy} />

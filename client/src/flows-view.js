@@ -3,6 +3,9 @@
 // Nada é simulado: dado ausente vira "não informado" (ou "—" onde cabe um traço). O estado de cada etapa vem do run real; sem run, a etapa está "na fila" e a lista mostra "—/m".
 // Testado em server/test/flows-view.test.mjs.
 
+import { paneUsage, squadUsage, newTokens } from './usage-view.js';
+import { accountTagName } from './accounts-view.js';
+
 export const NOT_INFORMED = 'não informado';
 export const DASH = '—';
 export const MAX_STEPS = 12, MAX_TITLE = 120, MAX_TEXT = 2000;
@@ -596,7 +599,36 @@ function deliveryState(run) {
  * Nós e arestas do workflow. Coluna = profundidade na cadeia de dependências (ramos paralelos ficam na mesma coluna); linha = ordem da definição.
  * O último nó é a ENTREGA, ligada às etapas finais (as que ninguém espera). Estado de cada nó = o do run (sem run, tudo `pending`).
  */
-export function buildWorkflow(flow, run = currentRun(flow), { roles = FALLBACK_ROLES } = {}) {
+/**
+ * Consumo de tokens de UMA etapa (o terminal dela, o mesmo número que o Cockpit mostra: entrada + saída, cache fora) e a conta que ele debita. Sem terminal ou sem consumo ainda: null
+ * (a tela não inventa zero). `account`: nome da conta quando não é a Sistema (padrão); null = conta Sistema.
+ */
+export function stepUsage(session, accounts) {
+  if (!session || typeof session !== 'object' || newTokens(session.usage) === null) return null;
+  const u = paneUsage(session.usage), account = accountTagName(session.accountId, accounts);
+  return { tokens: u.tokens, cost: u.cost, title: u.title, account, accountId: typeof session.accountId === 'string' ? session.accountId : 'system' };
+}
+
+/**
+ * Consumo da MISSÃO (run atual): soma dos terminais das etapas (um terminal compartilhado por continueFrom conta uma vez) e as contas debitadas. Todo esse gasto entra no limite
+ * da conta: o terminal da etapa é aberto como qualquer outro (status line do FORGE, transcript e limite da conta no provedor). Sem consumo ainda: { tokens: '—', panes: 0 }.
+ */
+export function flowUsage(flow, run = currentRun(flow), sessions = [], accounts = []) {
+  const byId = new Map(arr(sessions).map((s) => [s?.id, s])), seen = new Set(), mine = [];
+  for (const rs of runSteps(run)) {
+    if (typeof rs?.terminalId !== 'string' || !rs.terminalId || seen.has(rs.terminalId)) continue;
+    seen.add(rs.terminalId); const s = byId.get(rs.terminalId); if (s) mine.push(s);
+  }
+  const total = squadUsage(mine), withUse = mine.filter((s) => newTokens(s.usage) !== null);
+  const names = [...new Set(withUse.map((s) => accountTagName(s.accountId, accounts) ?? 'Sistema (padrão)'))];
+  const title = withUse.length
+    ? `Tokens desta missão (entrada + saída, como o terminal mostra) em ${withUse.length} terminal(is). Debitados na conta: ${names.join(', ')}. O limite da conta (barra inferior) já conta este gasto.`
+    : 'Nenhum consumo registrado ainda. Os terminais da missão gastam tokens na conta do FORGE e entram no limite dela como os do Cockpit.';
+  return { tokens: total.tokens, cost: total.cost, panes: total.panes, accounts: names, title, has: total.panes > 0 };
+}
+
+export function buildWorkflow(flow, run = currentRun(flow), { roles = FALLBACK_ROLES, sessions = null, accounts = null } = {}) {
+  const sessionById = new Map(arr(sessions).map((s) => [s?.id, s]));
   const steps = arr(flow?.steps).filter((s) => s?.id);
   if (!steps.length) return { nodes: [], edges: [], columns: [], hasRun: !!run };
   const depth = depths(steps), ids = new Set(steps.map((s) => s.id)), rowIn = new Map();
@@ -607,7 +639,7 @@ export function buildWorkflow(flow, run = currentRun(flow), { roles = FALLBACK_R
     return {
       id: def.id, kind: 'step', col, row, title: str(def.title) || def.id, state, stateLabel: meta.label, tone: meta.tone, waiting: state === 'waiting', unconfirmed: st.unconfirmed, limit: st.limit,
       agent: { provider: def.provider ?? null, providerLabel: providerLabel(def.provider), role: def.role ?? null, roleLabel: roleLabel(def.role, roles), model: def.model || null, effort: def.effort || null },
-      terminalId: rs?.terminalId ?? null, ...nodeLine(def, st), integration: stepIntegration(rs),
+      terminalId: rs?.terminalId ?? null, usage: rs?.terminalId ? stepUsage(sessionById.get(rs.terminalId), accounts) : null, ...nodeLine(def, st), integration: stepIntegration(rs),
     };
   });
   const stateOf = new Map(nodes.map((n) => [n.id, n.state]));

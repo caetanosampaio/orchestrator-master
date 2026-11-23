@@ -1253,3 +1253,40 @@ test('envio ao remoto (tela): diálogo com a lista e o destino, botão só com a
   assert.match(hook, /pushPreview: \(id, runId\) => api\.get/); assert.match(hook, /\/push`, \{ expect \}/); assert.match(hook, /autoPush: body\?\.autoPush === true/);
   for (const s of [head, page, panel, form]) assert.ok(!s.includes('dangerouslySetInnerHTML'));
 });
+
+// ---------- consumo de tokens e conta da missão (entra no limite da conta como os terminais do Cockpit) ----------
+test('stepUsage: tokens como o terminal mostra (entrada + saída, cache fora) e a conta; sem consumo = null (nunca zero inventado)', () => {
+  const accounts = [{ id: 'acc_11111111', label: 'Trabalho' }, { id: 'system', system: true, label: 'Sistema' }];
+  const u = FV.stepUsage({ id: 't1', accountId: 'acc_11111111', usage: { input: 1200, output: 300, cacheWrite: 24000, cacheRead: 50000, total: 75500, costUsd: null } }, accounts);
+  assert.equal(u.tokens, (1500).toLocaleString('pt-BR')); assert.equal(u.account, 'Trabalho'); assert.equal(u.accountId, 'acc_11111111'); assert.match(u.title, /entrada/);
+  assert.equal(FV.stepUsage({ id: 't2', accountId: 'system', usage: { input: 10, output: 5 } }, accounts).account, null, 'conta Sistema não leva etiqueta');
+  assert.equal(FV.stepUsage({ id: 't3', accountId: 'system', usage: null }, accounts), null);
+  assert.equal(FV.stepUsage(null, accounts), null); assert.equal(FV.stepUsage({ id: 't4' }, accounts), null);
+});
+
+test('flowUsage: soma os terminais do run (terminal compartilhado conta uma vez), lista as contas e diz que o limite da conta já conta o gasto', () => {
+  const flow = { id: 'flow_1', steps: [{ id: 's1', title: 'A' }, { id: 's2', title: 'B' }, { id: 's3', title: 'C' }] };
+  const run = { id: 'run_1', status: 'running', steps: [{ stepId: 's1', terminalId: 't1', status: 'completed' }, { stepId: 's2', terminalId: 't1', status: 'running' }, { stepId: 's3', terminalId: 't3', status: 'running' }] };
+  const sessions = [{ id: 't1', accountId: 'system', usage: { input: 100, output: 50 } }, { id: 't3', accountId: 'acc_22222222', usage: { input: 1000, output: 500 } }, { id: 'outro', accountId: 'system', usage: { input: 9999, output: 9999 } }];
+  const accounts = [{ id: 'acc_22222222', label: 'Cliente X' }];
+  const u = FV.flowUsage(flow, run, sessions, accounts);
+  assert.equal(u.has, true); assert.equal(u.panes, 2); assert.equal(u.tokens, (1650).toLocaleString('pt-BR'), 't1 uma vez (150) + t3 (1500); o terminal de fora não entra');
+  assert.deepEqual(u.accounts.sort(), ['Cliente X', 'Sistema (padrão)']); assert.match(u.title, /limite da conta/);
+  const none = FV.flowUsage(flow, run, [], accounts); assert.equal(none.has, false); assert.equal(none.tokens, '—'); assert.match(none.title, /Nenhum consumo/);
+  assert.equal(FV.flowUsage(flow, null, sessions, accounts).has, false, 'sem run, sem consumo');
+});
+
+test('buildWorkflow leva o consumo de cada etapa (e a conta) quando recebe as sessões; sem sessões o nó não tem consumo', () => {
+  const flow = { id: 'flow_1', steps: [{ id: 's1', title: 'A', provider: 'claude', role: 'builder' }] };
+  const run = { id: 'run_1', status: 'running', steps: [{ stepId: 's1', terminalId: 't1', status: 'running' }] };
+  const wf = FV.buildWorkflow(flow, run, { sessions: [{ id: 't1', accountId: 'acc_33333333', usage: { input: 70, output: 30 } }], accounts: [{ id: 'acc_33333333', label: 'Pessoal' }] });
+  assert.equal(wf.nodes[0].usage.tokens, '100'); assert.equal(wf.nodes[0].usage.account, 'Pessoal');
+  assert.equal(FV.buildWorkflow(flow, run).nodes[0].usage, null); assert.equal(wf.nodes.find((n) => n.kind === 'delivery').usage, undefined);
+});
+
+test('a página liga o consumo: nó mostra "tokens", cabeçalho recebe `usage` e Missions passa sessões e contas do store', () => {
+  const read = (f) => fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'client', 'src', f), 'utf8');
+  const page = read('pages/Missions.jsx'), node = read('components/FlowWorkflow.jsx'), head = read('components/FlowHeader.jsx');
+  assert.match(page, /flowUsage\(flow, run, terminals\?\.sessions, accounts\)/); assert.match(page, /buildWorkflow\(flow, run, \{ roles: roles \?\? undefined, sessions: terminals\?\.sessions, accounts \}\)/); assert.match(page, /usage=\{usage\}/);
+  assert.match(node, /node\.usage && <span className="fl-node-tok"/); assert.match(head, /usage\?\.has/); assert.ok(!node.includes('dangerouslySetInnerHTML') && !head.includes('dangerouslySetInnerHTML'));
+});
