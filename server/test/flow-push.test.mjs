@@ -107,7 +107,7 @@ test('remoto inacessível: falha sem pedir login e sem vazar credencial da URL n
   G(repo, ['remote', 'set-url', 'origin', 'https://usuario:segredo123@127.0.0.1:9/x.git']);
   const to = commit(repo, 'x.txt');
   const a = await mk().assess(runOf(repo, base, to));
-  assert.deepEqual(codes(a), ['target_changed', 'remote_unknown'], 'a URL mudou depois do início e o remoto não responde'); const msg = a.reasons.map((x) => x.message).join(' | ');
+  assert.deepEqual(codes(a), ['target_changed'], 'a URL mudou depois do início: não consulta o remoto'); const msg = a.reasons.map((x) => x.message).join(' | ');
   assert.ok(!msg.includes('segredo123') && !msg.includes('usuario:'), msg);
 });
 
@@ -155,6 +155,34 @@ test('configuração local que executa comando (core.sshCommand, credential.help
   const to = commit(repo, 'x.txt'), fp = mk(), a = await fp.assess(runOf(repo, base, to));
   const u = a.reasons.find((r) => r.code === 'unsafe_config'); assert.ok(u); assert.match(u.message, /core\.sshcommand/i); assert.match(u.message, /credential\.helper/i);
   assert.equal((await fp.push(runOf(repo, base, to), { by: 'auto' })).code, 'unsafe_config'); assert.equal(remoteHead(bare), base);
+});
+
+test('configuração insegura ou destino trocado: assess/push NÃO executam o comando nem falam com o remoto (sentinela em core.sshCommand)', async () => {
+  const fwd = (p) => p.split(path.sep).join('/');
+  for (const modo of ['unsafe', 'target']) {
+    const { repo, base } = await setup(); const marker = path.join(tmp, `ssh-rodou-${modo}-${seq}`);
+    const sentinela = `echo x > "${fwd(marker)}"; exit 1 #`;
+    if (modo === 'unsafe') { G(repo, ['remote', 'set-url', 'origin', 'ssh://example.invalid/x.git']); await snap(repo); G(repo, ['config', 'core.sshCommand', sentinela]); }
+    else { G(repo, ['config', 'core.sshCommand', sentinela]); G(repo, ['remote', 'set-url', 'origin', 'ssh://example.invalid/outro.git']); }
+    const to = commit(repo, 'x.txt'), fp = P.createFlowPush({ allowProtocols: 'ssh' }), run = runOf(repo, base, to);
+    const a = await fp.assess(run);
+    assert.ok(codes(a).includes(modo === 'unsafe' ? 'unsafe_config' : 'target_changed'), JSON.stringify(a.reasons));
+    assert.ok(!codes(a).includes('remote_unknown'), 'não consultou o remoto'); assert.equal(a.from, null);
+    for (const by of ['auto', 'user']) { const r = await fp.push(run, { by, expect: a.digest }); assert.equal(r.ok, false); assert.ok(['unsafe_config', 'target_changed'].includes(r.code), r.code); }
+    assert.equal(fs.existsSync(marker), false, `o comando do agente (${modo}) não pode rodar`);
+  }
+});
+
+test('[remote rejected] (branch protegida/hook do servidor) não vira "remoto à frente"; remoto à frente que já contém o commit integrado = já enviado', async () => {
+  const { repo, bare, base } = await setup();
+  const to = commit(repo, 'x.txt');
+  fs.writeFileSync(path.join(bare, 'hooks', 'pre-receive'), '#!/bin/sh\necho "protected branch hook declined" >&2\nexit 1\n', { mode: 0o755 });
+  const r = await mk().push(runOf(repo, base, to), { by: 'auto' });
+  assert.equal(r.ok, false); assert.equal(r.code, 'push_failed', r.error); assert.equal(remoteHead(bare), base);
+  fs.rmSync(path.join(bare, 'hooks', 'pre-receive'));
+  assert.equal((await mk().push(runOf(repo, base, to), { by: 'auto' })).ok, true);
+  const more = commit(repo, 'depois.txt'); G(repo, ['push', '-q', 'origin', 'main']); assert.equal(remoteHead(bare), more);
+  const a = await mk().assess(runOf(repo, base, to)); assert.equal(a.already, true, JSON.stringify(a.reasons)); assert.deepEqual(codes(a), []);
 });
 
 test('nenhuma tag vai junto, nem com push.followTags ligado na configuração', async () => {

@@ -10,7 +10,9 @@
 // Recusas que o ENVIO AUTOMÁTICO respeita e o MANUAL mostra com aviso (você vê a lista e confirma; USER_OK):
 //   - local_unpushed: a sua branch tinha commits não enviados ANTES da missão (iriam junto);
 //   - foreign_commits: o commit integrado não é a ponta verificada da missão (integração por merge ou "já estava": entram commits que não são da missão);
-//   - target_changed / target_unknown: o destino (remoto, branch, URL de envio) não é o gravado no início da execução, antes de qualquer agente rodar;
+//   - target_unknown: o destino do envio não foi gravado no início da execução (confira o remoto).
+// Recusas para os DOIS (sem consultar o remoto: o ls-remote executaria a configuração do agente ou falaria com a URL trocada):
+//   - target_changed: o destino (remoto, branch, URL de envio) não é o gravado no início da execução, antes de qualquer agente rodar;
 //   - unsafe_config: a configuração LOCAL do repositório tem chaves que executam comandos ou redirecionam o envio (core.sshCommand, credential.*, pushurl, insteadOf, include...).
 // Credenciais: as do Git da máquina, sem janela de login (GIT_TERMINAL_PROMPT=0, GCM_INTERACTIVE=never) e com tempo limite. O FORGE não lê nem grava token; a URL guardada e mostrada
 // passa por scrubGitText (sem usuário:senha@), e a comparação usa só um hash dela. Hooks desligados como em todo Git do FORGE (worktrees.js).
@@ -26,9 +28,10 @@ const BRANCH_RE = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/;
 // tags, submódulos e assinatura nunca vão junto, seja qual for a configuração do usuário (ou de um agente)
 const NET_ARGS = ['-c', 'credential.interactive=false', '-c', 'push.followTags=false', '-c', 'push.recurseSubmodules=no', '-c', 'push.gpgSign=false'];
 // chaves da configuração LOCAL que executam comandos ou mudam o destino do envio: com qualquer uma, o automático não envia (o manual avisa)
-const UNSAFE_KEY_RE = /^(?:core\.(?:sshcommand|gitproxy|askpass)|credential\..+|remote\.[^.]+\.(?:pushurl|uploadpack|receivepack|proxy|vcs)|url\..+\.(?:insteadof|pushinsteadof)|include\.path|includeif\..+|protocol\..+|http\..*(?:proxy|sslcainfo|sslbackend)|gpg\..+)$/i;
+const UNSAFE_KEY_RE = /^(?:core\.(?:sshcommand|gitproxy|askpass|alternaterefscommand)|credential\..+|remote\.[^.]+\.(?:pushurl|uploadpack|receivepack|proxy|vcs)|url\..+\.(?:insteadof|pushinsteadof)|include\.path|includeif\..+|protocol\..+|http\..*(?:proxy|sslcainfo|sslbackend)|gpg\..+)$/i;
 // motivos que NÃO bloqueiam o envio manual (você vê a lista e o aviso e confirma)
-const USER_OK = new Set(['local_unpushed', 'foreign_commits', 'target_changed', 'target_unknown', 'unsafe_config']);
+// (target_changed e unsafe_config NÃO estão aqui: sem consultar o remoto não há o que confirmar, e o envio seria às cegas)
+const USER_OK = new Set(['local_unpushed', 'foreign_commits', 'target_unknown']);
 /** Motivos que impedem enviar agora, para quem envia (`auto` respeita todos; `user` aceita os de USER_OK). */
 export const pushBlocking = (a, by) => (Array.isArray(a?.reasons) ? a.reasons : []).filter((x) => !(by === 'user' && USER_OK.has(x.code)));
 
@@ -115,7 +118,9 @@ export function createFlowPush({ runGit = realGit, now = () => new Date().toISOS
     const snap = g.pushTarget;
     if (!snap || typeof snap !== 'object' || typeof snap.urlHash !== 'string') add('target_unknown', 'o destino do envio não foi gravado no início desta execução: confira o remoto antes de enviar');
     else if (snap.urlHash !== t.urlHash || snap.remote !== t.remote || snap.mergeRef !== t.mergeRef) add('target_changed', `o destino do envio mudou durante a execução (agora: ${t.branch} em ${t.url}); confira se é mesmo o seu remoto`);
-    if (t.unsafe.length) add('unsafe_config', `a configuração local do repositório tem chaves que executam comandos ou mudam o destino do envio (${t.unsafe.join(', ')}); confira-as antes de enviar`);
+    if (t.unsafe.length) add('unsafe_config', `a configuração local do repositório tem chaves que executam comandos ou mudam o destino do envio (${t.unsafe.join(', ')}); confira-as e remova-as antes de enviar`);
+    // destino trocado ou configuração que executa comando: NÃO consulta o remoto (o ls-remote executaria core.sshCommand/credential.helper de um agente, ou falaria com a URL trocada)
+    if (reasons.some((x) => x.code === 'target_changed' || x.code === 'unsafe_config')) return done();
     if (typeof g.tip === 'string' && to !== g.tip) add('foreign_commits', 'o commit integrado inclui commits da sua branch que não são da missão (integração por merge ou a branch já estava à frente): eles iriam junto e não foram verificados');
     const rs = await remoteSha(repo, t.remote, t.mergeRef);
     if (!rs.known) { add('remote_unknown', `não foi possível consultar ${t.branch}: ${rs.error}`); return done(); }
@@ -123,6 +128,7 @@ export function createFlowPush({ runGit = realGit, now = () => new Date().toISOS
     a.from = rs.sha;
     if (rs.sha === to) { a.already = true; return done(); }
     const have = await hasCommit(repo, rs.sha);
+    if (have && (await ancestor(repo, to, rs.sha)) === true) { a.already = true; return done(); } // o remoto já contém o commit integrado (e talvez mais)
     const ff = have ? await ancestor(repo, rs.sha, to) : false;
     if (have === null || ff === null) { add('git_unknown', 'não foi possível comparar com o remoto'); return done(); }
     if (!ff) { add('remote_ahead', `${t.branch} tem commits que a sua branch não tem: atualize-a (pull) e envie de novo`); return done(); }
@@ -154,7 +160,7 @@ export function createFlowPush({ runGit = realGit, now = () => new Date().toISOS
     const r = await net(run.git.repoPath, ['push', '--porcelain', '--no-verify', '--no-follow-tags', '--recurse-submodules=no', '--no-signed', a.remote, `${a.to}:${a.mergeRef}`], PUSH_TIMEOUT_MS);
     if (r.failed || r.code !== 0) {
       const text = scrubGitText(`${r.err} ${r.out}`);
-      const code = r.timedOut ? 'timeout' : /rejected|non-fast-forward|fetch first/i.test(text) ? 'remote_ahead' : /authentication|could not read username|permission denied|\b40[13]\b|access denied/i.test(text) ? 'auth' : 'push_failed';
+      const code = r.timedOut ? 'timeout' : /\[rejected\]|non-fast-forward|fetch first/i.test(text) /* "[remote rejected]" não casa: é recusa do servidor, não remoto à frente */ ? 'remote_ahead' : /authentication|could not read username|permission denied|\b40[13]\b|access denied/i.test(text) ? 'auth' : 'push_failed';
       const why = code === 'timeout' ? 'o remoto não respondeu a tempo' : code === 'remote_ahead' ? `${a.branch} recebeu commits novos: atualize a sua branch e envie de novo` : code === 'auth' ? `o remoto recusou as credenciais do Git desta máquina (${text || 'sem detalhe'})` : text || 'o Git não informou o motivo';
       return { ok: false, code, error: `Envio não feito: ${why}.`, assessment: a };
     }
