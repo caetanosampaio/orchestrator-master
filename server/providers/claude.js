@@ -2,6 +2,8 @@
 // O terminals.js só conhece a interface do provedor (ver providers/index.js), nunca os argumentos da CLI. Nada aqui vem do cliente.
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFile } from 'node:child_process';
+import { killTreeSync } from '../orphans.js';
 
 /** Claude Code no PATH (arquivo real, nunca por shell). `.cmd`/`.bat` precisam do cmd.exe. null se não achar. */
 export function resolveClaude({ env = process.env, platform = process.platform } = {}) {
@@ -24,11 +26,116 @@ export const CLAUDE_OPTIONS = Object.freeze({
 /** Ferramentas de edição do Claude Code bloqueadas no pane somente leitura (--disallowedTools). Nomes fixos, sem caracteres especiais: valem também pelo cmd.exe. */
 export const READ_ONLY_DENIED = Object.freeze(['Edit', 'Write', 'NotebookEdit']);
 
+// ---- Conta (contrato `account`, ver providers/index.js) ----
+// DUPLICAÇÃO TEMPORÁRIA (etapa 2 da refatoração de contas): o que está abaixo é cópia adaptada de claude-cli.js (envForAccount e a parte de argumentos simples do launchSpec)
+// e de accounts.js (normalizeStatus e a leitura de `claude auth status`). Não é importado de lá porque claude-cli.js importa ESTE arquivo (ciclo) e accounts.js passará a consumir
+// este bloco; a etapa seguinte troca os consumidores para cá e apaga as cópias. Mudou lá, mude aqui até lá.
+
+// Variáveis que SOBREPÕEM o login de uma conta isolada (cópia de OVERRIDING_AUTH_ENV, claude-cli.js): numa pasta própria a CLI tem de usar o login DAQUELA conta, não uma chave do ambiente.
+const CLAUDE_AUTH_ENV = Object.freeze(['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_CUSTOM_HEADERS']);
+export const CLAUDE_HOME_ENV = 'CLAUDE_CONFIG_DIR';
+export const CLAUDE_NOT_FOUND_STATUS = 'Claude Code não encontrado'; // mesmo texto de accounts.js (NOT_FOUND): a interface já o conhece
+
+/**
+ * Ambiente do `claude` de uma conta. `home` null = conta da máquina: o ambiente do processo como está (inclusive chave de API/Bedrock/Vertex, que a CLI usa).
+ * `home` = pasta isolada: CLAUDE_CONFIG_DIR apontando para ela e SEM as variáveis de autenticação do ambiente (senão elas "ganhariam" do login da conta).
+ */
+export function claudeAccountEnv(base = process.env, home = null) {
+  const env = { ...base };
+  if (typeof home !== 'string' || !home) return env;
+  for (const k of Object.keys(env)) if (CLAUDE_AUTH_ENV.includes(k.toUpperCase())) delete env[k];
+  env[CLAUDE_HOME_ENV] = home;
+  return env;
+}
+
+// Só argumentos simples (os de `claude auth` são fixos): no wrapper .cmd nada que o cmd.exe interprete chega à linha de comando.
+const CMD_SAFE_ARG = /^[A-Za-z0-9][A-Za-z0-9._:,=\[\]\/-]*$|^-{1,2}[A-Za-z0-9][A-Za-z0-9-]*$/;
+/** Como iniciar `claude <args>` sem shell: { file, args, verbatim } | { error } | null (CLI ausente). `.cmd` vai pelo cmd.exe com aspas externas, como o `/s` exige. */
+function claudeCommand(extraArgs, { resolve = resolveClaude, env = process.env } = {}) {
+  let r; try { r = resolve({ env }); } catch { r = null; }
+  if (!r) return null;
+  if (!extraArgs.every((a) => typeof a === 'string' && CMD_SAFE_ARG.test(a))) return { error: 'Argumento recusado para o Claude Code.' };
+  if (!r.viaShell) return { file: r.file, args: [...r.args, ...extraArgs], verbatim: false };
+  const script = r.args?.at(-1);
+  if (typeof script !== 'string' || !script || /[%"^&|<>!\r\n]/.test(script)) return { error: 'O caminho do claude.cmd contém caracteres que o cmd.exe interpretaria; instale o Claude Code em outro caminho.' };
+  return { file: r.file, args: ['/d', '/s', '/c', `"${[`"${script}"`, ...extraArgs].join(' ')}"`], verbatim: true };
+}
+
+const CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
+const clean = (v, max) => (typeof v === 'string' && !CONTROL.test(v) ? v.trim().slice(0, max) || null : null);
+const emptyStatus = (error = null) => ({ checked: false, loggedIn: null, plan: null, authMethod: null, email: null, orgName: null, loginExpiresAt: null, error });
+
+/** JSON de `claude auth status` -> só os campos do contrato, com tipos conferidos (a saída da CLI é dado não confiável). null se não é o formato esperado. `plan` = subscriptionType. */
+export function normalizeClaudeStatus(o) {
+  if (!o || typeof o !== 'object' || Array.isArray(o) || typeof o.loggedIn !== 'boolean') return null;
+  const expires = o.loginExpiresAt;
+  return {
+    checked: true, loggedIn: o.loggedIn, plan: clean(o.subscriptionType, 60), authMethod: clean(o.authMethod, 40), email: clean(o.email, 200), orgName: clean(o.orgName, 200),
+    loginExpiresAt: typeof expires === 'string' ? clean(expires, 40) : (typeof expires === 'number' && Number.isFinite(expires) && Math.abs(expires) < 8.64e15 ? new Date(expires).toISOString() : null), error: null,
+  };
+}
+
+/**
+ * Estado de login de UMA conta, numa única consulta (sem cache: quem chama decide; accounts.js tem o seu). Nunca lança nem rejeita.
+ * ctx: { home (pasta isolada | null = conta da máquina), env (ambiente BASE; a regra da conta é aplicada aqui), run (assinatura do execFile; testes), resolve, timeoutMs, killTree }.
+ */
+function claudeStatus({ home = null, env = process.env, run = execFile, resolve = resolveClaude, timeoutMs = 8000, killTree = killTreeSync } = {}) {
+  return new Promise((done) => {
+    const spec = claudeCommand(['auth', 'status'], { resolve, env });
+    if (!spec) return done(emptyStatus(CLAUDE_NOT_FOUND_STATUS));
+    if (spec.error) return done(emptyStatus('Não foi possível consultar o Claude Code com segurança.'));
+    let child = null;
+    try {
+      child = run(spec.file, spec.args, { timeout: timeoutMs, windowsHide: true, windowsVerbatimArguments: spec.verbatim, env: claudeAccountEnv(env, home), maxBuffer: 256 * 1024, encoding: 'utf8' }, (err, stdout) => {
+        // `claude auth status` sai com código != 0 quando não há login, mas ainda imprime o JSON: o que vale é o JSON.
+        let parsed = null; try { parsed = JSON.parse(String(stdout ?? '')); } catch { /* abaixo */ }
+        const st = normalizeClaudeStatus(parsed);
+        if (st) return done(st);
+        if (err?.code === 'ENOENT') return done(emptyStatus(CLAUDE_NOT_FOUND_STATUS));
+        if (err?.killed || err?.signal || err?.code === 'ETIMEDOUT') {
+          // No wrapper .cmd o execFile encerra só o cmd.exe; o `claude` neto ficaria vivo (mesma razão da sonda do Codex).
+          if (err?.killed && spec.verbatim) { try { killTree(child?.pid); } catch { /* informativo */ } }
+          return done(emptyStatus('Tempo esgotado ao consultar o Claude Code.'));
+        }
+        done(emptyStatus('Não foi possível consultar o estado do login.'));
+      });
+    } catch { done(emptyStatus('Não foi possível consultar o estado do login.')); }
+  });
+}
+
+// Métodos de `claude auth login` (lista FECHADA, cópia de account-login.js): nada de --email nem argumento vindo do cliente.
+const LOGIN_METHOD_ARGS = Object.freeze({ claudeai: Object.freeze(['--claudeai']), console: Object.freeze(['--console']), sso: Object.freeze(['--sso']) });
+
+/** Como iniciar `claude auth login` de uma conta: { file, args, verbatim, env } ou { error, code }. Quem inicia (account-login.js) segue responsável pelo processo, timeout e saída. */
+function claudeLoginSpec({ method = 'claudeai', home = null, env = process.env, resolve = resolveClaude } = {}) {
+  if (typeof method !== 'string' || !Object.hasOwn(LOGIN_METHOD_ARGS, method)) return { error: 'Método de login inválido. Use claudeai, console ou sso.', code: 'invalid_method' };
+  const spec = claudeCommand(['auth', 'login', ...LOGIN_METHOD_ARGS[method]], { resolve, env });
+  if (!spec) return { error: `${CLAUDE_NOT_FOUND_STATUS}.`, code: 'not_found' };
+  if (spec.error) return { error: spec.error, code: 'unsafe' };
+  return { ...spec, env: claudeAccountEnv(env, home) };
+}
+
+export const claudeAccount = Object.freeze({
+  label: 'Claude Code',
+  note: 'Cada conta do Claude Code tem uma pasta de configuração própria e o login é feito aqui no FORGE ("claude auth login").',
+  homeEnv: CLAUDE_HOME_ENV,
+  detect(env = process.env) { try { return !!resolveClaude({ env }); } catch { return false; } },
+  status: claudeStatus,
+  env: claudeAccountEnv,
+  canLogin: true,
+  loginMethods: Object.freeze(Object.keys(LOGIN_METHOD_ARGS)),
+  loginSpec: claudeLoginSpec,
+  // Ponto de extensão dos limites da conta. Hoje as fontes do Claude (status line do FORGE gravando o limite real e a API de uso lida com o token da conta) vivem em
+  // rate-limits.js e usage-api.js e dependem do estado do servidor (gravações por conta, cache, desligamento por variável): continuam lá. Devolve null até a etapa que as trouxer.
+  limits: async () => null,
+});
+
 export const claudeProvider = Object.freeze({
   id: 'claude',
   label: 'Claude Code',
   resolve: resolveClaude,
   options: CLAUDE_OPTIONS,
+  account: claudeAccount, // contrato de conta (providers/index.js > accountSpecOf)
   notFoundMessage: 'Claude Code não foi encontrado no PATH.',
   // O que a CLI sabe fazer; o terminals.js só liga o recurso quando o provedor declara a capacidade.
   capabilities: Object.freeze({ resume: true, fork: true, hooks: true, plugins: true, accounts: true, transcript: true, statusLine: true }),

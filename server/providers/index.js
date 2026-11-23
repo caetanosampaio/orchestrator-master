@@ -6,6 +6,7 @@
 //   resolve()   : { file, args, viaShell } da CLI no PATH, ou null se não estiver instalada
 //   paneArgs()  : argumentos do terminal interativo para new | resume | fork (ver claude.js)
 //   capabilities: { resume, fork, hooks, plugins, accounts }; submit: { bracketed, delayMs } (entrega de tarefas do Maestro); notFoundMessage; projectConfig/envFor (opcionais)
+//   account     : contrato de conta (opcional; ver accountSpecOf no fim do arquivo)
 import { claudeProvider } from './claude.js';
 import { codexProvider } from './codex.js';
 
@@ -48,4 +49,85 @@ export function tolerantChoice(providerId, src) {
   if (inList(o?.efforts, src.effort)) out.effort = src.effort;
   return out;
 }
+// ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+// CONTAS (contrato `account`). O FORGE não tem conta própria: toda conta é um login de algum provedor. Um provedor novo (cursor, kimi, gemini...) entra só declarando o bloco
+// `account`; quem consome usa `accountSpecOf(id)` e nunca importa o provedor direto. Provedor sem bloco (ou com bloco inválido) simplesmente não oferece contas: nada quebra.
+//
+// Bloco `account` de um provedor:
+//   label       : nome real da CLI ('Claude Code', 'Codex CLI'); sem ele vale o label do provedor
+//   note        : texto de orientação para a interface (ou ausente)
+//   homeEnv     : variável da pasta de configuração da conta ('CLAUDE_CONFIG_DIR', 'CODEX_HOME') ou null = só existe a conta da máquina
+//   detect(env) : a CLI está instalada? (boolean; só procura no PATH, não executa nada)
+//   status(ctx) : Promise do estado de login { checked, loggedIn, plan, authMethod, email, orgName, loginExpiresAt, error } (nunca credencial)
+//   env(base, home): ambiente para rodar a CLI daquela conta (home null = conta da máquina)
+//   canLogin    : o FORGE conduz o login? Se true, loginSpec({ method, home, env, resolve }) -> { file, args, verbatim, env } | { error, code }
+//   limits(ctx) : Promise dos limites da conta ou null (ponto de extensão; os consumidores atuais ainda usam rate-limits.js)
+// ctx = { home (pasta isolada | null), env (ambiente BASE do processo), run (assinatura do execFile; injetável nos testes), ...opções do provedor }.
+const ACCOUNT_STATUS_ERROR = 'Não foi possível consultar o estado do login.';
+const HOME_ENV_RE = /^[A-Z][A-Z0-9_]{0,63}$/;
+const CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
+const text = (v, max) => (typeof v === 'string' && !CONTROL.test(v) ? v.trim().slice(0, max) || null : null);
+const emptyAccountStatus = (error = null) => ({ checked: false, loggedIn: null, plan: null, authMethod: null, email: null, orgName: null, loginExpiresAt: null, error });
+
+/** Filtro final do status de QUALQUER provedor: só os campos do contrato, com tipo conferido. Um provedor que devolva a mais (token, texto da CLI) não vaza nada por aqui. */
+export function pickAccountStatus(o) {
+  if (!isObj(o)) return emptyAccountStatus(ACCOUNT_STATUS_ERROR);
+  const checked = o.checked === true;
+  return {
+    checked, loggedIn: checked && typeof o.loggedIn === 'boolean' ? o.loggedIn : null, plan: text(o.plan, 60), authMethod: text(o.authMethod, 40), email: text(o.email, 200), orgName: text(o.orgName, 200),
+    loginExpiresAt: text(o.loginExpiresAt, 40), error: text(o.error, 300),
+  };
+}
+
+const validBlock = (a) => isObj(a) && typeof a.detect === 'function' && typeof a.status === 'function' && typeof a.env === 'function' && typeof a.limits === 'function'
+  && typeof a.canLogin === 'boolean' && (!a.canLogin || typeof a.loginSpec === 'function') && (a.homeEnv === null || (typeof a.homeEnv === 'string' && HOME_ENV_RE.test(a.homeEnv)));
+
+/** Bloco `account` do provedor -> especificação normalizada e congelada (ou null se ausente/inválido). As funções nunca lançam, exceto env() com pasta isolada num provedor sem isolamento. */
+function accountSpecFrom(id, provider) {
+  const a = provider?.account;
+  if (!validBlock(a)) return null;
+  const label = text(a.label, 60) ?? text(provider.label, 60) ?? id, note = text(a.note, 400), isolated = a.homeEnv !== null;
+  const hasHome = (ctx) => typeof ctx?.home === 'string' && ctx.home !== '';
+  return Object.freeze({
+    providerId: id, label, note, homeEnv: a.homeEnv, isolated, canLogin: a.canLogin,
+    loginMethods: Object.freeze(Array.isArray(a.loginMethods) ? a.loginMethods.filter((m) => typeof m === 'string') : []),
+    detect(env = process.env) { try { return a.detect(env) === true; } catch { return false; } },
+    async status(ctx = {}) {
+      if (!isolated && hasHome(ctx)) return emptyAccountStatus(`${label} só tem a conta da máquina.`);
+      try { return pickAccountStatus(await a.status(ctx)); } catch { return emptyAccountStatus(ACCOUNT_STATUS_ERROR); }
+    },
+    // Sem fallback silencioso: cair na conta da máquina quando se pediu uma pasta isolada usaria o login errado.
+    env(base = process.env, home = null) {
+      if (!isolated && typeof home === 'string' && home) throw new Error(`${label} só tem a conta da máquina.`);
+      return a.env(base, home);
+    },
+    loginSpec(opts = {}) {
+      if (!a.canLogin) return { error: note ?? `O FORGE não faz o login do ${label}.`, code: 'login_unsupported' };
+      if (!isolated && typeof opts?.home === 'string' && opts.home) return { error: `${label} só tem a conta da máquina.`, code: 'not_isolated' };
+      try { return a.loginSpec(opts); } catch { return { error: 'Não foi possível preparar o login.', code: 'login_error' }; }
+    },
+    async limits(ctx = {}) { try { return (await a.limits(ctx)) ?? null; } catch { return null; } },
+  });
+}
+
+/** Registro de contas a partir de um mapa { id: provedor }. O padrão usa os provedores cadastrados; os testes montam um com provedores falsos sem mexer no registro real. */
+export function createAccountRegistry(providers) {
+  const specs = {};
+  if (isObj(providers)) for (const id of Object.keys(providers)) { const s = accountSpecFrom(id, providers[id]); if (s) specs[id] = s; }
+  Object.freeze(specs);
+  const ids = Object.freeze(Object.keys(specs));
+  return Object.freeze({
+    /** Especificação de conta do provedor, ou null (id desconhecido, `__proto__` e afins, ou provedor sem bloco). */
+    specOf: (id) => (typeof id === 'string' && Object.hasOwn(specs, id) ? specs[id] : null),
+    ids: () => [...ids],
+    /** Vista pública (vai para a interface): sem funções. */
+    list: () => ids.map((id) => ({ id, label: specs[id].label, canLogin: specs[id].canLogin, isolated: specs[id].isolated, ...(specs[id].note ? { note: specs[id].note } : {}) })),
+  });
+}
+
+const ACCOUNTS = createAccountRegistry(PROVIDERS);
+export const accountSpecOf = (id) => ACCOUNTS.specOf(id);
+export const accountProviderIds = () => ACCOUNTS.ids();
+export const accountProviders = () => ACCOUNTS.list();
+
 export { claudeProvider, codexProvider };

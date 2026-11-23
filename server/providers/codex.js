@@ -12,6 +12,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { killTreeSync } from '../orphans.js';
+import { createCodexRateLimitsReader, codexHomeDir } from '../codex-usage.js';
 
 /** Codex no PATH (arquivo real, nunca por shell). `.cmd`/`.bat` (npm no Windows) precisam do cmd.exe. null se não achar. */
 export function resolveCodex({ env = process.env, platform = process.platform } = {}) {
@@ -108,11 +109,58 @@ export const CODEX_OPTIONS = Object.freeze({
   efforts: frozenList([['low', 'Baixo'], ['medium', 'Médio'], ['high', 'Alto'], ['xhigh', 'Muito alto']]),
 });
 
+// ---- Conta (contrato `account`, ver providers/index.js) ----
+// O Codex lê a pasta de configuração de CODEX_HOME (padrão ~/.codex); o FORGE já usa a mesma regra para os rollouts (codex-usage.js, codexHomeDir) e para a assinatura do login (authSignature).
+export const CODEX_HOME_ENV = 'CODEX_HOME';
+// Variáveis que desviariam a conta isolada para outra credencial/endpoint. HIPÓTESE (não verificada contra a CLI real, sem login nesta máquina): o Codex aceita chave de API por OPENAI_API_KEY/CODEX_API_KEY
+// e endpoint por OPENAI_BASE_URL. Remover a mais é o lado seguro: no pior caso a conta isolada usa só o próprio login.
+const CODEX_AUTH_ENV = Object.freeze(['OPENAI_API_KEY', 'CODEX_API_KEY', 'OPENAI_BASE_URL']);
+
+/** Ambiente do `codex` de uma conta. Sempre sem as variáveis do Claude (envFor). `home` null = conta da máquina (CODEX_HOME do processo, se houver, e as chaves do ambiente). `home` = pasta isolada: CODEX_HOME nela e sem as chaves do ambiente. */
+export function codexAccountEnv(base = process.env, home = null) {
+  const env = codexProvider.envFor(base);
+  if (typeof home !== 'string' || !home) return env;
+  for (const k of Object.keys(env)) if (CODEX_AUTH_ENV.includes(k.toUpperCase())) delete env[k];
+  env[CODEX_HOME_ENV] = home;
+  return env;
+}
+
+/**
+ * Estado de login de UMA conta do Codex, numa única consulta: reaproveita a sonda existente (`codex login status`, só o código de saída) sem cache, com o ambiente da conta.
+ * O Codex não informa plano/e-mail/organização por esse comando (e o texto da CLI nunca é repassado): esses campos ficam null. Nunca lança nem rejeita.
+ * ctx: { home, env (ambiente BASE), run (assinatura do execFile; testes), resolve, timeoutMs, killTree }.
+ */
+async function codexStatus({ home = null, env = process.env, run = execFile, resolve = resolveCodex, timeoutMs = 6000, killTree = killTreeSync } = {}) {
+  const empty = { checked: false, loggedIn: null, plan: null, authMethod: null, email: null, orgName: null, loginExpiresAt: null, error: null };
+  try {
+    const probe = createCodexAuthProbe({ resolve, env: () => codexAccountEnv(env, home), run, ttlMs: 0, retryMs: 0, timeoutMs, killTree, signature: () => '' });
+    const r = await probe();
+    if (r?.known === true && typeof r.loggedIn === 'boolean') return { ...empty, checked: true, loggedIn: r.loggedIn };
+    return { ...empty, error: typeof r?.detail === 'string' ? r.detail : 'Não foi possível consultar o login do Codex.' };
+  } catch { return { ...empty, error: 'Não foi possível consultar o login do Codex.' }; }
+}
+
+export const CODEX_LOGIN_NOTE = 'O login é feito no próprio Codex CLI ("codex login" num terminal); o FORGE não gerencia contas do Codex.'; // mesmo texto de accounts.js (PROVIDERS)
+
+export const codexAccount = Object.freeze({
+  label: 'Codex CLI',
+  note: CODEX_LOGIN_NOTE,
+  homeEnv: CODEX_HOME_ENV,
+  detect(env = process.env) { try { return !!resolveCodex({ env }); } catch { return false; } },
+  status: codexStatus,
+  env: codexAccountEnv,
+  canLogin: false, // sem loginSpec: o acesso genérico (providers/index.js) responde "login não suportado" com a nota
+  // Limites da conta: delega ao leitor dos rollouts que já existe (codex-usage.js; somente leitura, nenhuma credencial). Leitor novo a cada chamada (sem o cache do rate-limits.js, que segue
+  // sendo o consumidor de verdade nesta etapa). Devolve { planType, session, week, at } ou null.
+  limits: async ({ home = null, env = process.env, now = Date.now } = {}) => createCodexRateLimitsReader({ codexHome: typeof home === 'string' && home ? home : codexHomeDir(env), now }).read(),
+});
+
 export const codexProvider = Object.freeze({
   id: 'codex',
   label: 'Codex CLI',
   resolve: resolveCodex,
   options: CODEX_OPTIONS,
+  account: codexAccount, // contrato de conta (providers/index.js > accountSpecOf)
   oscState: codexOscState, // estado do agente lido do terminal (terminals.js), no lugar de hooks
   authProbe: createCodexAuthProbe(), // login do Codex (o terminals.js expõe em /api/terminals > providers[].auth)
   notFoundMessage: 'O Codex CLI não foi encontrado no PATH (instale com "npm i -g @openai/codex" e faça "codex login").',
