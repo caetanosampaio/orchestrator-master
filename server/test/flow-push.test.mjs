@@ -173,6 +173,15 @@ test('configuração insegura ou destino trocado: assess/push NÃO executam o co
   }
 });
 
+test('o digest cobre os avisos: um aviso novo entre a prévia e o clique muda o digest (o envio manual recusa com "changed")', async () => {
+  const { repo, bare, base } = await setup();
+  const pre = commit(repo, 'antes.txt', 'não enviado'), m = commit(repo, 'missao.txt', 'Integra');
+  const fp = mk(), run = runOf(repo, pre, m), a = await fp.assess(run); assert.deepEqual(codes(a), ['local_unpushed']);
+  const b = await fp.assess(runOf(repo, base, m)); // mesmo destino e commit, mas sem o aviso de commits locais anteriores
+  assert.deepEqual(codes(b), []); assert.notEqual(a.digest, b.digest, 'os avisos entram no digest');
+  const r = await fp.push(run, { by: 'user', expect: b.digest }); assert.equal(r.code, 'changed'); assert.equal(remoteHead(bare), base);
+});
+
 test('[remote rejected] (branch protegida/hook do servidor) não vira "remoto à frente"; remoto à frente que já contém o commit integrado = já enviado', async () => {
   const { repo, bare, base } = await setup();
   const to = commit(repo, 'x.txt');

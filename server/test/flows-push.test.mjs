@@ -98,6 +98,18 @@ test('verificação FALHOU e você integrou por cima: o automático NÃO envia (
   r = w.raw(); assert.deepEqual([r.git.push.state, r.git.push.by], ['pushed', 'user']); assert.equal(w.remoteHead(), r.git.integration.to);
 });
 
+test('um envio que já deu certo NÃO é apagado por uma nova tentativa que falha (o commit continua no remoto)', async () => {
+  const w = world();
+  await w.finish({ verifyCommand: CMD, autoPush: true });
+  const before = structuredClone(w.raw().git.push); assert.equal(before.state, 'pushed');
+  G(w.repo, ['remote', 'set-url', 'origin', path.join(tmp, 'outro-remoto.git')]); // destino trocado depois: o novo envio é recusado (target_changed)
+  const p = await w.flows.pushPreview(w.flow.id, w.run.id); assert.equal(p.status, 200, p.error);
+  const s = await w.flows.pushNow(w.flow.id, w.run.id, { expect: p.body.digest });
+  assert.equal(s.status, 409); assert.equal(s.code, 'target_changed');
+  assert.deepEqual(w.raw().git.push, before, 'o registro "enviado" continua igual');
+  assert.equal(w.remoteHead(), w.raw().git.integration.to);
+});
+
 test('sem autoPush: integra e NÃO envia; o envio manual continua disponível', async () => {
   const w = world(), before = w.remoteHead();
   await w.finish({ verifyCommand: CMD });

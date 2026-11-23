@@ -1090,7 +1090,9 @@ export function createFlows({ db, terminals, maestro, flowGit = null, flowVerify
         apply(run, () => { const { push, ...g } = run.git; run.git = hadPrev ? { ...g, push: prev } : g; }, { rollback: false });
         return { r };
       }
-      apply(run, () => { run.git = { ...run.git, push: pushRecord(by, r ?? { ok: false }) }; }, { rollback: false });
+      // um envio que JÁ deu certo para este mesmo commit não é apagado por uma nova tentativa que falhou (rede, remoto avançou): o commit continua no remoto
+      const keep = !r?.ok && isObj(prev) && prev.state === 'pushed' && typeof prev.to === 'string' && prev.to === run.git?.integration?.to;
+      apply(run, () => { run.git = { ...run.git, push: keep ? prev : pushRecord(by, r ?? { ok: false }) }; }, { rollback: false });
       return { r };
     } finally { pushJobs.delete(run.id); release(); }
   }

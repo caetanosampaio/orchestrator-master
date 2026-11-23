@@ -93,13 +93,14 @@ export function createFlowPush({ runGit = realGit, now = () => new Date().toISOS
 
   /**
    * Avaliação SÓ de leitura. { remote, branch, mergeRef, url, from, to, commits, more, reasons: [{ code, message }], already, digest }.
-   * `digest` amarra o envio manual ao que você viu (remoto, branch, URL de envio, ponta remota e commit enviado).
+   * `digest` amarra o envio manual ao que você viu (remoto, branch, URL de envio, ponta remota, commit enviado e os avisos).
    */
   async function assess(run) {
     const reasons = [], add = (code, message) => reasons.push({ code, message });
     const a = { remote: null, branch: null, mergeRef: null, url: null, from: null, to: null, commits: [], more: 0, reasons, already: false, digest: null };
     let urlHash = null;
-    const done = () => { a.digest = hashOf(JSON.stringify([run?.id ?? null, a.remote, a.mergeRef, urlHash, a.from, a.to])); return a; };
+    // os códigos dos avisos entram no digest: um aviso novo entre a prévia e o clique invalida o que você viu
+    const done = () => { a.digest = hashOf(JSON.stringify([run?.id ?? null, a.remote, a.mergeRef, urlHash, a.from, a.to, reasons.map((x) => x.code).sort()])); return a; };
     const g = run?.git, integ = g?.integration;
     if (run?.status !== 'completed' || !g || g.mode !== 'git' || !integ || typeof integ !== 'object') { add('not_integrated', 'a execução ainda não foi integrada na sua branch'); return done(); }
     if (integ.mode === 'empty') { add('nothing', 'a missão não produziu alterações: não há o que enviar'); return done(); }

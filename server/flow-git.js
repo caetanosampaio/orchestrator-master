@@ -41,7 +41,8 @@ export function missionBranchFor(runId) {
 // Também guardados: entrada de link simbólico (modo 120000: o alvo pode ser qualquer arquivo; decidido em changedEntries/configAudit) e componentes no formato 8.3 do
 // Windows (`CLAUDE~1`), que apontam para um nome longo que a lista não veria.
 // LIMITE CONHECIDO: scripts de `package.json` (postinstall etc.) NÃO são marcados por caminho: o arquivo muda em quase toda etapa e a guarda viraria ruído; a cópia
-// nunca roda instalação sozinha e a integração final não executa scripts.
+// nunca roda instalação sozinha e a integração em si não executa scripts. ATENÇÃO: com `verifyCommand` (flow-verify.js) o comando do usuário (ex.: `npm test`) roda ANTES da
+// integração numa cópia do commit da missão, e executa o que os agentes editaram (scripts do package.json, testes, .npmrc) com o usuário do FORGE, sem ack desses arquivos.
 const CFG_FILES = [...new Set([
   ...CONFIG_FILES,
   ...providerIds().flatMap((id) => getProvider(id).projectConfig?.files ?? []), // configuração de projeto de TODOS os provedores (hoje: Claude pelo padrão, Codex só pastas)
