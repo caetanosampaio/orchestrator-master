@@ -1,5 +1,7 @@
 # Missions v2: especificação (fatia 1: missão de projeto + workflow)
 
+> Continuação: `docs/missions-v2-fatia2.md` (paralelo isolado, integração, retomada, agenda), `docs/missions-v2-briefing.md` (criação por briefing) e `docs/missions-v2-fatia3.md` (verificação, envio ao remoto e parada por limite).
+
 Origem: decisão do usuário. Missions deixa de ter Planner/Executor. Passa a ser o ambiente para criar **missões** em workspaces, em que cada **etapa** é executada por um **agente de CLI num terminal real** (os mesmos PTY do Cockpit: Claude/Codex, com as permissões do usuário, editando arquivos, rodando comandos). Duas famílias de missão: **projeto** (algo maior, feito em etapas, com progresso) e **automação** (roda de forma recorrente; vem na fatia 2). A tela mostra um **workflow** com os agentes e o progresso REAL de cada etapa.
 
 ## Decisões já tomadas (não reabrir)
