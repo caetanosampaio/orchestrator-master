@@ -141,6 +141,19 @@ test('ambiente sem segredos, CI=1 e segredos ocultados na saída', async () => {
   assert.ok(!r.outputTail.includes('segredo-super-secreto'));
 });
 
+test('ambiente por LISTA PERMITIDA: variáveis fora da lista (URL com senha, NODE_OPTIONS, PAT) não chegam ao comando; PATH e a pasta temporária sim', async () => {
+  const set = { FORGE_TEST_CONN: 'postgres://u:senhaXYZ@h/db', FORGE_TEST_PAT: 'ghx_abc', NODE_OPTIONS: '--no-warnings', FORGE_TEST_WEBHOOK: 'https://hooks.exemplo/abc', JAVA_HOME: 'C:\\jdk-teste', ProgramW6432: 'C:\\Program Files' };
+  const old = Object.fromEntries(Object.keys(set).map((k) => [k, process.env[k]]));
+  Object.assign(process.env, set);
+  try {
+    fs.writeFileSync(path.join(repo, 'env2.js'), "const k=['FORGE_TEST_CONN','FORGE_TEST_PAT','NODE_OPTIONS','FORGE_TEST_WEBHOOK'].filter((x)=>process.env[x]!==undefined); console.log('vazou=' + JSON.stringify(k) + ' java=' + process.env.JAVA_HOME + ' path=' + Boolean(process.env.PATH||process.env.Path) + ' tmp=' + Boolean(process.env.TEMP||process.env.TMPDIR||process.env.TMP));");
+    G(repo, ['add', '-A']); G(repo, ['commit', '-q', '-m', 'env2']);
+    const sha = G(repo, ['rev-parse', 'HEAD']);
+    const r = await fv.run(repo, sha, { args: [NODE, 'env2.js'] });
+    assert.equal(r.status, 'pass', r.outputTail); assert.match(r.outputTail, /vazou=\[\] java=C:\\jdk-teste path=true tmp=true/);
+  } finally { for (const [k, v] of Object.entries(old)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; } }
+});
+
 test('a pasta e o repositório do usuário ficam intactos (sem worktree, branch, ref nem arquivo)', async () => {
   const antes = snapshot();
   const arquivos = fs.readdirSync(repo).sort();

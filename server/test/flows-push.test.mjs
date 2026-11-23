@@ -110,6 +110,20 @@ test('um envio que já deu certo NÃO é apagado por uma nova tentativa que falh
   assert.equal(w.remoteHead(), w.raw().git.integration.to);
 });
 
+test('reinício entre a integração e o envio automático: o boot registra "falhou/interrupted" (não fica silencioso); missão sem autoPush ou integrada antes de ligá-lo não é tocada', async () => {
+  const w = world();
+  await w.finish({ verifyCommand: CMD, autoPush: true });
+  assert.equal(w.raw().git.push.state, 'pushed');
+  delete w.raw().git.push; // como se o servidor tivesse caído antes do envio automático gravar o registro
+  const f = w.db.flows.find((x) => x.id === w.flow.id); f.updatedAt = '2000-01-01T00:00:00.000Z'; // autoPush já estava ligado quando integrou
+  w.flows.recover();
+  assert.deepEqual([w.raw().git.push.state, w.raw().git.push.code, w.raw().git.push.by], ['failed', 'interrupted', 'auto']); assert.match(w.raw().git.push.error, /reiniciou antes do envio automático/);
+  // integrada ANTES de o autoPush ser (re)ligado: não é alarme falso
+  delete w.raw().git.push; f.updatedAt = '2999-01-01T00:00:00.000Z'; w.flows.recover(); assert.equal(w.raw().git.push, undefined);
+  // sem autoPush na missão: nada
+  f.updatedAt = '2000-01-01T00:00:00.000Z'; f.autoPush = false; w.flows.recover(); assert.equal(w.raw().git.push, undefined);
+});
+
 test('sem autoPush: integra e NÃO envia; o envio manual continua disponível', async () => {
   const w = world(), before = w.remoteHead();
   await w.finish({ verifyCommand: CMD });

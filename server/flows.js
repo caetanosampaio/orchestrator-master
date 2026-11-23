@@ -1420,7 +1420,13 @@ export function createFlows({ db, terminals, maestro, flowGit = null, flowVerify
   function recover() {
     let n = 0, pushFixed = 0;
     for (const run of runs()) { // envio ao remoto interrompido pelo reinício: o resultado é desconhecido; repetir é seguro (o envio confere o remoto antes)
-      if (isObj(run.git?.push) && run.git.push.state === 'pushing') { run.git = { ...run.git, push: { ...run.git.push, state: 'failed', code: 'interrupted', error: 'O servidor reiniciou durante o envio: confira o remoto e envie de novo (repetir é seguro).', at: now() } }; pushFixed++; }
+      if (isObj(run.git?.push) && run.git.push.state === 'pushing') { run.git = { ...run.git, push: { ...run.git.push, state: 'failed', code: 'interrupted', error: 'O servidor reiniciou durante o envio: confira o remoto e envie de novo (repetir é seguro).', at: now() } }; pushFixed++; continue; }
+      // integrada com autoPush ligado e SEM registro de envio: o servidor caiu entre a integração e o envio automático. Só vale se a missão não foi editada depois de integrar
+      // (qualquer edição muda `updatedAt`, não só o autoPush; nesse caso não avisa), para não acusar missões antigas.
+      const integ = run.git?.integration, fl = flowById(run.flowId);
+      if (run.status === 'completed' && run.git?.mode === 'git' && isObj(integ) && integ.mode !== 'empty' && !isObj(run.git.push) && fl?.autoPush === true && typeof integ.at === 'string' && typeof fl.updatedAt === 'string' && integ.at >= fl.updatedAt) {
+        run.git = { ...run.git, push: { state: 'failed', by: 'auto', code: 'interrupted', error: 'O servidor reiniciou antes do envio automático: use Enviar agora para ver a lista e enviar.', remote: null, branch: null, url: null, from: null, to: typeof integ.to === 'string' ? integ.to : null, commits: [], more: 0, already: false, at: now() } }; pushFixed++;
+      }
     }
     for (const run of runs()) {
       if (run.status !== 'running') continue;

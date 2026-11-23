@@ -4,7 +4,7 @@
 //  - nada é escrito no repositório do usuário: a cópia é `git clone --local --no-hardlinks --no-checkout` para uma pasta temporária nova (sem worktree, branch ou ref novos),
 //    seguida de `checkout --detach <sha>`; tudo pelo `git` de worktrees.js (hooks desligados, sem prompts);
 //  - a cópia é apagada num `finally`, também após timeout, falha ou saída gigante;
-//  - o processo é `spawn` sem shell, cwd = cópia, ambiente sem segredos (+ CI=1), timeout com `killTree`, teto de saída e só o FIM da saída é guardado;
+//  - o processo é `spawn` sem shell, cwd = cópia, ambiente por LISTA PERMITIDA (+ CI=1), timeout com `killTree`, teto de saída e só o FIM da saída é guardado;
 //  - `npm`/`npx` rodam por node + npm-cli.js/npx-cli.js (sem shell); `.cmd`/`.bat` não rodam sem shell no Windows: erro claro em português;
 //  - nenhuma dependência é instalada; `run` nunca lança.
 // Limite honesto: o comando executa código do projeto (inclusive o que os agentes editaram), como `npm test`.
@@ -52,10 +52,15 @@ export function validateVerifyCommand(v) {
 
 const secretValues = () => Object.entries(process.env).filter(([k, v]) => (SECRET_ENV.test(k) || PROXY_ENV.test(k)) && typeof v === 'string' && v.length >= 4).map(([, v]) => v);
 
-/** Ambiente sem segredos (como verify.js) e sem proxies (podem carregar credenciais), mais CI=1. */
+// LISTA PERMITIDA: o comando roda código que um agente pode ter editado, então só passa o que o sistema e as ferramentas precisam (PATH, pastas do usuário e temporárias, idioma).
+// URLs de banco com senha, PATs, webhooks e NODE_OPTIONS do usuário ficam de fora, seja qual for o nome. HOME/USERPROFILE continuam: sem eles npm e git não acham a própria configuração.
+// Também passam: onde ficam as toolchains (JAVA_HOME, GOPATH, CARGO_HOME...) e o CA corporativo (caminhos, não segredos); sem elas uma verificação não-Node falharia sem explicação.
+const ENV_ALLOW = /^(?:path|pathext|systemroot|systemdrive|windir|comspec|temp|tmp|tmpdir|home|homedrive|homepath|userprofile|appdata|localappdata|programdata|programfiles(?:\(x86\))?|programw6432|commonprogramfiles(?:\(x86\))?|commonprogramw6432|allusersprofile|public|username|user|userdomain|logname|computername|sessionname|os|number_of_processors|processor_\w+|shell|term|lang|language|tz|lc_(?:all|ctype|messages|collate|time|numeric|monetary)|xdg_(?:config_home|cache_home|data_home|state_home|runtime_dir)|java_home|gopath|goroot|cargo_home|rustup_home|dotnet_root|virtual_env|nvm_dir|volta_home|psmodulepath|node_extra_ca_certs|ssl_cert_file)$/i;
+
+/** Ambiente só com a lista permitida (e ainda sem nada que pareça segredo ou proxy), mais CI=1. */
 function cleanEnv() {
   const env = {};
-  for (const [k, v] of Object.entries(process.env)) if (!SECRET_ENV.test(k) && !PROXY_ENV.test(k)) env[k] = v;
+  for (const [k, v] of Object.entries(process.env)) if (ENV_ALLOW.test(k) && !SECRET_ENV.test(k) && !PROXY_ENV.test(k)) env[k] = v;
   return { ...env, CI: '1', NO_UPDATE_NOTIFIER: '1', npm_config_update_notifier: 'false', npm_config_fund: 'false', npm_config_audit: 'false' };
 }
 
