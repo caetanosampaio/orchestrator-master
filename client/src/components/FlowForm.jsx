@@ -157,7 +157,7 @@ function VerifyEditor({ text, timeout, onChange, errOf }) {
           {E('verifyTimeout')}
         </label>
       </div>
-      <p id="fl-verify-d" className="fl-hint">Em workspace Git, antes da integração final automática o comando roda numa cópia isolada da branch da missão. Só integra se passar; se falhar, a execução fica “pronta para integrar” com o fim da saída. Vazio = sem verificação.</p>
+      <p id="fl-verify-d" className="fl-hint">Em workspace Git, antes da integração final automática o comando roda numa cópia isolada da branch da missão. Só integra se passar; se falhar, a execução fica “pronta para integrar” com o fim da saída. Vazio = sem verificação. Atenção: o comando executa o código da missão, inclusive scripts do package.json e testes que os agentes tenham alterado, com o seu usuário e sem revisão prévia desses arquivos.</p>
       <p id="fl-verify-h" className="fl-hint" role="note">{VERIFY_SHELL_HINT}</p>
       {ops.length > 0 && <p id="fl-verify-w" className="fl-hint warn" role="note">O comando tem {ops.map((o, i) => <React.Fragment key={o}>{i ? ' ' : ''}<code>{o}</code></React.Fragment>)}: sem shell, isso vai como argumento do programa e não como operador.</p>}
     </fieldset>
