@@ -143,7 +143,7 @@
 .fl-files ul { list-style: none; margin: 0; padding: 0 0 0 10px; max-height: 180px; overflow-y: auto; border-left: 1px solid var(--fl-hair-2); }
 .fl-files li { line-height: 1.6; overflow-wrap: anywhere; }
 .fl-path { margin: 0; color: var(--text, #d8d8d8); font-size: 12.5px; line-height: 1.6; overflow-wrap: anywhere; }
-.fl-reasons { margin: 0; padding-left: 18px; }
+.fl-reasons { margin: 0; padding-left: 18px; } .fl-reasons li { overflow-wrap: anywhere; } /* caminho/URL longo do destino do envio não pode vazar do diálogo */
 .fl-int-box { display: flex; flex-direction: column; gap: 6px; } .fl-int-box > p { margin: 0; }
 .fl-int-box .fl-files-l, .fl-int-box .fl-hint { color: var(--fl-mute-2); }
 .fl-st-t { color: var(--st-t); }
