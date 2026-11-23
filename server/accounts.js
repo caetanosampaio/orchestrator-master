@@ -56,7 +56,7 @@ export function normalizeStatus(o) {
  * `command`/`prefixArgs` só são injetados pelos testes (CLI falsa); `unavailable: true` = tratar o Claude Code como ausente (testes que sobem o servidor sem CLI de contas).
  * `isInUse(id)` diz se um terminal em execução usa a conta. `env()` = ambiente base dos filhos.
  */
-export function createAccounts({ db, dataDir, persist, now = () => new Date().toISOString(), uid, command, prefixArgs = [], unavailable = false, resolve = resolveClaude, env = () => process.env, isInUse = () => false, isLoginActive = () => false, isCycleBusy = () => false, codex = codexProvider, statusTtlMs = STATUS_TTL_MS, statusTimeoutMs = 8000, run = null } = {}) {
+export function createAccounts({ db, dataDir, persist, now = () => new Date().toISOString(), uid, command, prefixArgs = [], unavailable = false, resolve = resolveClaude, env = () => process.env, isInUse = () => false, isLoginActive = () => false, codex = codexProvider, statusTtlMs = STATUS_TTL_MS, statusTimeoutMs = 8000, run = null } = {}) {
   if (!db || !dataDir || typeof persist !== 'function') throw new Error('createAccounts: db, dataDir e persist são obrigatórios');
   const injected = command !== undefined;
   const root = path.join(dataDir, 'accounts');
@@ -207,8 +207,7 @@ export function createAccounts({ db, dataDir, persist, now = () => new Date().to
     const a = typeof id === 'string' ? find(id) : null; if (!a) return fail(404, 'Conta não encontrada.');
     if (removing.has(id)) return fail(409, 'Esta conta já está sendo removida.');
     const busy = () => (isInUse(id) ? fail(409, 'Há um terminal em execução usando esta conta: feche-o antes de removê-la.', { code: 'account_in_use' })
-      : isLoginActive(id) ? fail(409, 'Há um login em andamento nesta conta: cancele-o antes de removê-la.', { code: 'account_in_use' })
-      : id === defaultId() && isCycleBusy() ? fail(409, 'Esta é a conta padrão e o ciclo autônomo (Executor ou Planner) está em execução com ela: aguarde terminar ou troque a conta padrão antes de removê-la.', { code: 'account_in_use' }) : null);
+      : isLoginActive(id) ? fail(409, 'Há um login em andamento nesta conta: cancele-o antes de removê-la.', { code: 'account_in_use' }) : null);
     const b0 = busy(); if (b0) return b0;
     if (!inspectDir(id).ok) return fail(500, 'A pasta desta conta não é segura para apagar (link ou caminho fora de accounts/); nada foi removido. Apague-a manualmente.', { code: 'unsafe_dir' });
     removing.add(id);

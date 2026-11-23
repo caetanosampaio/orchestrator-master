@@ -16,7 +16,6 @@ import './theme.css'; // por último: aparência (console de agentes); não muda
 import './oc.css'; // interface centrada nos terminais (sidebar de ambientes, Cockpit, diálogos): carregado depois de tudo
 import './retro.css'; // identidade retro-terminal (cantos retos, status em pixels, scanline discreta): a última camada
 import './overclock.css'; // linguagem do Overclock por cima de tudo: preto total, sem brilho, pontos redondos, chips contornados, navegação em texto
-import './missions.css'; // página Missões (central de missões)
 import './missions-workflow.css'; // workflow animado da página Missões
 import './teams.css'; // página de Configurações e Configurações > Equipes (linhas de equipe, bonequinhos dos providers)
 import './settings.css'; // página de Configurações (barra lateral agrupada, seções, Suas IAs, Mascotes)
@@ -24,7 +23,6 @@ import './harness.css'; // Configurações > Quem faz cada tarefa e o mascote do
 import './skills.css'; // Configurações > Skills
 import './home.css'; // página Início (atividade de tokens, workspaces recentes)
 import './cockpit-ui.css'; // Cockpit na estrutura das Configurações (barra lateral e topo dos terminais): a última camada
-import './permission-profile.css'; // perfil de permissão do workspace (selo, diálogo, atalhos): só classes `pp-`
 import './forge.css'; // identidade visual no formato do Orca (sidebar, abas, painel Live, barra de status, glifos animados): a ÚLTIMA camada, vence todas as anteriores
 
 getLayouts().start(); // layout da grade por workspace (db.settings.layouts)

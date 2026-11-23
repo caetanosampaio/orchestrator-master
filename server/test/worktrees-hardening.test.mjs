@@ -1,5 +1,5 @@
 // Marco C — fechamento: I1 (recuperação de registros inconsistentes e Git indisponível), I2 (ciclo anterior em pastCycles), I3 (falha ao consultar o Git NUNCA é "limpo")
-// e I4 (worktree é checkout frio: verificação sem ambiente preparado é recusada). Repositórios Git REAIS mas TEMPORÁRIOS; falhas do Git são INJETADAS por `runGit`;
+// e I4 (worktree é checkout frio: environmentFor recusa sem ambiente preparado). Os testes que subiam o ciclo antigo (createCycle) saíram com ele. Repositórios Git REAIS mas TEMPORÁRIOS; falhas do Git são INJETADAS por `runGit`;
 // banco temporário; nenhum modelo, nenhuma missão real, nenhuma rede (sem remoto, sem instalação de dependências).
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -7,16 +7,10 @@ import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import { execFileSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
 
 const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'orch-wt-hard-')));
 process.env.ORCH_DATA_DIR = path.join(tmp, 'data');
-const FAKE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fake-cli.mjs');
-const { default: express } = await import('express');
 const store = await import('../store.js');
-const { createExecutor } = await import('../executor/index.js');
-const { setupExecution } = await import('../execution.js');
-const { createCycle } = await import('../cycle.js');
 const W = await import('../worktrees.js');
 const db = store.load(); db.missions = []; db.workspaces = []; store.saveOrThrow();
 after(async () => { await new Promise((r) => setTimeout(r, 300)); fs.rmSync(tmp, { recursive: true, force: true }); });
@@ -297,48 +291,4 @@ test('I4 — o node_modules do workspace PRINCIPAL nunca é copiado nem usado: o
   assert.equal(fs.existsSync(path.join(rec.path, 'node_modules')), false, 'arquivos ignorados não acompanham o worktree');
   const r = w.mgr.environmentFor(rec.id); assert.equal(r.ok, false); assert.equal(r.code, 'dependencies_not_prepared'); assert.equal(fs.existsSync(path.join(rec.path, 'node_modules')), false, 'nada foi copiado');
   assert.deepEqual(fs.readdirSync(path.join(w.repo, 'node_modules')).sort(), before);
-});
-
-// ----- no ciclo real (executor = CLI falsa; Planner e verificador SIMULADOS): a recusa vira verificação "blocked", nunca "pass", e nada roda no principal -----
-const executor = createExecutor({ command: process.execPath, prefixArgs: [FAKE], args: [] });
-const mgrC = W.createWorktreeManager({ db, root: path.join(tmp, 'wtsC') });
-const { startTaskRun } = setupExecution(express(), { db, executor, workspaceOf: (m) => mgrC.workspaceFor(m) });
-let seq = 0, verCalls = [];
-function repoC({ deps = true } = {}) {
-  const dir = path.join(tmp, `c${++seq}`); fs.mkdirSync(dir); G(dir, 'init', '-q', '-b', 'main'); G(dir, 'config', 'core.autocrlf', 'false');
-  wr(dir, 'base.txt', 'base\n'); wr(dir, '.gitignore', 'node_modules/\n'); wr(dir, 'package.json', pkg(deps ? { devDependencies: { 'dep-a': '1.0.0' } } : {})); G(dir, 'add', '-A'); G(dir, 'commit', '-q', '-m', 'base');
-  const ws = { id: `cws${seq}`, name: `cws${seq}`, path: dir, verifications: [{ id: 'test', script: 'test', command: 'node --test', required: true, timeoutMs: 60000 }] };
-  db.workspaces.push(ws); const m = { id: `cm${seq}`, demo: false, title: `M${seq}`, objective: 'obj', workspaceId: ws.id, createdAt: 'T0', tasks: [] }; db.missions.push(m);
-  return { dir, ws, m, status: () => G(dir, 'status', '--porcelain', '-uall') };
-}
-const J = (o) => JSON.stringify(o);
-const planner = (answers) => ({ calls: [], busy: () => false, cancel: async () => {}, describeTier: () => null, decide: async () => { const x = answers.shift(); return x === undefined ? { error: 'roteiro acabou' } : { text: x, usage: { costUsd: 0.01, turns: 1 } }; } });
-const step = (id, file) => ({ id, title: `Etapa ${id}`, instructions: `MODE:produce FILE:${file} ${id}`, acceptance: [`${file} existe e foi gerado nesta etapa`], expectedFiles: [file], dependsOn: [] });
-const planAns = (...steps) => J({ decision: 'plan', rationale: 'dividir', steps });
-const done = () => J({ decision: 'complete', rationale: 'ok', evidence: ['verificação real aprovada'] });
-const verifier = () => ({ isBusy: () => false, stop: async () => ({ stopped: false }), run: async (ws, item) => { verCalls.push(ws.path); return { id: item.id, script: item.script, required: !!item.required, command: `npm run ${item.script}`, source: 'backend', status: 'pass', exitCode: 0, durationMs: 5, outputTail: '', truncated: false, reason: null }; } });
-const mkCycle = (pl, { isolation = true } = {}) => createCycle({ db, executor, planner: pl, startTaskRun, verifier: verifier(), listFiles: () => [], multiStep: true, stepRetries: 0, worktrees: mgrC, worktreeIsolation: isolation, persistRetryMs: [1] });
-
-test('I4 — no ciclo isolado, projeto com dependências e worktree frio: a verificação é RECUSADA (blocked), o verificador nem roda e nada vai ao principal; preparado o ambiente, a retomada verifica no worktree', async () => {
-  const r = repoC(), head = G(r.dir, 'rev-parse', 'HEAD'); verCalls = [];
-  const cy = mkCycle(planner([planAns(step('a', 'a.txt')), done()])); assert.equal((await cy.start(r.m.id, 6)).status, 202); await cy.idle();
-  const c = r.m.cycle, rec = mgrC.get(c.worktreeId); assert.ok(rec);
-  assert.equal(c.status, 'blocked'); assert.equal(c.blockedCode, 'verification_blocked', `${c.blockedCode}: ${c.blockedReason}`); assert.notEqual(c.assurance, 'verified');
-  const v = c.rounds[0].report.verifications; assert.equal(v.length, 1); assert.equal(v[0].status, 'blocked'); assert.equal(v[0].source, 'backend'); assert.match(v[0].reason, /Ambiente do worktree não preparado/); assert.equal(v[0].code, 'dependencies_not_prepared', 'a interface decide pelo código, não pelo texto'); assert.match(v[0].reason, /npm ci/);
-  assert.equal(v[0].exitCode, null); assert.notEqual(v[0].status, 'pass'); assert.deepEqual(verCalls, [], 'o verificador (nem o simulado) foi chamado: nada foi "verificado"');
-  assert.equal(fs.existsSync(path.join(r.dir, 'a.txt')), false); assert.equal(r.status(), ''); assert.equal(G(r.dir, 'rev-parse', 'HEAD'), head); assert.equal(fs.existsSync(path.join(rec.path, 'node_modules')), false);
-  const chk = await mgrC.check(rec.id); assert.notEqual(chk.attempt.result, 'mergeable', 'sem verificação real não há integração');
-  // preparação EXPLÍCITA (feita por um humano fora do orquestrador; aqui simulada com arquivos locais, sem rede) e retomada
-  dep(rec.path, 'dep-a'); assert.equal(mgrC.environmentFor(rec.id).ok, true);
-  const cy2 = mkCycle(planner([done()])); const res = await cy2.resume(r.m.id); assert.equal(res.status, 202, JSON.stringify(res)); await cy2.idle();
-  assert.ok(verCalls.length >= 1); assert.deepEqual([...new Set(verCalls)], [rec.path], 'a verificação rodou NO worktree preparado, nunca no principal'); assert.equal(r.status(), '');
-});
-
-test('I4 — modo SEM isolamento preservado (verifica no workspace principal, sem a exigência de ambiente) e worktree sem dependências declaradas verifica normalmente', async () => {
-  const off = repoC(); verCalls = [];
-  const cy = mkCycle(planner([planAns(step('a', 'a.txt')), done()]), { isolation: false }); assert.equal((await cy.start(off.m.id, 6)).status, 202); await cy.idle();
-  assert.equal(off.m.cycle.status, 'completed', `${off.m.cycle.blockedCode}: ${off.m.cycle.blockedReason}`); assert.equal('worktreeId' in off.m.cycle, false); assert.deepEqual([...new Set(verCalls)], [off.dir]);
-  const lean = repoC({ deps: false }); verCalls = [];
-  const cy2 = mkCycle(planner([planAns(step('a', 'a.txt')), done()])); assert.equal((await cy2.start(lean.m.id, 6)).status, 202); await cy2.idle();
-  const rec = mgrC.get(lean.m.cycle.worktreeId); assert.equal(lean.m.cycle.status, 'completed', `${lean.m.cycle.blockedCode}: ${lean.m.cycle.blockedReason}`); assert.deepEqual([...new Set(verCalls)], [rec.path]);
 });

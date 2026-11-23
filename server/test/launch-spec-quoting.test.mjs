@@ -3,7 +3,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { launchSpec, shellSafeArgs, cmdLineArgs } from '../claude-cli.js';
-import { executorArgs } from '../exec-profile.js';
+// Argumentos fixos com a forma típica de uma CLI headless com regras de permissão (antes vinham de exec-profile.js, removido com o ciclo antigo).
+const BASE = ['-p', '--output-format', 'stream-json', '--verbose', '--permission-prompts', 'none', '--no-session-persistence', '--strict-mcp-config', '--setting-sources', 'user'];
+const ALLOW = ['Bash(npm test:*)', 'Bash(npm run build:*)', 'Bash(node --test:*)', 'Bash(git status:*)', 'Bash(git diff:*)', 'Bash(git log:*)', 'Bash(git show:*)', 'Bash(git branch --show-current)'];
+const fixedArgs = () => [...BASE, '--permission-mode', 'acceptEdits', '--disallowedTools', 'WebFetch', 'WebSearch', '--allowedTools', ...ALLOW];
+const bypassArgs = () => [...BASE, '--permission-mode', 'bypassPermissions'];
 
 const cmd = () => ({ file: 'cmd.exe', args: ['/d', '/s', '/c', 'C:\\x\\claude.cmd'], viaShell: true });
 const spec = (args) => launchSpec({ injected: false }, args, { resolve: cmd });
@@ -15,9 +19,9 @@ test('regra com espaço, parênteses e `*` vai entre aspas duplas, e o restante 
   assert.equal(spec(['auth', 'login', '--console']).args[3], '""C:\\x\\claude.cmd" auth login --console"', 'argumentos simples continuam sem aspas (comportamento de sempre)');
 });
 
-test('o perfil `default` completo (executorArgs) é aceito no caminho .cmd; o `bypass` também', () => {
-  for (const p of ['default', 'bypass']) { const sp = spec(executorArgs(p)); assert.equal(sp.error, undefined, p); assert.equal(sp.verbatim, true); }
-  const line = spec(executorArgs('default')).args[3];
+test('uma linha completa de argumentos fixos (com regras Bash) é aceita no caminho .cmd; a sem regras também', () => {
+  for (const [p, args] of [['fixos', fixedArgs()], ['sem regras', bypassArgs()]]) { const sp = spec(args); assert.equal(sp.error, undefined, p); assert.equal(sp.verbatim, true); }
+  const line = spec(fixedArgs()).args[3];
   for (const r of ['"Bash(npm test:*)"', '"Bash(npm run build:*)"', '"Bash(node --test:*)"', '"Bash(git status:*)"', '"Bash(git branch --show-current)"']) assert.ok(line.includes(` ${r}`), r);
   assert.match(line, / --disallowedTools WebFetch WebSearch --allowedTools "Bash\(/);
 });

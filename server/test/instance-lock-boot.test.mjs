@@ -37,7 +37,7 @@ function server(dir, port) {
 }
 const UP = /FORGE API em/;
 const lockFile = (d) => path.join(d, 'server.lock');
-/** Estado "no meio de uma execução": uma tarefa running. O boot de uma instância marca isso como interrupted (e grava). */
+/** Banco com uma missão ANTIGA (ciclo removido) com tarefa running: o boot não a migra nem a interrompe (dados antigos ficam intactos); serve de marca para provar que a 2ª instância não altera o banco. */
 const runningDb = () => ({ version: 1, settings: { activeWorkspaceId: null, requireApproval: true, showDemoData: false }, workspaces: [], activity: [], missions: [{ id: 'm1', demo: false, title: 'em execução', workspaceId: null, tasks: [{ id: 't1', title: 'x', status: 'running', dependsOn: [], log: [], files: [] }] }] });
 const plantDb = (d) => fs.writeFileSync(path.join(d, 'db.json'), JSON.stringify(runningDb(), null, 2));
 const snapshot = (d) => { const f = path.join(d, 'db.json'); return { bytes: fs.readFileSync(f, 'utf8'), mtime: fs.statSync(f).mtimeMs }; };
@@ -47,10 +47,10 @@ test('a 2ª instância (outra porta OU a mesma) sai com erro claro sem alterar o
   const dir = newDir(), p1 = await freePort();
   plantDb(dir);
   const s1 = server(dir, p1); await s1.waitFor(UP);
-  assert.equal(taskStatus(dir), 'interrupted', 'o boot da 1ª instância tratou a tarefa órfã');
+  assert.equal(taskStatus(dir), 'running', 'o boot da 1ª instância deixa os dados antigos intactos (sem migração)');
   const lock1 = JSON.parse(fs.readFileSync(lockFile(dir), 'utf8')); assert.equal(lock1.pid, s1.child.pid);
 
-  plantDb(dir);                                                                    // "a 1ª instância está no meio de uma execução": tarefa running de novo
+  plantDb(dir);                                                                    // restaura a marca (a 1ª instância pode ter regravado o banco)
   const before = snapshot(dir), lockBefore = fs.readFileSync(lockFile(dir), 'utf8'), listing = () => fs.readdirSync(dir).sort(), filesBefore = listing(); // a 1ª instância já criou db.json.bak no boot
   for (const port of [await freePort(), p1]) {                                    // outra porta (mesmo diretório de dados) e a mesma porta
     const s2 = server(dir, port);
@@ -59,7 +59,7 @@ test('a 2ª instância (outra porta OU a mesma) sai com erro claro sem alterar o
     assert.doesNotMatch(s2.out(), UP, 'a 2ª não chegou a subir');
     const after_ = snapshot(dir);
     assert.equal(after_.bytes, before.bytes, 'db.json byte a byte igual'); assert.equal(after_.mtime, before.mtime, 'db.json não foi regravado');
-    assert.equal(taskStatus(dir), 'running', 'a tarefa running não foi marcada como interrompida pela 2ª instância');
+    assert.equal(taskStatus(dir), 'running', 'a 2ª instância não alterou os dados');
     assert.equal(fs.readFileSync(lockFile(dir), 'utf8'), lockBefore, 'a trava da 1ª está intacta');
   }
   assert.deepEqual(listing(), filesBefore, 'a 2ª instância não criou nenhum arquivo (.corrupt, .tmp, .stale, .bak…)');
@@ -78,7 +78,7 @@ test('a 2ª instância (outra porta OU a mesma) sai com erro claro sem alterar o
   assert.ok(fs.existsSync(lockFile(dir)), 'a trava ficou para trás');
   const s3 = server(dir, await freePort()); await s3.waitFor(UP);
   assert.equal(JSON.parse(fs.readFileSync(lockFile(dir), 'utf8')).pid, s3.child.pid, 'a nova instância assumiu a trava');
-  assert.equal(taskStatus(dir), 'interrupted', 'e executou o boot normal (recuperou a tarefa órfã)');
+  assert.equal(taskStatus(dir), 'running', 'e executou o boot normal (dados antigos intactos)');
   s3.kill(); await s3.exited;
 });
 

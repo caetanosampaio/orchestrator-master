@@ -1,7 +1,8 @@
-// Encerramento do servidor: ordem fixa FILHO -> FLUSH -> TRAVA. Encerra o processo filho do executor (no Windows os filhos NÃO morrem com o pai),
+// Encerramento do servidor: ordem fixa FILHO -> FLUSH -> TRAVA. Encerra os processos filhos (no Windows os filhos NÃO morrem com o pai),
 // grava o que o saveSoon() deixou pendente (as últimas linhas de log) e só então libera a trava de instância. `proc`/`exit` são injetáveis para os
 // testes; o servidor usa o `process` real. Nada aqui protege contra encerramento forçado (taskkill /F, TerminateProcess) nem queda de energia.
-// `children`: outros donos de processos filhos (Planner, verificador), cada um com killActiveSync(); todos são encerrados antes do flush e da liberação da trava.
+// `children`: donos de processos filhos (worktrees, terminais, logins, preview, missões v2), cada um com killActiveSync(); todos são encerrados antes do flush e da liberação da trava.
+// `executor` é opcional (legado do ciclo antigo, removido): o servidor não o passa mais.
 export function installShutdown({ lock, executor, store, children = [], proc = process, exit = (code) => process.exit(code) }) {
   const stopChild = () => {
     for (const owner of [executor, ...children]) {

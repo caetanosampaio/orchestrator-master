@@ -2,11 +2,9 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { api, nav } from '../api.js';
 import { useStore } from '../store.jsx';
 import { environments, wsTone, wsAlert, paneState, pendingPanes } from '../env-view.js';
-import { createPortal } from 'react-dom';
 import { Icon } from './ui.jsx';
 import ProviderLogo from './ProviderLogo.jsx';
 import StatusGlyph from './StatusGlyph.jsx';
-import PermissionProfileDialog, { ProfileSeal } from './PermissionProfileDialog.jsx';
 import { elapsed, shortPath } from '../forge-shell.js';
 import { flowsActivity } from '../flows-view.js';
 import { withoutFlowTerminals } from '../flow-terminals.js';
@@ -68,9 +66,9 @@ function TermRow({ s, state, now, onOpen }) {
 }
 
 /** Um workspace = um cartão: estado + nome + contagem, a pasta embaixo e os terminais dele aninhados. O aberto fica destacado (como o projeto ativo do Orca). */
-function EnvCard({ env, terms, now, editing, onPick, onEdit, onSave, onCancel, onPerm, onOpenTerm }) {
-  const tone = wsTone(env), bypass = env.profile === 'bypass', alert = wsAlert(tone, env.finished);
-  const full = `${env.name}: ${TONE_LABEL[tone]}; ${describe(env)}${env.active ? ' (aberto)' : ''}${bypass ? '; missões em perfil sem confirmação' : ''}`;
+function EnvCard({ env, terms, now, editing, onPick, onEdit, onSave, onCancel, onOpenTerm }) {
+  const tone = wsTone(env), alert = wsAlert(tone, env.finished);
+  const full = `${env.name}: ${TONE_LABEL[tone]}; ${describe(env)}${env.active ? ' (aberto)' : ''}`;
   const shown = terms.slice(0, MAX_TERMS), more = terms.length - shown.length;
   return (
     <li className={`fx-ws${env.active ? ' on' : ''}${terms.length ? ' has-terms' : ''}`}>
@@ -87,7 +85,6 @@ function EnvCard({ env, terms, now, editing, onPick, onEdit, onSave, onCancel, o
       )}
       <div className="fx-ws-sub" title={env.path}>
         <span>{shortPath(env.path)}</span>
-        {bypass && <button type="button" className="pp-sideseal" onClick={() => onPerm(env)} aria-label={`Missões em ${env.name} rodam sem confirmação: abrir as permissões`} title="Perfil sem confirmação ligado para as missões deste workspace. Clique para abrir as permissões."><ProfileSeal profile="bypass" /></button>}
       </div>
       {shown.length > 0 && (
         <ul className="fx-terms" aria-label={`Terminais de ${env.name}`}>
@@ -119,7 +116,6 @@ export default function Sidebar({ modal = false, onClose, onOpenWorkspaces, onOp
   const box = useRef(null), searchRef = useRef(null);
   const [editId, setEditId] = useState(null);
   const [query, setQuery] = useState('');
-  const [permEnv, setPermEnv] = useState(null); // workspace cujo perfil de permissão está aberto (diálogo no <body>: a gaveta modal não o prende)
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 30_000); return () => clearInterval(t); }, []);
   const sessions = useMemo(() => withoutFlowTerminals(terminals?.sessions, hiddenIds), [terminals?.sessions, hiddenIds]); // terminais de missões aparecem na página Missões, não aninhados nos workspaces
@@ -211,7 +207,7 @@ export default function Sidebar({ modal = false, onClose, onOpenWorkspaces, onOp
         {envs.length === 0
           ? <div className="fx-empty-side"><p>Nenhum workspace ainda.</p><button type="button" className="fx-link" onClick={onOpenWorkspaces}>Adicionar um workspace</button></div>
           : shown.length === 0 ? <p className="fx-empty-side">Nada encontrado para “{query}”.</p>
-          : <ul>{shown.map((e) => <EnvCard key={e.id} env={e} terms={termsOf.get(e.id) ?? []} now={now} editing={editId === e.id} onPick={pick} onEdit={setEditId} onSave={(t) => save(e, t)} onCancel={() => setEditId(null)} onPerm={setPermEnv} onOpenTerm={openTerm} />)}</ul>}
+          : <ul>{shown.map((e) => <EnvCard key={e.id} env={e} terms={termsOf.get(e.id) ?? []} now={now} editing={editId === e.id} onPick={pick} onEdit={setEditId} onSave={(t) => save(e, t)} onCancel={() => setEditId(null)} onOpenTerm={openTerm} />)}</ul>}
       </nav>
 
       <div className="fx-side-foot">
@@ -220,7 +216,6 @@ export default function Sidebar({ modal = false, onClose, onOpenWorkspaces, onOp
         <span className="grow" />
         <button type="button" className="fx-ibtn" onClick={() => onOpenSessions?.()} aria-label="Sessões: histórico de sessões do workspace aberto" title="Sessões: histórico, para retomar"><Icon name="clock" size={15} /></button>
       </div>
-      {permEnv && createPortal(<PermissionProfileDialog workspace={{ id: permEnv.id, name: permEnv.name }} onClose={() => setPermEnv(null)} />, document.body)}
     </aside>
   );
 }

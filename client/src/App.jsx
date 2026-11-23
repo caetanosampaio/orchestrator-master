@@ -11,7 +11,6 @@ import WorkspaceDialog from './components/WorkspaceDialog.jsx';
 import SessionsDialog from './components/SessionsDialog.jsx';
 import { useStore } from './store.jsx';
 import { nav } from './api.js';
-import { useMissions } from './use-missions.js';
 import { useFlows } from './use-flows.js';
 import { createTerminalStream } from './terminal-stream.js';
 import { flowTerminalIds } from './flow-terminals.js';
@@ -55,7 +54,6 @@ export default function App() {
   const backTo = useRef(view === 'settings' ? 'home' : view); // de onde as Configurações foram abertas: o "Voltar" retorna para lá
   const cockpitFrom = useRef(view === 'cockpit' ? 'cockpit' : 'home'); // última página do Cockpit (Início ou Terminais): o "Voltar ao Cockpit" das Missões retorna para lá
   useEffect(() => { if (view === 'home' || view === 'cockpit') cockpitFrom.current = view; }, [view]);
-  const missionsData = useMissions({ intervalMs: view === 'missions' ? 2500 : 6000 }); // mais devagar fora da página: só alimenta o indicador do botão Missions
   // Missões v2 (flows): um único polling serve a página Missões e o indicador da barra lateral (visível em qualquer página). `flowsSeenAt` = quando você viu Missões pela última vez: run que termina depois disso aparece como "concluída/falhou" na sidebar até você abrir a página.
   const flowsData = useFlows({ intervalMs: 2500 });
   const [flowsSeenAt, setFlowsSeenAt] = useState(() => Date.now());
@@ -119,7 +117,7 @@ export default function App() {
             {/* O Cockpit fica SEMPRE montado (só escondido nas outras páginas): os terminais não são recriados ao voltar, então rolagem e texto digitado se mantêm.
                 Escondido, o contêiner mede 0 e o terminal não se reajusta (TerminalGrid só ajusta acima de 40px): nenhum redimensionamento vai ao servidor. */}
             <div className="oc-view fx-view" hidden={view !== 'cockpit'}><Cockpit stream={termStream} hiddenIds={flowTermIds} flows={flowsData.flows} liveHint={liveHint} liveVisible={view === 'cockpit'} onOpenWorkspaces={openWorkspaces} onOpenSettings={openSettings} onOpenSessions={openSessions} liveOpen={liveOpen} onToggleLive={toggleLive} narrow={narrow || sideHidden} onMenu={menu} menuIcon={narrow ? 'menu' : 'panel'} focusRequest={focusReq} onFocusHandled={() => setFocusReq(null)} /></div>
-            {view === 'home' && <div className="fx-view fx-page"><Home onOpenWorkspaces={openWorkspaces} onOpenWorkspace={openCockpit} missions={missionsData.missions} /></div>}
+            {view === 'home' && <div className="fx-view fx-page"><Home onOpenWorkspaces={openWorkspaces} onOpenWorkspace={openCockpit} /></div>}
             {view === 'missions' && <div className="fx-view fx-page"><Missions onOpenCockpit={openCockpit} data={flowsData} stream={termStream} onBack={backToCockpit} backLabel={cockpitFrom.current === 'cockpit' ? 'Terminais' : 'Início'} narrow={narrow}
               side={{ onView: goView, onOpenSessions: openSessions, onOpenSettings: openSettings, onOpenWorkspaces: openWorkspaces, desktop }} /></div>}
             {settings && <Settings key={settingsKey} initial={settingsTab} onClose={closeSettings} onOpenWorkspaces={openWorkspaces} />}

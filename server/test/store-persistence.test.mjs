@@ -124,5 +124,5 @@ test('/api/state expõe o estado de persistência (verificação estática: o in
   const src = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'index.js'), 'utf8');
   const handler = src.slice(src.indexOf("app.get('/api/state'"), src.indexOf("// ---------- Workspaces"));
   assert.ok(handler.includes('persistence: store.persistenceStatus()'), 'o handler de /api/state inclui o campo aditivo "persistence"');
-  assert.ok(handler.includes('settings:') && handler.includes('counts:'), 'e os campos existentes continuam lá');
+  assert.ok(handler.includes('settings:') && handler.includes('worktrees:') && handler.includes('persistenceIncident:'), 'e os campos existentes continuam lá');
 });

@@ -1,4 +1,4 @@
-// Uso da conta certa por TODO `claude` iniciado pelo FORGE: ambiente do PTY, retomada/fork, histórico, leitura de transcrições (conversas e consumo) e ciclo autônomo (executor/planner).
+// Uso da conta certa por TODO `claude` iniciado pelo FORGE: ambiente do PTY, retomada/fork, histórico, leitura de transcrições (conversas e consumo).
 // PTY simulado, CLI falsa, ORCH_DATA_DIR temporário. Nunca o Claude real.
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -13,9 +13,7 @@ const A = await import('../accounts.js');
 const T = await import('../terminals.js');
 const { createUsageReader } = await import('../terminal-usage.js');
 const { createConversationStore } = await import('../conversations.js');
-const { createExecutor } = await import('../executor/index.js');
-const { setClaudeEnvProvider } = await import('../claude-cli.js');
-after(() => { setClaudeEnvProvider(null); fs.rmSync(tmp, { recursive: true, force: true }); });
+after(() => { fs.rmSync(tmp, { recursive: true, force: true }); });
 
 const wsDir = path.join(tmp, 'ws'); fs.mkdirSync(wsDir);
 const UUID = (i) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`;
@@ -132,20 +130,4 @@ test('conversas: sync lê o transcript na pasta da conta do registro; conta remo
   w.db.accounts = []; assert.equal(store.sync(rec('ses_00000005', UUID(7), a.id)).reason, 'sem_transcricao', 'conta removida: não cai na global');
   // sem configDirOf o comportamento é o de sempre (pasta única)
   const plain = createConversationStore({ dir: path.join(tmp, `hist-plain${w.k}`), configDir: w.sysConf }); assert.equal(plain.sync(rec('ses_00000006', UUID(8), undefined)).ok, true);
-});
-
-test('executor/planner do ciclo: o ambiente do filho vem da conta padrão NO MOMENTO da execução (opção env e provedor global)', async () => {
-  const script = "process.stdin.resume();process.stdin.on('end',()=>{console.log(JSON.stringify({type:'result',subtype:'success',is_error:false,result:JSON.stringify({d:process.env.CLAUDE_CONFIG_DIR??null,k:process.env.ANTHROPIC_API_KEY??null}),total_cost_usd:0,duration_ms:1,num_turns:1}))})";
-  const w = world(); const a = w.mk();
-  const run = async (ex) => { const h = ex.start({ missionId: 'm', taskId: 't', cwd: wsDir, prompt: 'x', onLine: () => {} }); const r = await h.done; assert.equal(r.status, 'completed', r.error); return JSON.parse(r.result.text); };
-  await withEnv({ CLAUDE_CONFIG_DIR: path.join(tmp, 'sentinela'), ANTHROPIC_API_KEY: 'k-sistema' }, async () => {
-    const ex = createExecutor({ command: process.execPath, prefixArgs: ['-e', script, '--'], args: [], env: () => w.accounts.envOf(w.accounts.defaultId()) });
-    assert.deepEqual(await run(ex), { d: path.join(tmp, 'sentinela'), k: 'k-sistema' }, 'padrão = Sistema: ambiente do processo');
-    w.accounts.setDefault(a.id); assert.deepEqual(await run(ex), { d: w.dir(a.id), k: null }, 'trocou a padrão: a próxima execução já usa a nova conta');
-    // provedor global (é o que o Planner usa, via createExecutor sem opções de ambiente)
-    setClaudeEnvProvider(() => w.accounts.envOf(w.accounts.defaultId()));
-    const planner = createExecutor({ command: process.execPath, prefixArgs: ['-e', script, '--'], args: [] }); assert.deepEqual(await run(planner), { d: w.dir(a.id), k: null });
-    w.accounts.setDefault('system'); assert.equal((await run(planner)).d, path.join(tmp, 'sentinela'));
-    setClaudeEnvProvider(null); assert.equal((await run(planner)).k, 'k-sistema', 'sem provedor: process.env, como sempre');
-  });
 });

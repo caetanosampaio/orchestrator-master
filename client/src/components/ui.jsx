@@ -2,55 +2,17 @@ import React from 'react';
 import { AGENT_SIZE, agentPath } from '../agent-mark.mjs';
 const AGENT_D = agentPath();
 
-import { STATUS, statusLabel, EVIDENCE_BASIS } from '../labels.js';
-export { STATUS, statusLabel, EVIDENCE_BASIS };
-
-// Tipos de evento da Atividade (a chave é o `type` gravado pelo servidor).
-export const TYPE_LABEL = {
-  mission: 'missão', task: 'tarefa', approval: 'aprovação', rejection: 'rejeição', workspace: 'espaço de trabalho',
-  settings: 'configurações', system: 'sistema', execution: 'execução', cycle: 'ciclo', chat: 'conversa',
-};
-export const typeLabel = (type) => TYPE_LABEL[type] || type;
-
-// Resultado de uma verificação real e decisão do Planner, como o servidor os registra.
-export const VERIFICATION_LABEL = {
-  pass: 'passou', fail: 'falhou', error: 'erro', cancelled: 'cancelada', timeout: 'tempo esgotado', output_limit: 'saída acima do limite',
-};
-// Evidência do sistema (M8): o relato do Executor nunca conclui; só a evidência independente conclui uma etapa.
-export const DECISION_LABEL = { continue: 'continuar', complete: 'concluir', blocked: 'bloquear', plan: 'planejar etapas' };
+import { STATUS, statusLabel } from '../labels.js';
+export { STATUS, statusLabel };
 
 export const Status = ({ value, masc, label }) => (
   <span className={`status s-${value}`}><i />{label ?? statusLabel(value, masc)}</span>
 );
 
-export const DemoTag = ({ title = 'Dado demonstrativo, não real' }) => <span className="demo" title={title}>DEMO</span>;
-
-export const Panel = ({ title, right, children, className = '', demo }) => (
-  <section className={`panel ${className}`}>
-    <header><h3>{title}{demo && <DemoTag />}</h3><div className="right">{right}</div></header>
-    <div className="body">{children}</div>
-  </section>
-);
-
-export const Empty = ({ children }) => <div className="empty">{children}</div>;
-
 export const Btn = ({ kind = '', ...p }) => <button className={`btn ${kind}`} {...p} />;
 
-// Glifo de cada estado: a forma (não só a cor) diz o que é. Ver .glyph em styles.css. `done` é um check desenhado.
+// Glifo de cada estado: a forma (não só a cor) diz o que é. Ver .glyph em styles.css.
 export const GLYPH = { active: 'g-run', idle: 'g-ring', live: 'g-ring', awaiting: 'g-diamond', disconnected: 'g-dash', unavailable: 'g-dash', error: 'g-tri', done: 'g-ok', interrupted: 'g-sq', queued: 'g-dring' };
-export const Glyph = ({ kind }) => (kind === 'done'
-  ? <svg className="glyph g-ok" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M2 6.4l2.6 2.6L10 3.4" /></svg>
-  : <i className={`glyph ${GLYPH[kind] || 'g-ring'}`} aria-hidden="true" />);
-// estado de uma tarefa/etapa -> glifo
-export const TASK_GLYPH = { completed: 'done', running: 'active', awaiting_approval: 'awaiting', failed: 'error', interrupted: 'interrupted', queued: 'queued', verified: 'done', unverified: 'awaiting' };
-
-/** Uma barra segmentada: um trecho por tarefa, colorido pelo estado real. O texto ao lado repete a contagem, então a cor só reforça. */
-const SEG = { completed: 'done', running: 'run', awaiting_approval: 'wait', failed: 'fail', interrupted: 'fail' };
-export const TaskSegments = ({ tasks }) => (
-  <div className="segs" role="img" aria-label={`${tasks.filter((t) => t.status === 'completed').length} de ${tasks.length} tarefas concluídas`}>
-    {tasks.map((t) => <span key={t.id} className={`seg ${SEG[t.status] || ''}`} title={`${t.title}: ${statusLabel(t.status)}`} />)}
-  </div>
-);
 
 export const fmtTime = (iso) => new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'medium' });
 
@@ -61,10 +23,6 @@ export const PersistenceNote = ({ incident }) => (incident ? (
     {incident.recoveredAt ? `gravação restabelecida em ${fmtTime(incident.recoveredAt)}` : 'a gravação ainda não voltou'}
   </span>
 ) : null);
-
-export function taskBlocked(task, tasks) {
-  return task.dependsOn.some((d) => tasks.find((t) => t.id === d)?.status !== 'completed');
-}
 
 // Ícones de traço único (24x24), usados em toda a interface. Decorativos (aria-hidden): o texto ao lado sempre diz o mesmo.
 const ICONS = {
@@ -90,9 +48,6 @@ const ICONS = {
 export const Icon = ({ name, size = 18 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false"><path d={ICONS[name]} /></svg>
 );
-
-/** Ciclo da missão parado numa ação que espera aprovação humana (M9): dado real do servidor, nunca inferido. */
-export { cycleApprovalPending } from '../op-state.js';
 
 /** Três barras que sobem e descem: há saída sendo produzida AGORA (dado real: a saída do pane cresceu na última consulta). Parada sob prefers-reduced-motion. */
 /** Glifo de atividade da sidebar: 3 células verticais; um ponto brilhante desce topo → meio → base em passos (animação em oc.css). Decorativo: o estado real vai no aria-label da linha. */

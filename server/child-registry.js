@@ -1,4 +1,5 @@
-// Registro PERSISTIDO dos processos filhos do Planner e do verificador (db.childProcesses). O Executor já guarda o PID na tarefa (execution.js);
+// Registro PERSISTIDO dos processos filhos (db.childProcesses): terminais, logins e preparação de worktrees. Os tipos planner/verifier vêm do ciclo antigo (removido) e
+// continuam aceitos só para um banco antigo ter os registros reclamados no boot. Histórico: o Planner e o verificador não tinham registro;
 // estes dois não tinham nada: se o servidor morresse no meio de uma chamada ao Planner ou de um `npm run test|build`, o filho (no Windows os
 // filhos NÃO morrem com o pai) seguia vivo sem ninguém saber, e uma nova rodada podia começar por cima dele.
 //
@@ -56,7 +57,7 @@ export function createChildRegistry({ store = realStore, orphanTools = {} } = {}
   }
 
   /**
-   * No boot (depois de setupExecution): confere os registros deixados por um servidor anterior. Encerra o que comprovadamente é o filho
+   * No boot: confere os registros deixados por um servidor anterior. Encerra o que comprovadamente é o filho
    * abandonado; o que continua vivo (identidade não confirmada ou encerramento que falhou) fica registrado e BLOQUEIA o executor.
    * Nunca lança por causa de um registro malformado.
    */

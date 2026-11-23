@@ -1,4 +1,4 @@
-// M2: token de sessão por boot. Unitário (consumo do ambiente, guard) + integração com o index.js REAL (via chat-boot.mjs, Planner simulado).
+// M2: token de sessão por boot. Unitário (consumo do ambiente, guard) + integração com o index.js REAL (via audit-server-boot.mjs, sonda do Claude falsa).
 // SEMPRE com ORCH_DATA_DIR temporário e porta livre própria; o banco real (data/) não é tocado (o teste confere o db.json real).
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { consumeApiTokenFromEnv, createTokenGuard, TOKEN_HEADER } from '../session-token.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const BOOT = path.join(here, 'chat-boot.mjs');
+const BOOT = path.join(here, 'audit-server-boot.mjs');
 const REAL_DB = path.resolve(here, '..', '..', 'data', 'db.json');
 const stat = () => (fs.existsSync(REAL_DB) ? `${fs.statSync(REAL_DB).mtimeMs}:${fs.statSync(REAL_DB).size}` : 'ausente');
 const TOKEN = 'a'.repeat(16) + 'B1_-'.repeat(8);
@@ -43,11 +43,11 @@ test('createTokenGuard: métodos mutáveis e fluxos de terminal exigem o token; 
   for (const p of ['/terminals/stream', '/terminals/term_1/stream', '/TERMINALS/STREAM', '/terminals/stream/']) {
     assert.equal(run({ p }).status, 403, `GET ${p} sem token`); assert.equal(run({ p, token: TOKEN }).next, true, `GET ${p} com token`);
   }
-  // leituras que expõem conteúdo (sessões, missões, relatórios, chat, fila do Maestro, atividade, eventos, worktrees) também exigem o token
-  for (const p of ['/terminals', '/terminals/history', '/terminals/x/y/stream', '/missions', '/missions/mis_1/delivery', '/missions/mis_1/thread', '/chat', '/maestro', '/activity', '/events', '/worktrees', '/worktrees/wt_1', '/MISSIONS/', '/accounts', '/live/changes', '/live/preview', '/LIVE/preview/']) {
+  // leituras que expõem conteúdo (sessões, missões v2, fila do Maestro, atividade, worktrees) também exigem o token
+  for (const p of ['/terminals', '/terminals/history', '/terminals/x/y/stream', '/flows', '/flows/flow_1', '/maestro', '/activity', '/worktrees', '/worktrees/wt_1', '/FLOWS/', '/accounts', '/live/changes', '/live/preview', '/LIVE/preview/']) {
     assert.equal(run({ p }).status, 403, `GET ${p} sem token`); assert.equal(run({ p, token: 'errado' }).status, 403, `GET ${p} token errado`); assert.equal(run({ p, token: TOKEN }).next, true, `GET ${p} com token`);
   }
-  assert.equal(run({ p: '/missionsx' }).next, true, 'prefixo parecido não é protegido por engano');
+  assert.equal(run({ p: '/flowsx' }).next, true, 'prefixo parecido não é protegido por engano');
   assert.equal(run({ p: '/livex' }).next, true, 'prefixo parecido de /live não é protegido por engano');
   // missões v2 (/flows): prompts, resumos dos agentes, branches, arquivos alterados e o caminho das cópias também exigem o token na leitura
   for (const p of ['/flows', '/flows/', '/flows/flow_0a1b2c3d', '/flows/flow_0a1b2c3d/runs', '/flows/flow_0a1b2c3d/runs/run_0a1b2c3d', '/FLOWS']) {
@@ -96,7 +96,7 @@ test('index.js real com ORCH_API_TOKEN: mutações e fluxo de terminal só com o
     const s0 = (await call('/api/state')).text;
     assert.equal((await call('/api/state')).status, 200, 'leitura comum sem token');
     // Origin e Host perfeitos (como um curl forjado de um pane), mas sem o token: recusado e nada muda
-    for (const [method, p, body] of [['POST', '/api/workspaces', { name: 'x', path: ws }], ['POST', '/api/workspaces/validate', { path: ws }], ['POST', '/api/maestro/autonomy', { enabled: true }], ['POST', '/api/terminals/term_x/input', { data: 'ls\r' }], ['POST', '/api/terminals', {}], ['PUT', '/api/settings', { showDemoData: true }]]) {
+    for (const [method, p, body] of [['POST', '/api/workspaces', { name: 'x', path: ws }], ['POST', '/api/workspaces/validate', { path: ws }], ['POST', '/api/maestro/autonomy', { enabled: true }], ['POST', '/api/terminals/term_x/input', { data: 'ls\r' }], ['POST', '/api/terminals', {}], ['POST', '/api/flows', { title: 'x' }]]) {
       const r = await call(p, { method, body, headers: { origin } });
       assert.equal(r.status, 403, `${method} ${p} sem token`); assert.match(r.text, /Token de sessão/);
       assert.equal((await call(p, { method, body, headers: { origin, [TOKEN_HEADER]: 'x'.repeat(64) } })).status, 403, `${method} ${p} token errado`);

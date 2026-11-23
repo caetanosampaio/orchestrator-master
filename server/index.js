@@ -6,16 +6,11 @@ import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import * as store from './store.js';
 import { uid, now } from './store.js';
-import { claudeCodeExecutor as realExecutor, bus as executorBus } from './executor/index.js';
-import { setupMissionLive } from './mission-live.js';
-import { buildLiveView, liveMarkdown } from './mission-live-view.js';
 import { gitInfo } from './git.js';
 import { asyncRoute } from './async-route.js';
 import { createGitProbe, prereqsOf, probeLogin } from './prereqs.js';
+import { createClaudeProbe } from './claude-probe.js';
 import { validateDir, setupWorkspaceRemoval, setupWorkspaceRename } from './workspaces.js';
-import { setupPermissionProfile } from './permission-profile.js';
-import { setupStepTier } from './step-tier.js';
-import { tiersFromEnv } from './tiers.js';
 import { topicsState, openAndActivate, snapshotTabs, restoreTabs, setupWorkspaceTabs, setupTopics } from './topics.js';
 import { setupUiSettings } from './ui-settings.js';
 import { createLoadouts, setupLoadouts } from './loadouts.js';
@@ -24,24 +19,13 @@ import { setupLayouts } from './layouts.js';
 import { setupTeamTemplates, findTeam } from './team-templates.js';
 import { setupHarness, terminalDefaults, routesForMaestro, routeFor, taskHint } from './harness.js';
 import { createConversationStore, setupConversations, startConversationCapture } from './conversations.js';
-import { setupExecution, blockedReason } from './execution.js';
-import { missionStatus } from './mission-status.js';
-import { deliveryOf } from './delivery.js';
-import { threadOf } from './result-message.js';
-import { setupCycle, DEFAULT_MAX_ITERATIONS, HARD_MAX_ITERATIONS } from './cycle.js';
-import { createClaudePlanner, plannerConfigFromEnv } from './planner.js';
-import { routingFromEnv, createRouter } from './routing.js';
-import { cycleLimitsFromEnv } from './limits.js';
-import { planModeFromEnv, stepRetriesFromEnv, autoCloseFromEnv, resolveOrchestration, MAX_STEP_ATTEMPTS, MAX_STEP_RETRIES } from './plan.js';
-import { resolveSupervision, supervisionMs, MAX_MINUTES_LIMIT, STALL_MINUTES_LIMIT, MAX_AUTO_RESUMES } from './supervisor.js';
-import { resolveWorktreeIsolation, createWorktreeManager, setupWorktrees } from './worktrees.js';
+import { createWorktreeManager, setupWorktrees } from './worktrees.js';
 import { createTerminalManager, setupTerminals } from './terminals.js';
 import { setupFlows } from './flows.js';
 import { createPreviewManager, setupLivePreview } from './live-preview.js';
 import { createChangesService, setupLiveChanges } from './live-changes.js';
 import { createAccounts, setupAccounts } from './accounts.js';
 import { createLoginManager } from './account-login.js';
-import { setClaudeEnvProvider } from './claude-cli.js';
 import { createUsageReader, claudeConfigDir } from './terminal-usage.js';
 import { createProviderActivity, parseDaysParam } from './provider-activity.js';
 import { createRateLimits } from './rate-limits.js';
@@ -49,9 +33,6 @@ import { createUsageApi } from './usage-api.js';
 import { codexProvider } from './providers/codex.js';
 import { createMaestro, setupMaestro, stableServerName } from './maestro.js';
 import { migrateLegacyDir } from './legacy-dirs.js';
-import { setupChat } from './chat.js';
-import { summarizeUsage } from './usage.js';
-import { createVerifier, setupVerification } from './verify.js';
 import { acquireInstanceLock, pidAlive } from './instance-lock.js';
 import { UI_CSP } from './csp.js';
 import { createChildRegistry } from './child-registry.js';
@@ -64,41 +45,24 @@ import { consumeApiTokenFromEnv, createTokenGuard } from './session-token.js';
 
 const apiToken = consumeApiTokenFromEnv(); // M2: lido e REMOVIDO de process.env antes de qualquer processo filho existir (ver session-token.js)
 
-// Costura de teste: só código em processo (nunca env, rede ou requisição) pode injetar executor/planner simulados.
+// Costura de teste: só código em processo (nunca env, rede ou requisição) pode injetar sondas e CLIs simuladas.
 const testDeps = globalThis.__ORCH_TEST_DEPS__ ?? {};
-const claudeCodeExecutor = testDeps.executor ?? realExecutor;
+const claudeProbe = testDeps.claudeProbe ?? createClaudeProbe(); // sonda do Claude Code (claude-probe.js) de /api/state
 const probeGit = testDeps.gitProbe ?? createGitProbe();
 // Só registra no log: uma rejeição esquecida não derruba o servidor nem os terminais. (Nenhum handler de uncaughtException de propósito: estado corrompido deve derrubar.)
 process.on('unhandledRejection', (reason) => { console.error('[forge] rejeição não tratada:', reason?.code || reason?.message || reason); });
-const routingMode = routingFromEnv(); // ORCH_PLANNER_ROUTING=off|on (padrão off); valor inválido impede o boot, antes de qualquer acesso a dados
-const router = routingMode === 'on' ? createRouter() : null;
-const cycleLimits = cycleLimitsFromEnv(); // ORCH_CYCLE_MAX_PLANNER_CALLS / ORCH_CYCLE_MAX_ESTIMATED_COST_USD (padrão: desativados); valor inválido impede o boot
-stepRetriesFromEnv(); // ORCH_CYCLE_MAX_STEP_RETRIES=0|1|2|off: valor inválido impede o boot, antes de qualquer dado. O valor EFETIVO (ambiente > configurações > padrão) é resolvido por orchestration()
-planModeFromEnv(); // ORCH_CYCLE_PLAN=on|off: valor inválido impede o boot, antes de qualquer dado. O valor EFETIVO (ambiente > configurações > padrão) é resolvido por orchestration()
-autoCloseFromEnv(); // ORCH_CYCLE_AUTO_CLOSE=on|off: valor inválido impede o boot, antes de qualquer dado. O valor EFETIVO (ambiente > configurações > padrão ligado) é resolvido por orchestration()
-tiersFromEnv(); // ORCH_TIER_LEVE|PADRAO|PROFUNDA=modelo:esforco: valor inválido impede o boot, antes de qualquer dado. A tabela EFETIVA (somente leitura) sai em /api/state.orchestration.tiers
-resolveWorktreeIsolation({ settings: {} }); // Marco C: ORCH_WORKTREE_ISOLATION=on|off; valor inválido impede o boot, antes de qualquer dado
-resolveSupervision({ settings: {} }); // Marco B: ORCH_CYCLE_SUPERVISOR / _MAX_MINUTES / _STALL_MINUTES / _AUTO_RESUMES; valor inválido impede o boot, antes de qualquer dado
-const childRegistry = createChildRegistry(); // PIDs do Planner e do verificador no banco (db.childProcesses), para o boot reclamar o que um servidor anterior deixou vivo
-const planner = testDeps.planner ?? createClaudePlanner({ ...plannerConfigFromEnv(), routing: routingMode, track: childRegistry.track }); // ORCH_PLANNER_MODEL / ORCH_PLANNER_EFFORT (opcionais); valor inválido impede o boot
-const verifier = testDeps.verifier ?? createVerifier({ track: childRegistry.track });
-const planning = () => planner.busy();
+const childRegistry = createChildRegistry(); // PIDs dos processos filhos (terminais, logins, preparação de worktrees) no banco (db.childProcesses), para o boot reclamar o que um servidor anterior deixou vivo
 
 const PORT = Number(process.env.PORT) || 4317;
 const HOST = '127.0.0.1'; // somente local
-// Trava de instância ANTES de qualquer operação que possa tocar o banco (load, setupExecution, recover): uma 2ª instância sai sem alterar nada.
+// Trava de instância ANTES de qualquer operação que possa tocar o banco (load, recover): uma 2ª instância sai sem alterar nada.
 const lock = acquireInstanceLock({ dir: store.dataDir, autoRelease: true });
 if (!lock.ok) { console.error(`[forge] ${lock.message}`); process.exit(1); }
 let livePreview = null; // gerenciador do preview do painel Live (criado junto das rotas); o encerramento o fecha
 let flowsManager = null; // Missions v2 (criado junto das rotas): o encerramento para o runner e o agendador das automações antes de matar os terminais
-installShutdown({ lock, executor: claudeCodeExecutor, children: [planner, verifier, { killActiveSync: () => worktrees.killActiveSync() }, { killActiveSync: () => terminals.killAllSync() }, { killActiveSync: () => logins.killActiveSync() }, { killActiveSync: () => { void livePreview?.close(); } }, { killActiveSync: () => flowsManager?.stop() }], store }); // ao sair: encerra os filhos (executor, Planner, verificador), grava o que está pendente e libera a trava
+installShutdown({ lock, children: [{ killActiveSync: () => worktrees.killActiveSync() }, { killActiveSync: () => terminals.killAllSync() }, { killActiveSync: () => logins.killActiveSync() }, { killActiveSync: () => { void livePreview?.close(); } }, { killActiveSync: () => flowsManager?.stop() }], store }); // ao sair: encerra os filhos (preparação de worktrees, terminais, logins, preview), grava o que está pendente e libera a trava
 const db = store.load();
-// Configuração efetiva de planejamento e retentativas (I4): ambiente > db.settings > padrão (desligados). Lida a cada mensagem do chat e a cada laço do ciclo.
-const orchestration = () => resolveOrchestration({ settings: db.settings });
-// Supervisão autônoma (Marco B): mesma precedência (ambiente > configurações > padrão DESLIGADO), lida a cada laço do ciclo.
-const supervision = () => resolveSupervision({ settings: db.settings });
-// Worktrees isolados (Marco C): execução do ciclo fora do workspace principal. Padrão DESLIGADO (ambiente > configurações > padrão). A recuperação só concilia o registro com o Git: não relança missões nem remove nada.
-const worktreeIsolation = () => resolveWorktreeIsolation({ settings: db.settings });
+// Worktrees (modo Git das missões v2 e dos terminais). A recuperação só concilia o registro com o Git: não relança nada nem remove nada.
 const worktrees = createWorktreeManager({ db, track: childRegistry.track, children: childRegistry });
 // Credenciais MCP dos panes: com ORCH_DATA_DIR (testes, app desktop) ficam na pasta de dados; no modo dev, FORA do repositório (um agente com cwd no repositório leria data/ sem pedir permissão).
 const devHome = path.join(process.env.LOCALAPPDATA || os.homedir(), 'forge'); // modo dev; antes era 'ai-dev-orchestrator' (o histórico e os loadouts são copiados no boot, ver legacy-dirs.js)
@@ -117,10 +81,10 @@ const loadoutsDir = process.env.ORCH_DATA_DIR ? path.join(store.dataDir, 'loadou
 const statusDir = process.env.ORCH_DATA_DIR ? path.join(store.dataDir, 'agent-status') : path.join(devHome, 'agent-status');
 const agentStatus = createAgentStatus({ dir: statusDir });
 const loadouts = createLoadouts({ db, dir: loadoutsDir, hooks: hooksJson({ node: process.execPath, script: fileURLToPath(new URL('./agent-status-hook.mjs', import.meta.url)), dir: statusDir }) });
-// Contas do Claude Code (accounts.js): cada conta é uma pasta de configuração própria. Testes que injetam o executor e não injetam `accountsCli` rodam SEM Claude Code (nunca chamam o real).
-const accountsCli = testDeps.accountsCli ?? (testDeps.executor ? { unavailable: true } : {});
+// Contas do Claude Code (accounts.js): cada conta é uma pasta de configuração própria. Testes que injetam a sonda e não injetam `accountsCli` rodam SEM Claude Code (nunca chamam o real).
+const accountsCli = testDeps.accountsCli ?? (testDeps.claudeProbe ? { unavailable: true } : {});
 let logins = null;
-const accounts = createAccounts({ db, dataDir: store.dataDir, persist: store.saveOrThrow, uid, ...accountsCli, isInUse: (id) => terminals.usesAccount(id), isLoginActive: (id) => logins?.isActive(id) === true, isCycleBusy: () => claudeCodeExecutor.isBusy() || planning() });
+const accounts = createAccounts({ db, dataDir: store.dataDir, persist: store.saveOrThrow, uid, ...accountsCli, isInUse: (id) => terminals.usesAccount(id), isLoginActive: (id) => logins?.isActive(id) === true });
 logins = createLoginManager({ accounts, ...accountsCli, track: childRegistry.track });
 // Limite real de uso das contas (janela de 5 h e semanal): a status line do Claude Code grava aqui (claude-statusline-hook.mjs) e o Codex vem dos rollouts; e, quando o login permite, o uso REAL da conta vem do provedor (usage-api.js: lê o token só em memória e consulta o endpoint de uso; desliga com ORCH_LIMITS_API=off) (rate-limits.js). Pasta fora do workspace.
 const limitsDir = process.env.ORCH_DATA_DIR ? path.join(store.dataDir, 'rate-limits') : path.join(devHome, 'rate-limits');
@@ -129,7 +93,6 @@ const usageApi = (!process.env.ORCH_DATA_DIR && !process.env.NODE_TEST_CONTEXT) 
 const rateLimits = createRateLimits({ db, accounts, dir: limitsDir, script: fileURLToPath(new URL('./claude-statusline-hook.mjs', import.meta.url)), codexAuth: () => codexProvider.authProbe(), usageApi });
 if (usageApi) rateLimits.view(); // aquece a 1ª leitura do uso real
 rateLimits.sweep();
-setClaudeEnvProvider(() => accounts.envOf(accounts.defaultId())); // Executor e Planner do ciclo usam a conta padrão no momento de cada execução
 const conversations = createConversationStore({ dir: historyDir, configDirOf: (id) => accounts.configDirOf(id) }); // histórico de conversas próprio, por workspace (texto das trocas; ver conversations.js); cada sessão é lida na pasta da conta dela
 // Avisos ao abrir terminais: (1) "confiar nesta pasta?" do Claude Code e do Codex é respondido pelo FORGE (trust.js; o Codex recebe por argumento); (2) a confirmação "Abrir mesmo assim?" por configuração de projeto
 // não revisada no Git (project-config.js) é EXIGIDA por padrão (hooks, MCP e comandos do projeto não rodam sem o usuário confirmar). Para DESLIGAR a confirmação: ORCH_STRICT_PROJECT_CONFIG=0; para não gravar a confiança do Claude Code: ORCH_NO_TRUST=1. Testes ficam de fora.
@@ -152,42 +115,22 @@ const bad = (res, msg, code = 400) => res.status(code).json({ error: msg });
 const find = (arr, id) => arr.find((x) => x.id === id);
 const commit = () => store.save();
 
-function visibleMissions() {
-  return db.settings.showDemoData ? db.missions : db.missions.filter((m) => !m.demo);
-}
-// blockedReason: motivo pelo qual a tarefa não pode rodar agora (calculado no servidor).
-const withStatus = (m) => ({ ...m, status: missionStatus(m), tasks: m.tasks.map((t) => ({ ...t, blockedReason: blockedReason(db, claudeCodeExecutor, m, t) })) });
-
 // ---------- Estado geral ----------
 // Login do /api/state: espera no máximo ~1,5 s pelo status (a 1ª consulta a frio leva ~1 s ou mais). Se estourar, devolve "desconhecido"; a consulta continua em segundo plano e aquece o cache.
 const LOGIN_WAIT_MS = 1500, LOGIN_UNKNOWN = { known: false, loggedIn: null, detail: '' };
 const withTimeout = (p, ms, fallback) => new Promise((resolve) => { const t = setTimeout(() => resolve(fallback), ms); t.unref?.(); Promise.resolve(p).then((v) => { clearTimeout(t); resolve(v); }, () => { clearTimeout(t); resolve(fallback); }); });
 app.get('/api/state', asyncRoute(async (req, res) => {
-  if (req.query.fresh === '1') { accounts.invalidate(accounts.defaultId()); claudeCodeExecutor.resetProbe?.(); probeGit.reset?.(); } // "Verificar novamente": enxerga um login feito fora do FORGE sem esperar o cache
-  const [probe, git] = await Promise.all([claudeCodeExecutor.probe(), probeGit()]); // o probe do executor deduplica a chamada em andamento (também usada por /api/agents)
-  const tasks = visibleMissions().flatMap((m) => m.tasks);
-  const o = orchestration(), sv = supervision();
+  if (req.query.fresh === '1') { accounts.invalidate(accounts.defaultId()); claudeProbe.reset?.(); probeGit.reset?.(); } // "Verificar novamente": enxerga um login feito fora do FORGE sem esperar o cache
+  const [probe, git] = await Promise.all([claudeProbe(), probeGit()]); // a sonda deduplica a chamada em andamento
   res.json({
-    system: claudeCodeExecutor.isBusy() || planning() ? 'running' : probe.available ? 'idle' : 'degraded',
     prereqs: prereqsOf(probe, git, await withTimeout((testDeps.loginProbe ?? (() => probeLogin({ accounts })))(), LOGIN_WAIT_MS, LOGIN_UNKNOWN)), // aditivo: { claude, git, login } = { available, version, detail } e { known, loggedIn, detail } (login = `claude auth status` da conta padrão, com cache de ~45 s)
-    executor: { id: claudeCodeExecutor.id, connected: probe.available, busy: claudeCodeExecutor.isBusy(), current: claudeCodeExecutor.current(), ...probe },
-    planner: { connected: probe.available, busy: planning(), detail: probe.available ? 'Planner pronto (Claude Code sem ferramentas).' : probe.detail },
-    counts: {
-      activeAgents: (claudeCodeExecutor.isBusy() ? 1 : 0) + (planning() ? 1 : 0),
-      running: tasks.filter((t) => t.status === 'running').length,
-      pending: tasks.filter((t) => ['queued', 'awaiting_approval'].includes(t.status)).length,
-      awaitingApproval: tasks.filter((t) => t.status === 'awaiting_approval').length,
-    },
+    executor: { id: 'claude-code', connected: probe.available, ...probe }, // sonda do Claude Code (available, version, detail): a tela de Setup e a de IAs leem daqui
     persistenceIncident: store.persistenceIncident(), // aditivo (M2): último incidente de gravação (início, nº de falhas, quando foi reconciliado); null se nunca houve
     persistence: store.persistenceStatus(), // aditivo: ok, código do último erro, quando falhou e quantas falhas seguidas (sem caminhos)
-    settings: { cycleMaxIterations: DEFAULT_MAX_ITERATIONS, ...db.settings, cycleHardMax: HARD_MAX_ITERATIONS },
-    orchestration: { planMode: o.planMode, stepRetries: o.stepRetries, autoClose: o.autoClose, maxStepAttempts: MAX_STEP_ATTEMPTS, hardMaxIterations: HARD_MAX_ITERATIONS, source: o.source, tiers: tiersFromEnv() }, // efetivo + origem (env | settings | default); tiers = tabela EFETIVA de níveis { leve|padrao|profunda: { model, effort } }, só leitura
-    worktrees: { isolation: worktreeIsolation(), items: worktrees.list(), unregistered: worktreeRecovery.unregistered }, // Marco C, aditivo
-    supervision: sv, // Marco B, aditivo: { supervisor, maxMinutes, stallMinutes, autoResumes, source } — efetivo + origem de cada valor
+    settings: db.settings,
+    worktrees: { items: worktrees.list(), unregistered: worktreeRecovery.unregistered },
     activeWorkspace: find(db.workspaces, db.settings.activeWorkspaceId) || null,
     ...topicsState(db), // aditivo: openWorkspaceIds[] (abas), topics[] (só não arquivados) e activeTopicIds{ wsId: topicId }
-    // costUsd/runs (legado: execuções reais que reportaram custo) + durationMs + tokens agregados por agente/missão/ciclo (ver usage.js); null sem nenhum dado
-    usage: summarizeUsage(visibleMissions(), db.chat),
   });
 }));
 
@@ -243,194 +186,8 @@ app.get('/api/workspaces/:id/git', asyncRoute(async (req, res) => {
   res.json(await (testDeps.gitInfo ?? gitInfo)(ws.path));
 }));
 
-// ---------- Missões ----------
-app.get('/api/missions', (req, res) => res.json(visibleMissions().map(withStatus)));
-
-app.get('/api/missions/:id', (req, res) => {
-  const m = find(db.missions, req.params.id);
-  if (!m) return bad(res, 'Missão não encontrada.', 404);
-  res.json(withStatus(m));
-});
-
-// Relatório de entrega: somente leitura, derivado dos registros gravados (delivery.js). Nunca grava nem altera o estado da missão.
-const deliveryFor = (m) => deliveryOf(m, find(db.workspaces, m.workspaceId) || null, { worktrees: db.worktrees, environments: Object.fromEntries((db.worktrees || []).filter((w) => w.missionId === m.id && w.prepare?.state === 'ready').map((w) => { const e = worktrees.environmentFor(w.id); return [w.id, { ok: e.ok, code: e.code }]; })) }); // E5: checagem ATUAL do ambiente só dos que dizem "ready"
-app.get('/api/missions/:id/delivery', (req, res) => {
-  const m = find(db.missions, req.params.id);
-  if (!m) return bad(res, 'Missão não encontrada.', 404);
-  const r = deliveryFor(m);
-  if (!r.ok) return bad(res, r.error, 500);
-  res.json(r.report);
-});
-// Conversa da missão + mensagem FINAL do orquestrador (derivada do relatório, nunca gravada: sem duplicatas ao reler). Somente leitura.
-app.get('/api/missions/:id/thread', (req, res) => {
-  const m = find(db.missions, req.params.id);
-  if (!m) return bad(res, 'Missão não encontrada.', 404);
-  const r = deliveryFor(m);
-  res.json(threadOf(m, r.ok ? r.report : null));
-});
-
-app.post('/api/missions', (req, res) => {
-  const title = str(req.body?.title, 120);
-  if (!title) return bad(res, 'Título obrigatório.');
-  const workspaceId = req.body?.workspaceId || db.settings.activeWorkspaceId || null;
-  if (workspaceId && !find(db.workspaces, workspaceId)) return bad(res, 'Workspace inválido.');
-  const m = {
-    id: uid('mis'),
-    demo: false,
-    title,
-    objective: str(req.body?.objective, 2000),
-    workspaceId,
-    createdAt: now(),
-    tasks: [],
-  };
-  db.missions.unshift(m);
-  try { store.saveOrThrow(); } catch {
-    db.missions.shift(); // desfaz: nada fica só na memória
-    return bad(res, 'Não foi possível criar a missão: o banco não pôde ser gravado; nada foi alterado.', 500);
-  }
-  store.log('mission', `Missão criada: ${title}`, { missionId: m.id });
-  store.saveSoon();
-  res.status(201).json(withStatus(m));
-});
-
-app.delete('/api/missions/:id', (req, res) => {
-  const m = find(db.missions, req.params.id);
-  if (!m) return bad(res, 'Missão não encontrada.', 404);
-  if (m.tasks.some((t) => t.status === 'running') || (m.cycle && ['planning', 'running'].includes(m.cycle.status))) return bad(res, 'Há uma tarefa ou ciclo em andamento nesta missão.', 409);
-  const prevMissions = db.missions;
-  db.missions = db.missions.filter((x) => x.id !== m.id);
-  try { store.saveOrThrow(); } catch {
-    db.missions = prevMissions;
-    return bad(res, 'Não foi possível remover a missão: o banco não pôde ser gravado; nada foi alterado.', 500);
-  }
-  store.log('mission', `Missão removida: ${m.title}`);
-  store.saveSoon();
-  try { missionLive.revokeForMission(m.id); } catch { /* o link também expira sozinho: a checagem a cada acesso vê que a missão sumiu */ }
-  res.status(204).end();
-});
-
-// Tarefas (hoje criadas manualmente; o planejador as gerará no futuro).
-app.post('/api/missions/:id/tasks', (req, res) => {
-  const m = find(db.missions, req.params.id);
-  if (!m) return bad(res, 'Missão não encontrada.', 404);
-  const title = str(req.body?.title, 200);
-  if (!title) return bad(res, 'Título da tarefa obrigatório.');
-  const dependsOn = Array.isArray(req.body?.dependsOn) ? req.body.dependsOn.filter((d) => find(m.tasks, d)) : [];
-  const task = { id: uid('task'), title, status: 'queued', authorized: false, dependsOn, report: '', files: [], log: [] };
-  m.tasks.push(task);
-  try { store.saveOrThrow(); } catch {
-    m.tasks.pop();
-    return bad(res, 'Não foi possível adicionar a tarefa: o banco não pôde ser gravado; nada foi alterado.', 500);
-  }
-  store.log('task', `Tarefa adicionada: ${title}`, { missionId: m.id, taskId: task.id });
-  store.saveSoon();
-  res.status(201).json(task);
-});
-
-app.delete('/api/missions/:id/tasks/:tid', (req, res) => {
-  const m = find(db.missions, req.params.id);
-  const task = m && find(m.tasks, req.params.tid);
-  if (!task) return bad(res, 'Tarefa não encontrada.', 404);
-  if (task.status === 'running') return bad(res, 'Tarefa em execução não pode ser removida.', 409);
-  // Rodadas (do ciclo atual e dos anteriores) apontam para a tarefa por taskId; removê-la deixaria o histórico e o relatório com referência quebrada.
-  const referenced = [m.cycle, ...(m.pastCycles || [])].some((c) => (c?.rounds || []).some((r) => r.taskId === task.id));
-  if (referenced) return bad(res, 'A tarefa é referenciada por uma rodada de ciclo e não pode ser removida.', 409);
-  const prevTasks = m.tasks, prevDeps = m.tasks.map((t) => t.dependsOn);
-  m.tasks = m.tasks.filter((t) => t.id !== task.id);
-  m.tasks.forEach((t) => (t.dependsOn = t.dependsOn.filter((d) => d !== task.id)));
-  try { store.saveOrThrow(); } catch {
-    m.tasks = prevTasks; prevTasks.forEach((t, i) => (t.dependsOn = prevDeps[i])); // desfaz a remoção e as dependências limpas
-    return bad(res, 'Não foi possível remover a tarefa: o banco não pôde ser gravado; nada foi alterado.', 500);
-  }
-  store.log('task', `Tarefa removida: ${task.title}`, { missionId: m.id });
-  store.saveSoon();
-  res.status(204).end();
-});
-
-function decide(kind) {
-  return (req, res) => {
-    const m = find(db.missions, req.params.id);
-    const task = m && find(m.tasks, req.params.tid);
-    if (!task) return bad(res, 'Tarefa não encontrada.', 404);
-    if (task.status !== 'awaiting_approval') return bad(res, 'A tarefa não está aguardando aprovação.', 409);
-    const prev = { status: task.status, rejected: task.rejected, decidedAt: task.decidedAt, hadRejected: Object.hasOwn(task, 'rejected'), hadDecidedAt: Object.hasOwn(task, 'decidedAt') };
-    task.status = kind === 'approve' ? 'completed' : 'failed';
-    task.rejected = kind === 'reject'; // distingue rejeição humana de falha de execução
-    task.decidedAt = now();
-    try { store.saveOrThrow(); } catch { // a decisão não ficou gravada: volta ao estado anterior (nada fica "aprovado" só na memória)
-      task.status = prev.status;
-      if (prev.hadRejected) task.rejected = prev.rejected; else delete task.rejected;
-      if (prev.hadDecidedAt) task.decidedAt = prev.decidedAt; else delete task.decidedAt;
-      return bad(res, 'Não foi possível registrar a decisão: o banco não pôde ser gravado; nada foi alterado.', 500);
-    }
-    store.log(
-      kind === 'approve' ? 'approval' : 'rejection',
-      `${kind === 'approve' ? 'Aprovada' : 'Rejeitada'}: ${task.title}${m.demo ? ' [demo]' : ''}`,
-      { missionId: m.id, taskId: task.id },
-    );
-    commit();
-    res.json(task);
-  };
-}
-app.post('/api/missions/:id/tasks/:tid/approve', decide('approve'));
-app.post('/api/missions/:id/tasks/:tid/reject', decide('reject'));
-
-// ---------- Agentes, atividade, configurações ----------
-app.get('/api/agents', asyncRoute(async (req, res) => {
-  const probe = await claudeCodeExecutor.probe();
-  res.json([
-    { id: 'planner', name: 'Planner', role: 'Decide a próxima tarefa a partir do objetivo e dos relatórios do Executor (continue, complete ou blocked). Não tem ferramentas: só recebe e devolve texto.', status: planning() ? 'running' : probe.available ? 'idle' : 'not_connected', detail: planning() ? 'Planejando a próxima rodada.' : probe.available ? 'Pronto: usa o Claude Code sem ferramentas e é validado pelo backend.' : probe.detail, availability: probe.available ? 'connected' : 'unavailable' },
-    { id: 'executor', name: 'Executor (Claude Code)', role: 'Executa uma tarefa autorizada por vez no workspace da missão, com permissões padrão (leitura e edição de arquivos).', status: claudeCodeExecutor.isBusy() ? 'running' : probe.available ? 'idle' : 'not_connected', detail: claudeCodeExecutor.isBusy() ? 'Executando uma tarefa.' : probe.detail, version: probe.version || null, available: probe.available, availability: probe.available ? 'connected' : 'unavailable' },
-  ]);
-}));
-
+// ---------- Atividade ----------
 app.get('/api/activity', (req, res) => res.json(db.activity.slice(0, 200)));
-
-app.put('/api/settings', (req, res) => {
-  const b = req.body || {};
-  // Validação ESTRITA de tudo ANTES de aplicar qualquer coisa (nada é gravado pela metade).
-  if (b.cycleMaxIterations !== undefined && (!Number.isInteger(b.cycleMaxIterations) || b.cycleMaxIterations < 1 || b.cycleMaxIterations > HARD_MAX_ITERATIONS)) return bad(res, `cycleMaxIterations deve ser um inteiro de 1 a ${HARD_MAX_ITERATIONS}.`);
-  if (b.planMode !== undefined && typeof b.planMode !== 'boolean') return bad(res, 'planMode deve ser verdadeiro ou falso.');
-  if (b.stepRetries !== undefined && (!Number.isInteger(b.stepRetries) || b.stepRetries < 0 || b.stepRetries > MAX_STEP_RETRIES)) return bad(res, `stepRetries deve ser um inteiro de 0 a ${MAX_STEP_RETRIES}.`);
-  if (b.autoClose !== undefined && typeof b.autoClose !== 'boolean') return bad(res, 'autoClose deve ser verdadeiro ou falso.');
-  if (b.supervisor !== undefined && typeof b.supervisor !== 'boolean') return bad(res, 'supervisor deve ser verdadeiro ou falso.');
-  if (b.worktreeIsolation !== undefined && typeof b.worktreeIsolation !== 'boolean') return bad(res, 'worktreeIsolation deve ser verdadeiro ou falso.');
-  for (const [k, max] of [['maxMinutes', MAX_MINUTES_LIMIT], ['stallMinutes', STALL_MINUTES_LIMIT], ['autoResumes', MAX_AUTO_RESUMES]]) {
-    if (b[k] !== undefined && (!Number.isInteger(b[k]) || b[k] < 0 || b[k] > max)) return bad(res, `${k} deve ser um inteiro de 0 a ${max}.`);
-  }
-  const orchKeys = ['planMode', 'stepRetries', 'autoClose', 'supervisor', 'maxMinutes', 'stallMinutes', 'autoResumes', 'worktreeIsolation'].filter((k) => b[k] !== undefined);
-  if (orchKeys.length) {
-    const locked = orchKeys.filter((k) => (orchestration().source[k] ?? supervision().source[k] ?? (k === 'worktreeIsolation' ? worktreeIsolation().source : null)) === 'env');
-    if (locked.length) return bad(res, `${locked.join(' e ')} ${locked.length > 1 ? 'são definidos' : 'é definido'} pelo ambiente do servidor (variáveis ORCH_CYCLE_*, como ORCH_CYCLE_PLAN) e não podem ser mudados pela interface; altere o ambiente e reinicie.`, 409);
-    if (db.missions.some((m) => ['planning', 'running'].includes(m.cycle?.status))) return bad(res, 'Há um ciclo em andamento: aguarde terminar ou cancele antes de mudar o planejamento, as retentativas ou a supervisão.', 409);
-  }
-  // Aplica e GRAVA com confirmação; se o disco falhar, volta EXATAMENTE ao estado anterior (nada fica só na memória dizendo que foi salvo) e responde 503.
-  const KEYS = ['showDemoData', 'cycleMaxIterations', 'planMode', 'stepRetries', 'autoClose', 'supervisor', 'maxMinutes', 'stallMinutes', 'autoResumes', 'worktreeIsolation'], prev = new Map(KEYS.map((k) => [k, Object.hasOwn(db.settings, k) ? { v: db.settings[k] } : null]));
-  if (typeof b.showDemoData === 'boolean') db.settings.showDemoData = b.showDemoData;
-  if (b.cycleMaxIterations !== undefined) db.settings.cycleMaxIterations = b.cycleMaxIterations;
-  if (b.planMode !== undefined) db.settings.planMode = b.planMode;
-  if (b.stepRetries !== undefined) db.settings.stepRetries = b.stepRetries;
-  if (b.autoClose !== undefined) db.settings.autoClose = b.autoClose;
-  for (const k of ['supervisor', 'maxMinutes', 'stallMinutes', 'autoResumes', 'worktreeIsolation']) if (b[k] !== undefined) db.settings[k] = b[k];
-  // requireApproval é fixo: aprovação humana é obrigatória.
-  try { store.saveOrThrow(); } catch (e) {
-    for (const [k, p] of prev) { if (p) db.settings[k] = p.v; else delete db.settings[k]; }
-    return bad(res, `As configurações NÃO foram salvas (o banco não pôde ser gravado: ${e?.code || e?.message || 'erro'}); nada foi alterado.`, 500); // 500: o contrato existente (persistence-api.test.mjs) para gravação que falha
-  }
-  store.log('settings', 'Configurações atualizadas'); store.saveSoon();
-  res.json(db.settings);
-});
-
-// ---------- Acompanhamento ao vivo de cada missão no navegador (localhost) ----------
-// Página leve em /live/<token>/ (link de capacidade por missão, somente leitura, expira, revogável) com a visão REDIGIDA da missão e SSE por link (mission-live.js, mission-live-view.js).
-// Fica ANTES do catch-all do SPA (senão /live cairia no index.html). ORCH_LIVE=off desliga. As rotas POST/DELETE /api/missions/:id/live-link herdam apiGuard e o token de sessão do desktop.
-const missionLive = setupMissionLive(app, {
-  db, bus: executorBus, deliveryFor,
-  getSquad: () => ({ tasks: maestro.snapshot().tasks, sessions: terminals.list() }), // tarefas do Maestro + sessões de terminal (o vínculo missão↔tarefa depende dos panes do workspace)
-  visibleMission: (id) => visibleMissions().find((m) => m.id === id) ?? null,
-  now: () => Date.now(), env: process.env,
-  view: { buildLiveView: (m, ctx) => buildLiveView(m, { ...ctx, dataDir: store.dataDir }), liveMarkdown }, // dataDir vira marcador «dados» na redação
-});
 
 // ---------- Frontend buildado (opcional) ----------
 const dist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'client', 'dist');
@@ -445,13 +202,10 @@ if (fs.existsSync(dist)) {
   app.get(/^(?!\/api)(?!\/mcp(?:\/|$)).*/, (req, res) => res.sendFile(path.join(dist, 'index.html'))); // /mcp nunca cai no SPA: o cliente MCP espera 405/401, não HTML
 }
 
-const { startTaskRun } = setupExecution(app, { db, executor: claudeCodeExecutor, verifier, workspaceOf: (m) => worktrees.workspaceFor(m) });
-childRegistry.reclaim({ executor: claudeCodeExecutor });
-worktreeRecovery = await worktrees.recover(); // E3: a conciliação dos worktrees (inclusive `prepare` interrompido) só roda DEPOIS do reclaim: ela depende de saber se o preparador ainda vive // órfãos do Planner/verificador: depois dos do Executor, antes de qualquer ciclo (setupCycle) e de ouvir a porta
-setupVerification(app, { db, verifier });
+childRegistry.reclaim(); // órfãos de um servidor anterior (terminais, logins, preparação de worktrees): antes da conciliação dos worktrees e de ouvir a porta
+worktreeRecovery = await worktrees.recover(); // E3: a conciliação dos worktrees (inclusive `prepare` interrompido) só roda DEPOIS do reclaim: ela depende de saber se o preparador ainda vive
 setupWorkspaceRemoval(app, { db, terminals, onRemoved: (id) => conversations.removeWorkspace(id) });
 setupWorkspaceRename(app, { db });
-setupPermissionProfile(app, { db, tokenActive: !!apiToken }); // GET/PUT /api/workspaces/:id/permission-profile: única escrita do perfil do Executor (só o usuário; ver permission-profile.js)
 setupWorkspaceTabs(app, { db });
 setupTopics(app, { db });
 setupLoadouts(app, { loadouts }); // skills por papel: GET/PUT /api/loadouts
@@ -461,8 +215,6 @@ setupHarness(app, { db }); // "Quem faz cada tarefa": a tabela de tipos de taref
 setupTeamTemplates(app, { db }); // squads salvos (equipes nomeadas com o agente de cada vaga): GET/POST /api/team-templates, PUT/DELETE /api/team-templates/:id
 setupConversations(app, { db, conversations }); // GET/DELETE /api/workspaces/:id/conversations[/:rec]
 { const capture = startConversationCapture({ db, conversations }); setTimeout(() => { capture.sweep().catch(() => {}); }, 3000).unref?.(); } // captura ao vivo das sessões rodando + varredura única das interrompidas // layout da grade de terminais por workspace (db.settings.layouts): GET /api/layouts, PUT /api/workspaces/:id/layout
-setupStepTier(app, { db }); // POST /api/missions/:id/cycle/steps/:stepId/tier: única escrita de cycle.plan.pins (fixa o nível de uma etapa ainda "queued"; mesmo apiGuard/token das demais escritas)
-const cycle = setupCycle(app, { db, executor: claudeCodeExecutor, planner, startTaskRun, verifier, router, limits: cycleLimits, multiStep: () => orchestration().planMode, stepRetries: () => orchestration().stepRetries, autoClose: () => orchestration().autoClose, supervision: () => supervisionMs(supervision()), worktrees, worktreeIsolation: () => worktreeIsolation().enabled });
 setupWorktrees(app, { db, manager: worktrees });
 setupTerminals(app, { manager: terminals });
 livePreview = createPreviewManager({ db, dataDir: store.dataDir }); // painel Live: preview da pasta do workspace (somente leitura) em listener próprio 127.0.0.1:<porta efêmera>, origem diferente da API
@@ -487,7 +239,6 @@ setupMaestro(app, { maestro, onAutonomy: (enabled) => { // a escolha do usuário
   db.settings.maestro = { autonomous: enabled };
   try { store.saveOrThrow(); } catch (e) { if (had) db.settings.maestro = prev; else delete db.settings.maestro; throw e; }
 } });
-setupChat(app, { db, planner, cycle, multiStep: () => orchestration().planMode }); // M5: chat geral; só prepara propostas, executar exige /api/chat/approve
 
 app.use('/api', (req, res) => bad(res, 'Rota não encontrada.', 404));
 app.use((err, req, res, next) => {

@@ -30,11 +30,12 @@ test('/api/state: saudável => persistence.ok e incidente null; falha real de gr
   try {
     assert.equal(await waitUp(b), true, `o servidor não subiu: ${b.out()}`);
     const state = async () => (await fetch(`${base}/api/state`)).json();
-    const save = () => fetch(`${base}/api/settings`, { method: 'PUT', headers: { 'content-type': 'application/json', origin: 'http://localhost:5173' }, body: '{}' });
+    const wsDir = path.join(root, 'ws1'); fs.mkdirSync(wsDir, { recursive: true }); // rota viva que grava com saveOrThrow e desfaz o estado parcial se a gravação falha
+    const save = () => fetch(`${base}/api/workspaces`, { method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://localhost:5173' }, body: JSON.stringify({ name: 'w', path: wsDir }) });
 
     let s = await state();
     assert.equal(s.persistence.ok, true); assert.equal(s.persistence.error, null); assert.equal(s.persistenceIncident, null);
-    assert.ok(s.settings && s.counts && s.executor, 'os campos existentes continuam lá');
+    assert.ok(s.settings && s.worktrees && s.executor && !('counts' in s), 'os campos existentes continuam lá');
 
     fs.mkdirSync(path.join(dir, 'db.json.tmp'));                       // EISDIR: erro real, não transitório
     assert.equal((await save()).status, 500, 'a gravação que falha não é apresentada como sucesso');
@@ -44,7 +45,7 @@ test('/api/state: saudável => persistence.ok e incidente null; falha real de gr
     assert.ok(!JSON.stringify(s.persistence).includes(root) && !JSON.stringify(s.persistenceIncident).includes(root), 'só o código do erro: nenhum caminho do disco');
 
     fs.rmSync(path.join(dir, 'db.json.tmp'), { recursive: true, force: true });
-    assert.equal((await save()).status, 200, 'normalizado o armazenamento, a gravação volta');
+    assert.equal((await save()).status, 201, 'normalizado o armazenamento, a gravação volta (e o workspace da tentativa que falhou foi desfeito, sem duplicata)');
     s = await state();
     assert.equal(s.persistence.ok, true); assert.equal(s.persistence.error, null);
     assert.equal(s.persistenceIncident.error, 'EISDIR', 'o incidente não é apagado pela recuperação'); assert.ok(s.persistenceIncident.recoveredAt);

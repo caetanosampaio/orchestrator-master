@@ -121,15 +121,18 @@ const WS = [
   { id: 'w3', name: 'Ação Útil', displayName: 'Ação Útil', path: 'D:\\x\\acao', createdAt: iso(2026, 3, 1) },
 ];
 
-test('último uso do workspace: o instante mais recente entre atividade, terminais, missões e tópicos; sem nada, o cadastro', () => {
-  const last = lastUsedMap({
+test('último uso do workspace: o instante mais recente entre atividade, terminais e tópicos; sem nada, o cadastro (missões do ciclo antigo não contam)', () => {
+  const input = {
     workspaces: WS,
     activity: [{ at: iso(2026, 11, 11, 15, 0), workspaceId: 'w1', type: 'workspace' }, { at: iso(2026, 11, 11, 15, 29), message: 'sem workspace' }, { at: iso(2026, 11, 5), workspaceId: 'desconhecido' }],
     sessions: [{ workspaceId: 'w2', startedAt: iso(2026, 11, 11, 10), lastOutputAt: iso(2026, 11, 11, 14, 50), endedAt: null }],
-    missions: [{ workspaceId: 'w1', createdAt: iso(2026, 11, 1) }], topics: [{ workspaceId: 'w3', createdAt: iso(2026, 10, 1) }],
-  });
+    topics: [{ workspaceId: 'w3', createdAt: iso(2026, 10, 1) }],
+  };
+  const last = lastUsedMap(input);
   assert.equal(last.get('w1'), Date.parse(iso(2026, 11, 11, 15, 0))); assert.equal(last.get('w2'), Date.parse(iso(2026, 11, 11, 14, 50))); assert.equal(last.get('w3'), Date.parse(iso(2026, 10, 1)));
   assert.equal(last.size, 3, 'workspace desconhecido não entra'); assert.equal(lastUsedMap({ workspaces: WS }).get('w2'), Date.parse(iso(2026, 2, 1)));
+  const legacy = lastUsedMap({ ...input, missions: [{ workspaceId: 'w3', createdAt: iso(2026, 11, 11, 15, 20) }] });
+  assert.equal(legacy.get('w3'), Date.parse(iso(2026, 10, 1)), 'um campo `missions` antigo é ignorado');
 });
 
 test('recentes: do mais recente ao mais antigo, com "há X"; busca por nome ou pasta sem acento nem caixa', () => {
@@ -140,13 +143,14 @@ test('recentes: do mais recente ao mais antigo, com "há X"; busca por nome ou p
   const tie = recentWorkspaces({ workspaces: [{ id: 'b', name: 'zeta', path: 'p', createdAt: iso(2026, 1, 1) }, { id: 'a', name: 'alfa', path: 'q', createdAt: iso(2026, 1, 1) }] }); assert.deepEqual(tie.map((x) => x.id), ['a', 'b'], 'empate: ordem alfabética');
 });
 
-test('CONTINUAR: o workspace mais recente, o tópico (ativo, senão o mais novo) e a missão mais recente dele; sem workspace, nada', () => {
+test('CONTINUAR: o workspace mais recente e o tópico (ativo, senão o mais novo); missões do ciclo antigo não entram; sem workspace, nada', () => {
   const base = { workspaces: WS, activity: [{ at: iso(2026, 11, 11, 15, 0), workspaceId: 'w2' }], now: NOW.getTime() };
-  assert.deepEqual(continueTarget(base), { workspaceId: 'w2', parts: ['app-b'] }, 'sem tópico nem missão: só o workspace');
+  assert.deepEqual(continueTarget(base), { workspaceId: 'w2', parts: ['app-b'] }, 'sem tópico: só o workspace');
   const topics = [{ id: 't1', workspaceId: 'w2', title: 'Entrega', createdAt: iso(2026, 11, 1) }, { id: 't2', workspaceId: 'w2', title: 'Corrigir   bug', createdAt: iso(2026, 11, 5) }, { id: 't3', workspaceId: 'w2', title: 'Velho', createdAt: iso(2026, 11, 9), archived: true }, { id: 't4', workspaceId: 'w1', title: 'Outro', createdAt: iso(2026, 11, 9) }];
-  const missions = [{ workspaceId: 'w2', title: 'Missão velha', createdAt: iso(2026, 11, 2) }, { workspaceId: 'w2', title: 'Testar no Linux', createdAt: iso(2026, 11, 8) }, { workspaceId: 'w1', title: 'De outro', createdAt: iso(2026, 11, 10) }];
-  assert.deepEqual(continueTarget({ ...base, topics, missions }).parts, ['app-b', 'Corrigir bug', 'Testar no Linux'], 'tópico mais novo não arquivado, espaços colapsados, missão mais recente do próprio workspace');
-  assert.equal(continueTarget({ ...base, topics, missions, activeTopicIds: { w2: 't1' } }).parts[1], 'Entrega', 'o tópico ativo vence');
+  assert.deepEqual(continueTarget({ ...base, topics }).parts, ['app-b', 'Corrigir bug'], 'tópico mais novo não arquivado, espaços colapsados');
+  assert.equal(continueTarget({ ...base, topics, activeTopicIds: { w2: 't1' } }).parts[1], 'Entrega', 'o tópico ativo vence');
+  const missions = [{ workspaceId: 'w2', title: 'Testar no Linux', createdAt: iso(2026, 11, 8) }, { workspaceId: 'w1', title: 'De outro', createdAt: iso(2026, 11, 11, 15, 20) }];
+  assert.deepEqual(continueTarget({ ...base, topics, missions }), { workspaceId: 'w2', parts: ['app-b', 'Corrigir bug'] }, 'um campo `missions` antigo não muda o workspace nem o caminho');
   assert.equal(continueTarget({ workspaces: [] }), null); assert.equal(continueTarget({}), null);
 });
 

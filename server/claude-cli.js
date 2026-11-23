@@ -1,14 +1,12 @@
-// Como iniciar a CLI `claude` com segurança, compartilhado pelo executor, pelas contas (status/login/logout) e pelos terminais.
-// Extraído de executor/index.js sem mudar o comportamento. Nada aqui vem do cliente.
+// Como iniciar a CLI `claude` com segurança, compartilhado pela sonda (claude-probe.js), pelas contas (status/login/logout) e pelos terminais. Nada aqui vem do cliente.
 import { resolveClaude } from './providers/claude.js';
 
-// Segurança do caminho `.cmd` (instalação do Claude Code via npm no Windows): o cmd.exe interpreta & | < > ^ % ! " ( ) e espaços. Conclusão da auditoria: os argumentos que chegam
-// ao argv são SÓ os fixos de CLAUDE_ARGS/agents.js, os do Planner (`--model <valor>` de MODEL_RE; `--effort` de lista fechada) e os de `claude auth` (lista fechada em accounts.js);
-// o PROMPT vai por stdin e o cwd não é argumento. Mesmo assim, por defesa em profundidade, no caminho .cmd todo argumento precisa passar nesta lista permitida; senão a execução é recusada.
+// Segurança do caminho `.cmd` (instalação do Claude Code via npm no Windows): o cmd.exe interpreta & | < > ^ % ! " ( ) e espaços. Os argumentos que chegam
+// ao argv são SÓ os fixos da sonda (`--version`, claude-probe.js) e os de `claude auth` (lista fechada em accounts.js/account-login.js); o cwd não é argumento. Mesmo assim, por defesa em profundidade, no caminho .cmd todo argumento precisa passar nesta lista permitida; senão a execução é recusada.
 const SHELL_SAFE_ARG = /^[A-Za-z0-9][A-Za-z0-9._:,=\[\]\/-]*$|^-{1,2}[A-Za-z0-9][A-Za-z0-9-]*$/;
 export const shellSafeArgs = (list) => list.every((a) => typeof a === 'string' && SHELL_SAFE_ARG.test(a));
 
-// Regras de permissão `Ferramenta(especificação)` como `Bash(npm run test:*)` (ver exec-profile.js) precisam de espaço, parênteses e `*`: só esta forma é aceita ENTRE ASPAS DUPLAS, com um conjunto fechado de
+// Regras de permissão `Ferramenta(especificação)` como `Bash(npm run test:*)` precisam de espaço, parênteses e `*`: só esta forma é aceita ENTRE ASPAS DUPLAS, com um conjunto fechado de
 // caracteres e sem nenhum metacaractere do cmd.exe (& | < > ^ % ! ") nem aspas. Dentro de aspas duplas o cmd.exe não interpreta ( ) * nem espaços. Terminar em `)` também impede que uma barra invertida
 // FINAL escape a aspa de fechamento na análise do argv do Windows. Um texto qualquer com espaço (ex.: `a b`) continua recusado. O argumento que já passa em SHELL_SAFE_ARG segue SEM aspas, como sempre.
 const QUOTED_ARG = /^[A-Za-z][A-Za-z0-9_]*\([A-Za-z0-9 ._:,=()*\/\\-]+\)$/;
@@ -56,9 +54,3 @@ export function envForAccount(base, configDir) {
   env.CLAUDE_CONFIG_DIR = configDir;
   return env;
 }
-
-// Ambiente padrão dos `claude` do ciclo autônomo (Executor e Planner): o index.js liga isto à CONTA PADRÃO, lida no momento de cada execução.
-// Sem provedor (testes isolados) vale process.env, como sempre.
-let envProvider = null;
-export const setClaudeEnvProvider = (fn) => { envProvider = typeof fn === 'function' ? fn : null; };
-export const claudeEnv = () => (envProvider ? envProvider() : process.env);

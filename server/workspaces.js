@@ -59,20 +59,14 @@ export function validateDir(input, opts = {}) {
   };
 }
 
-const ACTIVE_CYCLE = ['planning', 'running'];
-
 /**
- * Motivo pelo qual o workspace NÃO pode ser removido do cadastro agora, ou null. Uma missão com execução, ciclo ativo ou ciclo
- * bloqueado (retomável) ainda depende do workspace; ciclos completed/cancelled/limit_reached não bloqueiam.
+ * Motivo pelo qual o workspace NÃO pode ser removido do cadastro agora, ou null. Terminais abertos e worktrees ainda não removidos dependem do workspace.
+ * As missões do ciclo antigo (db.missions, inertes desde que o ciclo foi removido) não bloqueiam: nada mais as executa nem as cancela.
  */
 export function workspaceRemovalBlocker(db, workspaceId, terminals = null) {
   // Terminal vivo do workspace ficaria órfão (invisível na grade, ocupando vaga e sem como retomar): feche-os antes.
   let live = 0; try { live = (terminals?.list?.() ?? []).filter((t) => t.workspaceId === workspaceId && t.status === 'running').length; } catch { live = 0; }
   if (live) return `Há ${live} terminal(is) aberto(s) neste workspace; feche-os antes de remover o workspace.`;
-  const missions = db.missions.filter((m) => m.workspaceId === workspaceId);
-  if (missions.some((m) => m.tasks.some((t) => t.status === 'running'))) return 'Há uma execução em andamento neste workspace.';
-  if (missions.some((m) => ACTIVE_CYCLE.includes(m.cycle?.status))) return 'Há um ciclo em andamento neste workspace; aguarde ou cancele o ciclo antes de remover o workspace.';
-  if (missions.some((m) => m.cycle?.status === 'blocked')) return 'Há um ciclo bloqueado neste workspace; cancele o ciclo antes de remover o workspace.';
   if ((db.worktrees || []).some((w) => w.workspaceId === workspaceId && w.state !== 'removed' && w.state !== 'failed')) return 'Há worktrees isolados deste workspace que ainda não foram removidos; integre ou limpe-os antes de remover o workspace.';
   return null;
 }

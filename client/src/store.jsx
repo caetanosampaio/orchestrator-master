@@ -12,7 +12,7 @@ export function StoreProvider({ children }) {
   const [data, setData] = useState({ state: null, workspaces: [], activity: [] });
   const [error, setError] = useState(null);
 
-  // Só a resposta de /api/state MAIS RECENTE é aplicada: o refresh completo e a atualização leve de uso (abaixo) podem se cruzar.
+  // Só a resposta de /api/state MAIS RECENTE é aplicada: o polling e o refresh depois de uma ação podem se cruzar.
   const stateSeq = useRef(0);
   const refresh = useCallback(async () => {
     const my = ++stateSeq.current;
@@ -23,15 +23,6 @@ export function StoreProvider({ children }) {
     } catch (e) {
       setError('API indisponível. Inicie o backend (npm run server).');
     }
-  }, []);
-
-  // Evento SSE `usage`: relê só /api/state, onde o servidor já entrega o agregado (nada é somado no cliente, então nenhum dado conta duas vezes).
-  const refreshUsage = useCallback(async () => {
-    const my = ++stateSeq.current;
-    try {
-      const state = await api.get('/api/state');
-      if (my === stateSeq.current) setData((prev) => ({ ...prev, state }));
-    } catch { /* o polling de 5 s cobre */ }
   }, []);
 
   useEffect(() => {
@@ -106,17 +97,6 @@ export function StoreProvider({ children }) {
     document.addEventListener('visibilitychange', tick);
     return () => { clearInterval(t); document.removeEventListener('visibilitychange', tick); };
   }, [loadTerminals]);
-
-  // Eventos em tempo real (SSE). O polling acima continua como rede de segurança.
-  useEffect(() => {
-    const es = new EventSource('/api/events');
-    const again = () => refresh();
-    es.addEventListener('state', again); es.addEventListener('hello', again);
-    // Atualizações de uso chegam em rajadas: uma releitura a cada ~400 ms, sempre depois do último evento da rajada.
-    let timer = null;
-    es.addEventListener('usage', () => { if (!timer) timer = setTimeout(() => { timer = null; refreshUsage(); }, 400); });
-    return () => { es.close(); clearTimeout(timer); };
-  }, [refresh, refreshUsage]);
 
   const activeWsId = data.state?.activeWorkspace?.id ?? null;
   // Terminal que o usuário encerrou (ou que acabou) não conta como "a equipe terminou": só tarefa concluída e o fim do trabalho observado, olhando os terminais vivos.

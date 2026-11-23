@@ -156,10 +156,10 @@ test('E3 — revalidate NUNCA declara sucesso com a preparação em andamento ne
 
 test('E3 — ordem do boot: o reclaim dos processos filhos vem ANTES da conciliação dos worktrees, e o gerenciador recebe o child-registry', () => {
   const src = fs.readFileSync(path.join(HERE, '..', 'index.js'), 'utf8').replace(/\r\n/g, '\n');
-  const iReclaim = src.indexOf('childRegistry.reclaim('), iRecover = src.indexOf('worktrees.recover()'), iCycle = src.indexOf('setupCycle(app');
-  assert.ok(iReclaim > 0 && iRecover > iReclaim, 'reclaim antes de recover'); assert.ok(iRecover < iCycle, 'recover antes do ciclo ser montado'); assert.equal(src.split('worktrees.recover()').length - 1, 1);
+  const iReclaim = src.indexOf('childRegistry.reclaim('), iRecover = src.indexOf('worktrees.recover()'), iFlows = src.indexOf('setupFlows(app');
+  assert.ok(iReclaim > 0 && iRecover > iReclaim, 'reclaim antes de recover'); assert.ok(iFlows < 0 || iRecover < iFlows, 'recover antes de as missões v2 (flows) serem montadas'); assert.equal(src.split('worktrees.recover()').length - 1, 1);
   assert.match(src, /createWorktreeManager\(\{ db, track: childRegistry\.track, children: childRegistry \}\)/); assert.match(src, /worktreeRecovery = await worktrees\.recover\(\)/);
-  assert.match(src, /installShutdown\(\{[^}]*children: \[planner, verifier, \{ killActiveSync: \(\) => worktrees\.killActiveSync\(\) \}(, \{ killActiveSync: \(\) => terminals\.killAllSync\(\) \})?(, \{ killActiveSync: \(\) => logins\.killActiveSync\(\) \})?(, \{ killActiveSync: \(\) => \{ void livePreview\?\.close\(\); \} \})?(, \{ killActiveSync: \(\) => flowsManager\?\.stop\(\) \})?\]/); // os terminais interativos, o login de conta em andamento e o agendador/runner de missões (v2) também são encerrados no desligamento
+  assert.ok(src.includes('installShutdown({') && src.includes('children: [{ killActiveSync: () => worktrees.killActiveSync() }'), 'o encerramento do servidor encerra o preparador de worktrees');
 });
 
 test('E3 — encerramento normal do servidor encerra o preparador (e libera o registro); sem preparação em curso nada acontece', async () => {

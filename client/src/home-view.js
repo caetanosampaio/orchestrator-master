@@ -218,22 +218,21 @@ export function agoLabel(iso, now = Date.now()) {
 
 /**
  * Último uso de cada workspace = o instante mais recente entre: eventos do registro de atividade que citam o workspace (ativar, abrir, tópicos...), terminais dele (início, saída, fim),
- * missões e tópicos criados nele; sem nada disso, a data do cadastro. Só dados reais do servidor.
+ * tópicos criados nele; sem nada disso, a data do cadastro. Só dados reais do servidor (as missões do ciclo antigo não entram mais).
  * @returns {Map<string, number>} workspaceId -> ms
  */
-export function lastUsedMap({ workspaces = [], activity = [], sessions = [], missions = [], topics = [] } = {}) {
+export function lastUsedMap({ workspaces = [], activity = [], sessions = [], topics = [] } = {}) {
   const out = new Map(workspaces.map((w) => [w.id, ts(w.createdAt)]));
   const bump = (id, iso) => { if (!out.has(id)) return; const t = ts(iso); if (t > out.get(id)) out.set(id, t); };
   for (const a of Array.isArray(activity) ? activity : []) if (a && a.workspaceId) bump(a.workspaceId, a.at);
   for (const s of Array.isArray(sessions) ? sessions : []) if (s && s.workspaceId) { bump(s.workspaceId, s.startedAt); bump(s.workspaceId, s.lastOutputAt); bump(s.workspaceId, s.endedAt); }
-  for (const m of Array.isArray(missions) ? missions : []) if (m && m.workspaceId) bump(m.workspaceId, m.createdAt);
   for (const t of Array.isArray(topics) ? topics : []) if (t && t.workspaceId) bump(t.workspaceId, t.createdAt);
   return out;
 }
 
 /** Workspaces do mais recente para o mais antigo (empate: nome). `query` filtra por nome ou pasta, sem acento nem caixa. @returns {{id,name,path,lastUsed:number,ago:string}[]} */
-export function recentWorkspaces({ workspaces = [], activity = [], sessions = [], missions = [], topics = [], query = '', now = Date.now() } = {}) {
-  const names = friendlyNames(workspaces), last = lastUsedMap({ workspaces, activity, sessions, missions, topics }), q = norm(query).trim();
+export function recentWorkspaces({ workspaces = [], activity = [], sessions = [], topics = [], query = '', now = Date.now() } = {}) {
+  const names = friendlyNames(workspaces), last = lastUsedMap({ workspaces, activity, sessions, topics }), q = norm(query).trim();
   return workspaces
     .map((w) => ({ id: w.id, name: names.get(w.id), path: w.path, lastUsed: last.get(w.id) ?? 0 }))
     .filter((r) => !q || norm(r.name).includes(q) || norm(r.path).includes(q))
@@ -242,14 +241,13 @@ export function recentWorkspaces({ workspaces = [], activity = [], sessions = []
 }
 
 /**
- * Faixa CONTINUAR: o workspace usado mais recentemente e, depois de "›", o tópico (o ativo nele, senão o criado por último) e a missão mais recente dele.
+ * Faixa CONTINUAR: o workspace usado mais recentemente e, depois de "›", o tópico (o ativo nele, senão o criado por último).
  * @returns {{workspaceId:string, parts:string[]}|null} null sem workspace.
  */
-export function continueTarget({ workspaces = [], activity = [], sessions = [], missions = [], topics = [], activeTopicIds = {}, now = Date.now() } = {}) {
-  const top = recentWorkspaces({ workspaces, activity, sessions, missions, topics, now })[0];
+export function continueTarget({ workspaces = [], activity = [], sessions = [], topics = [], activeTopicIds = {}, now = Date.now() } = {}) {
+  const top = recentWorkspaces({ workspaces, activity, sessions, topics, now })[0];
   if (!top) return null;
   const mine = (Array.isArray(topics) ? topics : []).filter((t) => t && t.workspaceId === top.id && !t.archived && String(t.title ?? '').trim());
   const topic = mine.find((t) => t.id === activeTopicIds?.[top.id]) ?? [...mine].sort((a, b) => ts(b.createdAt) - ts(a.createdAt))[0];
-  const mission = (Array.isArray(missions) ? missions : []).filter((m) => m && m.workspaceId === top.id && String(m.title ?? '').trim()).sort((a, b) => ts(b.createdAt) - ts(a.createdAt))[0];
-  return { workspaceId: top.id, parts: [top.name, topic?.title, mission?.title].filter(Boolean).map((s) => String(s).replace(/\s+/g, ' ').trim()) };
+  return { workspaceId: top.id, parts: [top.name, topic?.title].filter(Boolean).map((s) => String(s).replace(/\s+/g, ' ').trim()) };
 }

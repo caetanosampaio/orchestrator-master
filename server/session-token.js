@@ -9,9 +9,10 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 export const TOKEN_HEADER = 'x-orch-token';
 const TOKEN_RE = /^[A-Za-z0-9_-]{32,128}$/;
 // Leituras que entregam conteúdo sensível também exigem o token: saída dos terminais e lista de sessões (cwd, títulos), conversas copiadas, contas (e-mail e andamento do login),
-// missões (inclui relatórios e logs), chat, fila do Maestro, atividade, eventos em tempo real, worktrees, o painel Live (/live: arquivos alterados e porta do preview) e as missões v2
+// fila do Maestro, atividade, worktrees, o painel Live (/live: arquivos alterados e porta do preview) e as missões v2
 // (/flows: prompts, resumos dos agentes, branches, arquivos em conflito/alterados e o caminho das cópias). As demais leituras (estado, workspaces, layouts, preferências) seguem abertas.
-const PROTECTED_READ = /^\/(?:terminals(?:\/.*)?|missions(?:\/.*)?|chat|maestro|activity|events|worktrees(?:\/.*)?|workspaces\/[^/]+\/conversations(?:\/[^/]+)?|accounts(?:\/.*)?|live(?:\/.*)?|flows(?:\/.*)?)\/?$/i;
+// (missions, chat e events eram do ciclo antigo, removido: essas rotas não existem mais e caem no 404 da /api.)
+const PROTECTED_READ = /^\/(?:terminals(?:\/.*)?|maestro|activity|worktrees(?:\/.*)?|workspaces\/[^/]+\/conversations(?:\/[^/]+)?|accounts(?:\/.*)?|live(?:\/.*)?|flows(?:\/.*)?)\/?$/i;
 
 /** Lê ORCH_API_TOKEN, apaga do ambiente e devolve o token (ou null). Formato inválido impede o boot: nunca "protege" com um token fraco em silêncio. */
 export function consumeApiTokenFromEnv(env = process.env) {

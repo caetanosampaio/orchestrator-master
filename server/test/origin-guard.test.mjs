@@ -1,4 +1,4 @@
-// Proteção de Host e Origin da API local: testes unitários do guard + integração com o index.js REAL (via chat-boot.mjs, Planner simulado).
+// Proteção de Host e Origin da API local: testes unitários do guard + integração com o index.js REAL (via audit-server-boot.mjs, sonda do Claude falsa).
 // SEMPRE com ORCH_DATA_DIR temporário e porta livre própria; nenhum modelo é chamado, nada é executado e o banco real (data/) não é tocado (o teste confere o db.json real).
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { isAllowedHost, isAllowedOrigin, isMutatingMethod, apiGuard, isForeignFetch } from '../origin-guard.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const BOOT = path.join(here, 'chat-boot.mjs');
+const BOOT = path.join(here, 'audit-server-boot.mjs');
 const REAL_DB = path.resolve(here, '..', '..', 'data', 'db.json');
 const stat = () => (fs.existsSync(REAL_DB) ? `${fs.statSync(REAL_DB).mtimeMs}:${fs.statSync(REAL_DB).size}` : 'ausente');
 
@@ -101,39 +101,38 @@ test('index.js real: Origin obrigatório em POST/PUT/PATCH/DELETE (403 sem alter
     assert.ok(await waitUp(b), `servidor não subiu:\n${b.out()}`);
     const state = async () => (await call('/api/state', { method: 'GET' })).text;
     const s0 = await state();
-    // toda rota mutável (POST/PUT/PATCH/DELETE, de decisão ou não, existente ou não): sem Origin, vazio ou inválido => 403
-    const MUT = [['POST', '/api/workspaces', { name: 'invasor', path: ws }], ['POST', '/api/workspaces/validate', { path: ws }], ['POST', '/api/missions', { title: 'invasora' }], ['POST', '/api/missions/m1/tasks', { title: 'x' }],
-      ['POST', '/api/missions/m1/tasks/t1/approve', {}], ['POST', '/api/missions/m1/tasks/t1/reject', {}], ['POST', '/api/missions/m1/cycle/accept-unverified', {}], ['POST', '/api/chat/approve', {}], ['POST', '/api/chat/message', { text: 'oi' }],
-      ['PUT', '/api/settings', { showDemoData: true, cycleMaxIterations: 3 }], ['PATCH', '/api/settings', { showDemoData: true }], ['DELETE', '/api/missions/m1'], ['DELETE', '/api/missions/m1/tasks/t1']];
+    // toda rota mutável (POST/PUT/PATCH/DELETE, existente ou não): sem Origin, vazio ou inválido => 403
+    const MUT = [['POST', '/api/workspaces', { name: 'invasor', path: ws }], ['POST', '/api/workspaces/validate', { path: ws }], ['POST', '/api/flows', { title: 'invasora' }], ['POST', '/api/flows/briefing', {}],
+      ['POST', '/api/flows/proposals/p1/dismiss', {}], ['POST', '/api/workspaces/ws1/activate', {}], ['PUT', '/api/settings', { x: 1 }], ['PATCH', '/api/flows/f1', { title: 'x' }], ['DELETE', '/api/flows/f1'], ['DELETE', '/api/workspaces/ws1']];
     for (const [method, p, body] of MUT) {
       assert.equal((await call(p, { method, body })).status, 403, `${method} ${p} sem Origin`);
       for (const origin of ['', 'http://evil.example', 'null', 'http://localhost.evil.com', 'http://127.0.0.1:1@evil.com', 'http://127.1']) assert.equal((await call(p, { method, body, headers: { origin } })).status, 403, `${method} ${p} Origin "${origin}"`);
     }
     assert.equal(await state(), s0, 'nenhuma requisição barrada alterou o estado');
     // contornos de forma: maiúsculas, barra final, consulta e alvo em forma absoluta não escapam da regra
-    for (const target of ['/API/CHAT/APPROVE', '/api/chat/approve/', `http://127.0.0.1:${port}/api/chat/approve`, '/api/chat/approve?x=1', '/API/SETTINGS']) assert.equal((await call(target, { method: target === '/API/SETTINGS' ? 'PUT' : 'POST', body: {} })).status, 403, target);
+    for (const target of ['/API/FLOWS/BRIEFING', '/api/flows/briefing/', `http://127.0.0.1:${port}/api/flows/briefing`, '/api/flows/briefing?x=1', '/API/SETTINGS']) assert.equal((await call(target, { method: target === '/API/SETTINGS' ? 'PUT' : 'POST', body: {} })).status, 403, target);
     assert.equal(await state(), s0, 'o estado segue intacto');
     // com Origin válido (o próprio servidor ou o Vite) a requisição chega à rota e altera o estado (controle positivo)
     assert.equal((await call('/api/workspaces/validate', { body: { path: ws }, headers: { origin: legit } })).status, 200);
-    assert.equal((await call('/api/chat/approve', { body: {}, headers: { host: 'localhost:5173', origin: 'http://localhost:5173' } })).status !== 403, true, 'Origin do Vite (Host preservado pelo proxy) passa pelo guard');
+    assert.equal((await call('/api/flows/briefing', { body: {}, headers: { host: 'localhost:5173', origin: 'http://localhost:5173' } })).status !== 403, true, 'Origin do Vite (Host preservado pelo proxy) passa pelo guard');
     assert.equal((await call('/api/workspaces', { body: { name: 'legitimo', path: ws }, headers: { origin: legit } })).status, 201);
     assert.notEqual(await state(), s0, 'com Origin válido o estado muda');
     // leituras sem Origin continuam funcionando (Host válido); HEAD e OPTIONS não são barrados; Origin externo em leitura continua barrado
-    assert.equal((await call('/api/chat', { method: 'GET' })).status, 200);
+    assert.equal((await call('/api/state', { method: 'GET' })).status, 200);
     assert.equal((await call('/api/state', { method: 'HEAD' })).status, 200);
     assert.notEqual((await call('/api/state', { method: 'OPTIONS' })).status, 403);
-    assert.equal((await call('/api/chat', { method: 'GET', headers: { origin: legit } })).status, 200);
-    assert.equal((await call('/api/chat', { method: 'GET', headers: { origin: 'http://evil.example' } })).status, 403);
+    assert.equal((await call('/api/state', { method: 'GET', headers: { origin: legit } })).status, 200);
+    assert.equal((await call('/api/state', { method: 'GET', headers: { origin: 'http://evil.example' } })).status, 403);
     // Origin de outra porta local (outra página no localhost) é barrado; cabeçalhos de segurança só na interface (se houver client/dist), nunca na API
     assert.equal((await call('/api/workspaces/validate', { body: { path: ws }, headers: { origin: 'http://localhost:3000' } })).status, 403, 'outra porta local');
     const page = await new Promise((res, rej) => http.get({ host: '127.0.0.1', port, path: '/', headers: { host: `127.0.0.1:${port}` } }, (r) => { r.resume(); r.on('end', () => res(r.headers)); }).on('error', rej));
     if (!fs.existsSync(path.resolve(here, '..', '..', 'client', 'dist'))) console.warn('[aviso] sem client/dist: a CSP não foi verificada neste ambiente (rode npm run build para cobrir).'); else { assert.match(page['content-security-policy'] ?? '', /default-src 'self'.*frame-ancestors 'none'/); assert.equal(page['x-content-type-options'], 'nosniff'); }
     // Host: externo, com sufixo, porta inválida e ausente são barrados em qualquer rota /api; localhost com outra porta é aceito
-    for (const host of ['evil.com', 'localhost.evil.com', '127.0.0.1.evil.com:4317', 'localhost:99999', 'localhost:0']) assert.equal((await call('/api/chat', { method: 'GET', headers: { host } })).status, 403, host);
-    for (const host of ['localhost', `localhost:${port}`, '127.0.0.1:5173']) assert.equal((await call('/api/chat', { method: 'GET', headers: { host } })).status, 200, host);
-    assert.equal((await call('/api/chat/approve', { body: {}, headers: { host: 'evil.com', origin: legit } })).status, 403, 'Host inválido barra até a rota de decisão com Origin legítimo');
+    for (const host of ['evil.com', 'localhost.evil.com', '127.0.0.1.evil.com:4317', 'localhost:99999', 'localhost:0']) assert.equal((await call('/api/state', { method: 'GET', headers: { host } })).status, 403, host);
+    for (const host of ['localhost', `localhost:${port}`, '127.0.0.1:5173']) assert.equal((await call('/api/state', { method: 'GET', headers: { host } })).status, 200, host);
+    assert.equal((await call('/api/flows/briefing', { body: {}, headers: { host: 'evil.com', origin: legit } })).status, 403, 'Host inválido barra até a rota de decisão com Origin legítimo');
     // o guard roda ANTES do parser de JSON: Origin externo + corpo malformado é 403 (não 400 "JSON inválido"), em rota comum e de decisão; corpo malformado de origem legítima segue sendo 400
-    for (const p of ['/api/workspaces/validate', '/api/chat/approve']) {
+    for (const p of ['/api/workspaces/validate', '/api/flows/briefing']) {
       assert.equal((await call(p, { raw: '{' })).status, 403, `${p} sem Origin + JSON malformado`);
       assert.equal((await call(p, { raw: '{', headers: { origin: 'http://evil.example' } })).status, 403, `${p} Origin externo + JSON malformado`);
       assert.equal((await call(p, { raw: '{', headers: { host: 'evil.com' } })).status, 403, `${p} Host externo + JSON malformado`);

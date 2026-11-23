@@ -229,19 +229,13 @@ test('prereqs.login: estado da CONTA PADRÃO via claude auth status; variáveis 
 });
 
 // ---- correções pós-revisão ----
-test('remover a conta PADRÃO com Executor/Planner ocupados => 409 account_in_use (nada muda); ocioso => remove e avisa defaultChangedTo; não padrão não é bloqueada', async () => {
-  const flag = { busy: true }; const w = world({ isCycleBusy: () => flag.busy }); const a = mk(w, 'A'), b = mk(w, 'B'); w.accounts.setDefault(a.id);
-  let r = await w.accounts.remove(a.id); assert.deepEqual([r.ok, r.status, r.code], [false, 409, 'account_in_use']); assert.match(r.error, /conta padrão.*ciclo autônomo/);
-  assert.equal(w.db.accounts.length, 2); assert.equal(fs.existsSync(w.accDir(a.id)), true); assert.equal(w.accounts.defaultId(), a.id); assert.equal(w.calls().some((c) => c.cmd === 'logout'), false);
-  r = await w.accounts.remove(b.id); assert.deepEqual([r.ok, r.defaultChangedTo], [true, undefined], 'conta que não é a padrão: liberada mesmo ocupado');
-  flag.busy = false; r = await w.accounts.remove(a.id); assert.deepEqual([r.ok, r.folderRemoved, r.defaultChangedTo], [true, true, 'system']); assert.equal(w.accounts.defaultId(), 'system');
-});
-
-test('remover a padrão quando o ciclo fica ocupado DURANTE o logout => 409 e nada é apagado', async () => {
-  const flag = { busy: false }; const w = world({ isCycleBusy: () => flag.busy }); const a = mk(w); w.accounts.setDefault(a.id); w.st.extraEnv.FAKE_STATUS_SLEEP = '0';
-  const run = w.accounts.runAuth; // o logout é a única chamada assíncrona: liga o "ocupado" no meio dela
-  const p = w.accounts.remove(a.id); flag.busy = true; const r = await p;
-  assert.deepEqual([r.ok, r.status], [false, 409]); assert.equal(w.db.accounts.length, 1); assert.equal(fs.existsSync(w.accDir(a.id)), true); assert.ok(run);
+// (os testes de bloqueio por "Executor/Planner ocupados" saíram com o ciclo antigo; a remoção da padrão continua coberta aqui)
+test('remover a conta PADRÃO => remove e avisa defaultChangedTo (volta para Sistema); não padrão não muda a padrão', async () => {
+  const w = world(); const a = mk(w, 'A'), b = mk(w, 'B'); w.accounts.setDefault(a.id);
+  let r = await w.accounts.remove(b.id); assert.deepEqual([r.ok, r.defaultChangedTo], [true, undefined], 'conta que não é a padrão');
+  assert.equal(w.accounts.defaultId(), a.id);
+  r = await w.accounts.remove(a.id); assert.deepEqual([r.ok, r.folderRemoved, r.defaultChangedTo], [true, true, 'system']); assert.equal(w.accounts.defaultId(), 'system');
+  assert.equal(w.db.accounts.length, 0); assert.equal(fs.existsSync(w.accDir(a.id)), false);
 });
 
 test('rota DELETE da padrão devolve defaultChangedTo e folderRemoved; ?status=0 não executa a CLI; ?fresh=1 invalida o cache', async () => {
@@ -266,15 +260,15 @@ test('envForAccount: conta do FORGE perde também Bedrock/Vertex/BASE_URL/CUSTOM
   assert.deepEqual(envForAccount(base, null), base, 'Sistema: ambiente como está'); assert.equal(base.ANTHROPIC_API_KEY, 'a', 'o original não é alterado');
 });
 
-test('"Verificar novamente": reset das sondas do Git e do executor força nova consulta (sem reset, o cache vale)', async () => {
-  const { createGitProbe } = await import('../prereqs.js'); const { createExecutor } = await import('../executor/index.js');
+test('"Verificar novamente": reset das sondas do Git e do Claude força nova consulta (sem reset, o cache vale)', async () => {
+  const { createGitProbe } = await import('../prereqs.js'); const { createClaudeProbe } = await import('../claude-probe.js');
   const counter = path.join(tmp, 'sondas.txt'); fs.writeFileSync(counter, '');
   const script = path.join(tmp, 'sonda.mjs'); fs.writeFileSync(script, "import fs from 'node:fs'; fs.appendFileSync(process.env.SONDA_LOG, 'x'); console.log('git version 1.0');");
   const old = process.env.SONDA_LOG; process.env.SONDA_LOG = counter;
   try {
     const n = () => fs.readFileSync(counter, 'utf8').length;
     const git = createGitProbe({ command: process.execPath, prefixArgs: [script] }); await git(); await git(); assert.equal(n(), 1); git.reset(); await git(); assert.equal(n(), 2);
-    const ex = createExecutor({ command: process.execPath, prefixArgs: [script], args: [] }); await ex.probe(); await ex.probe(); assert.equal(n(), 3); ex.resetProbe(); await ex.probe(); assert.equal(n(), 4);
+    const claude = createClaudeProbe({ command: process.execPath, prefixArgs: [script] }); await claude(); await claude(); assert.equal(n(), 3); claude.reset(); await claude(); assert.equal(n(), 4);
   } finally { if (old === undefined) delete process.env.SONDA_LOG; else process.env.SONDA_LOG = old; }
 });
 

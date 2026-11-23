@@ -1,8 +1,6 @@
 // Visão derivada dos terminais para a sidebar e para a grade do Cockpit. PURA (sem React, sem rede): só reorganiza dados REAIS do servidor
 // (workspaces, sessões de /api/terminals e tarefas do maestro). Nada é inventado: cada workspace cadastrado é um ambiente, sempre visível; trocar de ambiente só muda qual está ativo.
 
-import { profileOf } from './permission-profile.js';
-
 const base = (p) => String(p ?? '').replace(/[\\/]+$/, '').split(/[\\/]/).pop() || String(p ?? '');
 const parent = (p) => { const parts = String(p ?? '').replace(/[\\/]+$/, '').split(/[\\/]/); return parts.length > 1 ? parts.at(-2) : ''; };
 
@@ -39,7 +37,6 @@ export function environments({ workspaces = [], sessions = [], activeId = null, 
       return {
         id: w.id, name: names.get(w.id), original: String(w.name ?? '').trim() || base(w.path), renamed: !!String(w.displayName ?? '').trim(), path: w.path, active: w.id === activeId, total: mine.length, running: running.length,
         working: n('working'), waiting: n('waiting'), done: n('done'), exited: mine.length - running.length, failed, pendingTasks, finished: finished.has(w.id), agent: lead ? providerOf(lead) : null, attention: failed > 0 || n('waiting') > 0,
-        profile: profileOf(w), // perfil de permissão das missões (default | bypass); a barra lateral destaca o bypass
       };
     });
 }

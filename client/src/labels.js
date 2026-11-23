@@ -7,6 +7,3 @@ export const STATUS = {
 // Concordância: o padrão acima é feminino (missão, tarefa, rodada); o ciclo é masculino (`masc`).
 const STATUS_MASC = { completed: 'concluído', interrupted: 'interrompido', blocked: 'bloqueado', cancelled: 'cancelado', succeeded: 'bem-sucedido' };
 export const statusLabel = (value, masc) => (masc && STATUS_MASC[value]) || STATUS[value] || value;
-
-// Evidência do sistema (M8): o relato do Executor nunca conclui; só a evidência independente conclui uma etapa.
-export const EVIDENCE_BASIS = { real_verification: 'verificação real', expected_files: 'arquivos esperados conferidos', 'real_verification+expected_files': 'verificação real e arquivos esperados', executor_claim_only: 'só o relato do Executor' };

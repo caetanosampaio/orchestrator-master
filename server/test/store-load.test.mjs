@@ -32,7 +32,7 @@ const sys = (db) => db.activity.filter((a) => a.type === 'system');
 test('arquivo ausente e sem cópias: primeira execução (banco inicial, sem aviso de recuperação)', async () => {
   const t = await fresh(); quiet();
   const db = t.store.load();
-  assert.ok(db.missions.length > 0 && db.missions.every((m) => m.demo)); assert.equal(sys(db).length, 0);
+  assert.equal('missions' in db, false, 'banco novo não semeia missões (nem demonstrativas)'); assert.deepEqual(db.workspaces, []); assert.equal(sys(db).length, 0);
   assert.equal(t.corrupt().length, 0); assert.equal(t.diskDb().version, 1);
   mock.restoreAll();
 });
@@ -45,20 +45,32 @@ test('db.json válido: carregado como está, sem copiar nem consultar .tmp/.bak'
   assert.equal(JSON.parse(t.read('db.json.tmp')).settings.marker, 'tmp', 'cópias intactas');
 });
 
-test('estrutura mínima: aceita bancos antigos (sem version/pastCycles, ciclo null) e recusa o que quebraria o boot', async () => {
+test('estrutura mínima: aceita bancos antigos (sem version, com missões antigas em qualquer formato) e recusa o que quebraria o boot', async () => {
   const { store } = await fresh();
   const base = okDb('x');
   assert.equal(store.validateDb(base), null);
-  const legado = okDb('x'); delete legado.version; delete legado.missions[0].pastCycles; legado.missions[0].cycle = null; legado.missions.push({ id: 'm2', tasks: [] });
-  assert.equal(store.validateDb(legado), null, 'campos opcionais ausentes não rejeitam');
+  const legado = okDb('x'); delete legado.version; delete legado.missions[0].pastCycles; legado.missions[0].cycle = null; legado.missions.push({ id: 'm2', tasks: [] }, { id: 'm3' });
+  assert.equal(store.validateDb(legado), null, 'campos opcionais ausentes não rejeitam; missão sem tasks é aceita');
+  const semMissoes = okDb('x'); delete semMissoes.missions;
+  assert.equal(store.validateDb(semMissoes), null, '"missions" é opcional (o ciclo antigo foi removido)');
   const bad = (mut) => { const d = okDb('x'); mut(d); return store.validateDb(d); };
   for (const [nome, mut] of [
     ['settings ausente', (d) => { delete d.settings; }], ['settings array', (d) => { d.settings = []; }],
-    ['missions ausente', (d) => { delete d.missions; }], ['workspaces não-lista', (d) => { d.workspaces = {}; }], ['activity ausente', (d) => { delete d.activity; }],
-    ['workspace sem path', (d) => { delete d.workspaces[0].path; }], ['missão sem id', (d) => { delete d.missions[0].id; }], ['missão sem tasks', (d) => { delete d.missions[0].tasks; }],
-    ['tarefa não-objeto', (d) => { d.missions[0].tasks = [null]; }], ['ciclo sem rounds', (d) => { d.missions[0].cycle = { status: 'blocked' }; }], ['ciclo não-objeto', (d) => { d.missions[0].cycle = 'x'; }],
+    ['missions não-lista', (d) => { d.missions = {}; }], ['workspaces não-lista', (d) => { d.workspaces = {}; }], ['activity ausente', (d) => { delete d.activity; }],
+    ['workspace sem path', (d) => { delete d.workspaces[0].path; }], ['missão sem id', (d) => { delete d.missions[0].id; }], ['missão não-objeto', (d) => { d.missions.push(null); }],
   ]) assert.ok(bad(mut), nome);
   for (const v of [null, [], 'texto', 42, {}]) assert.ok(store.validateDb(v), JSON.stringify(v));
+});
+
+test('contrato: banco sem "missions" carrega sem criar o campo; banco com "missions" antigo é gravado de volta INTACTO', async () => {
+  const sem = okDb('sem'); delete sem.missions;
+  const t1 = await fresh({ 'db.json': json(sem) });
+  const db1 = t1.store.load(); assert.equal('missions' in db1, false, 'campo ausente continua ausente'); assert.equal(db1.settings.marker, 'sem');
+  t1.store.saveOrThrow(); assert.equal('missions' in t1.diskDb(), false, 'o disco também não ganha o campo');
+  const antigo = okDb('antigo'); antigo.missions.push({ id: 'm2', demo: true, title: 'demo', tasks: [], cycle: { status: 'blocked', rounds: [] } });
+  const t2 = await fresh({ 'db.json': json(antigo) });
+  const db2 = t2.store.load(); assert.deepEqual(db2.missions, antigo.missions, 'lista antiga intacta, sem migração');
+  t2.store.saveOrThrow(); assert.deepEqual(t2.diskDb().missions, antigo.missions, 'gravada de volta sem alterações');
 });
 
 test('JSON malformado ou arquivo vazio, sem cópias: modo DEGRADADO explícito e o original preservado byte a byte', async () => {
@@ -74,7 +86,7 @@ test('JSON malformado ou arquivo vazio, sem cópias: modo DEGRADADO explícito e
 });
 
 test('JSON válido de estrutura errada (null, array, {} e sem campos essenciais): degradado, nunca aceito', async () => {
-  const casos = ['null', '[]', '{}', '"texto"', json({ ...okDb('x'), missions: [{ id: 'm' }] }), json({ ...okDb('x'), settings: undefined }), json({ ...okDb('x'), activity: 'x' })];
+  const casos = ['null', '[]', '{}', '"texto"', json({ ...okDb('x'), missions: [{ title: 'sem id' }] }), json({ ...okDb('x'), settings: undefined }), json({ ...okDb('x'), activity: 'x' })];
   for (const conteudo of casos) {
     const t = await fresh({ 'db.json': conteudo }); quiet();
     const db = t.store.load();

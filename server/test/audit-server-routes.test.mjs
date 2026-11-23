@@ -1,4 +1,4 @@
-// Auditoria do servidor: rotas async com proteção (500 em JSON e servidor vivo), contrato aditivo `prereqs` e rollback das rotas de missão/tarefa.
+// Auditoria do servidor: rotas async com proteção (500 em JSON e servidor vivo), contrato aditivo `prereqs`/`executor` de /api/state e rollback das rotas de missão (Missions v2, /api/flows).
 // Servidor REAL (server/index.js via audit-server-boot.mjs) em processo filho, SEMPRE com ORCH_DATA_DIR temporário e porta livre própria. Nenhum modelo é chamado.
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -31,21 +31,22 @@ async function boot(extraEnv = {}) {
   return { child, dir, base, call, out: () => out, exited };
 }
 
-test('rotas async (/api/state, /api/agents, /api/workspaces/:id/git): exceção vira 500 em JSON e o servidor segue respondendo', async () => {
+test('rotas async (/api/state, /api/workspaces/:id/git): exceção vira 500 em JSON e o servidor segue respondendo', async () => {
   const flag = path.join(root, 'boom'), wsDir = path.join(root, 'ws'); fs.mkdirSync(wsDir);
   const s = await boot({ AUDIT_BOOM: flag });
   const ws = await (await s.call('POST', '/api/workspaces', { path: wsDir })).json();
   assert.ok(ws.id);
   fs.writeFileSync(flag, 'x');
-  for (const p of ['/api/state', '/api/agents', `/api/workspaces/${ws.id}/git`]) {
+  for (const p of ['/api/state', `/api/workspaces/${ws.id}/git`]) {
     const r = await s.call('GET', p);
     assert.equal(r.status, 500, p); assert.match(r.headers.get('content-type'), /application\/json/);
     assert.deepEqual(await r.json(), { error: 'Erro interno.' }); // sem detalhes do erro
   }
   assert.equal((await s.call('GET', '/api/workspaces')).status, 200, 'o servidor continua vivo');
+  assert.equal((await s.call('GET', '/api/flows')).status, 200, 'as Missões v2 seguem respondendo');
   fs.rmSync(flag);
   assert.equal((await s.call('GET', '/api/state')).status, 200, 'sem a falha, a rota volta ao normal');
-  assert.equal((await s.call('GET', '/api/agents')).status, 200);
+  assert.equal((await s.call('GET', `/api/workspaces/${ws.id}/git`)).status, 200);
   assert.equal(s.child.exitCode, null, 'o processo não caiu');
 });
 
@@ -55,9 +56,23 @@ test('prereqs em /api/state: Git e Claude disponíveis (comandos injetados) e co
   const st = await (await s.call('GET', '/api/state')).json();
   assert.deepEqual(Object.keys(st.prereqs).sort(), ['claude', 'git', 'login']); // login entrou depois, de forma aditiva
   assert.deepEqual(st.prereqs.git, { available: true, version: '9.9.9.windows.1', detail: 'Git detectado.' });
-  assert.equal(st.prereqs.claude.available, true); assert.equal(st.prereqs.claude.version, '0.0.0-fake (teste)'); assert.equal(typeof st.prereqs.claude.detail, 'string');
-  assert.ok(st.executor && st.planner && st.counts && st.settings && st.persistence, 'campos existentes continuam lá');
-  assert.equal(st.executor.connected, true);
+  assert.deepEqual(st.prereqs.claude, { available: true, version: '0.0.0-fake (teste)', detail: 'Claude Code detectado.' });
+  assert.ok(st.executor && st.settings && st.persistence && st.worktrees, 'campos existentes continuam lá');
+  // `executor` mantém o shape de sonda: id/connected + o resultado da sonda (claude-probe.js) espalhado (sem busy/current: o executor do ciclo antigo foi removido)
+  assert.deepEqual(st.executor, { id: 'claude-code', connected: true, available: true, version: '0.0.0-fake (teste)', detail: 'Claude Code detectado e pronto para executar tarefas autorizadas' });
+  const fresh = await (await s.call('GET', '/api/state?fresh=1')).json(); // "Verificar novamente" consulta a sonda de novo e devolve o mesmo contrato
+  assert.deepEqual(fresh.prereqs.claude, st.prereqs.claude); assert.deepEqual(fresh.executor, st.executor);
+});
+
+test('contrato de /api/state sem o ciclo antigo: só os campos vivos; /api/missions e /api/chat respondem 404 (GET e POST com Origin)', async () => {
+  const s = await boot();
+  const st = await (await s.call('GET', '/api/state')).json();
+  for (const k of ['planner', 'counts', 'system', 'missions', 'tasks', 'cycle', 'chat', 'limits', 'usage', 'demo']) assert.equal(k in st, false, `/api/state não devolve mais "${k}"`);
+  for (const k of ['prereqs', 'executor', 'persistence', 'persistenceIncident', 'settings', 'worktrees', 'activeWorkspace', 'openWorkspaceIds', 'topics', 'activeTopicIds']) assert.equal(k in st, true, `/api/state mantém "${k}"`);
+  assert.deepEqual(Object.keys(st.worktrees).sort(), ['items', 'unregistered']);
+  for (const p of ['/api/missions', '/api/missions/m1', '/api/chat', '/api/chat/message', '/api/events']) {
+    for (const method of ['GET', 'POST']) assert.equal((await s.call(method, p, method === 'POST' ? {} : undefined)).status, 404, `${method} ${p}`);
+  }
 });
 
 test('prereqs em /api/state: Git ausente traz a mensagem de instalação e disponível=false', async () => {
@@ -67,38 +82,33 @@ test('prereqs em /api/state: Git ausente traz a mensagem de instalação e dispo
   assert.equal(st.prereqs.claude.available, true);
 });
 
-test('missão e tarefa: gravação que falha desfaz o estado em memória (500 e nada alterado); sem falha tudo funciona', async () => {
+test('missões (Missions v2, /api/flows): gravação que falha desfaz o estado em memória (500 e nada alterado); sem falha tudo funciona', async () => {
   const s = await boot();
-  const list = async () => (await (await s.call('GET', '/api/missions')).json());
-  const m = await (await s.call('POST', '/api/missions', { title: 'Missão A' })).json();
-  const t1 = await (await s.call('POST', `/api/missions/${m.id}/tasks`, { title: 'T1' })).json();
-  const t2 = await (await s.call('POST', `/api/missions/${m.id}/tasks`, { title: 'T2', dependsOn: [t1.id] })).json();
-  assert.deepEqual(t2.dependsOn, [t1.id]);
+  const wsDir = path.join(s.dir, 'ws'); fs.mkdirSync(wsDir);
+  const ws = await (await s.call('POST', '/api/workspaces', { path: wsDir })).json(); assert.ok(ws.id);
+  const body = (title) => ({ workspaceId: ws.id, title, goal: 'Meta de teste', steps: [{ id: 's1', title: 'Etapa s1', prompt: 'Faça s1', provider: 'claude', role: 'builder' }] });
+  const list = async () => (await (await s.call('GET', '/api/flows')).json());
+  let r = await s.call('POST', '/api/flows', body('Missão A')); assert.equal(r.status, 201);
+  const a = await r.json();
   const tmpDir = path.join(s.dir, 'db.json.tmp');
   fs.mkdirSync(tmpDir); // EISDIR: o save() falha de verdade
   try {
-    // criar missão
-    let r = await s.call('POST', '/api/missions', { title: 'Missão B' });
+    // criar
+    r = await s.call('POST', '/api/flows', body('Missão B'));
     assert.equal(r.status, 500); assert.match((await r.json()).error, /nada foi alterado/);
     assert.deepEqual((await list()).map((x) => x.title), ['Missão A']);
-    // criar tarefa
-    r = await s.call('POST', `/api/missions/${m.id}/tasks`, { title: 'T3' });
-    assert.equal(r.status, 500);
-    assert.deepEqual((await list())[0].tasks.map((t) => t.title), ['T1', 'T2']);
-    // remover tarefa (T1: T2 depende dela; a dependência precisa voltar)
-    r = await s.call('DELETE', `/api/missions/${m.id}/tasks/${t1.id}`);
-    assert.equal(r.status, 500);
-    const after1 = (await list())[0].tasks;
-    assert.deepEqual(after1.map((t) => t.title), ['T1', 'T2']); assert.deepEqual(after1[1].dependsOn, [t1.id]);
-    // remover missão
-    r = await s.call('DELETE', `/api/missions/${m.id}`);
-    assert.equal(r.status, 500);
+    // alterar
+    r = await s.call('PATCH', `/api/flows/${a.id}`, { title: 'Missão A2' });
+    assert.equal(r.status, 500); assert.match((await r.json()).error, /nada foi alterado/);
+    assert.deepEqual((await list()).map((x) => x.title), ['Missão A']);
+    // remover
+    r = await s.call('DELETE', `/api/flows/${a.id}`);
+    assert.equal(r.status, 500); assert.match((await r.json()).error, /nada foi alterado/);
     assert.equal((await list()).length, 1);
   } finally { fs.rmSync(tmpDir, { recursive: true, force: true }); }
   // armazenamento normalizado: as mesmas operações funcionam
-  assert.equal((await s.call('DELETE', `/api/missions/${m.id}/tasks/${t1.id}`)).status, 204);
-  assert.deepEqual((await list())[0].tasks.map((t) => [t.title, t.dependsOn.length]), [['T2', 0]]);
-  assert.equal((await s.call('POST', '/api/missions', { title: 'Missão C' })).status, 201);
-  assert.equal((await s.call('DELETE', `/api/missions/${m.id}`)).status, 204);
+  r = await s.call('PATCH', `/api/flows/${a.id}`, { title: 'Missão A2' }); assert.equal(r.status, 200); assert.equal((await r.json()).title, 'Missão A2');
+  assert.equal((await s.call('POST', '/api/flows', body('Missão C'))).status, 201);
+  assert.equal((await s.call('DELETE', `/api/flows/${a.id}`)).status, 204);
   assert.deepEqual((await list()).map((x) => x.title), ['Missão C']);
 });

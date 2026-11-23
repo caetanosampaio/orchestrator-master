@@ -79,7 +79,7 @@ test('vermelhos mais escuros e terminais sem cor por papel: nenhum vermelho vivo
   const hexOf = (n) => new RegExp(`${n}: (#[0-9a-f]{6})`, 'i').exec(tok)[1], bright = (h) => 0.299 * parseInt(h.slice(1, 3), 16) + 0.587 * parseInt(h.slice(3, 5), 16) + 0.114 * parseInt(h.slice(5, 7), 16);
   assert.ok(bright(hexOf('--brand')) < bright('#ef4444') - 45, 'a marca virou vinho/sangue'); assert.ok(bright(hexOf('--bone')) < bright('#dc2626') - 30); assert.ok(bright(hexOf('--brand-soft')) > bright(hexOf('--brand')), 'ícones e texto em vermelho um pouco mais claros que os fundos');
   assert.ok((lum(hexOf('--err')) + 0.05) / (lum('#0a0a0a') + 0.05) >= 4.5, 'o vermelho de texto continua legível (AA)');
-  for (const f of ['missions.css', 'missions-workflow.css', 'overclock.css', 'oc.css', 'retro.css', 'shell.css', 'teams.css']) assert.ok(!/#ef4444|#dc2626|rgba\(239, ?68, ?68/i.test(src(f)), `${f} ainda tem o vermelho vivo`);
+  for (const f of ['missions-workflow.css', 'overclock.css', 'oc.css', 'retro.css', 'shell.css', 'teams.css']) assert.ok(!/#ef4444|#dc2626|rgba\(239, ?68, ?68/i.test(src(f)), `${f} ainda tem o vermelho vivo`);
   assert.match(css, /\.oc-app \.oc-pane \{ border: 1px solid var\(--pane-line\) !important; box-shadow: none !important; \}/); assert.match(css, /--pane-line: #4f171c/, 'a borda dos terminais em vinho escuro');
   assert.ok(!/'--role'/.test(grid.slice(grid.indexOf('<section className={`oc-pane'), grid.indexOf('<header className="oc-ph">'))), 'o terminal não leva mais a cor do papel');
   assert.ok(!/\.oc-app \.oc-prole[^}]*--role/.test(css), 'a etiqueta do papel não usa a cor do papel');

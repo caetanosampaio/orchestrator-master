@@ -10,8 +10,7 @@ const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'orch-a
 process.env.ORCH_DATA_DIR = path.join(tmp, 'data');
 const { acquireInstanceLock, lockPathFor } = await import('../instance-lock.js');
 const { createTerminalManager } = await import('../terminals.js');
-const { createExecutor } = await import('../executor/index.js');
-const { executorArgs } = await import('../exec-profile.js');
+const { createClaudeProbe } = await import('../claude-probe.js');
 const { createGitProbe, GIT_MISSING } = await import('../prereqs.js');
 const realPath = process.env.PATH ?? process.env.Path;
 after(() => { process.env.PATH = realPath; fs.rmSync(tmp, { recursive: true, force: true }); });
@@ -69,11 +68,11 @@ test('boot do gerenciador de terminais: registros "running" viram "interrupted" 
 test('probe: chamadas simultâneas compartilham UMA execução de `--version` e o cache de 15 s continua valendo', async () => {
   const counter = path.join(tmp, 'count.txt'), script = path.join(tmp, 'ver.mjs');
   fs.writeFileSync(script, `import fs from 'node:fs'; fs.appendFileSync(${JSON.stringify(counter)}, 'x'); setTimeout(() => console.log('1.2.3 (fake)'), 300);`);
-  const ex = createExecutor({ command: process.execPath, prefixArgs: [script], args: [] });
-  const [a, b, c] = await Promise.all([ex.probe(), ex.probe(), ex.probe()]);
+  const probe = createClaudeProbe({ command: process.execPath, prefixArgs: [script] });
+  const [a, b, c] = await Promise.all([probe(), probe(), probe()]);
   assert.equal(fs.readFileSync(counter, 'utf8').length, 1, 'uma única chamada');
   assert.deepEqual([a.available, a.version], [true, '1.2.3 (fake)']); assert.equal(a, b); assert.equal(b, c);
-  await ex.probe(); assert.equal(fs.readFileSync(counter, 'utf8').length, 1, 'cache de 15 s');
+  await probe(); assert.equal(fs.readFileSync(counter, 'utf8').length, 1, 'cache de 15 s');
 });
 
 test('probe de Git: ausente = mensagem de instalação; presente = versão; chamadas simultâneas deduplicadas', async () => {
@@ -87,37 +86,29 @@ test('probe de Git: ausente = mensagem de instalação; presente = versão; cham
 });
 
 // ---------- tarefa 2: claude.cmd (só Windows) ----------
-test('claude.cmd no PATH (Windows): probe e execução funcionam; só argumentos da lista permitida chegam ao argv; prompt por stdin; argumento perigoso é recusado', { skip: process.platform !== 'win32' }, async () => {
+// Claude falso como wrapper `claude.cmd` numa pasta COM ESPAÇO, posta no início do PATH (o after() restaura o PATH). Criado uma vez e compartilhado pelos dois testes abaixo.
+const cmdFiles = { argsFile: path.join(tmp, 'argv.json'), stdinFile: path.join(tmp, 'stdin.txt'), pwned: path.join(tmp, 'PWNED.txt') };
+let cmdReady = false;
+function installFakeClaudeCmd() {
+  if (cmdReady) return cmdFiles;
   const dir = path.join(tmp, 'bin com espaco'); fs.mkdirSync(dir);
-  const argsFile = path.join(tmp, 'argv.json'), stdinFile = path.join(tmp, 'stdin.txt'), pwned = path.join(tmp, 'PWNED.txt');
   const script = path.join(dir, 'fake.mjs');
   fs.writeFileSync(script, `import fs from 'node:fs';
 const a = process.argv.slice(2);
 if (a.includes('--version')) { console.log('7.7.7 (Claude Code fake)'); process.exit(0); }
 let input = ''; process.stdin.setEncoding('utf8'); process.stdin.on('data', (c) => (input += c));
-process.stdin.on('end', () => { fs.writeFileSync(${JSON.stringify(argsFile)}, JSON.stringify(a)); fs.writeFileSync(${JSON.stringify(stdinFile)}, input);
+process.stdin.on('end', () => { fs.writeFileSync(${JSON.stringify(cmdFiles.argsFile)}, JSON.stringify(a)); fs.writeFileSync(${JSON.stringify(cmdFiles.stdinFile)}, input);
   console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: 'ok' })); });`);
   fs.writeFileSync(path.join(dir, 'claude.cmd'), `@echo off\r\n"${process.execPath}" "${script}" %*\r\n`);
   process.env.PATH = `${dir}${path.delimiter}${realPath}`;
-  const ex = createExecutor(); // padrão: resolve como os terminais
-  const p = await ex.probe();
-  assert.deepEqual([p.available, p.version], [true, '7.7.7 (Claude Code fake)']);
+  cmdReady = true;
+  return cmdFiles;
+}
 
-  const prompt = 'Tarefa com & | " ^ % <> caracteres especiais no prompt';
-  const h = ex.start({ missionId: 'm', taskId: 't', cwd: tmp, prompt, onLine: () => {} });
-  const r = await h.done;
-  assert.equal(r.status, 'completed', r.error);
-  // O perfil padrão leva regras `Bash(npm test:*)` (parênteses, espaço e asterisco): no wrapper .cmd elas só passam ENTRE ASPAS DUPLAS (claude-cli.js) e chegam inteiras ao argv.
-  assert.deepEqual(JSON.parse(fs.readFileSync(argsFile, 'utf8')), executorArgs('default'), 'o argv do createExecutor() padrão é exatamente o do perfil padrão (executorArgs)');
-  assert.equal(fs.readFileSync(stdinFile, 'utf8'), prompt, 'o prompt vai por stdin, intacto');
-
-  // modelo/esforço do Planner (valores válidos) passam; qualquer coisa fora da lista permitida é recusada ANTES de iniciar
-  const ok = ex.start({ missionId: 'm', taskId: 't', cwd: tmp, prompt: 'x', onLine: () => {}, args: ['-p', '--model', 'claude-opus-4[1m]', '--effort', 'high'] });
-  assert.equal((await ok.done).status, 'completed');
-  assert.deepEqual(JSON.parse(fs.readFileSync(argsFile, 'utf8')), ['-p', '--model', 'claude-opus-4[1m]', '--effort', 'high']);
-  for (const evil of ['x&echo>' + pwned, 'x|echo', 'a b', '"x"', 'x^y', '%PATH%', 'x\nwhoami', '$(x)', ';x']) {
-    assert.throws(() => ex.start({ missionId: 'm', taskId: 't', cwd: tmp, prompt: 'x', onLine: () => {}, args: ['-p', '--model', evil] }), TypeError, JSON.stringify(evil));
-  }
-  assert.equal(fs.existsSync(pwned), false, 'nada foi interpretado pelo cmd.exe');
-  assert.equal(ex.isBusy(), false, 'a recusa não deixa o executor ocupado');
+test('claude.cmd no PATH (Windows): a sonda padrão (claude-probe.js, resolve como os terminais) detecta a versão', { skip: process.platform !== 'win32' }, async () => {
+  installFakeClaudeCmd();
+  const probe = createClaudeProbe(); // padrão: resolve como os terminais
+  const p = await probe();
+  assert.deepEqual(p, { available: true, version: '7.7.7 (Claude Code fake)', detail: 'Claude Code detectado e pronto para executar tarefas autorizadas' });
+  assert.equal(probe.cachedAvailability(), true);
 });

@@ -1,5 +1,5 @@
-// Marco C — servidor REAL (server/index.js via orchestration-boot.mjs) em processo filho, SEMPRE com ORCH_DATA_DIR temporário e porta livre: configuração, estado e rotas de worktrees.
-// Executor = CLI falsa; nada de modelo. O servidor da 4317 e data/db.json não são tocados.
+// Marco C — servidor REAL (server/index.js via audit-server-boot.mjs, sonda do Claude falsa) em processo filho, SEMPRE com ORCH_DATA_DIR temporário e porta livre: estado e rotas de worktrees.
+// Nada de modelo. O servidor da 4317 e data/db.json não são tocados. (O teste de isolamento por /api/settings saiu com o ciclo antigo.)
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
@@ -10,13 +10,11 @@ import { spawn, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const BOOT = path.join(here, 'orchestration-boot.mjs');
-const REAL_DB = path.resolve(here, '..', '..', 'data', 'db.json');
+const BOOT = path.join(here, 'audit-server-boot.mjs');
 const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'orch-wt-api-')));
 const children = new Set();
 after(async () => { for (const c of children) { try { c.kill(); } catch { /* já encerrado */ } } await new Promise((r) => setTimeout(r, 300)); fs.rmSync(root, { recursive: true, force: true }); });
 const freePort = () => new Promise((resolve) => { const s = net.createServer().listen(0, '127.0.0.1', () => { const { port } = s.address(); s.close(() => resolve(port)); }); });
-const stat = () => (fs.existsSync(REAL_DB) ? `${fs.statSync(REAL_DB).mtimeMs}:${fs.statSync(REAL_DB).size}` : 'ausente');
 const ORIGIN = 'http://localhost:5173';
 let n = 0;
 async function boot(data, env = {}) {
@@ -33,24 +31,6 @@ async function call(b, p, { method = 'GET', body, origin = method === 'GET' ? un
   return { status: res.status, json: await res.json().catch(() => null) };
 }
 const world = () => { const dir = path.join(root, `w${++n}`); fs.mkdirSync(dir); return dir; };
-
-test('configuração e estado: padrão DESLIGADO; entrada inválida = 400; Origin obrigatório; ambiente trava o campo; valor gravado sobrevive ao reinício', async () => {
-  const realBefore = stat(), data = world(); let b = await up(data);
-  try {
-    const st = (await call(b, '/api/state')).json; assert.deepEqual(st.worktrees, { isolation: { enabled: false, source: 'default' }, items: [], unregistered: [] });
-    for (const body of [{ worktreeIsolation: 'on' }, { worktreeIsolation: 1 }, { worktreeIsolation: null }]) { const r = await call(b, '/api/settings', { method: 'PUT', body }); assert.equal(r.status, 400, JSON.stringify(body)); assert.match(r.json.error, /worktreeIsolation/); }
-    assert.equal((await call(b, '/api/settings', { method: 'PUT', body: { worktreeIsolation: true }, origin: 'http://evil.example' })).status, 403);
-    assert.equal((await call(b, '/api/state')).json.worktrees.isolation.enabled, false, 'nada foi aplicado');
-    assert.equal((await call(b, '/api/settings', { method: 'PUT', body: { worktreeIsolation: true } })).status, 200);
-    assert.deepEqual((await call(b, '/api/state')).json.worktrees.isolation, { enabled: true, source: 'settings' });
-    await stop(b); b = await up(data); assert.deepEqual((await call(b, '/api/state')).json.worktrees.isolation, { enabled: true, source: 'settings' }, 'persistido');
-    await stop(b); b = await up(data, { ORCH_WORKTREE_ISOLATION: 'off' }); assert.deepEqual((await call(b, '/api/state')).json.worktrees.isolation, { enabled: false, source: 'env' });
-    const locked = await call(b, '/api/settings', { method: 'PUT', body: { worktreeIsolation: true } }); assert.equal(locked.status, 409); assert.match(locked.json.error, /worktreeIsolation/);
-  } finally { await stop(b); }
-  const bad = await boot(world(), { ORCH_WORKTREE_ISOLATION: 'talvez' }); const code = await Promise.race([bad.exited, new Promise((r) => setTimeout(() => r('preso'), 15000))]);
-  assert.notEqual(code, 'preso'); assert.notEqual(code, 0); assert.match(bad.out(), /ORCH_WORKTREE_ISOLATION/);
-  assert.equal(stat(), realBefore, 'o banco real não foi tocado');
-});
 
 test('rotas de worktrees pelo servidor real: vazio, 404, Origin obrigatório nas mutações e nenhuma rota destrutiva/forçada', async () => {
   const data = world(), b = await up(data);
@@ -75,7 +55,7 @@ test('RECUPERAÇÃO no boot do servidor real: registro com operação inacabada 
   b = await up(data);
   try {
     const items = (await call(b, '/api/state')).json.worktrees.items; assert.deepEqual(items.map((x) => [x.id, x.state, x.op]), [['wt_aaaaaaaa', 'failed', null]]); assert.ok(items[0].history.some((h) => h.event === 'create_interrupted_nothing_created'));
-    assert.equal((await call(b, '/api/missions')).json.filter((m) => m.cycle).length, 0, 'nenhuma missão foi relançada'); assert.equal(G('branch', '--list', 'orch/*'), '');
+    assert.equal(G('branch', '--list', 'orch/*'), '', 'nada foi criado nem relançado');
   } finally { await stop(b); }
   const after = JSON.parse(fs.readFileSync(file, 'utf8')); assert.equal(after.worktrees[0].state, 'failed', 'gravado');
 });

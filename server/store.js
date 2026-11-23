@@ -3,7 +3,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
-import { buildDemoMissions } from './demo.js';
 
 // ORCH_DATA_DIR só serve para os testes isolarem o banco; não afeta o que é executado.
 const DATA_DIR = process.env.ORCH_DATA_DIR || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'data');
@@ -20,9 +19,8 @@ function initial() {
     settings: { activeWorkspaceId: null, openWorkspaceIds: [], activeTopicIds: {}, requireApproval: true, showDemoData: false },
     workspaces: [],
     topics: [],
-    missions: buildDemoMissions(),
     activity: [],
-    flows: [], // Missions v2 (flows.js): definições de missão e execuções; o db.missions legado não é tocado
+    flows: [], // Missions v2 (flows.js): definições de missão e execuções. Banco novo não tem `missions` (ciclo antigo removido); num banco antigo o campo fica intacto e inerte
     flowRuns: [],
   };
 }
@@ -92,20 +90,18 @@ export function sanitizeTerminalSessions(d) {
 }
 
 /**
- * Estrutura MÍNIMA que o servidor usa logo no boot e nas rotas (initial(), setupExecution, recover, store.log): nada além disso é exigido,
+ * Estrutura MÍNIMA que o servidor usa logo no boot e nas rotas (initial(), recover, store.log): nada além disso é exigido,
  * para não rejeitar bancos antigos legítimos. Devolve o motivo da rejeição ou null.
+ * `missions` (ciclo antigo, removido) é OPCIONAL: banco novo não o tem; num banco antigo continua tendo de ser uma lista e é mantido intacto (nenhuma migração).
  */
 export function validateDb(d) {
   if (!isObj(d)) return 'a raiz não é um objeto';
   if (!isObj(d.settings)) return '"settings" ausente ou inválido';
-  for (const k of ['workspaces', 'missions', 'activity']) if (!Array.isArray(d[k])) return `"${k}" ausente ou não é uma lista`;
+  for (const k of ['workspaces', 'activity']) if (!Array.isArray(d[k])) return `"${k}" ausente ou não é uma lista`;
+  if (d.missions !== undefined && !Array.isArray(d.missions)) return '"missions" não é uma lista';
+  if (d.missions?.some((m) => !isObj(m) || typeof m.id !== 'string')) return 'há missão sem id'; // worktrees.js ainda procura a missão antiga de um worktree pelo id
   if (d.workspaces.some((w) => !isObj(w) || typeof w.id !== 'string' || typeof w.path !== 'string')) return 'há workspace sem id/path';
   if (d.worktrees !== undefined && (!Array.isArray(d.worktrees) || d.worktrees.some((w) => !isObj(w) || typeof w.id !== 'string'))) return '"worktrees" inválido';
-  for (const m of d.missions) {
-    if (!isObj(m) || typeof m.id !== 'string' || !Array.isArray(m.tasks)) return 'há missão sem id ou sem lista de tarefas';
-    if (m.tasks.some((t) => !isObj(t))) return `a missão ${m.id} tem tarefa inválida`;
-    if (m.cycle != null && (!isObj(m.cycle) || !Array.isArray(m.cycle.rounds))) return `o ciclo da missão ${m.id} não tem a lista de rodadas`;
-  }
   return null;
 }
 
@@ -173,7 +169,7 @@ export function load() {
   if (!main.missing) { kept.push(preserve(DB_FILE, 'db.json')); fs.rmSync(DB_FILE, { force: true }); }
   for (const x of alts) if (x.reason) kept.push(preserve(x.file, path.basename(x.file)));
   db = initial();
-  log('system', `RECUPERAÇÃO DEGRADADA: nenhuma cópia válida do banco (${problems.join('; ')}). Foi iniciado um banco novo (com missões de demonstração); os arquivos originais foram preservados: ${kept.map((f) => path.basename(f)).join(', ')}.`, { recovery: 'degraded' });
+  log('system', `RECUPERAÇÃO DEGRADADA: nenhuma cópia válida do banco (${problems.join('; ')}). Foi iniciado um banco novo; os arquivos originais foram preservados: ${kept.map((f) => path.basename(f)).join(', ')}.`, { recovery: 'degraded' });
   console.error('[store] RECUPERAÇÃO DEGRADADA: banco novo iniciado; veja os arquivos .corrupt-*');
   save();
   return db;

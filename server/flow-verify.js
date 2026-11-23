@@ -14,7 +14,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { git, redactSecrets } from './worktrees.js';
-import { resolveNpmCli } from './verify.js';
+import { resolveNpmCli } from './npm-cli.js';
 import { killTree } from './proc.js';
 
 export const VERIFY_MAX_ARGS = 16;

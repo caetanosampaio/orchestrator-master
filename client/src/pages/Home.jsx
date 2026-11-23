@@ -185,17 +185,17 @@ function WorkspaceColumn({ recents, count, query, setQuery, envOf, onOpenWorkspa
 
 /**
  * Página Início (a de abertura do app): cabeçalho com o Forjador, faixa CONTINUAR, atividade de tokens por provider e a coluna de workspaces.
- * Tudo vem do servidor (workspaces, atividade, terminais, missões e /api/provider-activity); sem dado, a tela diz isso em vez de preencher.
+ * Tudo vem do servidor (workspaces, atividade, terminais e /api/provider-activity); sem dado, a tela diz isso em vez de preencher.
  */
-export default function Home({ onOpenWorkspaces, onOpenWorkspace, missions = null }) {
+export default function Home({ onOpenWorkspaces, onOpenWorkspace }) {
   const { workspaces, activity, terminals, topics, activeTopicIds, state, workingIds, maestro } = useStore();
   const [query, setQuery] = useState('');
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 30_000); return () => clearInterval(t); }, []); // "há 39 min" anda sozinho
-  const sessions = terminals?.sessions ?? [], ms = Array.isArray(missions) ? missions : [];
-  const base = { workspaces, activity, sessions, missions: ms, topics, now };
-  const recents = useMemo(() => recentWorkspaces({ ...base, query }), [workspaces, activity, terminals, missions, topics, query, now]); // eslint-disable-line react-hooks/exhaustive-deps
-  const cont = useMemo(() => continueTarget({ ...base, activeTopicIds }), [workspaces, activity, terminals, missions, topics, activeTopicIds, now]); // eslint-disable-line react-hooks/exhaustive-deps
+  const sessions = terminals?.sessions ?? [];
+  const base = { workspaces, activity, sessions, topics, now };
+  const recents = useMemo(() => recentWorkspaces({ ...base, query }), [workspaces, activity, terminals, topics, query, now]); // eslint-disable-line react-hooks/exhaustive-deps
+  const cont = useMemo(() => continueTarget({ ...base, activeTopicIds }), [workspaces, activity, terminals, topics, activeTopicIds, now]); // eslint-disable-line react-hooks/exhaustive-deps
   const envOf = useMemo(() => new Map(environments({ workspaces, sessions, activeId: state?.activeWorkspace?.id ?? null, workingIds, maestroTasks: maestro?.tasks ?? [] }).map((e) => [e.id, e])), [workspaces, terminals, state, workingIds, maestro]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (

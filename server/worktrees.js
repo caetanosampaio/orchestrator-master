@@ -15,7 +15,7 @@ import os from 'node:os';
 import path from 'node:path';
 import * as store from './store.js';
 import { asyncRoute } from './async-route.js';
-import { resolveNpmCli } from './verify.js';
+import { resolveNpmCli } from './npm-cli.js';
 import { killTreeSync, waitGone } from './orphans.js';
 
 // ---------- configuração (ambiente > configurações > padrão DESLIGADO) ----------

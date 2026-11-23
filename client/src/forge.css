@@ -170,7 +170,6 @@ body.fx-resizing iframe { pointer-events: none; }
 .fx-ws:hover .fx-ws-pen, .fx-ws-pen:focus-visible { opacity: 1; }
 .fx-ws-sub { display: flex; align-items: center; gap: 6px; min-height: 16px; padding: 0 8px 0 30px; color: var(--faint); font: 400 11.5px var(--mono); }
 .fx-ws-sub > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fx-ws-sub .pp-sideseal { margin-left: auto; }
 .fx-new { width: 6px; height: 6px; border-radius: 50%; background: var(--st-ok); flex: none; animation: fx-pop .3s var(--ease) both; }
 .fx-new.err { background: var(--st-err); }
 .fx-terms { list-style: none; margin: 4px 0 0; padding: 0 4px 0 18px; display: flex; flex-direction: column; gap: 1px; }
@@ -431,10 +430,10 @@ button.fx-sb-i:hover { background: rgba(255, 255, 255, .07); color: var(--strong
 .ep-chips button.on { background: rgba(255, 255, 255, .09) !important; border-color: rgba(255, 255, 255, .28) !important; color: var(--strong) !important; }
 .ep-chips button i { border-radius: 4px !important; transition: background-color var(--dur-1) ease, border-color var(--dur-1) ease; }
 .ep-chips button.on i { background: var(--bone) !important; border-color: var(--bone) !important; color: var(--ink) !important; }
-.set-body select, .set-body input[type="text"], .set-body input:not([type]), .set-body textarea, .ep-select select, .ep-input, .mi-form input:not([type="checkbox"]), .mi-form textarea, .mi-form select, .fl-form input:not([type="checkbox"]), .fl-form textarea, .fl-form select, .mb-compose textarea, .mb-field textarea, .mi-live-url {
+.set-body select, .set-body input[type="text"], .set-body input:not([type]), .set-body textarea, .ep-select select, .ep-input, .fl-form input:not([type="checkbox"]), .fl-form textarea, .fl-form select {
   border-radius: 6px !important; border: 1px solid var(--line-strong) !important; background-color: var(--field) !important; color: var(--strong) !important; font-family: var(--sans) !important; transition: border-color var(--dur-1) ease, background-color var(--dur-1) ease !important; }
-.set-body select:hover, .set-body input[type="text"]:hover, .ep-select select:hover, .mi-form select:hover, .fl-form select:hover { border-color: rgba(255, 255, 255, .22) !important; }
-.set-body select:focus-visible, .set-body input:focus-visible, .set-body textarea:focus-visible, .ep-select select:focus-visible, .ep-input:focus-visible, .mi-form :focus-visible, .fl-form :focus-visible, .mb-compose textarea:focus-visible, .mb-field textarea:focus-visible {
+.set-body select:hover, .set-body input[type="text"]:hover, .ep-select select:hover, .fl-form select:hover { border-color: rgba(255, 255, 255, .22) !important; }
+.set-body select:focus-visible, .set-body input:focus-visible, .set-body textarea:focus-visible, .ep-select select:focus-visible, .ep-input:focus-visible, .fl-form :focus-visible {
   outline: none !important; border-color: rgba(255, 255, 255, .4) !important; box-shadow: 0 0 0 3px rgba(255, 255, 255, .07) !important; }
 .fx-app input[type="range"] { accent-color: var(--bone); }
 .fx-app input[type="checkbox"]:not([role="switch"]) { accent-color: var(--bone); }
@@ -469,13 +468,13 @@ button.fx-sb-i:hover { background: rgba(255, 255, 255, .07); color: var(--strong
 .fx-app .hm-scroll { background: var(--surface); }
 .fx-app .fx-cockpit .oc-noteams { background: var(--card) !important; border: 1px solid var(--line) !important; border-radius: var(--r-4) !important; box-shadow: none !important; }
 /* Missões e Flows: grafite, sem preto chapado; workflow em sans */
-.fx-app .mi-side, .fx-app .fl-side { background: var(--side) !important; }
-.fx-app .mi-main, .fx-app .fl-main, .fx-app .mwf { background: var(--surface) !important; }
-.fx-app .mi-btn, .fx-app .fl-btn { border-radius: var(--r-2) !important; font-family: var(--sans) !important; letter-spacing: 0 !important; text-transform: none !important; transition: var(--t-color), transform var(--dur-1) var(--ease) !important; }
-.fx-app .mi-btn:active:not(:disabled), .fx-app .fl-btn:active:not(:disabled) { transform: scale(.97); }
-.fx-app .mi-row, .fx-app .fl-row { border-radius: var(--r-2); transition: var(--t-color); }
-.fx-app .mi-row.on, .fx-app .fl-row.on { background: rgba(255, 255, 255, .08) !important; }
-.fx-app .mwf-node, .fx-app .mb-card { border-radius: var(--r-3) !important; }
+.fx-app .fl-side { background: var(--side) !important; }
+.fx-app .fl-main, .fx-app .mwf { background: var(--surface) !important; }
+.fx-app .fl-btn { border-radius: var(--r-2) !important; font-family: var(--sans) !important; letter-spacing: 0 !important; text-transform: none !important; transition: var(--t-color), transform var(--dur-1) var(--ease) !important; }
+.fx-app .fl-btn:active:not(:disabled) { transform: scale(.97); }
+.fx-app .fl-row { border-radius: var(--r-2); transition: var(--t-color); }
+.fx-app .fl-row.on { background: rgba(255, 255, 255, .08) !important; }
+.fx-app .mwf-node { border-radius: var(--r-3) !important; }
 
 /* ======================================================================= 9d. setup do primeiro uso (a forja animada + os passos) */
 .fx-setup { position: fixed; inset: 0; z-index: 70; display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(380px, 1fr); background: var(--surface); color: var(--text); font-family: var(--sans); animation: fx-fade .4s ease both; }
