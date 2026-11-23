@@ -265,7 +265,7 @@ export function DiscardDialog({ info, busy, onConfirm, onClose }) {
  * Os textos dos commits vêm do Git (o React escapa). Commits locais anteriores à missão aparecem com aviso: iriam junto.
  */
 // avisos que o envio MANUAL aceita com a sua confirmação (o servidor, flow-push.js USER_OK, é quem decide; aqui só separa aviso de impedimento)
-const PUSH_WARN = new Set(['local_unpushed', 'foreign_commits', 'target_changed', 'target_unknown', 'unsafe_config']);
+const PUSH_WARN = new Set(['local_unpushed', 'foreign_commits', 'target_unknown']);
 export function PushDialog({ dlg, busy, onConfirm, onClose }) {
   const p = dlg?.preview ?? null, reasons = Array.isArray(p?.reasons) ? p.reasons : [];
   const warns = reasons.filter((r) => PUSH_WARN.has(r.code)), blocking = reasons.filter((r) => !PUSH_WARN.has(r.code));
