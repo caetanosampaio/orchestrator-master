@@ -289,6 +289,10 @@
 .fl-prop-swap .dim { color: var(--fl-mute-2); }
 .fl-foot-left { margin-right: auto; }
 .fl-brief-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+/* Contas da missão (FlowForm > AccountsPicker) */
+.fl-acc-row { display: grid; grid-template-columns: minmax(120px, auto) minmax(0, 1fr); align-items: center; gap: 4px 10px; }
+.fl-acc-row > .dim, .fl-acc-row > .fl-hint { grid-column: 2; }
+.fl-acc-p { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
 .fl-dock-tab.is-planner { font-weight: 600; }
 @media (max-width: 900px) { .fl-props { padding: 0 16px; } .fl-brief-grid { grid-template-columns: minmax(0, 1fr); } }
 

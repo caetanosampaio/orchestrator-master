@@ -27,7 +27,7 @@ const readSeen = () => { try { const v = JSON.parse(sessionStorage.getItem(SEEN_
  */
 export default function Missions({ onOpenCockpit, data, stream = null, onBack = null, backLabel = 'Início', narrow = false, side = null }) { // side: navegação da barra (o mesmo desenho da do Cockpit)
   const { flows, failure, refresh, actions, proposals } = data; // o App mantém um único polling de /api/flows (também usado pelo indicador da barra lateral); as propostas vêm junto
-  const { workspaces, state, terminals, notify, loadTerminals, accounts } = useStore();
+  const { workspaces, state, terminals, notify, loadTerminals, accounts, loadAccounts } = useStore();
   const [selectedId, setSelectedId] = useState(readSel), [nodeId, setNodeId] = useState(null);
   // null | { mode: 'create' } | { mode: 'create', proposal, key } (proposta do Planejador) | { mode: 'edit', flow } | { mode: 'schedule', flow } (só agenda/integração, com run ativo);
   // todos com `seenAtOpen` (propostas já vistas ao abrir; ver openForm)
@@ -81,7 +81,7 @@ export default function Missions({ onOpenCockpit, data, stream = null, onBack = 
   const onStart = () => {
     if (!flow) return undefined;
     if (flow.fullAccess === true && !window.confirm(`A missão “${flow.title}” roda com ACESSO TOTAL: os agentes executam sem pedir confirmação e podem editar arquivos e rodar comandos no seu computador. Iniciar?`)) return undefined;
-    return run_('start', () => actions.start(flow.id), 'Missão iniciada.');
+    return run_('start', async () => { try { return await actions.start(flow.id); } finally { loadAccounts?.(); } }, 'Missão iniciada.'); // o servidor lembra a conta usada: relê para a pré-seleção
   };
   const onCancel = () => {
     if (!flow || !active || !window.confirm('Cancelar a missão? As etapas em andamento são interrompidas e os terminais abertos por esta execução são fechados.')) return undefined;
@@ -215,7 +215,7 @@ export default function Missions({ onOpenCockpit, data, stream = null, onBack = 
     setBriefing(false); // o diálogo desmonta aqui: nada do que vem depois pode lançar de volta para ele
     try {
       const id = typeof r?.terminalId === 'string' ? r.terminalId : typeof r?.session?.id === 'string' ? r.session.id : null;
-      await loadTerminals?.();
+      await loadTerminals?.(); loadAccounts?.();
       if (id) setDockWanted(id);
       setDockOpen(true);
       notify('Planejador aberto. Escreva o que você quer no terminal abaixo; quando a proposta chegar, ela aparece para você revisar.');

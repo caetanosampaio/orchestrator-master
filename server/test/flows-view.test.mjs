@@ -269,7 +269,7 @@ test('corpo da API: ids s1..sN, vazio vira null, fullAccess só booleano estrito
   d = addStep(d); d = patchStep(d, 'k2', { title: 'B', prompt: 'faça B', provider: 'codex', role: 'reviewer', continueFrom: 'k1' });
   const body = draftToBody(d);
   assert.deepEqual(body, {
-    workspaceId: 'ws_1', kind: 'project', title: 'Missão', goal: 'obj', fullAccess: false, maxParallel: 2, schedule: null, autoIntegrate: true, autoPush: false, verifyCommand: null, // fatia 2: projeto não leva agenda; sem verificação = null
+    workspaceId: 'ws_1', kind: 'project', title: 'Missão', goal: 'obj', fullAccess: false, maxParallel: 2, schedule: null, autoIntegrate: true, autoPush: false, verifyCommand: null, accounts: null, // fatia 2: projeto não leva agenda; sem verificação = null; contas v2: sem escolha = null
     steps: [
       { id: 's1', title: 'A', prompt: 'faça A', provider: 'claude', role: 'builder', model: 'opus', effort: null, dependsOn: [], continueFrom: null },
       { id: 's2', title: 'B', prompt: 'faça B', provider: 'codex', role: 'reviewer', model: null, effort: null, dependsOn: ['s1'], continueFrom: 's1' },
@@ -750,7 +750,7 @@ test('fatia 2 (tela): formulário com tipo, presets da agenda, avisos e integra�
   assert.ok(form.includes('Integrar automaticamente na sua branch quando terminar sem conflitos'));
   assert.ok(form.includes('Em workspace Git, cada etapa trabalha numa cópia isolada (só arquivos versionados; alterações não commitadas na sua pasta não entram). Sua pasta só muda na integração final, e só se estiver limpa.'));
   // briefing: o create passa a levar o proposalId (só da proposta carregada); o modo reduzido continua mandando só a agenda
-  assert.ok(form.includes('validateScheduleDraft(draft.schedule)') && form.includes('reduced ? draftToScheduleBody(draft) : draftToBody(draft, { mode, proposalId: fromProposal ? proposal.id : null })'), 'modo reduzido: valida e envia só a agenda');
+  assert.ok(form.includes('validateScheduleDraft(draft.schedule)') && form.includes('reduced ? draftToScheduleBody(draft) : draftToBody(draft, { mode, proposalId: fromProposal ? proposal.id : null, ...accOpts })'), 'modo reduzido: valida e envia só a agenda');
   const page = readSrc('pages/Missions.jsx');
   assert.ok(page.includes("form?.mode === 'schedule'") && page.includes('actions.updateSchedule(form.flow.id, body)'));
 });
@@ -957,7 +957,7 @@ test('briefing (tela): rotas no hook, botões "Nova por briefing", diálogo, avi
   // botões ao lado de "Nova missão": barra lateral (cabeçalho e lista vazia) e estado vazio da página
   assert.ok(side.includes('aria-label="Nova por briefing"') && side.includes('<span>Nova por briefing</span>') && side.includes('onBriefing'));
   assert.ok(page.includes('<span>Nova por briefing</span>') && page.includes('onBriefing={() => setBriefing(true)}') && page.includes('<FlowBriefing '));
-  assert.ok(brief.includes('{BRIEFING_TEXT}') && brief.includes('useProviderOptions()') && brief.includes('briefingBody({ workspaceId, provider, model, effort, acknowledgeProjectConfig: needsAck && cfgOk === true })') && brief.includes("useState('claude')"), 'diálogo: texto, listas fechadas, Claude por padrão');
+  assert.ok(brief.includes('{BRIEFING_TEXT}') && brief.includes('useProviderOptions()') && brief.includes('briefingBody({ workspaceId, provider, model, effort, acknowledgeProjectConfig: needsAck && cfgOk === true, accountId: account })') && brief.includes("useState('claude')"), 'diálogo: texto, listas fechadas, Claude por padrão');
   assert.ok(brief.includes('role="alert">{error}'), 'erro do servidor (ex.: limite de terminais) aparece no diálogo');
   // formulário: aviso no topo, Descartar proposta (com confirmação), troca só por clique e com confirmação se mexido
   assert.ok(form.includes('{proposal && <div className="fl-callout fl-prop-notice" role="note" tabIndex={-1} data-autofocus>{lines.map((t) => <p key={t}><b>{t}</b></p>)}</div>}') && form.includes('const lines = proposal ? proposalNoticeLines(proposal) : [];') && form.includes('<span>Descartar proposta</span>'));
@@ -1268,11 +1268,11 @@ test('stepUsage: tokens como o terminal mostra (entrada + saída, cache fora) e 
 test('flowUsage: soma os terminais do run (terminal compartilhado conta uma vez), lista as contas e diz que o limite da conta já conta o gasto', () => {
   const flow = { id: 'flow_1', steps: [{ id: 's1', title: 'A' }, { id: 's2', title: 'B' }, { id: 's3', title: 'C' }] };
   const run = { id: 'run_1', status: 'running', steps: [{ stepId: 's1', terminalId: 't1', status: 'completed' }, { stepId: 's2', terminalId: 't1', status: 'running' }, { stepId: 's3', terminalId: 't3', status: 'running' }] };
-  const sessions = [{ id: 't1', accountId: 'system', usage: { input: 100, output: 50 } }, { id: 't3', accountId: 'acc_22222222', usage: { input: 1000, output: 500 } }, { id: 'outro', accountId: 'system', usage: { input: 9999, output: 9999 } }];
+  const sessions = [{ id: 't1', accountId: 'acc_99999999', usage: { input: 100, output: 50 } }, { id: 't3', accountId: 'acc_22222222', usage: { input: 1000, output: 500 } }, { id: 'outro', accountId: 'acc_22222222', usage: { input: 9999, output: 9999 } }];
   const accounts = [{ id: 'acc_22222222', label: 'Cliente X' }];
   const u = FV.flowUsage(flow, run, sessions, accounts);
   assert.equal(u.has, true); assert.equal(u.panes, 2); assert.equal(u.tokens, (1650).toLocaleString('pt-BR'), 't1 uma vez (150) + t3 (1500); o terminal de fora não entra');
-  assert.deepEqual(u.accounts.sort(), ['Cliente X', 'Sistema (padrão)']); assert.match(u.title, /limite da conta/);
+  assert.deepEqual(u.accounts, ['Cliente X'], 'conta desconhecida é omitida (não existe "Sistema (padrão)")'); assert.match(u.title, /limite da conta/); assert.doesNotMatch(u.title, /Sistema/);
   const none = FV.flowUsage(flow, run, [], accounts); assert.equal(none.has, false); assert.equal(none.tokens, '—'); assert.match(none.title, /Nenhum consumo/);
   assert.equal(FV.flowUsage(flow, null, sessions, accounts).has, false, 'sem run, sem consumo');
 });
@@ -1290,4 +1290,70 @@ test('a página liga o consumo: nó mostra "tokens", cabeçalho recebe `usage` e
   const page = read('pages/Missions.jsx'), node = read('components/FlowWorkflow.jsx'), head = read('components/FlowHeader.jsx');
   assert.match(page, /flowUsage\(flow, run, terminals\?\.sessions, accounts\)/); assert.match(page, /buildWorkflow\(flow, run, \{ roles: roles \?\? undefined, sessions: terminals\?\.sessions, accounts \}\)/); assert.match(page, /usage=\{usage\}/);
   assert.match(node, /node\.usage && <span className="fl-node-tok"/); assert.match(head, /usage\?\.has/); assert.ok(!node.includes('dangerouslySetInnerHTML') && !head.includes('dangerouslySetInnerHTML'));
+});
+
+// ---------- Contas v2 na interface das missões (etapa 9; docs/missions-v2-fatia3.md D2) ----------
+const ACC = [{ id: 'acc_aaaaaaaa', provider: 'claude', label: 'Pessoal', home: 'machine' }, { id: 'acc_bbbbbbbb', provider: 'claude', label: 'Trabalho' }, { id: 'acc_cccccccc', provider: 'codex', label: 'Codex CLI', home: 'machine' }];
+const twoProviders = () => { let d = { ...emptyDraft({ workspaceId: 'ws_1' }), title: 'Missão' }; d = patchStep(d, 'k1', { title: 'A', prompt: 'a' }); d = addStep(d); return patchStep(d, 'k2', { title: 'B', prompt: 'b', provider: 'codex' }); };
+
+test('contas da missão: rascunho por provedor, formato fechado, ida e volta e proposta sem conta', () => {
+  assert.deepEqual(emptyDraft().accounts, {});
+  assert.deepEqual(FV.cleanFlowAccounts({ claude: 'acc_aaaaaaaa', codex: 'system', gemini: 'acc_bbbbbbbb', x: 1 }), { claude: 'acc_aaaaaaaa' }, 'só provedor conhecido e id acc_<8hex> (a referência antiga é recusada)');
+  assert.deepEqual(FV.cleanFlowAccounts(null), {}); assert.deepEqual(FV.cleanFlowAccounts(['acc_aaaaaaaa']), {});
+  const d = flowToDraft({ ...flow(), accounts: { claude: 'acc_bbbbbbbb' } }); assert.deepEqual(d.accounts, { claude: 'acc_bbbbbbbb' });
+  assert.deepEqual(draftToBody(d, { mode: 'edit' }).accounts, { claude: 'acc_bbbbbbbb' }, 'PATCH leva a escolha');
+  assert.equal(draftToBody(flowToDraft(flow()), { mode: 'edit' }).accounts, null, 'missão antiga sem o campo = null');
+  assert.deepEqual(FV.proposalToDraft({ workspaceId: 'ws_1', flow: { ...flow(), accounts: { claude: 'acc_bbbbbbbb' } } }).accounts, {}, 'o planejador nunca escolhe conta');
+  const t = twoProviders(); assert.deepEqual(FV.draftProviders(t), ['claude', 'codex']);
+  let x = FV.setDraftAccount(t, 'codex', 'acc_cccccccc'); x = FV.setDraftAccount(x, 'claude', 'acc_bbbbbbbb'); assert.deepEqual(x.accounts, { codex: 'acc_cccccccc', claude: 'acc_bbbbbbbb' });
+  assert.deepEqual(FV.setDraftAccount(x, 'claude', '').accounts, { codex: 'acc_cccccccc' }, 'vazio limpa'); assert.deepEqual(FV.setDraftAccount(x, 'claude', '../x').accounts, { codex: 'acc_cccccccc' });
+  // tirar o provedor das etapas tira a escolha do corpo (o servidor recusaria provedor sem etapa)
+  assert.deepEqual(draftToBody(patchStep(x, 'k2', { provider: 'claude' })).accounts, { claude: 'acc_bbbbbbbb' });
+});
+
+test('contas da missão: uma conta = automática; várias = escolha (pré-seleção da última usada); nenhuma = aviso; escolhida sumida', () => {
+  const t = twoProviders();
+  const rows = (d, lastUsed = null, accounts = ACC) => Object.fromEntries(FV.accountRows(d, accounts, lastUsed).map((r) => [r.provider, r]));
+  let r = rows(t);
+  assert.deepEqual([r.claude.state, r.claude.value, r.claude.options.map((o) => o.id)], ['choose', '', ['acc_aaaaaaaa', 'acc_bbbbbbbb']], 'a do computador primeiro');
+  assert.deepEqual([r.codex.state, r.codex.value], ['auto', ''], 'uma conta só: o servidor usa ela'); assert.match(r.codex.hint, /única conta/);
+  assert.equal(validateDraft(t, { accounts: ACC }).errors.find((e) => e.field === 'accounts')?.message, 'Claude Code: escolha a conta da missão (há mais de uma).');
+  assert.equal(validateDraft(t).ok, true, 'sem a lista de contas não há como conferir: o servidor decide');
+  r = rows(t, { claude: 'acc_bbbbbbbb' }); assert.deepEqual([r.claude.state, r.claude.value], ['chosen', 'acc_bbbbbbbb']); assert.match(r.claude.hint, /última conta usada/);
+  assert.equal(validateDraft(t, { accounts: ACC, lastUsed: { claude: 'acc_bbbbbbbb' } }).ok, true);
+  assert.deepEqual(draftToBody(t, { accounts: ACC, lastUsed: { claude: 'acc_bbbbbbbb' } }).accounts, { claude: 'acc_bbbbbbbb' }, 'a pré-seleção vai no corpo; a de uma conta só não');
+  assert.deepEqual(FV.effectiveAccounts(t, ACC, { codex: 'acc_cccccccc' }), {}, 'última usada só pré-seleciona com MAIS de uma conta');
+  const chosen = FV.setDraftAccount(t, 'claude', 'acc_aaaaaaaa'); r = rows(chosen, { claude: 'acc_bbbbbbbb' }); assert.equal(r.claude.value, 'acc_aaaaaaaa', 'a escolha vence a última usada'); assert.equal(r.claude.hint, '');
+  const gone = FV.setDraftAccount(t, 'claude', 'acc_dddddddd'); r = rows(gone);
+  assert.equal(r.claude.state, 'missing'); assert.match(r.claude.hint, /não existe mais/); assert.match(validateDraft(gone, { accounts: ACC }).errors.find((e) => e.field === 'accounts').message, /não existe mais/);
+  r = rows(t, null, ACC.filter((a) => a.provider === 'claude')); assert.equal(r.codex.state, 'none'); assert.match(r.codex.hint, /Configurações > Contas/);
+  assert.equal(validateDraft(t, { accounts: ACC.filter((a) => a.provider === 'claude'), lastUsed: { claude: 'acc_aaaaaaaa' } }).ok, true, 'sem conta não bloqueia criar: o início do run recusa com no_account');
+});
+
+test('consumo: o terminal vivo vence; terminal fechado usa o step.usage gravado; conta desconhecida é omitida', () => {
+  const snap = { input: 400, output: 100, cacheWrite: 0, cacheRead: 0, total: 500, io: 500, turns: 2, model: null, costUsd: null, accountId: 'acc_bbbbbbbb', terminalId: 't1', at: '2026-11-24T10:00:00.000Z' };
+  const fromSnap = FV.stepUsage(null, ACC, snap);
+  assert.deepEqual([fromSnap.tokens, fromSnap.account, fromSnap.accountId, fromSnap.live], ['500', 'Trabalho', 'acc_bbbbbbbb', false]);
+  const live = FV.stepUsage({ id: 't1', accountId: 'acc_aaaaaaaa', usage: { input: 900, output: 100 } }, ACC, snap); assert.deepEqual([live.tokens, live.account, live.live], [(1000).toLocaleString('pt-BR'), 'Pessoal', true]);
+  assert.equal(FV.stepUsage({ id: 't1', accountId: 'acc_aaaaaaaa', usage: null }, ACC, snap).live, false, 'terminal vivo ainda sem consumo: vale o gravado');
+  assert.equal(FV.stepUsage(null, ACC, { ...snap, accountId: null }).account, null); assert.equal(FV.stepUsage(null, ACC, { io: 'x' }), null);
+  // a missão: por terminal, o vivo ou o snapshot MAIS RECENTE (etapas que compartilham terminal levam o número cumulativo)
+  const f = { id: 'flow_1', steps: [{ id: 's1' }, { id: 's2' }, { id: 's3' }] };
+  const run = { id: 'run_1', status: 'completed', accounts: { claude: 'acc_bbbbbbbb' }, steps: [
+    { stepId: 's1', terminalId: 't1', usage: { ...snap, io: 300, at: '2026-11-24T09:00:00.000Z' } }, { stepId: 's2', terminalId: 't1', usage: snap }, { stepId: 's3', terminalId: 't3', usage: { ...snap, io: 50, accountId: 'acc_cccccccc', terminalId: 't3' } }] };
+  const u = FV.flowUsage(f, run, [], ACC);
+  assert.deepEqual([u.has, u.panes, u.tokens], [true, 2, '550'], 't1 uma vez com o número mais recente (500) + t3 (50)'); assert.deepEqual(u.accounts.sort(), ['Codex CLI', 'Trabalho']);
+  const withLive = FV.flowUsage(f, run, [{ id: 't1', accountId: 'acc_aaaaaaaa', usage: { io: 800 } }], ACC); assert.equal(withLive.tokens, '850', 'o ao vivo de t1 vence o gravado');
+  const anon = FV.flowUsage(f, { ...run, steps: run.steps.map((s) => ({ ...s, usage: { ...s.usage, accountId: null } })) }, [], ACC);
+  assert.deepEqual(anon.accounts, ['Trabalho'], 'sem conta no consumo: as fixadas no run'); assert.doesNotMatch(anon.title, /Sistema/);
+  const wf = FV.buildWorkflow({ id: 'flow_1', steps: [{ id: 's1', title: 'A', provider: 'claude', role: 'builder' }] }, { id: 'run_1', status: 'completed', steps: [{ stepId: 's1', terminalId: 't1', status: 'completed', usage: snap }] }, { sessions: [], accounts: ACC });
+  assert.deepEqual([wf.nodes[0].usage.tokens, wf.nodes[0].usage.account, wf.nodes[0].usage.live], ['500', 'Trabalho', false], 'o nó mostra o consumo gravado depois que o terminal fecha');
+});
+
+test('briefing: accountId só no formato do servidor; a interface não tem mais "Sistema (padrão)"', () => {
+  assert.deepEqual(FV.briefingBody({ workspaceId: 'ws_1', provider: 'claude', accountId: 'acc_aaaaaaaa' }), { workspaceId: 'ws_1', provider: 'claude', accountId: 'acc_aaaaaaaa' });
+  for (const bad of [null, '', 'system', 'acc_XYZ', '../acc_aaaaaaaa', 5]) assert.ok(!('accountId' in FV.briefingBody({ workspaceId: 'ws_1', accountId: bad })), String(bad));
+  const read = (f) => fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'client', 'src', f), 'utf8');
+  for (const f of ['flows-view.js', 'components/FlowWorkflow.jsx', 'components/FlowHeader.jsx', 'components/FlowForm.jsx', 'components/FlowBriefing.jsx', 'pages/Missions.jsx']) assert.doesNotMatch(read(f), /Sistema \(padrão\)/, f);
+  assert.match(read('components/FlowForm.jsx'), /<AccountsPicker rows=\{accRows\}/); assert.match(read('components/FlowBriefing.jsx'), /mine\.length > 1 &&/);
 });

@@ -55,7 +55,7 @@ function Node({ node, selected, onSelect, register, delay }) {
       {node.line ? <span className={`fl-node-line fl-line-${node.lineKind}${running ? ' live' : ''}`}>{node.line}{running && <i className="fl-caret" aria-hidden="true" />}</span> : null}
       <span className="fl-node-foot">
         <span className="fl-node-state">{node.stateLabel}</span>
-        {node.usage && <span className="fl-node-tok" title={`${node.usage.title}${node.usage.account ? ` | Conta: ${node.usage.account}` : ' | Conta: Sistema (padrão)'} | O limite da conta (barra inferior) já conta este gasto.`}>{node.usage.tokens} tokens</span>}
+        {node.usage && <span className="fl-node-tok" title={`${node.usage.title}${node.usage.account ? ` | Conta: ${node.usage.account}` : ''}${node.usage.live ? '' : ' | Último consumo gravado (o terminal da etapa já fechou)'} | O limite da conta (barra inferior) já conta este gasto.`}>{node.usage.tokens} tokens</span>}
         {badge && <span className={`fl-int fl-t-${badge.tone}`} title={`Integração: ${badge.label}`}><MergeIcon />{badge.text}</span>}
       </span>
     </button>

@@ -2,11 +2,42 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Dialog from './Dialog.jsx';
 import { Icon } from './ui.jsx';
 import { api } from '../api.js';
+import { useStore } from '../store.jsx';
+import ProviderLogo from './ProviderLogo.jsx';
 import {
   addStep, ancestorKeys, blocksImplicitSubmit, draftToBody, draftToScheduleBody, emptyDraft, flowToDraft, stepRoles, MAX_EVERY_HOURS, MAX_STEPS, MAX_TEXT, MAX_TITLE, patchStep, proposalNoticeLines, proposalToDraft,
   PROVIDER_LABEL, PROVIDERS, removeStep, toggleDependency, toggleScheduleDay, validateDraft, validateScheduleDraft, WEEKDAY_SHORT,
-  MAX_VERIFY_TEXT, VERIFY_SHELL_HINT, VERIFY_TIMEOUT_MAX, VERIFY_TIMEOUT_MIN, verifyShellOps,
+  MAX_VERIFY_TEXT, VERIFY_SHELL_HINT, VERIFY_TIMEOUT_MAX, VERIFY_TIMEOUT_MIN, verifyShellOps, accountRows, setDraftAccount,
 } from '../flows-view.js';
+
+/**
+ * Conta de cada provedor usado nas etapas (Contas v2): todos os terminais da missão daquele provedor nascem nela e o gasto entra no limite dela.
+ * Uma conta só = automática; várias = escolha obrigatória (pré-seleciona a última usada); nenhuma = aviso para adicionar em Contas.
+ */
+function AccountsPicker({ rows, onPick, errOf }) {
+  if (!rows.length) return null;
+  const errs = errOf('accounts');
+  return (
+    <fieldset className="fl-sched fl-accounts">
+      <legend className="fl-label">Contas da missão</legend>
+      <p className="dim">Cada IA usa UMA conta em todas as etapas dela; os tokens entram no limite dessa conta.</p>
+      {rows.map((r) => (
+        <label key={r.provider} className="fl-acc-row">
+          <span className="fl-acc-p"><ProviderLogo id={r.provider} size={13} />{r.label}</span>
+          {r.options.length > 0 ? (
+            <select value={r.value} onChange={(e) => onPick(r.provider, e.target.value)} aria-invalid={r.state === 'choose' || r.state === 'missing' ? true : undefined} aria-label={`Conta do ${r.label} na missão`}>
+              {(r.state === 'choose' || r.state === 'missing') && <option value="">Escolher conta…</option>}
+              {r.state === 'auto' && <option value="">Automática ({r.options[0].label})</option>}
+              {r.options.map((o) => <option key={o.id} value={o.id}>{o.label}{o.home === 'machine' ? ' (deste computador)' : ''}</option>)}
+            </select>
+          ) : null}
+          {r.hint && <span className={r.state === 'none' || r.state === 'missing' ? 'fl-hint warn' : 'dim'}>{r.hint}</span>}
+        </label>
+      ))}
+      {errs.length > 0 && <span className="fl-err" role="alert">{errs[0]}</span>}
+    </fieldset>
+  );
+}
 
 /**
  * Avisos de proposta do Planejador dentro do formulário. Nada substitui o que está na tela sozinho: "carregar" e "abrir" só com o clique, e com confirmação se o
@@ -267,9 +298,12 @@ export default function FlowForm({ mode = 'create', flow = null, workspaces, act
     try { await onDismissProposal(proposal.id); } catch (err) { setError(err.message); setDismissing(false); }
   };
   const opts = useProviderOptions();
+  const { accounts, lastAccount } = useStore(); // contas (só nomes) e a última usada por provedor: o seletor de conta da missão
+  const accOpts = { accounts, lastUsed: lastAccount };
+  const accRows = useMemo(() => accountRows(draft, accounts, lastAccount), [draft, accounts, lastAccount]);
   const roleList = stepRoles(roles); // sem Maestro e Planejador (o servidor recusa esses papéis numa etapa)
   // no modo reduzido só a agenda é conferida (o resto não vai no PATCH)
-  const check = useMemo(() => (reduced ? (draft.kind === 'automation' ? validateScheduleDraft(draft.schedule) : { ok: true, errors: [] }) : validateDraft(draft, { mode })), [draft, mode, reduced]);
+  const check = useMemo(() => (reduced ? (draft.kind === 'automation' ? validateScheduleDraft(draft.schedule) : { ok: true, errors: [] }) : validateDraft(draft, { mode, accounts, lastUsed: lastAccount })), [draft, mode, reduced, accounts, lastAccount]);
   const fieldErr = (f) => (tried ? check.errors.filter((e) => e.field === f).map((e) => e.message) : []);
   const set = (patch) => setDraft((d) => ({ ...d, ...patch }));
   const change = (key, patch) => setDraft((d) => (patch.__toggle ? toggleDependency(d, key, patch.__toggle) : patchStep(d, key, patch)));
@@ -278,7 +312,7 @@ export default function FlowForm({ mode = 'create', flow = null, workspaces, act
     setTried(true);
     if (!check.ok || busy) return;
     setBusy(true); setError(null);
-    try { await onSubmit(reduced ? draftToScheduleBody(draft) : draftToBody(draft, { mode, proposalId: fromProposal ? proposal.id : null })); } catch (err) { setError(err.message); setBusy(false); }
+    try { await onSubmit(reduced ? draftToScheduleBody(draft) : draftToBody(draft, { mode, proposalId: fromProposal ? proposal.id : null, ...accOpts })); } catch (err) { setError(err.message); setBusy(false); }
   };
   const E = (f) => { const m = fieldErr(f); return m.length ? <span className="fl-err" role="alert">{m[0]}</span> : null; };
   const auto = draft.kind === 'automation';
@@ -363,6 +397,8 @@ export default function FlowForm({ mode = 'create', flow = null, workspaces, act
           {E('steps')}
           <button type="button" className="fl-btn" onClick={() => setDraft((d) => addStep(d))} disabled={draft.steps.length >= MAX_STEPS}><Icon name="plus" size={13} /><span>Adicionar etapa</span></button>
         </section>
+
+        <AccountsPicker rows={accRows} onPick={(p, id) => setDraft((d) => setDraftAccount(d, p, id))} errOf={fieldErr} />
 
         {foot}
       </form>

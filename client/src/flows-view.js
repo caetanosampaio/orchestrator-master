@@ -4,7 +4,7 @@
 // Testado em server/test/flows-view.test.mjs.
 
 import { paneUsage, squadUsage, newTokens } from './usage-view.js';
-import { accountTagName } from './accounts-view.js';
+import { accountTagName, accountsOf, pickAccount } from './accounts-view.js';
 
 export const NOT_INFORMED = 'não informado';
 export const DASH = '—';
@@ -600,30 +600,42 @@ function deliveryState(run) {
  * O último nó é a ENTREGA, ligada às etapas finais (as que ninguém espera). Estado de cada nó = o do run (sem run, tudo `pending`).
  */
 /**
- * Consumo de tokens de UMA etapa (o terminal dela, o mesmo número que o Cockpit mostra: entrada + saída, cache fora) e a conta que ele debita. Sem terminal ou sem consumo ainda: null
- * (a tela não inventa zero). `account`: nome da conta quando não é a Sistema (padrão); null = conta Sistema.
+ * Consumo de tokens de UMA etapa (o mesmo número que o Cockpit mostra: entrada + saída, cache fora) e a conta que ele debita (docs/missions-v2-fatia3.md D2).
+ * Terminal vivo com consumo = o ao vivo (`session.usage`, `session.accountId`); senão o último gravado pelo servidor no run (`step.usage`, com `accountId`). Sem nenhum: null
+ * (a tela não inventa zero). `account`: nome da conta; null = conta desconhecida (omitida: não existe conta "Sistema").
  */
-export function stepUsage(session, accounts) {
-  if (!session || typeof session !== 'object' || newTokens(session.usage) === null) return null;
-  const u = paneUsage(session.usage), account = accountTagName(session.accountId, accounts);
-  return { tokens: u.tokens, cost: u.cost, title: u.title, account, accountId: typeof session.accountId === 'string' ? session.accountId : 'system' };
+export function stepUsage(session, accounts, snapshot = null) {
+  const live = session && typeof session === 'object' && newTokens(session.usage) !== null ? session : null;
+  const src = live ? { usage: live.usage, accountId: live.accountId } : snapshot && typeof snapshot === 'object' && newTokens(snapshot) !== null ? { usage: snapshot, accountId: snapshot.accountId } : null;
+  if (!src) return null;
+  const u = paneUsage(src.usage), accountId = typeof src.accountId === 'string' && src.accountId ? src.accountId : null;
+  return { tokens: u.tokens, cost: u.cost, title: u.title, account: accountTagName(accountId, accounts), accountId, live: !!live };
 }
 
 /**
- * Consumo da MISSÃO (run atual): soma dos terminais das etapas (um terminal compartilhado por continueFrom conta uma vez) e as contas debitadas. Todo esse gasto entra no limite
- * da conta: o terminal da etapa é aberto como qualquer outro (status line do FORGE, transcript e limite da conta no provedor). Sem consumo ainda: { tokens: '—', panes: 0 }.
+ * Consumo da MISSÃO (run atual): soma por TERMINAL das etapas (um terminal compartilhado por continueFrom conta uma vez; o número dele é cumulativo) e as contas debitadas.
+ * Por terminal: o ao vivo, se ele ainda está na lista com consumo; senão o snapshot mais recente gravado no run (`step.usage`). Todo esse gasto entra no limite da conta.
+ * Contas: as nomeadas no consumo; sem nenhuma conhecida, as fixadas no run (`run.accounts`). Conta desconhecida é omitida. Sem consumo ainda: { tokens: '—', panes: 0 }.
  */
 export function flowUsage(flow, run = currentRun(flow), sessions = [], accounts = []) {
-  const byId = new Map(arr(sessions).map((s) => [s?.id, s])), seen = new Set(), mine = [];
+  const byId = new Map(arr(sessions).map((s) => [s?.id, s])), items = new Map();
   for (const rs of runSteps(run)) {
-    if (typeof rs?.terminalId !== 'string' || !rs.terminalId || seen.has(rs.terminalId)) continue;
-    seen.add(rs.terminalId); const s = byId.get(rs.terminalId); if (s) mine.push(s);
+    const snap = rs?.usage && typeof rs.usage === 'object' && newTokens(rs.usage) !== null ? rs.usage : null;
+    const tid = typeof rs?.terminalId === 'string' && rs.terminalId ? rs.terminalId : typeof snap?.terminalId === 'string' && snap.terminalId ? snap.terminalId : null;
+    if (!tid || items.get(tid)?.live) continue;
+    const s = byId.get(tid);
+    if (s && newTokens(s.usage) !== null) { items.set(tid, { usage: s.usage, accountId: s.accountId, live: true }); continue; }
+    if (!snap) continue;
+    const prev = items.get(tid);
+    if (!prev || ts(snap.at) >= ts(prev.usage.at)) items.set(tid, { usage: snap, accountId: snap.accountId, live: false });
   }
-  const total = squadUsage(mine), withUse = mine.filter((s) => newTokens(s.usage) !== null);
-  const names = [...new Set(withUse.map((s) => accountTagName(s.accountId, accounts) ?? 'Sistema (padrão)'))];
-  const title = withUse.length
-    ? `Tokens desta missão (entrada + saída, como o terminal mostra) em ${withUse.length} terminal(is). Debitados na conta: ${names.join(', ')}. O limite da conta (barra inferior) já conta este gasto.`
-    : 'Nenhum consumo registrado ainda. Os terminais da missão gastam tokens na conta do FORGE e entram no limite dela como os do Cockpit.';
+  const list = [...items.values()], total = squadUsage(list);
+  let names = [...new Set(list.map((i) => accountTagName(i.accountId, accounts)).filter(Boolean))];
+  if (!names.length && run?.accounts && typeof run.accounts === 'object') names = [...new Set(Object.values(run.accounts).map((id) => accountTagName(id, accounts)).filter(Boolean))];
+  const debit = names.length ? ` Debitados na conta: ${names.join(', ')}.` : '';
+  const title = list.length
+    ? `Tokens desta missão (entrada + saída, como o terminal mostra) em ${list.length} terminal(is).${debit} O limite da conta (barra inferior) já conta este gasto.`
+    : 'Nenhum consumo registrado ainda. Os terminais da missão gastam tokens na conta escolhida de cada IA e entram no limite dela como os do Cockpit.';
   return { tokens: total.tokens, cost: total.cost, panes: total.panes, accounts: names, title, has: total.panes > 0 };
 }
 
@@ -639,7 +651,7 @@ export function buildWorkflow(flow, run = currentRun(flow), { roles = FALLBACK_R
     return {
       id: def.id, kind: 'step', col, row, title: str(def.title) || def.id, state, stateLabel: meta.label, tone: meta.tone, waiting: state === 'waiting', unconfirmed: st.unconfirmed, limit: st.limit,
       agent: { provider: def.provider ?? null, providerLabel: providerLabel(def.provider), role: def.role ?? null, roleLabel: roleLabel(def.role, roles), model: def.model || null, effort: def.effort || null },
-      terminalId: rs?.terminalId ?? null, usage: rs?.terminalId ? stepUsage(sessionById.get(rs.terminalId), accounts) : null, ...nodeLine(def, st), integration: stepIntegration(rs),
+      terminalId: rs?.terminalId ?? null, usage: rs?.terminalId || rs?.usage ? stepUsage(sessionById.get(rs?.terminalId), accounts, rs?.usage) : null, ...nodeLine(def, st), integration: stepIntegration(rs),
     };
   });
   const stateOf = new Map(nodes.map((n) => [n.id, n.state]));
@@ -755,7 +767,59 @@ export function describeFailure(err, ctx = 'list') {
 const blankStep = (key, deps = []) => ({ key, title: '', prompt: '', provider: 'claude', role: 'builder', model: '', effort: '', dependsOn: deps, continueFrom: '' });
 /** `kind`: 'project' | 'automation' (só automação leva agenda). `autoIntegrate` nasce ligado (padrão do servidor); `schedule` é o rascunho de `emptySchedule()`. */
 export function emptyDraft({ workspaceId = '', kind = 'project' } = {}) {
-  return { workspaceId, kind: kind === 'automation' ? 'automation' : 'project', title: '', goal: '', fullAccess: false, maxParallel: 1, autoIntegrate: true, autoPush: false, schedule: emptySchedule(), ...verifyToDraft(null), steps: [blankStep('k1')], nextKey: 2 };
+  return { workspaceId, kind: kind === 'automation' ? 'automation' : 'project', title: '', goal: '', fullAccess: false, maxParallel: 1, autoIntegrate: true, autoPush: false, schedule: emptySchedule(), ...verifyToDraft(null), accounts: {}, steps: [blankStep('k1')], nextKey: 2 };
+}
+
+// ---------- contas da missão (Contas v2; docs/missions-v2-fatia3.md D2): UMA conta por provedor usado nas etapas ----------
+export const ACCOUNT_ID_RE = /^acc_[0-9a-f]{8}$/;
+const isAccountId = (v) => typeof v === 'string' && ACCOUNT_ID_RE.test(v);
+/** `flow.accounts` no formato do servidor: só provedores conhecidos com id `acc_<8hex>` (o resto é ignorado). */
+export function cleanFlowAccounts(v) {
+  const out = {};
+  if (v && typeof v === 'object' && !Array.isArray(v)) for (const p of PROVIDERS) if (isAccountId(v[p])) out[p] = v[p];
+  return out;
+}
+/** Provedores usados pelas etapas do rascunho, na ordem fixa de PROVIDERS. */
+export const draftProviders = (draft) => PROVIDERS.filter((p) => arr(draft?.steps).some((s) => s?.provider === p));
+/** Escolhe (ou limpa, com id vazio) a conta de um provedor no rascunho. */
+export function setDraftAccount(draft, provider, id) {
+  const next = { ...cleanFlowAccounts(draft?.accounts) };
+  if (isAccountId(id)) next[provider] = id; else delete next[provider];
+  return { ...draft, accounts: next };
+}
+/**
+ * Contas efetivas do rascunho: a escolha do usuário e, para o provedor com MAIS de uma conta e nada escolhido (ou com a escolhida sumida), a última usada (pré-seleção).
+ * Não grava no rascunho: a pré-seleção é só a sugestão que a tela mostra e o corpo envia.
+ */
+export function effectiveAccounts(draft, accounts = null, lastUsed = null) {
+  const chosen = cleanFlowAccounts(draft?.accounts), out = {};
+  for (const p of draftProviders(draft)) {
+    if (!Array.isArray(accounts)) { if (chosen[p]) out[p] = chosen[p]; continue; } // sem a lista de contas: só a escolha gravada
+    const mine = accountsOf(accounts, p);
+    const id = pickAccount({ accounts, provider: p, chosen: chosen[p], lastUsed: mine.length > 1 ? lastUsed : null });
+    if (id) out[p] = id; else if (chosen[p] && !mine.length) out[p] = chosen[p]; // conta escolhida com a lista vazia: mantém (o servidor decide)
+  }
+  return out;
+}
+/**
+ * Linhas do seletor de conta do formulário, uma por provedor usado nas etapas. `state`: 'none' (nenhuma conta do provedor), 'auto' (uma só: o servidor usa ela),
+ * 'choose' (várias e nada escolhido: obrigatório), 'chosen', 'missing' (a escolhida não existe mais).
+ */
+export function accountRows(draft, accounts = [], lastUsed = null) {
+  const eff = effectiveAccounts(draft, accounts, lastUsed), chosen = cleanFlowAccounts(draft?.accounts);
+  return draftProviders(draft).map((p) => {
+    const options = accountsOf(accounts, p).map((a) => ({ id: a.id, label: String(a.label ?? a.id), home: a.home === 'machine' ? 'machine' : 'forge' }));
+    const value = eff[p] ?? '', label = providerLabel(p);
+    const gone = !!chosen[p] && options.length > 0 && !options.some((o) => o.id === chosen[p]); // a escolha gravada sumiu (conta removida)
+    const state = !options.length ? 'none' : !value ? (options.length === 1 ? 'auto' : gone ? 'missing' : 'choose') : 'chosen';
+    const was = gone ? 'A conta escolhida antes não existe mais. ' : '';
+    const hint = state === 'none' ? `Nenhuma conta do ${label}: adicione uma em Configurações > Contas antes de iniciar.`
+      : state === 'missing' ? `${was}Escolha outra conta do ${label}.`
+        : state === 'auto' ? `${was}Usa a única conta do ${label}: ${options[0].label}.`
+          : state === 'choose' ? `Há mais de uma conta do ${label}: escolha qual a missão usa.`
+            : value !== chosen[p] ? `${was}Pré-selecionada: a última conta usada.` : '';
+    return { provider: p, label, options, value, state, hint };
+  });
 }
 /** Nova etapa ao fim; por padrão depende da anterior (sequência), e o usuário desmarca para criar um ramo paralelo. */
 export function addStep(draft) {
@@ -792,14 +856,18 @@ export function flowToDraft(flow) {
     kind: flow?.kind === 'automation' ? 'automation' : 'project', schedule: scheduleToDraft(flow?.schedule), autoIntegrate: flow?.autoIntegrate !== false, // missão antiga sem o campo = true
     ...verifyToDraft(flow?.verifyCommand), // sem o campo = sem verificação
     autoPush: flow?.autoPush === true, // missão antiga sem o campo = desligado
+    accounts: cleanFlowAccounts(flow?.accounts), // sem o campo (ou formato inválido) = sem escolha
 
     steps: steps.length ? steps.map((s) => ({ key: keyOf.get(s.id), title: str(s.title), prompt: str(s.prompt), provider: s.provider ?? 'claude', role: s.role ?? 'builder', model: s.model ?? '', effort: s.effort ?? '', dependsOn: arr(s.dependsOn).map((d) => keyOf.get(d)).filter(Boolean), continueFrom: s.continueFrom ? keyOf.get(s.continueFrom) ?? '' : '' })) : [blankStep('k1')],
     nextKey: steps.length + 1,
   };
 }
 
-/** Confere o rascunho como o servidor confere (o servidor continua sendo a palavra final). { ok, errors: [{ field, key?, message }], byStep: { [key]: [mensagem] } } */
-export function validateDraft(draft, { mode = 'create' } = {}) {
+/**
+ * Confere o rascunho como o servidor confere (o servidor continua sendo a palavra final). { ok, errors: [{ field, key?, message }], byStep: { [key]: [mensagem] } }
+ * `accounts` (lista de GET /api/accounts) + `lastUsed`: com a lista, o provedor com várias contas precisa de uma escolhida (senão o run nasceria recusado com account_required).
+ */
+export function validateDraft(draft, { mode = 'create', accounts = null, lastUsed = null } = {}) {
   const errors = [], byStep = {};
   const add = (field, message, key) => { errors.push({ field, ...(key ? { key } : {}), message }); if (key) (byStep[key] ??= []).push(message); };
   const title = str(draft?.title).trim();
@@ -825,6 +893,12 @@ export function validateDraft(draft, { mode = 'create' } = {}) {
     for (const d of arr(s.dependsOn)) if (!index.has(d) || index.get(d) >= i) add('step.dependsOn', `Etapa ${n}: só pode depender de etapas anteriores da lista.`, s.key);
     if (s.continueFrom && !ancestorKeys(draft, s.key).has(s.continueFrom)) add('step.continueFrom', `Etapa ${n}: só pode continuar o terminal de uma etapa da sua cadeia de dependências.`, s.key);
   });
+  if (Array.isArray(accounts)) {
+    for (const r of accountRows(draft, accounts, lastUsed)) {
+      if (r.state === 'choose') add('accounts', `${r.label}: escolha a conta da missão (há mais de uma).`);
+      if (r.state === 'missing') add('accounts', `${r.label}: a conta escolhida não existe mais; escolha outra.`);
+    }
+  }
   return { ok: errors.length === 0, errors, byStep };
 }
 
@@ -832,13 +906,16 @@ export function validateDraft(draft, { mode = 'create' } = {}) {
  * Corpo de POST/PATCH /api/flows. Vazio de modelo/esforço = null (padrão do agente). `fullAccess` e `autoIntegrate` só vão `true` se marcados (booleano estrito: texto nunca
  * liga; o rascunho nasce com `autoIntegrate: true`). `kind` vai nos dois modos (o PATCH valida contra o resultado mesclado); `schedule` só em automação, senão null. PATCH não leva workspace.
  * `verifyCommand` vai nos dois modos: null (sem verificação; no PATCH, remove a que havia) ou { args, timeoutSec }.
+ * `accounts` vai nos dois modos: { provedor: 'acc_…' } só dos provedores usados nas etapas (com a pré-seleção de `effectiveAccounts`), ou null (no início do run vale a única conta).
  */
-export function draftToBody(draft, { mode = 'create', proposalId = null } = {}) {
+export function draftToBody(draft, { mode = 'create', proposalId = null, accounts = null, lastUsed = null } = {}) {
   const ids = new Map(arr(draft.steps).map((s, i) => [s.key, `s${i + 1}`]));
   const kind = draft.kind === 'automation' ? 'automation' : 'project';
+  const acc = effectiveAccounts(draft, accounts, lastUsed);
   const body = {
     kind, title: str(draft.title).trim(), goal: str(draft.goal).trim(), fullAccess: draft.fullAccess === true, maxParallel: Number(draft.maxParallel) || 1,
     schedule: kind === 'automation' ? draftToSchedule(draft.schedule) : null, autoIntegrate: draft.autoIntegrate === true, autoPush: draft.autoPush === true, verifyCommand: draftToVerify(draft),
+    accounts: Object.keys(acc).length ? acc : null,
     steps: arr(draft.steps).map((s) => ({
       id: ids.get(s.key), title: str(s.title).trim(), prompt: str(s.prompt).trim(), provider: s.provider, role: s.role, model: s.model || null, effort: s.effort || null,
       dependsOn: arr(s.dependsOn).map((d) => ids.get(d)).filter(Boolean), continueFrom: s.continueFrom ? ids.get(s.continueFrom) ?? null : null,
@@ -891,10 +968,11 @@ export function briefingConfigFiles(err) {
  * Corpo de POST /api/flows/briefing: workspace obrigatório; agente só se for um dos conhecidos; modelo e esforço só quando escolhidos (vazio = padrão do agente).
  * Os valores vêm de listas fechadas (selects); o servidor valida de novo. `acknowledgeProjectConfig` só vai `true` com o booleano estrito (a caixa marcada no diálogo).
  */
-export function briefingBody({ workspaceId, provider, model, effort, acknowledgeProjectConfig } = {}) {
+export function briefingBody({ workspaceId, provider, model, effort, acknowledgeProjectConfig, accountId } = {}) {
   return {
     workspaceId: str(workspaceId), ...(PROVIDERS.includes(provider) ? { provider } : {}),
     ...(str(model) ? { model } : {}), ...(str(effort) ? { effort } : {}),
+    ...(isAccountId(accountId) ? { accountId } : {}), // conta do terminal do planejador, escolhida pelo usuário; ausente = a única do provedor
     ...(acknowledgeProjectConfig === true ? { acknowledgeProjectConfig: true } : {}),
   };
 }
@@ -917,7 +995,7 @@ export function proposalRows(list, { workspaces = [] } = {}) {
  */
 export function proposalToDraft(proposal) {
   const flow = proposal?.flow && typeof proposal.flow === 'object' ? proposal.flow : {};
-  return { ...flowToDraft(flow), workspaceId: str(proposal?.workspaceId), fullAccess: false, ...verifyToDraft(null) };
+  return { ...flowToDraft(flow), workspaceId: str(proposal?.workspaceId), fullAccess: false, ...verifyToDraft(null), accounts: {} }; // o planejador nunca escolhe conta
 }
 
 /**

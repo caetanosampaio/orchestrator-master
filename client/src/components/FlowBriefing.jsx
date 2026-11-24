@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import Dialog from './Dialog.jsx';
 import { Icon } from './ui.jsx';
 import { useProviderOptions } from './FlowForm.jsx';
+import { useStore } from '../store.jsx';
+import { accountsOf, pickAccount } from '../accounts-view.js';
 import { BRIEFING_CONFIG_TEXT, BRIEFING_TEXT, briefingBody, briefingConfigFiles, PROVIDER_LABEL, PROVIDERS } from '../flows-view.js';
 
 /**
@@ -47,16 +49,20 @@ export default function FlowBriefing({ workspaces, activeWorkspaceId, onClose, o
   useEffect(() => { if (cfg) cfgBox.current?.focus(); }, [cfg]); // o botão de envio fica desabilitado: o foco vai para a caixa de confirmação (senão cai no body)
   const opts = useProviderOptions();
   const po = opts[provider] ?? { models: [], efforts: [] };
+  // Conta do terminal do Planejador (Contas v2): só se escolhe com MAIS de uma conta do agente (pré-seleção: a última usada); com uma, o servidor usa ela.
+  const { accounts, lastAccount } = useStore();
+  const [chosenAccount, setChosenAccount] = useState('');
+  const mine = accountsOf(accounts, provider), account = pickAccount({ accounts, provider, chosen: chosenAccount, lastUsed: lastAccount });
   const pickProvider = (p) => {
     const o = opts[p] ?? { models: [], efforts: [] };
-    setProvider(p); setModel((m) => (o.models.some((x) => x.id === m) ? m : '')); setEffort((e) => (o.efforts.some((x) => x.id === e) ? e : ''));
+    setProvider(p); setChosenAccount(''); setModel((m) => (o.models.some((x) => x.id === m) ? m : '')); setEffort((e) => (o.efforts.some((x) => x.id === e) ? e : ''));
   };
   const pickWorkspace = (id) => { setWorkspaceId(id); setCfg(null); setCfgOk(false); setError(null); };
   const submit = async (e) => {
     e.preventDefault();
     if (busy || !workspaceId || (needsAck && !cfgOk)) return; // sem a caixa marcada nada é reenviado
     setBusy(true); setError(null);
-    try { await onSubmit(briefingBody({ workspaceId, provider, model, effort, acknowledgeProjectConfig: needsAck && cfgOk === true })); } catch (err) {
+    try { await onSubmit(briefingBody({ workspaceId, provider, model, effort, acknowledgeProjectConfig: needsAck && cfgOk === true, accountId: account })); } catch (err) {
       const files = briefingConfigFiles(err);
       if (files) { setCfg({ workspaceId, files }); setCfgOk(false); } // lista (nova) aparece com a caixa DESMARCADA
       else setError(err?.message || 'Não foi possível abrir o Planejador.');
@@ -95,6 +101,15 @@ export default function FlowBriefing({ workspaces, activeWorkspaceId, onClose, o
               </select>
             </label>
           </div>
+          {mine.length > 1 && (
+            <label>Conta do {PROVIDER_LABEL[provider]}
+              <select value={account ?? ''} onChange={(e) => setChosenAccount(e.target.value)} aria-invalid={!account ? true : undefined}>
+                {!account && <option value="">Escolher conta…</option>}
+                {mine.map((a) => <option key={a.id} value={a.id}>{a.label}{a.home === 'machine' ? ' (deste computador)' : ''}</option>)}
+              </select>
+              {!account && <span className="dim">Há mais de uma conta do {PROVIDER_LABEL[provider]}: escolha qual o Planejador usa.</span>}
+            </label>
+          )}
         </fieldset>
         {needsAck && (
           <div className="fl-callout fl-brief-cfg" role="alert">
