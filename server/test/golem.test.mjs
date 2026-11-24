@@ -135,16 +135,30 @@ test('pixel art: cada fase é uma grade com corpo, olhos e efeitos dentro dela; 
   let lastArea = 0;
   for (let i = 0; i < 7; i++) {
     const sp = PX.golemSprite(i), inside = ([x, y]) => x >= 0 && y >= 0 && x < sp.w && y < sp.h;
-    for (const list of [sp.body, sp.arms, sp.fx.idle, sp.fx.working, ...(sp.eyes ? [sp.eyes.open, sp.eyes.closed, sp.eyes.happy] : [])]) {
+    for (const list of [sp.body, sp.arms, sp.fx.idle, sp.fx.working, sp.fx.hit, sp.fx.cool, sp.fx.cheer, sp.zzz, sp.alert, ...(sp.eyes ? [sp.eyes.open, sp.eyes.closed, sp.eyes.happy, sp.eyes.left, sp.eyes.right, sp.eyes.half] : [])]) {
       assert.ok(list.every(inside), `fase ${i}: tudo dentro da grade`);
       assert.ok(list.every(([, , ch]) => typeof pal[ch] === 'string'), `fase ${i}: letras da paleta`);
     }
     assert.ok(sp.body.length > 40, `fase ${i}: corpo desenhado`); assert.equal(PX.golemSprite(i), sp, 'memorizado');
     if (i >= 3) { assert.ok(sp.w * sp.h > lastArea, `fase ${i} é maior que a anterior`); lastArea = sp.w * sp.h; assert.ok(sp.arms.length > 0, 'golem tem braços (que batem ao trabalhar)'); }
     if (i >= 1) assert.ok(sp.fx.working.length > sp.fx.idle.length, `fase ${i}: trabalhando solta faíscas`);
+    if (i >= 2) assert.ok(sp.fx.hit.length > 0, `fase ${i}: faíscas nas mãos a cada golpe`);
+    if (i >= 2) {
+      const maxY = (l) => Math.max(...l.map(([, y]) => y)), minY = (l) => Math.min(...l.map(([, y]) => y)), inside2 = ([x, y]) => x >= 0 && y >= 0 && x < sp.w && y < sp.h;
+      for (const pose of ['up', 'slam']) assert.ok(sp.poses[pose].length > 0 && sp.poses[pose].every(inside2), `fase ${i}: pose ${pose} desenhada dentro da grade`);
+      assert.equal(maxY(sp.poses.slam), sp.h - 1, `fase ${i}: no golpe as mãos encostam no chão`);
+      assert.ok(maxY(sp.arms) < sp.h - 1, `fase ${i}: em repouso as mãos ficam acima do chão (o golpe desce de verdade)`);
+      assert.ok(minY(sp.poses.up) < minY(sp.arms), `fase ${i}: no impulso os braços sobem`);
+    } else assert.equal(sp.poses, undefined, `fase ${i}: sem braços, sem poses`);
+    const solidOf = (...lists) => new Set(lists.flat().map(([x, y]) => `${x},${y}`));
+    const anyPose = solidOf(sp.body, sp.arms, sp.poses?.up ?? [], sp.poses?.slam ?? []), impact = solidOf(sp.body, sp.poses?.slam ?? sp.arms);
+    assert.ok([...sp.zzz, ...sp.alert].every(([x, y]) => !anyPose.has(`${x},${y}`)), `fase ${i}: Zzz e "!" ficam fora do corpo e dos braços em qualquer pose`);
+    assert.ok(sp.fx.hit.every(([x, y]) => !impact.has(`${x},${y}`)), `fase ${i}: as faíscas do golpe ficam fora do corpo e das mãos no chão (o quadro em que aparecem)`);
+    assert.ok(sp.fx.cool.every(([, , ch]) => ch === 'S'), `fase ${i}: esfriando solta vapor`);
   }
   assert.equal(PX.golemSprite(0).eyes, null, 'o ovo de carvão não tem olhos');
   assert.deepEqual([pal.B, pal.M, pal.H], ['#111111', '#222222', '#333333'], 'o metal é a liga');
   assert.notEqual(PX.paletteFor(null, 'sleep').O, pal.O, 'cochilando, as brasas apagam');
+  assert.ok(![pal.O, PX.paletteFor(null, 'sleep').O].includes(PX.paletteFor(null, 'cooling').O), 'esfriando, as brasas baixam (entre acesas e apagadas)');
   assert.deepEqual(PX.runs([[0, 0, 'K'], [1, 0, 'K'], [2, 0, 'M'], [4, 0, 'M'], [0, 1, 'K']]), [[0, 0, 2, 'K'], [2, 0, 1, 'M'], [4, 0, 1, 'M'], [0, 1, 1, 'K']], 'pixels vizinhos da mesma cor viram um retângulo');
 });

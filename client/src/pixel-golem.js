@@ -1,7 +1,8 @@
 // O golem em PIXEL ART (Configurações > Golem e a barra lateral). PURO (sem React): monta cada fase numa grade de pixels com caixas de contorno escuro, luz em cima
 // e à esquerda e sombra embaixo e à direita, como nos sprites clássicos. Cada pixel é uma letra da paleta; o metal (B, M, H) é a liga das suas IAs.
-// Camadas: `body` (o corpo; O, Y e R são as partes em brasa), `arms` (os braços/martelo, que se mexem quando trabalha), `fx` (faíscas, chama, vapor, brilhos),
-// e os olhos em três versões (abertos, fechados, felizes). Testado em server/test/golem.test.mjs.
+// Camadas: `body` (o corpo; O, Y e R são as partes em brasa), `arms` (os braços/martelo, que se mexem quando trabalha), `fx` (faíscas, chama, vapor, brilhos; `hit` =
+// faíscas das mãos a cada golpe, `cool` = vapor esfriando, `cheer` = confete), `zzz` e `alert` (no canto de cima, fora do corpo) e os olhos (abertos, fechados, felizes,
+// olhando para os lados e meio fechados). Testado em server/test/golem.test.mjs.
 
 /** Paleta: letra -> papel. B/M/H = metal da liga (sombra, corpo, luz); o resto é fixo. */
 export const PALETTE_FIXED = Object.freeze({
@@ -10,6 +11,8 @@ export const PALETTE_FIXED = Object.freeze({
 });
 /** Paleta apagada (cochilando): as brasas quase sem brilho. */
 export const PALETTE_SLEEP = Object.freeze({ O: '#8a4424', Y: '#a8703a', R: '#6a2a18', E: '#c25a2a', e: '#d8925a', G: '#b8a070' });
+/** Paleta morna (esfriando, com sono): as brasas baixam, sem apagar. */
+export const PALETTE_COOL = Object.freeze({ O: '#e0743a', Y: '#f0b468', R: '#b03a22', E: '#e86c2c', e: '#f4ac6c', G: '#e8d49a' });
 export const HOT = new Set(['O', 'Y', 'R']);
 
 function canvas(w, h) {
@@ -42,16 +45,21 @@ function canvas(w, h) {
 const cells = (c) => { const out = []; c.g.forEach((row, y) => row.forEach((ch, x) => { if (ch !== '.') out.push([x, y, ch]); })); return out; };
 const pts = (list, ch) => list.map(([x, y]) => [x, y, ch]);
 
-/** Olhos: abertos (brasa com núcleo claro, ou escuros com brilho nos bichinhos), fechados (traço) e felizes (^). `w` = 2 ou 3. */
+/** Olhos: abertos (brasa com núcleo claro, ou escuros com brilho nos bichinhos), fechados (traço), felizes (^), olhando para a esquerda/direita (o brilho muda de
+ * lado) e meio fechados (pálpebra em cima, com sono). `w` = 2 ou 3. */
 function eyes(xs, y, { w = 2, dark = false } = {}) {
-  const open = [], closed = [], happy = [];
+  const open = [], closed = [], happy = [], left = [], right = [], half = [];
+  const base = dark ? 'D' : 'O', shine = dark ? 'W' : 'Y';
   for (const x of xs) {
-    for (let i = 0; i < w; i++) { open.push([x + i, y, dark ? 'D' : 'O'], [x + i, y + 1, dark ? 'D' : 'O']); closed.push([x + i, y + 1, 'D']); }
-    open.push([x + (dark ? w - 1 : Math.floor(w / 2)), y, dark ? 'W' : 'Y']);
+    for (let i = 0; i < w; i++) {
+      for (const list of [open, left, right]) list.push([x + i, y, base], [x + i, y + 1, base]);
+      closed.push([x + i, y + 1, 'D']); half.push([x + i, y, 'D'], [x + i, y + 1, base]);
+    }
+    open.push([x + (dark ? w - 1 : Math.floor(w / 2)), y, shine]); left.push([x, y, shine]); right.push([x + w - 1, y, shine]);
     if (w >= 3) happy.push([x, y + 1, dark ? 'D' : 'Y'], [x + 1, y, dark ? 'D' : 'Y'], [x + 2, y + 1, dark ? 'D' : 'Y']);
     else happy.push([x, y + 1, dark ? 'D' : 'Y'], [x + 1, y, dark ? 'D' : 'Y']);
   }
-  return { open, closed, happy };
+  return { open, closed, happy, left, right, half };
 }
 
 /** Faíscas (só aparecem trabalhando): pontos acima da cabeça que sobem em degraus. */
@@ -64,7 +72,7 @@ function faisca() {
   [[5, 8], [6, 7], [5, 9], [6, 8], [7, 7]].forEach(([x, y]) => c.px(x, y, 'c'));
   [[4, 13], [5, 12], [6, 13], [7, 12], [8, 13], [9, 12], [10, 13], [11, 12], [7, 11], [10, 14]].forEach(([x, y], i) => c.px(x, y, i % 3 ? 'O' : 'R'));
   [[6, 13], [9, 12]].forEach(([x, y]) => c.px(x, y, 'Y'));
-  return { w: 16, h: 20, body: cells(c), arms: [], fx: { idle: pts([[9, 2], [8, 3]], 'Y'), working: pts([[9, 1], [8, 2], [11, 3], [5, 3]], 'Y') }, eyes: null, top: 3 };
+  return { w: 16, h: 20, body: cells(c), arms: [], fx: { idle: pts([[9, 2], [8, 3]], 'Y'), working: pts([[9, 1], [8, 2], [11, 3], [5, 3]], 'Y'), hit: [] }, eyes: null, top: 3, cx: 8 };
 }
 function brasa() {
   const c = canvas(18, 22);
@@ -74,7 +82,7 @@ function brasa() {
   [[5, 15], [13, 15]].forEach(([x, y]) => c.px(x, y, 'R'));
   c.px(8, 17, 'D'); c.px(9, 18, 'D'); c.px(10, 17, 'D');
   const fx = pts([[9, 2], [8, 3], [9, 3], [10, 3], [8, 4], [9, 4], [10, 4], [7, 5], [9, 5], [11, 5]], 'O').map(([x, y, ch], i) => [x, y, i === 0 || i === 2 || i === 5 ? 'Y' : ch]);
-  return { w: 18, h: 22, body: cells(c), arms: [], fx: { idle: fx, working: [...fx, ...sparks(9, 1)] }, eyes: eyes([5, 11], 12, { w: 3, dark: true }), top: 2, flame: true };
+  return { w: 18, h: 22, body: cells(c), arms: [], fx: { idle: fx, working: [...fx, ...sparks(9, 1)], hit: [] }, eyes: eyes([5, 11], 12, { w: 3, dark: true }), top: 2, cx: 9, flame: true };
 }
 function lingote() {
   const c = canvas(24, 18);
@@ -84,9 +92,11 @@ function lingote() {
   c.box(1, 6, 22, 9, { fill: 'M', hi: 'M', sh: 'B' });
   c.rect(2, 12, 20, 1, 'O'); c.rect(4, 12, 3, 1, 'Y'); c.rect(15, 12, 4, 1, 'Y');
   [[11, 10], [12, 9], [13, 10]].forEach(([x, y]) => c.px(x, y, 'B'));
-  const arms = cells((() => { const a = canvas(24, 18); a.box(0, 8, 3, 4, { fill: 'M', hi: 'H', sh: 'B' }); a.box(21, 8, 3, 4, { fill: 'M', hi: 'H', sh: 'B' }); return a; })());
+  const nubs = (y) => cells((() => { const a = canvas(24, 18); a.box(0, y, 3, 4, { fill: 'M', hi: 'H', sh: 'B' }); a.box(21, y, 3, 4, { fill: 'M', hi: 'H', sh: 'B' }); return a; })());
+  const arms = nubs(8), poses = { up: nubs(5), slam: nubs(14) }; // erguidos ao lado do topo; no golpe, apoiados no chão
   const steam = pts([[8, 0], [9, 1], [16, 0], [15, 1]], 'S');
-  return { w: 24, h: 18, body: cells(c), arms, fx: { idle: steam, working: [...steam, ...sparks(12, 0)] }, eyes: eyes([7, 15], 7, { w: 2, dark: true }), top: 1 };
+  const hit = [[0, 12, 'Y'], [0, 10, 'O'], [0, 8, 'Y'], [23, 12, 'Y'], [23, 10, 'O'], [23, 8, 'Y'], [3, 17, 'S'], [4, 16, 'S'], [20, 17, 'S'], [19, 16, 'S']]; // faíscas acima das mãos e poeira no chão
+  return { w: 24, h: 18, body: cells(c), arms, fx: { idle: steam, working: [...steam, ...sparks(12, 0)], hit }, poses, eyes: eyes([7, 15], 7, { w: 2, dark: true }), top: 1, cx: 12 };
 }
 
 /** O golem de corpo inteiro (fases 3 a 6), montado por um layout calculado (cabeça, pescoço, tronco, ombros, braços, mãos, pernas e botas encaixam sempre). */
@@ -104,13 +114,22 @@ function golem(kind) {
   // pernas e botas
   const lx = [cx - Math.floor(L.gap / 2) - L.legW, cx + Math.ceil(L.gap / 2)];
   for (const x of lx) { c.box(x, legY, L.legW, L.legH); c.box(x - 1, bootY, L.legW + 2, L.bootH, { fill: 'B', hi: 'M', sh: 'K' }); if (steel) c.rect(x + 1, legY + 1, L.legW - 2, 1, 'H'); }
-  // braços e mãos (camada que bate quando trabalha)
+  // braços e mãos em três poses (a camada que bate quando trabalha): `rest` (pendurados), `up` (erguidos acima dos ombros, tomando impulso) e `slam` (esticados até o
+  // chão: a mão encosta na mesma linha das botas)
   const armX = [tx - L.armW + 1, tx + L.torsoW - 1], armY = ty + L.sh - 2;
-  for (const x of armX) {
-    a.box(x, armY, L.armW, L.armH);
-    a.box(x - 1, armY + L.armH - 1, L.armW + 2, L.handH, { fill: 'M', hi: 'H', sh: 'B' });
-    if (titan) a.rect(x, armY + L.armH, L.armW, 1, 'O');
-  }
+  const restBottom = armY + L.armH - 1 + L.handH - 1, reach = H - 1 - restBottom;
+  const drawArms = (cv, pose) => {
+    for (const [i, x0] of armX.entries()) {
+      const x = pose === 'up' ? x0 + (i === 0 ? -1 : 1) : x0; // erguidos, abrem um pouco para não cobrir a cabeça
+      const top = pose === 'up' ? armY - L.armH + 2 : armY, len = L.armH + (pose === 'slam' ? reach : 0);
+      const handY = pose === 'up' ? top - L.handH + 1 : top + len - 1;
+      cv.box(x, top, L.armW, len);
+      cv.box(x - 1, handY, L.armW + 2, L.handH, { fill: 'M', hi: 'H', sh: 'B' });
+      if (titan) cv.rect(x, pose === 'up' ? handY + L.handH - 2 : handY + 1, L.armW, 1, 'O');
+    }
+  };
+  drawArms(a, 'rest');
+  const poses = Object.fromEntries(['up', 'slam'].map((p) => { const cv = canvas(L.W, H); drawArms(cv, p); return [p, cells(cv)]; }));
   // tronco em barril, costura rebitada e a portinha da fornalha
   c.box(tx, ty, L.torsoW, L.th);
   c.rect(tx + 1, ty + 2, L.torsoW - 2, 1, 'B');
@@ -143,22 +162,38 @@ function golem(kind) {
     fxIdle.push(...pts([[1, ty], [L.W - 2, ty + 4], [2, ty + 12], [L.W - 3, ty + 16], [4, hy + 2], [L.W - 5, hy + 4]], 'G'));
   }
   const top = Math.max(0, hy - (titan ? 7 : 5));
-  return { w: L.W, h: H, body: cells(c), arms: cells(a), fx: { idle: fxIdle, working: [...fxIdle, ...sparks(cx, top)] }, eyes: eyes(ex, ey, { w: 3 }), top };
+  // o impacto: faíscas saltando do lado de fora de cada mão no chão e poeira rente ao chão
+  const hit = [];
+  armX.forEach((x, i) => {
+    const out = i === 0 ? x - 2 : x + L.armW + 1, dir = i === 0 ? -1 : 1, handTop = H - L.handH;
+    hit.push([out, H - 3, 'Y'], [out + dir, H - 5, 'O'], [out, H - 7, 'Y'], [i === 0 ? x - 1 : x + L.armW, handTop - 2, 'O'], [out + dir, H - 2, 'Y'], [out, H - 1, 'S'], [out + dir, H - 1, 'S']);
+  });
+  return { w: L.W, h: H, body: cells(c), arms: cells(a), fx: { idle: fxIdle, working: [...fxIdle, ...sparks(cx, top)], hit: hit.map(([x, y, ch]) => [Math.min(L.W - 1, Math.max(0, x)), Math.min(H - 1, Math.max(0, y)), ch]) }, poses, eyes: eyes(ex, ey, { w: 3 }), top, cx };
 }
 
 const BUILDERS = [faisca, brasa, lingote, () => golem('ferro'), () => golem('aco'), () => golem('tita'), () => golem('mitico')];
 const memo = new Map();
+/** Efeitos comuns a todas as fases, a partir do tamanho, do centro e do topo: vapor (esfriando), confete (comemorando), Zzz e "!" no canto de cima à direita. */
+function withExtras(sp) {
+  const { w, h, cx, top } = sp, clamp = ([x, y, ch]) => [Math.min(w - 1, Math.max(0, x)), Math.min(h - 1, Math.max(0, y)), ch];
+  const cool = [[cx - 3, top + 1, 'S'], [cx + 2, top, 'S'], [cx, top + 2, 'S'], [cx - 5, top + 3, 'S']].map(clamp);
+  const cheer = [[2, top + 2, 'G'], [w - 3, top + 3, 'Y'], [cx - 6, top, 'Y'], [cx + 6, top + 1, 'G'], [1, Math.floor(h / 2), 'Y'], [w - 2, Math.floor(h / 2) - 2, 'G']].map(clamp);
+  const zx = w - 4, zzz = [[zx, 1], [zx + 1, 1], [zx + 2, 1], [zx + 1, 2], [zx, 3], [zx + 1, 3], [zx + 2, 3]].map(([x, y]) => [x, y, 'W']); // um Z 3x3
+  const alert = [[w - 3, 0], [w - 2, 0], [w - 3, 1], [w - 2, 1], [w - 3, 2], [w - 2, 2], [w - 3, 4], [w - 2, 4]].map(([x, y]) => [x, y, y === 2 ? 'O' : 'Y']); // "!"
+  return { ...sp, fx: { ...sp.fx, cool, cheer }, zzz, alert };
+}
 /** Sprite da fase (0..6), memorizado. */
 export function golemSprite(stage) {
   const s = Math.min(6, Math.max(0, Math.round(Number(stage) || 0)));
-  if (!memo.has(s)) memo.set(s, Object.freeze(BUILDERS[s]()));
+  if (!memo.has(s)) memo.set(s, Object.freeze(withExtras(BUILDERS[s]())));
   return memo.get(s);
 }
 
-/** Cor de cada letra para uma liga ({ base, mid, hi }) e um humor ('sleep' apaga as brasas). */
+/** Cor de cada letra para uma liga ({ base, mid, hi }) e um humor: esfriando e com sono as brasas baixam; cochilando, quase apagam. */
 export function paletteFor(colors, mood) {
   const c = colors ?? { base: '#3a3d44', mid: '#7b818c', hi: '#c3c8d0' };
-  return { ...PALETTE_FIXED, ...(mood === 'sleep' ? PALETTE_SLEEP : {}), B: c.base, M: c.mid, H: c.hi };
+  const embers = mood === 'sleep' ? PALETTE_SLEEP : mood === 'cooling' || mood === 'drowsy' ? PALETTE_COOL : {};
+  return { ...PALETTE_FIXED, ...embers, B: c.base, M: c.mid, H: c.hi };
 }
 
 /** Junta pixels vizinhos da mesma cor numa linha em retângulos (menos elementos no SVG). [[x, y, w, ch]]. */

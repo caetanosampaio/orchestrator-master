@@ -49,8 +49,7 @@ export function GolemSection() {
       <section className="gm-hero" aria-label="O seu golem">
         <div className={`gm-show${anim ? ' evolving' : ''}`}>
           {anim && <span key={anim.i} className="gm-flash" aria-hidden="true" />}
-          <span className="gm-float" key={shown}><GolemSprite stage={shown} colors={g.alloy.colors} mood={anim ? 'cheer' : g.mood} scale={6} /></span>
-          {g.mood === 'sleep' && !anim && <span className="gm-zzz" aria-hidden="true"><i>z</i><i>z</i><i>Z</i></span>}
+          <span className="gm-float" key={shown}><GolemSprite stage={shown} colors={g.alloy.colors} mood={anim ? 'cheer' : g.mood} burst={!anim && g.burst} alert={!anim && g.waiting > 0} scale={6} /></span>
         </div>
         <div className="gm-info">
           {name === null
@@ -84,7 +83,7 @@ export function GolemSection() {
             return (
               <li key={s.id} className={`${open ? 'open' : 'locked'}${on ? ' on' : ''}${i === g.index ? ' now' : ''}`}>
                 <button type="button" role="radio" aria-checked={on} disabled={!open || !!anim} onClick={() => pick(i)} aria-label={open ? `Exibir ${s.label}` : `${s.label}: bloqueada, faltam ${fmtTokens(s.min - g.total)} tokens`} title={open ? s.hint : `Bloqueada: chega com ${fmtTokens(s.min)} tokens`}>
-                  <span className="gm-mini"><GolemSprite stage={i} colors={open ? g.alloy.colors : undefined} mood={open ? 'idle' : 'sleep'} scale={2} /></span>
+                  <span className="gm-mini"><GolemSprite stage={i} colors={open ? g.alloy.colors : undefined} mood={open ? 'idle' : 'sleep'} quiet scale={2} /></span>
                   <b>{open ? s.label : '???'}</b>
                   <small>{open ? (i === g.index ? 'atual' : s.min ? `${fmtTokens(s.min)}` : 'início') : <><Lock /> {fmtTokens(s.min)}</>}</small>
                 </button>

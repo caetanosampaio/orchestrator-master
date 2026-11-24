@@ -116,12 +116,14 @@ export const HomeIcon = () => <svg width={15} height={15} viewBox="0 0 24 24" fi
  * Embaixo, as Configurações e "Arquivos" (abrir, trocar ou adicionar workspace). Em telas estreitas vira uma gaveta modal. Tudo vem de /api/state e /api/terminals.
  */
 /** O golem na barra lateral, acima do rodapé: só ele (a forma escolhida), animado conforme o que acontece no Cockpit — martela enquanto há tokens sendo gastos,
- * comemora quando um trabalho termina, respira parado e cochila depois de um tempo sem trabalho. O clique abre um painel com o nível (a fase atual, não a forma
+ * vai parando aos poucos quando eles param, comemora quando um trabalho termina, solta vapor, olha em volta, cochila, e mostra "!" quando um agente espera você
+ * (os estados em golem.js > liveMood; o desenho em GolemSprite.jsx). O clique dá um pulinho e abre um painel com o nível (a fase atual, não a forma
  * exibida), o total de tokens e a barra até o próximo nível; "Ver detalhes" leva a Configurações > Golem. Esc ou clique fora fecha. */
 function SideGolem({ onOpen }) {
   const g = useGolem();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(false), [poke, setPoke] = useState(0);
   const wrap = useRef(null), btn = useRef(null);
+  useEffect(() => { if (!poke) return undefined; const t = setTimeout(() => setPoke(0), 600); return () => clearTimeout(t); }, [poke]); // o pulinho do clique
   useEffect(() => {
     if (!open) return undefined;
     const down = (e) => { if (!wrap.current?.contains(e.target)) setOpen(false); };
@@ -144,9 +146,9 @@ function SideGolem({ onOpen }) {
           <button type="button" className="gm-link" onClick={() => { setOpen(false); onOpen?.(); }}>Ver detalhes</button>
         </div>
       )}
-      <button ref={btn} type="button" className="fx-golem" onClick={() => setOpen((v) => !v)} aria-expanded={open} aria-controls={open ? 'fx-golem-info' : undefined}
-        aria-label={`Golem: nível ${level}, ${g.stage.label}. Mostrar progresso`}>
-        <GolemSprite stage={g.shown} colors={g.alloy.colors} mood={g.mood} scale={3} />
+      <button ref={btn} type="button" className="fx-golem" onClick={() => { setOpen((v) => !v); setPoke(Date.now()); }} aria-expanded={open} aria-controls={open ? 'fx-golem-info' : undefined}
+        aria-label={`Golem: nível ${level}, ${g.stage.label}${g.waiting > 0 ? `; ${g.waiting === 1 ? 'um agente espera' : `${g.waiting} agentes esperam`} você` : ''}. Mostrar progresso`}>
+        <GolemSprite key={poke || 'live'} stage={g.shown} colors={g.alloy.colors} mood={poke ? 'cheer' : g.mood} burst={g.burst} alert={g.waiting > 0} className={poke ? 'gl-poke' : ''} scale={3} />
       </button>
     </div>
   );

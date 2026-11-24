@@ -9,8 +9,6 @@
 .gm-float .gl { animation: gm-float 4.2s ease-in-out infinite; }
 .gm-show.evolving .gm-float { animation: gm-evolve .9s cubic-bezier(.2, .9, .3, 1.3) both; }
 .gm-flash { position: absolute; inset: 0; border-radius: 50%; background: radial-gradient(circle at 50% 70%, rgba(255, 236, 190, .75), rgba(255, 170, 80, .2) 35%, transparent 62%); animation: gm-flash .9s ease-out forwards; pointer-events: none; }
-.gm-zzz { position: absolute; top: 40px; right: 18%; display: flex; gap: 3px; font: 800 15px var(--sans, system-ui); color: var(--faint, #888); }
-.gm-zzz i { font-style: normal; animation: gm-zzz 2.6s ease-in-out infinite; } .gm-zzz i:nth-child(2) { animation-delay: .45s; font-size: 18px; } .gm-zzz i:nth-child(3) { animation-delay: .9s; font-size: 22px; }
 
 .gm-info { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .gm-name { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
@@ -67,21 +65,75 @@
 .gm-rec-grid div { display: flex; flex-direction: column; gap: 2px; }
 .gm-rec-grid span { color: var(--faint, #888); font-size: 11.5px; } .gm-rec-grid b { color: var(--strong, #fff); font-size: 17px; font-variant-numeric: tabular-nums; } .gm-rec-grid small { color: var(--faint, #888); font-size: 11px; }
 
-/* ---------- o golem em pixel art (GolemSprite.jsx): animações em degraus, como sprites clássicos ---------- */
+/* ---------- o golem em pixel art (GolemSprite.jsx): animações em degraus, como sprites clássicos ----------
+   O ritmo segue o trabalho e para aos poucos: working (golpes de .42 s; .28 s numa rajada de tokens) -> slowing (golpes de 1 s) -> cheer -> cooling (vapor) -> idle -> drowsy -> sleep. */
 .gl { overflow: visible; image-rendering: pixelated; }
 .px-all { animation: px-bob 1.6s steps(1, end) infinite; }
-.gl-m-sleep .px-all { animation-duration: 3.2s; }
-.gl-m-working .px-all { animation: px-hammer .36s steps(1, end) infinite; }          /* gastando tokens: martela */
-.gl-m-working .px-arms { animation: px-arms .36s steps(1, end) infinite; }
-.gl-m-working .px-hot { animation: px-flick .3s steps(1, end) infinite alternate; }
-.gl-m-cheer .px-all { animation: px-hop .6s steps(1, end) 3; }
 .px-eo { animation: px-blink-o 4.6s steps(1, end) infinite; }
 .px-ec { opacity: 0; animation: px-blink-c 4.6s steps(1, end) infinite; }
 .px-f { animation: px-flick .45s steps(1, end) infinite alternate; }
 .px-f.f1 { animation-delay: .15s; } .px-f.f2 { animation-delay: .3s; } .px-f.f3 { animation-delay: .1s; } .px-f.f4 { animation-delay: .25s; }
+.px-f.steam { animation: px-rise 1.8s steps(3, end) infinite; }
+.px-h { opacity: 0; }
+
+/* trabalhando: o golpe em 4 quadros (pixel-golem.js > poses), no compasso --beat — toma impulso (braços erguidos, corpo sobe), desce, BATE as mãos no chão (o corpo
+   afunda, tudo treme, faíscas e poeira saltam das mãos) e volta. Rajada de tokens = compasso mais curto; diminuindo o ritmo = mais longo. */
+.gl-m-working { --beat: .6s; } .gl-burst { --beat: .42s; } .gl-m-slowing { --beat: 1.25s; }
+.gl-m-working .px-all, .gl-m-slowing .px-all { animation: px-hammer var(--beat) steps(1, end) infinite; } /* sem braços (faísca, brasa): o corpo pula no compasso */
+.gl-posed.gl-m-working .px-all, .gl-posed.gl-m-slowing .px-all { animation: px-shake var(--beat) steps(1, end) infinite; }
+.gl-posed.gl-m-working :is(.px-body, .px-eyes), .gl-posed.gl-m-slowing :is(.px-body, .px-eyes) { animation: px-squash var(--beat) steps(1, end) infinite; }
+.px-pose-up, .px-pose-slam { opacity: 0; }
+.gl-m-working .px-pose-rest, .gl-m-slowing .px-pose-rest { animation: px-fr-rest var(--beat) steps(1, end) infinite; }
+.gl-m-working .px-pose-up, .gl-m-slowing .px-pose-up { animation: px-fr-up var(--beat) steps(1, end) infinite; }
+.gl-m-working .px-pose-slam, .gl-m-slowing .px-pose-slam { animation: px-fr-slam var(--beat) steps(1, end) infinite; }
+.gl-m-working .px-h, .gl-m-slowing .px-h { animation: px-strike var(--beat) steps(1, end) infinite; }
+.gl-m-working .px-h.steam, .gl-m-slowing .px-h.steam { animation: px-dust var(--beat) steps(1, end) infinite; }
+.gl-m-working .px-hot { animation: px-flick .3s steps(1, end) infinite alternate; }
+.gl-burst .px-hot { animation-duration: .16s; }
+.gl-m-slowing .px-hot { animation: px-flick .7s steps(1, end) infinite alternate; }
+/* as faíscas que sobem da cabeça (por cima do corpo, sem afundar com ele) */
 .gl-m-working .px-f { animation: px-rise .8s steps(4, end) infinite; }
 .gl-m-working .px-f.f1 { animation-delay: .2s; } .gl-m-working .px-f.f2 { animation-delay: .4s; } .gl-m-working .px-f.f3 { animation-delay: .6s; } .gl-m-working .px-f.f4 { animation-delay: .1s; }
-.px-f.steam, .gl-m-working .px-f.steam { animation: px-rise 1.8s steps(3, end) infinite; }
+.gl-m-working .px-f.steam { animation: px-rise 1.8s steps(3, end) infinite; }
+.gl-burst .px-f { animation-duration: .55s; }
+.gl-m-slowing .px-f { animation: px-rise 1.6s steps(4, end) infinite; }
+
+/* comemorando: pula, ergue os braços no alto de cada pulo e solta confete */
+.gl-m-cheer .px-all { animation: px-hop .6s steps(1, end) 4; }
+.gl-m-cheer .px-pose-rest { animation: px-cheer-rest .6s steps(1, end) 4; }
+.gl-m-cheer .px-pose-up { animation: px-cheer-up .6s steps(1, end) 4; }
+.px-c { animation: px-twinkle .5s steps(1, end) infinite alternate; }
+.px-c.f1 { animation-delay: .1s; } .px-c.f2 { animation-delay: .25s; } .px-c.f3 { animation-delay: .35s; } .px-c.f4 { animation-delay: .2s; }
+.gl-poke .px-all { animation: px-hop .5s steps(1, end) 1; }
+.gl-poke .px-pose-rest { animation: px-cheer-rest .5s steps(1, end) 1; }
+.gl-poke .px-pose-up { animation: px-cheer-up .5s steps(1, end) 1; }
+
+/* esfriando: respira fundo e o vapor sobe devagar, em tempos diferentes */
+.gl-m-cooling .px-all { animation: px-bob 2.4s steps(1, end) infinite; }
+.gl-m-cooling .px-hot { animation: px-flick 1.4s steps(1, end) infinite alternate; }
+.gl-m-cooling .px-f.steam { animation: px-steam 2.6s steps(5, end) infinite; }
+.gl-m-cooling .px-f.steam.f1 { animation-delay: .6s; } .gl-m-cooling .px-f.steam.f2 { animation-delay: 1.3s; } .gl-m-cooling .px-f.steam.f3 { animation-delay: 1.9s; }
+
+/* parado: respira, olha para os lados (ciclo de 10 s) e se espreguiça de vez em quando */
+.gl-m-idle .px-arms { animation: px-stretch 9s steps(1, end) infinite; }
+.px-gl, .px-gr, .px-gb { opacity: 0; }
+.px-gc { animation: px-look-c 10s steps(1, end) infinite; }
+.px-gl { animation: px-look-l 10s steps(1, end) infinite; }
+.px-gr { animation: px-look-r 10s steps(1, end) infinite; }
+.px-gb { animation: px-look-b 10s steps(1, end) infinite; }
+
+/* com sono: pálpebras pesadas, cabeceia e às vezes fecha os olhos */
+.gl-m-drowsy .px-all { animation: px-nod 3.6s steps(1, end) infinite; }
+.px-ed { opacity: 0; animation: px-doze-c 3.6s steps(1, end) infinite; }
+.px-eh { animation: px-doze-o 3.6s steps(1, end) infinite; }
+
+/* cochilando: respiração lenta e dois Zzz subindo, um atrás do outro */
+.gl-m-sleep .px-all { animation-duration: 3.2s; }
+.px-z { opacity: 0; animation: px-zzz 3.2s steps(6, end) infinite; }
+.px-z.z2 { animation-delay: 1.6s; }
+
+/* um agente esperando você: "!" piscando no canto */
+.px-alert { animation: px-alert 1s steps(1, end) infinite; }
 
 /* barra lateral do Cockpit (Sidebar.jsx > SideGolem): só o golem, animado conforme o trabalho; sem textos */
 /* centralizado na largura da barra; o painel do clique abre acima dele, por cima da lista de workspaces */
@@ -97,7 +149,27 @@
 @keyframes gm-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
 @keyframes px-bob { 0%, 49% { transform: translateY(0); } 50%, 100% { transform: translateY(1px); } }
 @keyframes px-hammer { 0%, 49% { transform: translateY(-1px); } 50%, 100% { transform: translateY(1px); } }
-@keyframes px-arms { 0%, 49% { transform: translateY(-2px); } 50%, 100% { transform: translateY(1px); } }
+@keyframes px-strike { 0%, 44% { opacity: 0; transform: translate(0, 0); } 45%, 59% { opacity: 1; transform: translate(0, 0); } 60%, 74% { opacity: .7; transform: translate(0, -1px); } 75%, 100% { opacity: 0; transform: translate(0, -2px); } }
+@keyframes px-dust { 0%, 44% { opacity: 0; transform: translate(0, 0); } 45%, 64% { opacity: .9; transform: translate(0, 0); } 65%, 84% { opacity: .5; transform: translate(0, -1px); } 85%, 100% { opacity: 0; } }
+@keyframes px-fr-up { 0%, 29% { opacity: 1; } 30%, 100% { opacity: 0; } }
+@keyframes px-fr-rest { 0%, 29% { opacity: 0; } 30%, 44% { opacity: 1; } 45%, 79% { opacity: 0; } 80%, 100% { opacity: 1; } }
+@keyframes px-fr-slam { 0%, 44% { opacity: 0; } 45%, 79% { opacity: 1; } 80%, 100% { opacity: 0; } }
+@keyframes px-squash { 0%, 29% { transform: translateY(-1px); } 30%, 44% { transform: translateY(0); } 45%, 64% { transform: translateY(1px); } 65%, 100% { transform: translateY(0); } }
+@keyframes px-shake { 0%, 44% { transform: translateX(0); } 45%, 51% { transform: translateX(1px); } 52%, 58% { transform: translateX(-1px); } 59%, 100% { transform: translateX(0); } }
+@keyframes px-cheer-up { 0%, 19% { opacity: 0; } 20%, 79% { opacity: 1; } 80%, 100% { opacity: 0; } }
+@keyframes px-cheer-rest { 0%, 19% { opacity: 1; } 20%, 79% { opacity: 0; } 80%, 100% { opacity: 1; } }
+@keyframes px-twinkle { 0%, 49% { opacity: 1; } 50%, 100% { opacity: .2; } }
+@keyframes px-steam { 0% { transform: translate(0, 0); opacity: .9; } 50% { transform: translate(1px, -3px); opacity: .6; } 100% { transform: translate(0, -6px); opacity: 0; } }
+@keyframes px-stretch { 0%, 79% { transform: translateY(0); } 80%, 85% { transform: translateY(-2px); } 86%, 89% { transform: translateY(-1px); } 90%, 100% { transform: translateY(0); } }
+@keyframes px-look-c { 0%, 54% { opacity: 1; } 55%, 62% { opacity: 0; } 63%, 66% { opacity: 1; } 67%, 74% { opacity: 0; } 75%, 93% { opacity: 1; } 94%, 95% { opacity: 0; } 96%, 100% { opacity: 1; } }
+@keyframes px-look-l { 0%, 54% { opacity: 0; } 55%, 62% { opacity: 1; } 63%, 100% { opacity: 0; } }
+@keyframes px-look-r { 0%, 66% { opacity: 0; } 67%, 74% { opacity: 1; } 75%, 100% { opacity: 0; } }
+@keyframes px-look-b { 0%, 93% { opacity: 0; } 94%, 95% { opacity: 1; } 96%, 100% { opacity: 0; } }
+@keyframes px-nod { 0%, 39% { transform: translateY(0); } 40%, 69% { transform: translateY(1px); } 70%, 89% { transform: translateY(2px); } 90%, 100% { transform: translateY(0); } }
+@keyframes px-doze-o { 0%, 69% { opacity: 1; } 70%, 89% { opacity: 0; } 90%, 100% { opacity: 1; } }
+@keyframes px-doze-c { 0%, 69% { opacity: 0; } 70%, 89% { opacity: 1; } 90%, 100% { opacity: 0; } }
+@keyframes px-zzz { 0% { opacity: 0; transform: translate(0, 2px); } 20% { opacity: 1; } 100% { opacity: 0; transform: translate(3px, -5px); } }
+@keyframes px-alert { 0%, 59% { opacity: 1; transform: translateY(0); } 60%, 79% { opacity: 1; transform: translateY(-1px); } 80%, 100% { opacity: .35; transform: translateY(0); } }
 @keyframes px-hop { 0% { transform: translateY(0); } 20% { transform: translateY(-3px); } 40% { transform: translateY(-5px); } 60% { transform: translateY(-3px); } 80%, 100% { transform: translateY(0); } }
 @keyframes px-flick { 0%, 49% { opacity: 1; } 50%, 100% { opacity: .55; } }
 @keyframes px-rise { from { transform: translateY(0); opacity: 1; } to { transform: translateY(-4px); opacity: 0; } }
@@ -107,6 +179,5 @@
 @keyframes gm-in { from { opacity: 0; transform: scale(.9); } to { opacity: 1; transform: scale(1); } }
 @keyframes gm-evolve { 0% { opacity: 0; transform: scale(.6); filter: brightness(3); } 60% { opacity: 1; transform: scale(1.08); filter: brightness(1.6); } 100% { transform: scale(1); filter: brightness(1); } }
 @keyframes gm-flash { 0% { opacity: 0; } 25% { opacity: 1; } 100% { opacity: 0; } }
-@keyframes gm-zzz { 0% { opacity: 0; transform: translate(0, 6px); } 40% { opacity: 1; } 100% { opacity: 0; transform: translate(8px, -16px); } }
 @media (prefers-reduced-motion: reduce) { .gm *, .gm *::before, .gm *::after, .fx-golem *, .fx-golem-pop { animation: none !important; transition: none !important; } }
 html[data-motion="reduced"] .gm *, html[data-motion="reduced"] .gm *::before, html[data-motion="reduced"] .gm *::after, html[data-motion="reduced"] .fx-golem *, html[data-motion="reduced"] .fx-golem-pop { animation: none !important; transition: none !important; }
