@@ -17,6 +17,7 @@ const T = await import('../terminals.js');
 const TT = await import('../team-templates.js');
 const F = await import('../flows.js');
 const PC = await import('../project-config.js');
+const M = await import('../maestro.js');
 after(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
 const NEW = ['gemini', 'opencode', 'cursor'];
@@ -179,4 +180,25 @@ test('times e missões: vaga ou etapa com IA sem coordenação é recusada na va
   }
   assert.equal(TT.validateTemplateBody({ name: 'Time', slots: [{ role: 'builder', provider: 'codex' }] }).error, undefined, 'Codex continua aceito');
   assert.equal(F.validateSteps([{ title: 'Etapa', prompt: 'Faça algo', provider: 'claude', role: 'builder' }]).error, undefined, 'Claude continua aceito');
+});
+
+test('Maestro: o terminal livre (IA sem coordenação) aparece em list_panes com coordinated:false e NÃO recebe send_task nem dispatch (não teria como avisar o fim)', () => {
+  const MA = 'term_aaaaaaaa', GE = 'term_bbbbbbbb', CL = 'term_cccccccc', OC = 'term_dddddddd';
+  const panes = new Map([[MA, { id: MA, role: 'maestro', provider: 'claude', title: 'M', status: 'running' }], [GE, { id: GE, role: 'builder', provider: 'gemini', title: 'G', status: 'running' }],
+    [OC, { id: OC, role: 'builder', provider: 'opencode', title: 'O', status: 'running' }], [CL, { id: CL, role: 'builder', provider: 'claude', title: 'C', status: 'running' }]]);
+  const written = [], timers = []; let n = 0;
+  const api = { get: (id) => panes.get(id) ?? null, peek: (id) => panes.get(id) ?? null, list: () => [...panes.values()], write: (id, d) => { written.push([id, d]); return { ok: true, status: 200 }; }, readOutput: () => '' };
+  const m = M.createMaestro({ getTerminals: () => api, mcpDir: path.join(tmp, `mcp-${Math.random().toString(16).slice(2)}`), url: 'http://127.0.0.1:4999/mcp', serverName: 'forge_ab12cd', uid: (p) => `${p}_${String(++n).padStart(8, '0')}`, setTimer: (fn) => { timers.push(fn); return { unref() {} }; } });
+  const ma = { terminalId: MA, role: 'maestro' }, call = (name, args = {}) => m.rpc(ma, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }).result;
+  m.setAutonomous(true);
+  const by = Object.fromEntries(JSON.parse(call('list_panes').content[0].text).map((x) => [x.pane_id, x]));
+  assert.equal(by[GE].coordinated, false); assert.equal(by[OC].coordinated, false); assert.equal('coordinated' in by[CL], false, 'pane com coordenação: o campo nem aparece');
+  for (const id of [GE, OC]) {
+    const r = call('send_task', { pane_id: id, task: 'faça isso' });
+    assert.equal(r.isError, true, id); assert.match(r.content[0].text, /terminal livre.*NÃO foi enviada/);
+    const d = m.dispatch({ to: id, text: 'faça isso' }); assert.equal(d.ok, false); assert.match(d.error, /terminal livre/);
+  }
+  assert.equal(written.length, 0, 'nada foi digitado nos terminais livres');
+  assert.match(call('send_task', { pane_id: CL, task: 'faça isso' }).content[0].text, /entregue/, 'o pane do Claude continua recebendo');
+  assert.equal(written[0][0], CL);
 });
