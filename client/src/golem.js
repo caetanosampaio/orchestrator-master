@@ -115,6 +115,13 @@ export function liveMood({ working = 0, lastActive = null, lastEnd = null, now =
   if (lastActive === null || now - lastActive >= SLEEP_AFTER_MS) return 'sleep';
   return 'idle';
 }
+/** Total de tokens (entrada + saída) dos terminais abertos, pelo consumo que o servidor mede de cada um (o mesmo número do Cockpit). Subiu = há tokens sendo gastos. */
+export const sessionTokens = (sessions) => (Array.isArray(sessions) ? sessions : []).reduce((a, s) => {
+  const u = s?.usage, n = Number.isFinite(u?.io) ? u.io : Number.isFinite(u?.input) && Number.isFinite(u?.output) ? u.input + u.output : 0;
+  return a + (n > 0 ? n : 0);
+}, 0);
+/** Tokens subiram há menos que isso = ainda trabalhando (o consumo dos terminais chega a cada poucos segundos). */
+export const TOKEN_FRESH_MS = 12_000;
 export const MOOD_LABEL = Object.freeze({ working: 'forjando', cheer: 'comemorando', idle: 'esfriando', sleep: 'cochilando' });
 
 /** Nome: até 20 caracteres, sem caracteres de controle. */

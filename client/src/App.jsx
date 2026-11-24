@@ -58,7 +58,7 @@ export default function App() {
   // Missões v2 (flows): um único polling serve a página Missões e o indicador da barra lateral (visível em qualquer página). `flowsSeenAt` = quando você viu Missões pela última vez: run que termina depois disso aparece como "concluída/falhou" na sidebar até você abrir a página.
   const flowsData = useFlows({ intervalMs: 2500 });
   useEffect(() => { startGolem(); }, []); // o golem de liga: cresce com os tokens de todas as IAs (com o histórico) e reage ao trabalho ao vivo
-  useGolemLive({ workingIds, workEnds, notify }); // agentes trabalhando agora, fim de trabalho (comemora) e aviso quando ele evolui
+  useGolemLive({ workingIds, workEnds, sessions: terminals?.sessions, notify }); // martela enquanto há tokens sendo gastos (terminal trabalhando ou consumo subindo), comemora no fim e avisa quando evolui
   const [flowsSeenAt, setFlowsSeenAt] = useState(() => Date.now());
   useEffect(() => { if (view === 'missions') setFlowsSeenAt(Date.now()); }, [view, flowsData.flows]);
   const flowTermIds = useMemo(() => flowTerminalIds(flowsData.flows), [flowsData.flows]); // terminais das missões: só aparecem na página Missões

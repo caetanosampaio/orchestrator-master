@@ -86,3 +86,31 @@ test('rotas: GET padrão, PUT parcial (nome e fase vista) e rollback quando a gr
     assert.equal((await call('PUT', { name: 'Outro' })).status, 500); assert.equal(JSON.stringify(db.golem), before);
   } finally { await new Promise((r) => srv.close(r)); }
 });
+
+test('martela enquanto há tokens sendo gastos: soma o consumo dos terminais (subiu = trabalhando)', () => {
+  const s = [{ id: 't1', usage: { io: 1200 } }, { id: 't2', usage: { input: 300, output: 50 } }, { id: 't3', usage: null }, { id: 't4' }, { id: 't5', usage: { io: -5 } }];
+  assert.equal(G.sessionTokens(s), 1550); assert.equal(G.sessionTokens(null), 0);
+  const now = 50_000_000;
+  assert.equal(G.liveMood({ working: 1, lastActive: now - 1000, now }), 'working', 'um terminal com tokens recentes conta como trabalhando');
+  assert.ok(G.TOKEN_FRESH_MS >= 5000 && G.TOKEN_FRESH_MS <= 30_000);
+});
+
+test('pixel art: cada fase é uma grade com corpo, olhos e efeitos dentro dela; letras só da paleta; fases crescem', async () => {
+  const PX = await import('../../client/src/pixel-golem.js');
+  const pal = PX.paletteFor({ base: '#111111', mid: '#222222', hi: '#333333' }, 'idle');
+  let lastArea = 0;
+  for (let i = 0; i < 7; i++) {
+    const sp = PX.golemSprite(i), inside = ([x, y]) => x >= 0 && y >= 0 && x < sp.w && y < sp.h;
+    for (const list of [sp.body, sp.arms, sp.fx.idle, sp.fx.working, ...(sp.eyes ? [sp.eyes.open, sp.eyes.closed, sp.eyes.happy] : [])]) {
+      assert.ok(list.every(inside), `fase ${i}: tudo dentro da grade`);
+      assert.ok(list.every(([, , ch]) => typeof pal[ch] === 'string'), `fase ${i}: letras da paleta`);
+    }
+    assert.ok(sp.body.length > 40, `fase ${i}: corpo desenhado`); assert.equal(PX.golemSprite(i), sp, 'memorizado');
+    if (i >= 3) { assert.ok(sp.w * sp.h > lastArea, `fase ${i} é maior que a anterior`); lastArea = sp.w * sp.h; assert.ok(sp.arms.length > 0, 'golem tem braços (que batem ao trabalhar)'); }
+    if (i >= 1) assert.ok(sp.fx.working.length > sp.fx.idle.length, `fase ${i}: trabalhando solta faíscas`);
+  }
+  assert.equal(PX.golemSprite(0).eyes, null, 'o ovo de carvão não tem olhos');
+  assert.deepEqual([pal.B, pal.M, pal.H], ['#111111', '#222222', '#333333'], 'o metal é a liga');
+  assert.notEqual(PX.paletteFor(null, 'sleep').O, pal.O, 'cochilando, as brasas apagam');
+  assert.deepEqual(PX.runs([[0, 0, 'K'], [1, 0, 'K'], [2, 0, 'M'], [4, 0, 'M'], [0, 1, 'K']]), [[0, 0, 2, 'K'], [2, 0, 1, 'M'], [4, 0, 1, 'M'], [0, 1, 1, 'K']], 'pixels vizinhos da mesma cor viram um retângulo');
+});
