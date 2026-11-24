@@ -525,6 +525,31 @@ button.fx-sb-i:hover { background: rgba(255, 255, 255, .07); color: var(--strong
 .fx-app .acc-card { background: rgba(255, 255, 255, .03) !important; border: 1px solid var(--line); border-radius: var(--r-3) !important; box-shadow: none !important; }
 .fx-app .acc-card.def { border-color: var(--line-strong); }
 .fx-app .acc-card .oc-pill, .fx-app .acc-card [class*="pill"] { border-radius: 5px; font-family: var(--sans); }
+/* Contas: ícone oficial ao lado do nome de cada IA e o formulário "Adicionar conta" (IA escolhida em cartões, no mesmo cinza dos cartões de conta, nunca preto puro) */
+.fx-app .acc-gh { gap: 8px; font-size: 13px; }
+.fx-app .acc-head .prov-mark, .fx-app .acc-gh .prov-mark { flex: none; }
+.fx-app .acc-actions .btn .prov-mark { margin-right: 6px; }
+.fx-app .acc-add { gap: 18px; padding: 18px 20px; border: 1px solid var(--line-strong); border-radius: var(--r-3); background: var(--card) !important; box-shadow: none !important; }
+.fx-app .acc-add-h h3 { margin: 0 0 4px; font: 600 14.5px var(--sans); color: var(--strong); }
+.fx-app .acc-add-h p { margin: 0; }
+.fx-app .acc-step { display: inline-flex; align-items: center; gap: 8px; margin: 0 0 10px; padding: 0; font: 550 12.5px var(--sans); color: var(--text); }
+.fx-app .acc-step b { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: rgba(255, 255, 255, .1); color: var(--strong); font: 600 11px var(--sans); }
+.fx-app .acc-pick { min-width: 0; margin: 0; padding: 0; border: 0; }
+.fx-app .acc-pick-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; }
+.fx-app .acc-tile { position: relative; display: flex; align-items: center; gap: 12px; min-height: 66px; padding: 12px 40px 12px 14px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--field); cursor: pointer; transition: border-color var(--dur-1, .15s) ease, background-color var(--dur-1, .15s) ease; }
+.fx-app .acc-tile:hover { border-color: rgba(255, 255, 255, .28); background: rgba(255, 255, 255, .05); }
+.fx-app .acc-tile.on { border-color: var(--bone); background: rgba(255, 255, 255, .07); box-shadow: inset 0 0 0 1px var(--bone); }
+.fx-app .acc-tile.off { cursor: not-allowed; opacity: .5; }
+.fx-app .acc-tile.off:hover { border-color: var(--line-strong); background: var(--field); }
+.fx-app .acc-tile:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
+.fx-app .acc-tile-t { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.fx-app .acc-tile-t b { font: 600 13.5px var(--sans); color: var(--strong); white-space: nowrap; }
+.fx-app .acc-tile-t span { font: 400 12px/1.35 var(--sans); color: var(--faint); }
+.fx-app .acc-tile-dot { position: absolute; top: 50%; right: 14px; width: 16px; height: 16px; margin-top: -8px; border: 1.5px solid var(--line-control); border-radius: 50%; }
+.fx-app .acc-tile.on .acc-tile-dot { border-color: var(--bone); background: radial-gradient(circle, var(--bone) 0 3.5px, transparent 4px); }
+.fx-app .acc-add .acc-field input { max-width: 420px; }
+.fx-app .acc-add .acc-field input:disabled { opacity: .5; }
+.fx-app .acc-add-foot { justify-content: flex-end; padding-top: 14px; border-top: 1px solid var(--line); }
 .fx-setup-tips { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; color: var(--dim); font-size: 13px; }
 .fx-setup-tips li { display: flex; align-items: center; gap: 10px; }
 .fx-setup-skip { position: absolute; right: 24px; bottom: 20px; border: 0; background: none; color: var(--faint); font: 450 12px var(--sans); cursor: pointer; transition: color var(--dur-1) ease; }

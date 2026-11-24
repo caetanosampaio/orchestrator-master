@@ -472,10 +472,8 @@ html[data-motion="reduced"] .wsi, html[data-motion="reduced"] .wsi svg { animati
 .acc-code { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--sp-2); } .acc-code .acc-field { flex: 1 1 220px; }
 .acc-url { overflow-wrap: anywhere; margin: 0; }
 .acc-log { margin: 0; max-height: 7.5em; overflow: auto; padding: var(--sp-2) var(--sp-3); font-size: 11.5px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--coal-2); border-radius: var(--r-2); box-shadow: inset 0 0 0 1px var(--coal-line); }
-.acc-prov { display: flex; flex-wrap: wrap; gap: var(--sp-3); margin: 0; padding: 0; border: 0; } .acc-prov legend { padding: 0; margin-bottom: 4px; font-size: var(--fs-sm); }
-.acc-popt { display: inline-flex; align-items: center; gap: var(--sp-2); min-height: 32px; } .acc-popt.off { opacity: .6; }
 .oc-ptag.acc { min-width: 0; max-width: 16ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 0 1 auto; }
-@media (max-width: 700px) { .acc .btn, .acc-popt { min-height: 44px; } .acc-field input, .acc-field select { max-width: none; } }
+@media (max-width: 700px) { .acc .btn, .acc-tile { min-height: 44px; } .acc-field input, .acc-field select { max-width: none; } }
 /* Logo do agente no cabeçalho do terminal (sem caixa nem nome). Trabalhando: pula, balança e se agita (mesma marca para Claude e Codex).
    Movimento desligado por prefers-reduced-motion e por "Animações reduzidas" (regras globais de animation: none acima). */
 .oc-pmark { flex: none; display: inline-grid; place-items: center; line-height: 0; transform-origin: 50% 85%; }

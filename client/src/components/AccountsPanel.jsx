@@ -238,6 +238,7 @@ export default function AccountsPanel() {
     return (
       <li key={a.id} className="acc-card">
         <div className="acc-head">
+          <ProviderLogo id={a.provider} size={18} title={a.providerLabel} />
           <b className="acc-name">{a.label}</b>
           {a.home === 'machine' && <span className="oc-pill" title="O login que este computador já usa fora do FORGE. Desvincular não faz logout.">deste computador</span>}
         </div>
@@ -279,7 +280,7 @@ export default function AccountsPanel() {
       {!loaded && <p className="dim small" role="status">Carregando contas…</p>}
       {groups.map((g) => (
         <section key={g.id} className="acc-group" aria-label={`Contas do ${g.label}`}>
-          <h3 className="acc-gh"><ProviderLogo id={g.id} size={14} />{g.label}</h3>
+          <h3 className="acc-gh"><ProviderLogo id={g.id} size={18} />{g.label}</h3>
           {g.accounts.length > 0
             ? <ul className="acc-list" aria-label={`Contas do ${g.label}`}>{g.accounts.map((a) => card(a, g.provider))}</ul>
             : <p className="dim small">Nenhuma conta do {g.label} ainda.</p>}
@@ -288,35 +289,46 @@ export default function AccountsPanel() {
       {loaded && !loadErr && !data.accounts.length && !groups.length && <p className="dim small">Nenhuma conta ainda. Instale o Claude Code ou o Codex CLI e verifique de novo.</p>}
       {loaded && !loadErr && machines.length > 0 && (
         <div className="acc-actions">
-          {machines.map((p) => <Btn key={p.id} onClick={() => linkMachine(p)} disabled={busyId === `machine:${p.id}`} title={`Usar no FORGE o login do ${p.label} que este computador já tem (não faz login nem logout).`}>{busyId === `machine:${p.id}` ? 'Vinculando…' : `Adicionar conta deste computador (${p.label})`}</Btn>)}
+          {machines.map((p) => <Btn key={p.id} onClick={() => linkMachine(p)} disabled={busyId === `machine:${p.id}`} title={`Usar no FORGE o login do ${p.label} que este computador já tem (não faz login nem logout).`}><ProviderLogo id={p.id} size={14} />{busyId === `machine:${p.id}` ? 'Vinculando…' : `Adicionar conta deste computador (${p.label})`}</Btn>)}
         </div>
       )}
 
       {!loadErr && (adding ? (
-        <form className="acc-add" onSubmit={add} aria-label="Adicionar conta">
-          <label className="acc-field"><span>Nome da conta</span>
-            <input type="text" value={name} onChange={(e) => setName(e.target.value)} maxLength={NAME_MAX} placeholder="Ex.: Trabalho" data-autofocus="" autoComplete="off" />
-          </label>
-          <fieldset className="acc-prov"><legend>Provedor</legend>
-            {providers.map((p) => {
-              const ok = providerSelectable(p);
-              return (
-                <label key={p.id} className={`acc-popt${ok ? '' : ' off'}`}>
-                  <input type="radio" name="acc-prov" value={p.id} checked={prov === p.id} disabled={!ok} onChange={() => setProv(p.id)} />
-                  <span>{p.label}</span>{!ok && <span className="oc-pill" title={p.note || undefined}>{p.canLogin === false ? 'login no próprio CLI' : 'indisponível'}</span>}
-                </label>
-              );
-            })}
+        <form className="acc-add" onSubmit={add} aria-labelledby="acc-add-t">
+          <div className="acc-add-h">
+            <h3 id="acc-add-t">Adicionar conta</h3>
+            <p className="dim small">Uma conta isolada, com o login guardado só pelo FORGE (por exemplo, a do trabalho ao lado da pessoal).</p>
+          </div>
+          <fieldset className="acc-pick">
+            <legend className="acc-step"><b>1</b>Escolha a IA</legend>
+            <div className="acc-pick-grid">
+              {providers.map((p) => {
+                const ok = providerSelectable(p), on = prov === p.id;
+                const sub = p.available === false ? 'Não instalado neste computador' : p.canLogin === false ? 'Login no próprio CLI: use a conta deste computador' : 'Login pelo navegador, guardado no FORGE';
+                return (
+                  <label key={p.id} className={`acc-tile${on ? ' on' : ''}${ok ? '' : ' off'}`} title={!ok ? (p.note || sub) : undefined}>
+                    <input className="sr" type="radio" name="acc-prov" value={p.id} checked={on} disabled={!ok} onChange={() => setProv(p.id)} />
+                    <ProviderLogo id={p.id} size={28} />
+                    <span className="acc-tile-t"><b>{p.label}</b><span>{sub}</span></span>
+                    <i className="acc-tile-dot" aria-hidden="true" />
+                  </label>
+                );
+              })}
+            </div>
           </fieldset>
+          <label className="acc-field">
+            <span className="acc-step"><b>2</b>Dê um nome à conta</span>
+            <input type="text" value={name} onChange={(e) => setName(e.target.value)} maxLength={NAME_MAX} placeholder="Ex.: Trabalho" data-autofocus="" autoComplete="off" disabled={!providerSelectable(selected)} />
+          </label>
           {addState.reason && name && <p className="dim small" role="status">{addState.reason}</p>}
-          <div className="acc-actions">
-            <Btn type="submit" variant="primary" disabled={!addState.ok || saving}>{saving ? 'Adicionando…' : 'Adicionar'}</Btn>
+          <div className="acc-actions acc-add-foot">
             <Btn variant="quiet" onClick={() => { setAdding(false); setName(''); }} disabled={saving}>Cancelar</Btn>
+            <Btn type="submit" variant="primary" disabled={!addState.ok || saving}>{saving ? 'Adicionando…' : 'Adicionar e entrar'}</Btn>
           </div>
         </form>
       ) : (
         <div className="acc-actions">
-          <Btn onClick={() => { setAdding(true); setMsg(null); }} disabled={data.accounts.length >= MAX_ACCOUNTS} title={data.accounts.length >= MAX_ACCOUNTS ? `Limite de ${MAX_ACCOUNTS} contas atingido.` : 'Uma conta isolada, com o login guardado só pelo FORGE (por exemplo, a do trabalho ao lado da pessoal).'}>Adicionar conta</Btn>
+          <Btn onClick={() => { setAdding(true); setMsg(null); if (!providerSelectable(selected)) setProv(providers.find(providerSelectable)?.id ?? prov); }} disabled={data.accounts.length >= MAX_ACCOUNTS} title={data.accounts.length >= MAX_ACCOUNTS ? `Limite de ${MAX_ACCOUNTS} contas atingido.` : 'Uma conta isolada, com o login guardado só pelo FORGE (por exemplo, a do trabalho ao lado da pessoal).'}>Adicionar conta</Btn>
         </div>
       ))}
     </div>
