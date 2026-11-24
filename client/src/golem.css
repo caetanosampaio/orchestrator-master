@@ -67,46 +67,38 @@
 .gm-rec-grid div { display: flex; flex-direction: column; gap: 2px; }
 .gm-rec-grid span { color: var(--faint, #888); font-size: 11.5px; } .gm-rec-grid b { color: var(--strong, #fff); font-size: 17px; font-variant-numeric: tabular-nums; } .gm-rec-grid small { color: var(--faint, #888); font-size: 11px; }
 
-/* ---------- o golem: animações das peças ---------- */
-.gl .gl-shadow { fill: rgba(0, 0, 0, .35); }
-.gl-m-working .gl-joint, .gl-m-working .gl-core, .gl-m-working .gl-molten, .gl-m-working .gl-furnace { animation: gm-glow .7s ease-in-out infinite alternate; }
-.gl-m-sleep { filter: saturate(.7) brightness(.82); }
-.gl-blink { animation: gm-blink 5s infinite; transform-box: fill-box; transform-origin: center; }
-.gl-flicker { animation: gm-flicker 1.4s ease-in-out infinite; transform-box: fill-box; transform-origin: center bottom; }
-.gl-seam, .gl-pulse { animation: gm-glow 1.8s ease-in-out infinite alternate; }
-.gl-aura { animation: gm-spin 16s linear infinite; transform-box: view-box; transform-origin: 60px 74px; }
-.gl-halo { animation: gm-glow 2.4s ease-in-out infinite alternate; }
-.gl-steam path, .gl-smoke circle { animation: gm-steam 2.6s ease-in-out infinite; }
-.gl-spark { animation: gm-spark 1.4s ease-out infinite; }
-.gl-spark.s1 { animation-delay: .35s; } .gl-spark.s2 { animation-delay: .7s; } .gl-spark.s3 { animation-delay: 1.05s; }
-.gl-arm { transform-box: fill-box; transform-origin: 50% 8%; }
-.gl-m-cheer .gl-arm.l { animation: gm-wave-l .5s ease-in-out 3; } .gl-m-cheer .gl-arm.r { animation: gm-wave-r .5s ease-in-out 3; }
+/* ---------- o golem em pixel art (GolemSprite.jsx): animações em degraus, como sprites clássicos ---------- */
+.gl { overflow: visible; image-rendering: pixelated; }
+.px-all { animation: px-bob 1.6s steps(1, end) infinite; }
+.gl-m-sleep .px-all { animation-duration: 3.2s; }
+.gl-m-working .px-all { animation: px-hammer .36s steps(1, end) infinite; }          /* gastando tokens: martela */
+.gl-m-working .px-arms { animation: px-arms .36s steps(1, end) infinite; }
+.gl-m-working .px-hot { animation: px-flick .3s steps(1, end) infinite alternate; }
+.gl-m-cheer .px-all { animation: px-hop .6s steps(1, end) 3; }
+.px-eo { animation: px-blink-o 4.6s steps(1, end) infinite; }
+.px-ec { opacity: 0; animation: px-blink-c 4.6s steps(1, end) infinite; }
+.px-f { animation: px-flick .45s steps(1, end) infinite alternate; }
+.px-f.f1 { animation-delay: .15s; } .px-f.f2 { animation-delay: .3s; } .px-f.f3 { animation-delay: .1s; } .px-f.f4 { animation-delay: .25s; }
+.gl-m-working .px-f { animation: px-rise .8s steps(4, end) infinite; }
+.gl-m-working .px-f.f1 { animation-delay: .2s; } .gl-m-working .px-f.f2 { animation-delay: .4s; } .gl-m-working .px-f.f3 { animation-delay: .6s; } .gl-m-working .px-f.f4 { animation-delay: .1s; }
+.px-f.steam, .gl-m-working .px-f.steam { animation: px-rise 1.8s steps(3, end) infinite; }
 
-/* barra lateral do Cockpit (Sidebar.jsx > SideGolem): o golem pequeno, flutuando, acima do rodapé */
-.fx-golem { display: flex; align-items: flex-end; gap: 10px; flex: none; margin: 4px -2px 0; padding: 6px 8px 8px; border: 0; border-radius: 10px; background: transparent; color: inherit; text-align: left; cursor: pointer; transition: background-color .15s; }
+/* barra lateral do Cockpit (Sidebar.jsx > SideGolem): só o golem, animado conforme o trabalho; sem textos */
+.fx-golem { display: grid; place-items: end start; flex: none; margin: 4px 0 2px; padding: 6px 8px; border: 0; border-radius: 10px; background: transparent; cursor: pointer; line-height: 0; transition: background-color .15s; }
 .fx-golem:hover { background: rgba(255, 255, 255, .04); }
 .fx-golem:focus-visible { outline: 2px solid var(--focus, rgba(255, 255, 255, .55)); outline-offset: 1px; }
-.fx-golem-art { display: grid; place-items: end center; width: 64px; height: 68px; flex: none; line-height: 0; }
-.fx-golem-art .gl { animation: gm-float 4.2s ease-in-out infinite; }
-.fx-golem-t { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding-bottom: 4px; }
-.fx-golem-t b { overflow: hidden; color: var(--strong, #fff); font: 600 12px var(--sans, system-ui); white-space: nowrap; text-overflow: ellipsis; }
-.fx-golem-t span { overflow: hidden; color: var(--faint, #888); font: 450 11px var(--sans, system-ui); white-space: nowrap; text-overflow: ellipsis; }
-.fx-golem-t span i { display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; background: #8a7f78; vertical-align: 1px; }
-.fx-golem.working .fx-golem-t span i { background: #ffb347; box-shadow: 0 0 6px #ff8a3d; animation: gm-pulse 1s ease-in-out infinite; }
-.fx-golem-bar { display: block; width: 92px; height: 3px; overflow: hidden; border-radius: 2px; background: rgba(255, 255, 255, .08); }
-.fx-golem-bar u { display: block; height: 100%; background: linear-gradient(90deg, #ff7a2e, #ffb347); }
 
 /* ---------- animações ---------- */
 @keyframes gm-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
-@keyframes gm-glow { from { opacity: .55; } to { opacity: 1; } }
+@keyframes px-bob { 0%, 49% { transform: translateY(0); } 50%, 100% { transform: translateY(1px); } }
+@keyframes px-hammer { 0%, 49% { transform: translateY(-1px); } 50%, 100% { transform: translateY(1px); } }
+@keyframes px-arms { 0%, 49% { transform: translateY(-2px); } 50%, 100% { transform: translateY(1px); } }
+@keyframes px-hop { 0% { transform: translateY(0); } 20% { transform: translateY(-3px); } 40% { transform: translateY(-5px); } 60% { transform: translateY(-3px); } 80%, 100% { transform: translateY(0); } }
+@keyframes px-flick { 0%, 49% { opacity: 1; } 50%, 100% { opacity: .55; } }
+@keyframes px-rise { from { transform: translateY(0); opacity: 1; } to { transform: translateY(-4px); opacity: 0; } }
+@keyframes px-blink-o { 0%, 94% { opacity: 1; } 95%, 100% { opacity: 0; } }
+@keyframes px-blink-c { 0%, 94% { opacity: 0; } 95%, 100% { opacity: 1; } }
 @keyframes gm-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.35); } }
-@keyframes gm-blink { 0%, 93%, 100% { transform: scaleY(1); } 96% { transform: scaleY(.15); } }
-@keyframes gm-flicker { 0%, 100% { transform: scale(1, 1); opacity: 1; } 50% { transform: scale(.88, 1.12); opacity: .8; } }
-@keyframes gm-spin { to { transform: rotate(360deg); } }
-@keyframes gm-steam { 0% { opacity: 0; transform: translateY(2px); } 40% { opacity: .6; } 100% { opacity: 0; transform: translateY(-6px); } }
-@keyframes gm-spark { 0% { opacity: 0; transform: translate(0, 4px); } 20% { opacity: 1; } 100% { opacity: 0; transform: translate(3px, -18px); } }
-@keyframes gm-wave-l { 0%, 100% { transform: rotate(0); } 50% { transform: rotate(28deg); } }
-@keyframes gm-wave-r { 0%, 100% { transform: rotate(0); } 50% { transform: rotate(-28deg); } }
 @keyframes gm-in { from { opacity: 0; transform: scale(.9); } to { opacity: 1; transform: scale(1); } }
 @keyframes gm-evolve { 0% { opacity: 0; transform: scale(.6); filter: brightness(3); } 60% { opacity: 1; transform: scale(1.08); filter: brightness(1.6); } 100% { transform: scale(1); filter: brightness(1); } }
 @keyframes gm-flash { 0% { opacity: 0; } 25% { opacity: 1; } 100% { opacity: 0; } }

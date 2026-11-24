@@ -3,7 +3,7 @@ import GolemSprite from '../GolemSprite.jsx';
 import { AiIcon } from '../ProviderLogo.jsx';
 import { aiName } from '../../provider-catalog.js';
 import { useGolem, golemActions } from '../../use-golem.js';
-import { fmtTokens, metalOf, evolutionSteps, MOOD_LABEL, NAME_MAX, STAGES } from '../../golem.js';
+import { fmtTokens, metalOf, evolutionSteps, NAME_MAX, STAGES } from '../../golem.js';
 import '../../golem.css';
 
 const pct = (x) => `${Math.round(x * 100)}%`;
@@ -42,7 +42,6 @@ export function GolemSection() {
   const shown = anim ? anim.steps[anim.i] : g.shown;
   const title = g.name || 'Golem sem nome';
   const save = async (e) => { e.preventDefault(); try { await golemActions.rename(name ?? ''); setName(null); setErr(''); } catch (er) { setErr(er.message || 'Não foi possível salvar o nome.'); } };
-  const moodText = anim ? 'evoluindo' : g.mood === 'working' ? `forjando · ${g.working} ${g.working === 1 ? 'agente' : 'agentes'}` : MOOD_LABEL[g.mood];
   const pick = (i) => { if (i <= g.index && !anim) golemActions.show(i === g.index ? null : i); };
 
   return (
@@ -50,7 +49,7 @@ export function GolemSection() {
       <section className="gm-hero" aria-label="O seu golem">
         <div className={`gm-show${anim ? ' evolving' : ''}`}>
           {anim && <span key={anim.i} className="gm-flash" aria-hidden="true" />}
-          <span className="gm-float" key={shown}><GolemSprite stage={shown} colors={g.alloy.colors} mood={anim ? 'cheer' : g.mood} size={250} /></span>
+          <span className="gm-float" key={shown}><GolemSprite stage={shown} colors={g.alloy.colors} mood={anim ? 'cheer' : g.mood} scale={6} /></span>
           {g.mood === 'sleep' && !anim && <span className="gm-zzz" aria-hidden="true"><i>z</i><i>z</i><i>Z</i></span>}
         </div>
         <div className="gm-info">
@@ -60,7 +59,6 @@ export function GolemSection() {
           {err && <p className="oc-note err" role="alert">{err}</p>}
           <div className="gm-tags">
             <span className="gm-tag stage">{STAGES[shown].label}</span>
-            <span className={`gm-tag mood m-${anim ? 'cheer' : g.mood}`} role="status"><i aria-hidden="true" />{moodText}</span>
             <span className="gm-tag alloy"><i aria-hidden="true" style={{ background: `linear-gradient(135deg, ${g.alloy.colors.hi}, ${g.alloy.colors.mid} 55%, ${g.alloy.colors.base})` }} />{g.alloy.name}</span>
           </div>
           <p className="gm-sub">{STAGES[shown].hint}{!anim && g.shown !== g.index ? ` Exibindo uma forma antiga: a atual é ${g.stage.label}.` : ''}</p>
@@ -86,7 +84,7 @@ export function GolemSection() {
             return (
               <li key={s.id} className={`${open ? 'open' : 'locked'}${on ? ' on' : ''}${i === g.index ? ' now' : ''}`}>
                 <button type="button" role="radio" aria-checked={on} disabled={!open || !!anim} onClick={() => pick(i)} aria-label={open ? `Exibir ${s.label}` : `${s.label}: bloqueada, faltam ${fmtTokens(s.min - g.total)} tokens`} title={open ? s.hint : `Bloqueada: chega com ${fmtTokens(s.min)} tokens`}>
-                  <span className="gm-mini"><GolemSprite stage={i} colors={open ? g.alloy.colors : undefined} mood={open ? 'idle' : 'sleep'} size={58} /></span>
+                  <span className="gm-mini"><GolemSprite stage={i} colors={open ? g.alloy.colors : undefined} mood={open ? 'idle' : 'sleep'} scale={2} /></span>
                   <b>{open ? s.label : '???'}</b>
                   <small>{open ? (i === g.index ? 'atual' : s.min ? `${fmtTokens(s.min)}` : 'início') : <><Lock /> {fmtTokens(s.min)}</>}</small>
                 </button>
