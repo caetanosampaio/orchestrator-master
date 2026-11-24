@@ -1,6 +1,7 @@
 import React from 'react';
 import claudeStarUrl from '../assets/claude-star.webp';
 import { providerColor } from '../provider-view.js';
+import { catalogById } from '../provider-catalog.js';
 import PixelMascot from './PixelMascot.jsx';
 
 // Marcas dos agentes (providers).
@@ -62,6 +63,18 @@ function CodexMark({ size, className, title }) {
         <path d="M12.58 14.88h4.02" />
       </g>
     </svg>
+  );
+}
+
+/**
+ * Ícone de QUALQUER IA do catálogo: o oficial das integradas (ProviderLogo) e, para as que ainda não têm ícone no FORGE, um selo neutro com a inicial na cor da IA
+ * (provisório: troque pelo arquivo oficial da IA quando ele entrar em assets/). Usado em Configurações > Suas IAs.
+ */
+export function AiIcon({ id, size = 24, title, className = '' }) {
+  if (id === 'claude' || id === 'codex') return <ProviderLogo id={id} size={size} title={title} className={className} />;
+  const c = catalogById(id), letter = String(c?.label ?? id ?? '?').trim().charAt(0).toUpperCase() || '?';
+  return (
+    <span className={`ai-mono${className ? ` ${className}` : ''}`} style={{ width: size, height: size, fontSize: Math.round(size * 0.5), '--ai': c?.color ?? '#9aa3b2' }} role={title ? 'img' : undefined} aria-label={title} aria-hidden={title ? undefined : true}>{letter}</span>
   );
 }
 

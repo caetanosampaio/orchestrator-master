@@ -15,7 +15,7 @@ export function ProfileSection() {
       <Row title="Nome exibido" hint="Aparece no rodapé da barra lateral e no cartão de perfil.">
         <input value={prefs.name} onChange={(e) => setPref('name', e.target.value)} maxLength={40} placeholder="Seu nome" data-autofocus="" aria-label="Nome exibido" />
       </Row>
-      <Row title="Conta" hint="O nome fica salvo apenas neste computador (127.0.0.1). Para conectar contas do Claude Code, use Contas em IAs e contas." />
+      <Row title="Conta" hint="O nome fica salvo apenas neste computador (127.0.0.1). Para conectar as contas das IAs (Claude Code, Codex CLI...), use Contas em IAs e contas." />
     </Card>
   );
 }

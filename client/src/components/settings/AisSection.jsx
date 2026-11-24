@@ -7,12 +7,12 @@ import { accountsOf } from '../../accounts-view.js';
 import { plannedAis, aiName } from '../../provider-catalog.js';
 import { slotOptions } from '../../squads.js';
 import { useSquads } from '../../use-squads.js';
-import { ProviderMascot } from '../ProviderLogo.jsx';
+import { AiIcon } from '../ProviderLogo.jsx';
 import { Btn } from '../ui.jsx';
 import { Row, Card, Block } from './SettingsUi.jsx';
 
 /**
- * Configurações > Suas IAs (no formato da tela "Suas IAs" de referência, em preto): "Ligadas agora" = os agentes instalados de verdade (Claude Code e Codex CLI, de GET /api/terminals), com o estado real;
+ * Configurações > Suas IAs (no formato da tela "Suas IAs" de referência, em preto; cada IA aparece com o ÍCONE oficial dela, não com o mascote): "Ligadas agora" = os agentes instalados de verdade (Claude Code e Codex CLI, de GET /api/terminals), com o estado real;
  * clicar num cartão mostra os detalhes logo abaixo. "Para ligar" = as outras IAs, que o FORGE ainda NÃO integra: aparecem só para acompanhar o que pode vir, sem botão que finja ligar.
  */
 function Detail({ row, go, accounts }) {
@@ -26,7 +26,7 @@ function Detail({ row, go, accounts }) {
   return (
     <Card className="ai-detail">
       <div className="ai-detail-h">
-        <ProviderMascot id={row.id} size={44} />
+        <AiIcon id={row.id} size={40} />
         <div><b>{aiName(row.id, row.label)}</b><span className="dim small">{row.id === 'claude' ? 'Agente padrão dos terminais.' : 'Ao lado do Claude Code, no mesmo Maestro.'}</span></div>
         <span className={`oc-pill${st.kind === 'ok' ? ' ok' : st.kind === 'bad' ? ' bad' : ''}`}>{st.text}</span>
       </div>
@@ -69,7 +69,8 @@ export function AisSection({ go }) {
               const st = providerStatus(r);
               return (
                 <button key={r.id} type="button" className={`ai-card${current?.id === r.id ? ' on' : ''}`} aria-pressed={current?.id === r.id} onClick={() => setSel(r.id)}>
-                  <ProviderMascot id={r.id} size={40} label={aiName(r.id, r.label)} />
+                  <AiIcon id={r.id} size={32} />
+                  <b className="ai-card-n">{aiName(r.id, r.label)}</b>
                   <span className="dim small">{st.text}{r.active > 0 ? ` · ${r.active} ${r.active === 1 ? 'terminal' : 'terminais'}` : ''}</span>
                 </button>
               );
@@ -81,7 +82,8 @@ export function AisSection({ go }) {
         <ul className="ai-next" aria-label="IAs ainda não integradas">
           {plannedAis().map((a) => (
             <li key={a.id} className="ai-next-i" style={{ '--pm': a.color }}>
-              <ProviderMascot id={a.id} size={34} label={a.label} />
+              <AiIcon id={a.id} size={26} />
+              <b className="ai-card-n">{a.label}</b>
               <span className="dim small">em breve</span>
             </li>
           ))}

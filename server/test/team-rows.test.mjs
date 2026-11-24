@@ -115,8 +115,8 @@ test('Times prontos: seções Para instalar (do servidor) e Seus, ver por dentro
   assert.match(cards, /<ProviderMascot id=\{s\.provider\} size=\{size\} hat=\{s\.role === 'maestro'\} \/>/, 'cada vaga é um mascote na cor da IA, e o Maestro usa o chapéu'); assert.match(cards, /tc-m-l/, 'com o papel embaixo');
   assert.ok(!/<ProviderMascot/.test(src('components/TerminalGrid.jsx')));
   const grid = src('components/TerminalGrid.jsx'); assert.ok(!/curatedSquads/.test(grid), 'as equipes por objetivo são opcionais: só entram no Cockpit depois de instaladas');
-  const ais = src('components/settings/AisSection.jsx'); assert.match(ais, /<ProviderMascot id=\{r\.id\} size=\{40\} label=/, 'Suas IAs usa o mesmo estilo de mascote dos times');
-  assert.match(ais, /<ProviderMascot id=\{a\.id\} size=\{34\} label=/);
+  const ais = src('components/settings/AisSection.jsx'); assert.match(ais, /<AiIcon id=\{r\.id\} size=\{32\} \/>/, 'Suas IAs mostra o ícone oficial de cada IA (não o mascote)');
+  assert.match(ais, /<AiIcon id=\{a\.id\} size=\{26\} \/>/); assert.ok(!/ProviderMascot/.test(ais), 'sem mascote em Suas IAs');
 });
 
 test('Cockpit sem terminais: só os times de Configurações (instalados e seus), sem equipes fixas; vazio orienta e leva a Times prontos; o agente padrão dos times básicos saiu das Configurações', () => {
@@ -127,4 +127,10 @@ test('Cockpit sem terminais: só os times de Configurações (instalados e seus)
   assert.match(gal, /\{mine\.length === 0 && !onNew && empty\}/);
   assert.ok(!/Times básicos do Cockpit|Agente dos times básicos/.test(t), 'a escolha do agente das equipes embutidas saiu');
   const pg = src('pages/Settings.jsx'); assert.ok(pg.includes('TeamsSettings'));
+});
+
+test('AiIcon: ícone oficial das IAs integradas; as demais levam um selo provisório com a inicial na cor do catálogo', () => {
+  const logo = src('components/ProviderLogo.jsx'), ai = logo.slice(logo.indexOf('export function AiIcon'), logo.indexOf('export default function ProviderLogo'));
+  assert.match(ai, /if \(id === 'claude' \|\| id === 'codex'\) return <ProviderLogo id=\{id\}/, 'Claude e Codex usam a logo oficial');
+  assert.match(ai, /className=\{`ai-mono/); assert.match(ai, /'--ai': c\?\.color/); assert.ok(!/dangerouslySetInnerHTML/.test(ai));
 });
