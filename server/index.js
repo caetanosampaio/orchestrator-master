@@ -13,7 +13,7 @@ import { createClaudeProbe } from './claude-probe.js';
 import { validateDir, setupWorkspaceRemoval, setupWorkspaceRename } from './workspaces.js';
 import { topicsState, openAndActivate, snapshotTabs, restoreTabs, setupWorkspaceTabs, setupTopics } from './topics.js';
 import { setupUiSettings } from './ui-settings.js';
-import { setupPet } from './pet.js';
+import { setupGolem } from './golem.js';
 import { createLoadouts, setupLoadouts } from './loadouts.js';
 import { createAgentStatus, hooksJson } from './agent-status.js';
 import { setupLayouts } from './layouts.js';
@@ -218,7 +218,7 @@ setupWorkspaceTabs(app, { db });
 setupTopics(app, { db });
 setupLoadouts(app, { loadouts }); // skills por papel: GET/PUT /api/loadouts
 setupUiSettings(app, { db }); // preferências da interface (db.settings.ui): GET/PUT /api/ui
-setupPet(app, { db }); // bichinho do FORGE (estilo Tamagotchi, db.pet): GET/PUT /api/pet e o saldo de petiscos (POST /api/pet/treats[/use])
+setupGolem(app, { db }); // golem de liga (db.golem: nome e a última fase vista); ele cresce com os tokens de GET /api/provider-activity, calculado no cliente
 setupLayouts(app, { db }); // layout da grade por workspace
 setupHarness(app, { db }); // "Quem faz cada tarefa": a tabela de tipos de tarefa, o piloto (Maestro) e os agentes do usuário: /api/harness
 setupTeamTemplates(app, { db }); // squads salvos (equipes nomeadas com o agente de cada vaga): GET/POST /api/team-templates, PUT/DELETE /api/team-templates/:id
