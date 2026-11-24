@@ -9,12 +9,12 @@ Central local para coordenar agentes de IA no desenvolvimento de software. O FOR
 | Requisito | Para quê | Como conferir |
 |---|---|---|
 | **Uma assinatura de IA que o FORGE suporta**, com a CLI dela instalada e o login feito | O FORGE **não** inclui nem substitui a IA: cada agente é a CLI da sua própria assinatura. Basta **uma**; hoje são o Claude Code e o Codex CLI, e dá para ter os dois. | Veja as duas linhas abaixo. |
-| **Claude Code** (se for usar) | Agente da assinatura Claude. | `claude --version`; depois rode `claude` uma vez para entrar, ou use **Configurações > Contas > Entrar**. |
+| **Claude Code** (se for usar) | Agente da assinatura Claude. | `claude --version`; o login deste computador já vale, ou use **Configurações > Contas > Entrar**. |
 | **Codex CLI** (se for usar) | Agente da assinatura ChatGPT/Codex. | `codex --version`. Instale com `npm i -g @openai/codex` e entre com `codex login` num terminal. |
 | **Git** | Worktrees, relatórios e histórico. | `git --version` (download: https://git-scm.com/downloads) |
 | Windows 10/11 (x64) ou macOS (pacote para Intel/x64; em Apple Silicon ainda não foi validado) | Sistemas dos instaladores. | |
 
-Quando falta algo, o FORGE abre o popup **"Antes de começar"** (com o fundo escurecido) explicando o que fazer: nenhuma IA encontrada (bloqueia o uso até você instalar o Claude Code ou o Codex CLI), conta não conectada e Git não encontrado. Com **pelo menos uma** IA instalada nada bloqueia: se só o Codex estiver instalado, o app libera o uso e apenas avisa quando ele estiver sem login; com o Claude Code instalado, o Codex é opcional e o seletor de agente mostra "não conectado" quando falta o login.
+Quando falta algo, o FORGE abre o popup **"Antes de começar"** (com o fundo escurecido) explicando o que fazer: nenhuma IA encontrada (bloqueia o uso até você instalar o Claude Code ou o Codex CLI), nenhuma conta conectada e Git não encontrado. O FORGE não depende de uma IA específica: basta **uma** conta conectada de **alguma** IA. Com pelo menos uma IA instalada nada bloqueia; o aviso de conta é só informativo.
 
 **Custos:** cada agente é uma sessão da CLI na **sua** conta, então o uso consome o **seu** plano ou os seus créditos. O FORGE mostra tokens e custo estimado por terminal **do Claude Code** (o custo usa a tabela de preços que você informa em `pricing.json`; não há preços embutidos). Para terminais do Codex ainda não há tokens nem custo.
 
@@ -26,9 +26,9 @@ Quando falta algo, o FORGE abre o popup **"Antes de começar"** (com o fundo esc
 ## Primeiros passos
 
 1. Instale o Git e a CLI de pelo menos uma IA (veja a tabela acima): o Claude Code, o Codex CLI ou os dois.
-2. Conecte a sua conta. No Claude Code, use **Configurações > Contas > Entrar**: o FORGE abre o navegador para você autorizar e detecta sozinho quando a conta conecta, e dá para cadastrar mais de uma e escolher a padrão. No Codex, rode `codex login` num terminal (o login dele é do próprio Codex CLI); a mesma aba mostra se ele está conectado.
+2. Confira as contas em **Configurações > Contas**. O login que este computador já usa em cada IA aparece como a conta **"deste computador"** (no primeiro uso o FORGE vincula sozinho as CLIs instaladas; uma CLI instalada depois entra pelo botão **Adicionar conta deste computador**). No Claude Code dá para adicionar outras contas isoladas (por exemplo, a do trabalho ao lado da pessoal) com **Adicionar conta > Entrar**: o FORGE abre o navegador e detecta sozinho quando a conta conecta. No Codex o login é feito com `codex login` num terminal. Não existe conta "padrão": com uma conta só, ela é usada; com várias da mesma IA, você escolhe (o FORGE pré-seleciona a última usada).
 3. Clique em **+** ao lado de *Workspaces* para escolher a pasta do seu projeto.
-4. Escolha o agente dos terminais novos (Claude Code ou Codex) e abra uma equipe (Dupla, Squad, Squad de 6 ou Construtor). Cada terminal é uma sessão da CLI escolhida naquela pasta; com *Worktree* ligado, cada equipe trabalha numa cópia isolada do código.
+4. Escolha o agente dos terminais novos (Claude Code ou Codex) e abra uma equipe (Dupla, Squad, Squad de 6 ou Construtor). Cada terminal é uma sessão da CLI escolhida naquela pasta; com *Worktree* ligado, cada equipe trabalha numa cópia isolada do código. Se a IA tiver mais de uma conta, a barra do workspace mostra um seletor com a conta dos próximos terminais.
 5. O ícone da marca (o elmo) acende e solta faíscas enquanto houver alguma tarefa rodando, e esfria quando termina.
 
 > **Atenção:** os agentes leem e **executam comandos** na pasta do projeto com as permissões do seu usuário. Abra no FORGE apenas projetos em que você confia, e revise o que o agente pede para fazer.
@@ -42,11 +42,11 @@ Quando falta algo, o FORGE abre o popup **"Antes de começar"** (com o fundo esc
 - **Worktrees do git**: um por agente que edita, ou um compartilhado por equipe, com verificação de conflitos e integração controlada.
 - **Estado em tempo real** de cada terminal e de cada workspace (executando, aguardando você, concluído, com erro), na grade, na sidebar e no status global.
 - **Sessões**: histórico, retomada automática da equipe ao reabrir o app e, nos terminais do Claude Code, retomar e bifurcar conversas.
-- **Contas do Claude Code**: perfis com login próprio, conta padrão, login pelo navegador.
+- **Contas por IA**: a conta deste computador de cada IA instalada e, no Claude Code, contas isoladas com login próprio pelo navegador; renomear, desvincular e escolher a conta por terminal e por missão. Os limites de uso (janela de 5 h e semana) aparecem por conta na barra de status.
+- **Missões**: missões em etapas, cada etapa executada por um agente num terminal real (o mesmo do Cockpit), com dependências, paralelo isolado em worktrees, verificação antes de integrar, integração na branch do workspace, envio opcional ao remoto, automações agendadas e criação por briefing com um Planejador. Cada IA da missão usa a conta escolhida, e os tokens de cada etapa entram no limite dessa conta. Veja [docs/missions-v2-spec.md](docs/missions-v2-spec.md).
 - **Loadouts**: skills e MCPs por papel, entregues ao Claude Code por um plugin de sessão fora do seu projeto.
 - **Desktop** (Electron) para Windows e macOS, com log rotativo, reinício automático do servidor e menu Ajuda com diagnóstico.
 
-O servidor também mantém um **ciclo autônomo de missões** (Planner, Executor, verificações reais, evidência e relatório de entrega), exposto na API (`/api/missions/...`) e coberto por testes, mas **sem tela na interface atual**.
 
 ## Arquitetura em resumo
 
@@ -58,7 +58,7 @@ Electron (desktop/)  ->  servidor Node + Express (server/, só 127.0.0.1)  ->  C
  React + Vite (client/) <-- API REST + SSE --  Maestro (MCP local) -------------------+
 ```
 
-- `server/`: API Node (ESM, Express 4), terminais PTY (`terminals.js`), Maestro (`maestro.js`), worktrees (`worktrees.js`), contas (`accounts.js`), persistência em JSON (`store.js`) e, em `providers/`, o adaptador de cada CLI. O núcleo só conhece a interface do provedor, nunca os argumentos da CLI.
+- `server/`: API Node (ESM, Express 4), terminais PTY (`terminals.js`), Maestro (`maestro.js`), missões (`flows.js`), worktrees (`worktrees.js`), contas (`accounts.js`; a tradução do modelo antigo fica só em `account-compat.js`), limites (`rate-limits.js`), persistência em JSON (`store.js`) e, em `providers/`, o adaptador de cada CLI (inclusive o bloco `account` de cada uma). O núcleo só conhece a interface do provedor, nunca os argumentos da CLI.
 - `client/`: React 18 + Vite. A lógica de visão fica em módulos puros testados a partir de `server/test/`.
 - `desktop/`: Electron que sobe o servidor, gera o token de sessão e empacota instaladores.
 
@@ -71,7 +71,7 @@ Detalhes, contratos e decisões em [docs/ARQUITETURA.md](docs/ARQUITETURA.md).
 | Dados (`db.json`, `history/`, `loadouts/`, `mcp/`, `agent-status/`, `accounts/`, `pricing.json`) | `%APPDATA%\FORGE\data` | `~/Library/Application Support/FORGE/data` |
 | Log do servidor | `%APPDATA%\FORGE\logs\server.log` | `~/Library/Application Support/FORGE/logs/server.log` |
 
-O FORGE **não** guarda o login do Codex: ele fica com o próprio Codex CLI (em `~/.codex`). Desinstalar o app **não** apaga os dados do FORGE. Para remover tudo, apague a pasta `FORGE` indicada acima. O que é gravado, por quanto tempo e como apagar está em [PRIVACIDADE.md](PRIVACIDADE.md).
+O FORGE **não** guarda o login das contas "deste computador": ele fica com a própria CLI (`~/.claude` no Claude Code, `~/.codex` no Codex). Só as contas isoladas do Claude Code têm o login numa pasta própria em `accounts/`. Desinstalar o app **não** apaga os dados do FORGE. Para remover tudo, apague a pasta `FORGE` indicada acima. O que é gravado, por quanto tempo e como apagar está em [PRIVACIDADE.md](PRIVACIDADE.md).
 
 ## Como reportar um problema
 
@@ -81,17 +81,17 @@ No menu **Ajuda** (no Windows, pressione `Alt` para exibir o menu) use **Copiar 
 
 - O servidor interno escuta **somente** em `127.0.0.1` (a própria máquina), numa porta livre, e valida `Host` e `Origin` de cada requisição.
 - No app desktop, ações que alteram estado (aprovar tarefas, escrever em terminais) e leituras de conteúdo sensível (saída dos terminais, conversas, contas) exigem um token de sessão gerado a cada abertura e injetado só na janela do app.
-- Cada conta do Claude Code cadastrada tem a sua pasta de login dentro dos dados do FORGE, e os agentes rodam com as suas permissões e podem lê-las: abra apenas projetos em que você confia.
+- Cada conta isolada do Claude Code tem a sua pasta de login dentro dos dados do FORGE (desvincular a conta deste computador nunca faz logout nem apaga nada), e os agentes rodam com as suas permissões e podem lê-las: abra apenas projetos em que você confia.
 - O Codex é aberto com o sandbox `workspace-write` e aprovação `on-request`; a credencial do Maestro vai só no ambiente do processo, nunca em arquivo nem na linha de comando.
 - Configuração de projeto que executa comandos (`.claude/settings.json`, `.mcp.json`, `.claude/agents`, `.claude/skills` e, para o Codex, a pasta `.codex`) e não está revisada no Git exige a sua confirmação antes de abrir o terminal.
-- Concluir uma missão do ciclo autônomo exige evidência verificada; a única exceção é a **aceitação humana explícita**, registrada.
+- Missões: o acesso total (sem pedir confirmação) é opcional por missão; integrar e enviar ao remoto passam pela verificação que você define, e a etapa que para sem concluir espera a sua decisão (continuar, aceitar ou recusar), registrada.
 - O FORGE não envia dados a nenhum servidor próprio. Quem fala com a Anthropic é o Claude Code e quem fala com a OpenAI é o Codex CLI. A única outra chamada de rede do FORGE é o preparo opcional de um worktree (`npm ci --ignore-scripts`), que só roda depois de você aprovar o plano mostrado e baixa pacotes do registro do npm.
 
 ## Limitações conhecidas
 
 - Instaladores **sem assinatura de código** e **sem atualização automática**: novas versões precisam ser instaladas manualmente.
 - macOS: pacote apenas para processadores Intel (x64); Apple Silicon ainda não foi validado.
-- **Codex CLI**: não retoma nem bifurca conversas (um terminal Codex interrompido volta como terminal novo), não tem loadouts, contas separadas do FORGE nem tokens e custo por terminal, e o login é feito no próprio Codex CLI. A integração foi validada contra o Codex real com um modelo simulado; o uso com conta real ainda não foi exercitado em testes.
+- **Codex CLI**: não retoma nem bifurca conversas (um terminal Codex interrompido volta como terminal novo), não tem loadouts nem tokens e custo por terminal, usa só a conta deste computador (o login é feito no próprio Codex CLI) e o isolamento por `CODEX_HOME` não foi conferido contra a CLI real. A integração foi validada contra o Codex real com um modelo simulado; o uso com conta real ainda não foi exercitado em testes.
 - O `claude auth login` real (pelo FORGE) só foi testado com uma CLI simulada.
 - Interface apenas em português.
 - Máximo de 50 terminais simultâneos.
@@ -114,7 +114,7 @@ export ORCH_DATA_DIR="$(mktemp -d -t orch-suite-XXXX)"; npm test
 $env:ORCH_DATA_DIR = (New-Item -ItemType Directory -Path (Join-Path $env:TEMP "orch-suite-$(Get-Random)")).FullName; npm test
 ```
 
-Um arquivo só: `node --test server/test/<arquivo>.test.mjs`. Os scripts `npm run test:real` e `npm run test:real-cycle` chamam o Claude de verdade e **consomem créditos**. Alguns testes só valem para um sistema (`posix-process.test.mjs` no macOS/Linux e `win-process.test.mjs` no Windows) e aparecem como ignorados nos outros. A integração contínua (`.github/workflows/ci.yml`) roda a suíte no Windows, Linux e macOS a cada push na `main` e em cada pull request.
+Um arquivo só: `node --test server/test/<arquivo>.test.mjs`. A suíte usa CLIs simuladas e não consome créditos. Alguns testes só valem para um sistema (`posix-process.test.mjs` no macOS/Linux e `win-process.test.mjs` no Windows) e aparecem como ignorados nos outros. A integração contínua (`.github/workflows/ci.yml`) roda a suíte no Windows, Linux e macOS a cada push na `main` e em cada pull request.
 
 **Empacotar o desktop** (rode dentro de `desktop/`, onde estão os scripts):
 
@@ -122,9 +122,12 @@ Um arquivo só: `node --test server/test/<arquivo>.test.mjs`. Os scripts `npm ru
 cd desktop && npm install
 npm run dist       # Windows: Setup.exe e Portable.exe em desktop/release/
 npm run dist:mac   # macOS: .dmg (só em um Mac)
+npm run dir:mac    # macOS: só o FORGE.app em desktop/release/mac (sem .dmg), para testar
 ```
 
-Estrutura: `server/` (API Node + Express, terminais PTY, Maestro, worktrees, contas, ciclo de missões), `server/providers/` (adaptadores do Claude Code e do Codex CLI), `client/` (React 18 + Vite), `desktop/` (Electron), `server/test/` (testes com `node:test`).
+**Migração das contas (v2):** o primeiro boot de uma versão com as Contas v2 reescreve o `db.json` (as referências à antiga conta "Sistema" viram a conta deste computador de cada IA) e guarda antes uma cópia única em `db.json.pre-accounts-v2`, na mesma pasta. Plano e estado em [docs/contas-v2-plano.md](docs/contas-v2-plano.md).
+
+Estrutura: `server/` (API Node + Express, terminais PTY, Maestro, worktrees, contas, missões), `server/providers/` (adaptadores do Claude Code e do Codex CLI), `client/` (React 18 + Vite), `desktop/` (Electron), `server/test/` (testes com `node:test`).
 
 ## Licença
 

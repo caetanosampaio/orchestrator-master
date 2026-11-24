@@ -6,6 +6,7 @@ data/server.lock*
 data/db.json.bak
 data/*.corrupt-*
 data/db.json.restore
+data/db.json.pre-accounts-v2
 .test-workspace
 
 # Environment and secrets
