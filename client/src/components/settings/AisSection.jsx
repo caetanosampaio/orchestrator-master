@@ -15,7 +15,7 @@ import { Row, Card, Block } from './SettingsUi.jsx';
  * Configurações > Suas IAs, enxuta: TODAS as IAs que o FORGE integra (de GET /api/terminals), instaladas ou não, juntas numa grade, cada uma só com o ícone oficial e o nome
  * ("Claude", "Codex", "Gemini"…), sem indicador de estado no cartão (o estado fica no detalhe, e no texto para leitor de tela). Clicar num cartão mostra os detalhes logo abaixo:
  * instalação (com o comando quando falta), coordenação com o Maestro e contas. As de nível 1 (capabilities.mcp === false) abrem só como terminal livre pelo "+" do Cockpit.
- * "Para ligar" = as outras IAs, que o FORGE ainda NÃO integra (em breve): aparecem só para acompanhar o que pode vir, sem botão que finja ligar.
+ * Na MESMA grade, depois delas, as IAs que o FORGE ainda NÃO integra (plannedAis, em breve): o detalhe só diz isso, sem botão que finja ligar ou instalar.
  */
 function Detail({ row, go, accounts }) {
   const { state, refresh } = useStore();
@@ -67,6 +67,20 @@ function Detail({ row, go, accounts }) {
   );
 }
 
+/** Detalhe de uma IA ainda não integrada: só informa (nenhum botão que finja ligar ou instalar). */
+function PlannedDetail({ a }) {
+  return (
+    <Card className="ai-detail">
+      <div className="ai-detail-h">
+        <AiIcon id={a.id} size={26} />
+        <div><b>{a.label}</b><span className="dim small">Ainda não integrada ao FORGE.</span></div>
+        <span className="oc-pill">em breve</span>
+      </div>
+      <Row title="Integração" hint="O FORGE ainda não abre esta IA nos terminais. Ela aparece aqui para você acompanhar o que pode vir." />
+    </Card>
+  );
+}
+
 export function AisSection({ go }) {
   const { terminals, workingIds } = useStore();
   const [sel, setSel] = useState(null);
@@ -74,32 +88,23 @@ export function AisSection({ go }) {
   const [accounts, setAccounts] = useState(null);
   useEffect(() => { let off = false; api.get('/api/accounts').then((d) => { if (!off) setAccounts(Array.isArray(d?.accounts) ? d.accounts : []); }).catch(() => { if (!off) setAccounts([]); }); return () => { off = true; }; }, []);
   const rows = Array.isArray(terminals?.providers) ? providerSummary(terminals.sessions ?? [], workingIds, withAccountsLogin(terminals.providers, accounts)) : null;
-  const all = rows ?? [], current = all.find((r) => r.id === sel) ?? all.find((r) => r.available !== false) ?? all[0] ?? null;
+  const planned = plannedAis((rows ?? []).map((r) => r.id)).map((a) => ({ id: a.id, label: a.label, planned: true }));
+  const all = rows ? [...rows, ...planned] : [], current = all.find((r) => r.id === sel) ?? all.find((r) => r.available !== false && !r.planned) ?? all[0] ?? null;
   return (
     <>
-      <Block title="Integradas" hint="Clique numa IA para ver os detalhes." id="ais-on">
+      <Block title="IAs" hint="As que o FORGE já abre e as que ainda vêm. Clique numa para ver os detalhes." id="ais-on">
         {!rows ? <p className="dim small">Consultando as IAs…</p>
-          : <div className="ai-cards" role="group" aria-label="IAs integradas ao FORGE">
+          : <div className="ai-cards" role="group" aria-label="IAs do FORGE">
             {all.map((r) => (
               <button key={r.id} type="button" className={`ai-card${current?.id === r.id ? ' on' : ''}`} aria-pressed={current?.id === r.id} onClick={() => setSel(r.id)}>
-                <AiIcon id={r.id} size={30} />
+                <AiIcon id={r.id} size={30} />{/* integradas e as que ainda vêm (planned), juntas */}
                 <b className="ai-card-n">{aiShortName(r.id, r.label)}</b>
-                <span className="sr">{providerStatus(r).text}</span>
+                <span className="sr">{r.planned ? 'em breve' : providerStatus(r).text}</span>
               </button>
             ))}
           </div>}
       </Block>
-      {current && <Detail row={current} go={go} accounts={accounts} />}
-      <Block title="Para ligar" hint="IAs que o FORGE ainda não integra. Aparecem aqui para você acompanhar o que pode vir." id="ais-next">
-        <ul className="ai-next" aria-label="IAs ainda não integradas">
-          {plannedAis((rows ?? []).map((r) => r.id)).map((a) => (
-            <li key={a.id} className="ai-next-i" title={`${a.label}: em breve`}>
-              <AiIcon id={a.id} size={16} />
-              <span className="ai-card-n">{a.label}</span>
-            </li>
-          ))}
-        </ul>
-      </Block>
+      {current && (current.planned ? <PlannedDetail a={current} /> : <Detail row={current} go={go} accounts={accounts} />)}
     </>
   );
 }

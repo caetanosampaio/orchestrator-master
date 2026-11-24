@@ -45,12 +45,13 @@ test('catálogo: só Claude Code e Codex CLI são integrados; as outras IAs apar
   assert.equal(aiShortName('nova', 'Nova CLI'), 'Nova', 'fora do catálogo: o nome do servidor sem " CLI"'); assert.equal(aiShortName('xyz'), 'xyz'); assert.equal(aiShortName('xyz', '   '), 'xyz');
 });
 
-test('página: cada seção da navegação tem um componente, a busca e o cartão de perfil existem e "Para ligar" não finge ligar nada', () => {
+test('página: cada seção da navegação tem um componente, a busca e o cartão de perfil existem e IA ainda não integrada não finge ligar nada', () => {
   const page = src('pages/Settings.jsx');
   for (const i of flatItems()) assert.match(page, new RegExp(`\\b${i.id}: <`), `a seção ${i.id} não tem componente`);
   assert.match(page, /Buscar nas Configurações/); assert.match(page, /filterNav\(query\)/); assert.match(page, /className="set-me"/); assert.match(page, /role="tablist"/);
-  const ais = src('components/settings/AisSection.jsx'), next = ais.slice(ais.indexOf('<Block title="Para ligar"'));
-  assert.match(next, /plannedAis\(/); assert.match(next, /em breve/); assert.ok(!/aiName\(/.test(ais), 'Suas IAs mostra só o nome da IA (aiShortName), sem "Code"/"CLI"'); assert.ok(!/<button/.test(next), 'IA ainda não integrada não tem botão de ligar');
+  const ais = src('components/settings/AisSection.jsx'), pd = ais.slice(ais.indexOf('function PlannedDetail'), ais.indexOf('export function AisSection'));
+  assert.match(ais, /plannedAis\(/, 'as IAs ainda não integradas entram na mesma grade'); assert.match(pd, /em breve/); assert.ok(!/aiName\(/.test(ais), 'Suas IAs mostra só o nome da IA (aiShortName), sem "Code"/"CLI"');
+  assert.ok(pd.length > 0 && !/<Btn|<button|onClick/.test(pd), 'IA ainda não integrada não tem botão de ligar nem de instalar');
   assert.match(src('components/settings/GolemSection.jsx'), /Tokens forjados/); assert.ok(!itemById('mascotes') && !itemById('bichinho'), 'Mascotes e Bichinho deram lugar ao Golem');
 });
 
