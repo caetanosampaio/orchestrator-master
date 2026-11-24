@@ -60,6 +60,7 @@ export function tolerantChoice(providerId, src) {
 //   detect(env) : a CLI está instalada? (boolean; só procura no PATH, não executa nada)
 //   status(ctx) : Promise do estado de login { checked, loggedIn, plan, authMethod, email, orgName, loginExpiresAt, error } (nunca credencial)
 //   env(base, home): ambiente para rodar a CLI daquela conta (home null = conta da máquina)
+//   logoutSpec  : (opcional) como encerrar o login de uma conta ISOLADA ao removê-la; a conta da máquina nunca sofre logout
 //   canLogin    : o FORGE conduz o login? Se true, loginSpec({ method, home, env, resolve }) -> { file, args, verbatim, env } | { error, code }
 //   limits(ctx) : Promise dos limites da conta ou null (ponto de extensão; os consumidores atuais ainda usam rate-limits.js)
 // ctx = { home (pasta isolada | null), env (ambiente BASE do processo), run (assinatura do execFile; injetável nos testes), ...opções do provedor }.
@@ -105,6 +106,11 @@ function accountSpecFrom(id, provider) {
       if (!a.canLogin) return { error: note ?? `O FORGE não faz o login do ${label}.`, code: 'login_unsupported' };
       if (!isolated && typeof opts?.home === 'string' && opts.home) return { error: `${label} só tem a conta da máquina.`, code: 'not_isolated' };
       try { return a.loginSpec(opts); } catch { return { error: 'Não foi possível preparar o login.', code: 'login_error' }; }
+    },
+    /** Logout da conta isolada (opcional; usado ao remover a conta). null = o provedor não tem logout, ou a conta é a da máquina (nunca se faz logout dela). */
+    logoutSpec(opts = {}) {
+      if (typeof a.logoutSpec !== 'function' || (typeof opts?.home !== 'string' || !opts.home)) return null;
+      try { return a.logoutSpec(opts) ?? null; } catch { return null; }
     },
     async limits(ctx = {}) { try { return (await a.limits(ctx)) ?? null; } catch { return null; } },
   });

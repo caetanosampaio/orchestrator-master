@@ -252,3 +252,14 @@ test('pickAccountStatus: tolera lixo e só devolve os campos do contrato', () =>
   const r = P.pickAccountStatus({ checked: false, loggedIn: true, email: 'a\u0000b', plan: 7, error: 'e' });
   assert.equal(r.loggedIn, null, 'loggedIn só vale com checked'); assert.equal(r.email, null); assert.equal(r.plan, null); assert.equal(r.error, 'e');
 });
+
+test('account logoutSpec: só de conta ISOLADA (a do computador nunca sofre logout); Claude monta `claude auth logout` no ambiente da conta; Codex não tem logout', () => {
+  const c = P.accountSpecOf('claude');
+  const sp = c.logoutSpec({ home: '/acc/claude', env: { PATH: 'x', ANTHROPIC_API_KEY: 'k' }, resolve: () => binSpec });
+  assert.deepEqual({ file: sp.file, args: sp.args, verbatim: sp.verbatim }, { file: '/fake/cli', args: ['auth', 'logout'], verbatim: false });
+  assert.equal(sp.env.CLAUDE_CONFIG_DIR, '/acc/claude'); assert.equal(sp.env.ANTHROPIC_API_KEY, undefined);
+  for (const home of [null, undefined, '']) assert.equal(c.logoutSpec({ home, resolve: () => binSpec }), null, `home ${String(home)}: conta do computador`);
+  assert.equal(c.logoutSpec({ home: '/acc/claude', resolve: () => null }), null, 'CLI ausente');
+  assert.equal(c.logoutSpec({ home: '/acc/claude', resolve: () => ({ file: 'cmd.exe', args: ['/d', '/s', '/c', 'C:\\a&b\\claude.cmd'], viaShell: true }) }).code, 'unsafe');
+  assert.equal(P.accountSpecOf('codex').logoutSpec({ home: '/acc/codex' }), null);
+});

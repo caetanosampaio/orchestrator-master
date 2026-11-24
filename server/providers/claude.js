@@ -27,14 +27,13 @@ export const CLAUDE_OPTIONS = Object.freeze({
 export const READ_ONLY_DENIED = Object.freeze(['Edit', 'Write', 'NotebookEdit']);
 
 // ---- Conta (contrato `account`, ver providers/index.js) ----
-// DUPLICAÇÃO TEMPORÁRIA (etapa 2 da refatoração de contas): o que está abaixo é cópia adaptada de claude-cli.js (envForAccount e a parte de argumentos simples do launchSpec)
-// e de accounts.js (normalizeStatus e a leitura de `claude auth status`). Não é importado de lá porque claude-cli.js importa ESTE arquivo (ciclo) e accounts.js passará a consumir
-// este bloco; a etapa seguinte troca os consumidores para cá e apaga as cópias. Mudou lá, mude aqui até lá.
+// Fonte ÚNICA das regras de conta do Claude: accounts.js, account-login.js e claude-cli.js (envForAccount) consomem daqui. A única cópia que resta é a lista de argumentos
+// simples (CMD_SAFE_ARG, igual a SHELL_SAFE_ARG de claude-cli.js): não é importada de lá porque claude-cli.js importa ESTE arquivo (ciclo). Mudou lá, mude aqui.
 
-// Variáveis que SOBREPÕEM o login de uma conta isolada (cópia de OVERRIDING_AUTH_ENV, claude-cli.js): numa pasta própria a CLI tem de usar o login DAQUELA conta, não uma chave do ambiente.
+// Variáveis que SOBREPÕEM o login de uma conta isolada: numa pasta própria a CLI tem de usar o login DAQUELA conta, não uma chave do ambiente.
 const CLAUDE_AUTH_ENV = Object.freeze(['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_CUSTOM_HEADERS']);
 export const CLAUDE_HOME_ENV = 'CLAUDE_CONFIG_DIR';
-export const CLAUDE_NOT_FOUND_STATUS = 'Claude Code não encontrado'; // mesmo texto de accounts.js (NOT_FOUND): a interface já o conhece
+export const CLAUDE_NOT_FOUND_STATUS = 'Claude Code não encontrado'; // mesmo texto que accounts.js monta (`${label} não encontrado`): a interface já o conhece
 
 /**
  * Ambiente do `claude` de uma conta. `home` null = conta da máquina: o ambiente do processo como está (inclusive chave de API/Bedrock/Vertex, que a CLI usa).
@@ -103,7 +102,7 @@ function claudeStatus({ home = null, env = process.env, run = execFile, resolve 
   });
 }
 
-// Métodos de `claude auth login` (lista FECHADA, cópia de account-login.js): nada de --email nem argumento vindo do cliente.
+// Métodos de `claude auth login` (lista FECHADA): nada de --email nem argumento vindo do cliente.
 const LOGIN_METHOD_ARGS = Object.freeze({ claudeai: Object.freeze(['--claudeai']), console: Object.freeze(['--console']), sso: Object.freeze(['--sso']) });
 
 /** Como iniciar `claude auth login` de uma conta: { file, args, verbatim, env } ou { error, code }. Quem inicia (account-login.js) segue responsável pelo processo, timeout e saída. */
@@ -111,6 +110,14 @@ function claudeLoginSpec({ method = 'claudeai', home = null, env = process.env, 
   if (typeof method !== 'string' || !Object.hasOwn(LOGIN_METHOD_ARGS, method)) return { error: 'Método de login inválido. Use claudeai, console ou sso.', code: 'invalid_method' };
   const spec = claudeCommand(['auth', 'login', ...LOGIN_METHOD_ARGS[method]], { resolve, env });
   if (!spec) return { error: `${CLAUDE_NOT_FOUND_STATUS}.`, code: 'not_found' };
+  if (spec.error) return { error: spec.error, code: 'unsafe' };
+  return { ...spec, env: claudeAccountEnv(env, home) };
+}
+
+/** Como iniciar `claude auth logout` de uma conta isolada (melhor esforço ao remover): { file, args, verbatim, env } | { error, code } | null (CLI ausente). */
+function claudeLogoutSpec({ home = null, env = process.env, resolve = resolveClaude } = {}) {
+  const spec = claudeCommand(['auth', 'logout'], { resolve, env });
+  if (!spec) return null;
   if (spec.error) return { error: spec.error, code: 'unsafe' };
   return { ...spec, env: claudeAccountEnv(env, home) };
 }
@@ -125,6 +132,7 @@ export const claudeAccount = Object.freeze({
   canLogin: true,
   loginMethods: Object.freeze(Object.keys(LOGIN_METHOD_ARGS)),
   loginSpec: claudeLoginSpec,
+  logoutSpec: claudeLogoutSpec,
   // Ponto de extensão dos limites da conta. Hoje as fontes do Claude (status line do FORGE gravando o limite real e a API de uso lida com o token da conta) vivem em
   // rate-limits.js e usage-api.js e dependem do estado do servidor (gravações por conta, cache, desligamento por variável): continuam lá. Devolve null até a etapa que as trouxer.
   limits: async () => null,

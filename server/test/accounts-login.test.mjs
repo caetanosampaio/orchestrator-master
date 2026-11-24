@@ -30,7 +30,7 @@ function world({ mode = 'ok', loginOver = {}, baseEnv = {}, accOver = {} } = {})
   const calls = () => (fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
   const acc = accounts.create({ provider: 'claude', label: 'Conta' }).account;
   const pids = () => JSON.parse(fs.readFileSync(pidFile, 'utf8'));
-  return { st, accounts, logins, calls, acc, pids, sysDir, pidFile, dir: accounts.configDirOf(acc.id) };
+  return { st, db, accounts, logins, calls, acc, pids, sysDir, pidFile, dir: accounts.configDirOf(acc.id) };
 }
 const snap = (w, id = w.acc.id) => w.logins.snapshot(id);
 const finished = (w, id = w.acc.id) => until(() => snap(w, id).state !== 'running');
@@ -50,7 +50,7 @@ test('login: `claude auth login --claudeai` com CLAUDE_CONFIG_DIR da conta; URL 
   const i = w.logins.input(w.acc.id, 'GOOD'); assert.equal(i.ok, true);
   assert.ok(await finished(w)); const f = snap(w); assert.deepEqual([f.state, f.error, f.needsCode], ['done', null, false]);
   assert.equal((await w.accounts.statusOf(w.acc.id)).loggedIn, true, 'o cache do status foi invalidado ao concluir'); assert.ok(!JSON.stringify(f).includes('GOOD'));
-  assert.deepEqual(snap(w, 'system').state, 'idle', 'o estado é por conta');
+  assert.deepEqual(snap(w, 'acc_0000beef').state, 'idle', 'o estado é por conta');
 });
 
 test('métodos: console e sso mudam o argumento; padrão claudeai; método inválido recusado; lista fechada (nada de --email)', async () => {
@@ -63,12 +63,16 @@ test('métodos: console e sso mudam o argumento; padrão claudeai; método invá
   assert.equal(w.calls().length, 0, 'nenhum processo iniciado');
 });
 
-test('a conta Sistema também faz login (sem CLAUDE_CONFIG_DIR); conta desconhecida 404; Claude Code ausente 409', async () => {
-  const w = world({ mode: 'auto' }); assert.equal(w.logins.start('system').ok, true); assert.ok(await finished(w, 'system'));
-  assert.equal(snap(w, 'system').state, 'done'); assert.equal(w.calls().find((c) => c.cmd === 'login').dir, null);
-  assert.equal(w.logins.start('acc_deadbeef').status, 404); assert.equal(w.logins.start('../x').status, 404);
-  const u = world({ loginOver: { unavailable: true } }); const r = u.logins.start(u.acc.id); assert.deepEqual([r.status, r.code], [409, 'claude_missing']);
-  const m = world({ loginOver: { command: path.join(tmp, 'nao-existe.exe'), prefixArgs: [] } }); assert.equal(m.logins.start(m.acc.id).ok, true); assert.ok(await finished(m)); assert.equal(snap(m).state, 'failed');
+test('a conta do computador também faz login (sem CLAUDE_CONFIG_DIR); conta desconhecida 404; CLI ausente 409 cli_missing; Codex não faz login pelo FORGE', async () => {
+  const w = world({ mode: 'auto' }); const m = w.accounts.create({ provider: 'claude', home: 'machine' }).account; assert.equal(m.home, 'machine');
+  assert.equal(w.logins.start(m.id).ok, true); assert.ok(await finished(w, m.id));
+  assert.equal(snap(w, m.id).state, 'done'); assert.equal(w.calls().find((c) => c.cmd === 'login').dir, null, 'conta da máquina: sem CLAUDE_CONFIG_DIR');
+  assert.equal(w.logins.start('acc_deadbeef').status, 404); assert.equal(w.logins.start('../x').status, 404); assert.equal(w.logins.start('system').status, 404, 'não existe mais conta virtual');
+  const u = world({ loginOver: { unavailable: true } }); const r = u.logins.start(u.acc.id); assert.deepEqual([r.status, r.code], [409, 'cli_missing']);
+  const x = world({ accOver: { command: path.join(tmp, 'nao-existe.exe'), prefixArgs: [] } }); assert.equal(x.logins.start(x.acc.id).ok, true); assert.ok(await finished(x)); assert.equal(snap(x).state, 'failed');
+  const c = world(); c.db.accounts.push({ id: 'acc_0000c0de', provider: 'codex', label: 'Codex', home: 'machine', createdAt: 'x' });
+  const rc = c.logins.start('acc_0000c0de'); assert.deepEqual([rc.ok, rc.status, rc.code], [false, 400, 'login_unsupported']); assert.match(rc.error, /codex login/);
+  assert.equal(c.calls().length, 0, 'nenhum processo iniciado');
 });
 
 test('URLs: só https de claude.ai/claude.com/console.anthropic.com/anthropic.com (e subdomínios), sem credenciais, sem porta; o resto é ignorado', () => {
@@ -99,7 +103,7 @@ test('input: só em `running`, 1 a 2048 caracteres, sem controle; nunca para out
   const w = world(); assert.equal(w.logins.input(w.acc.id, 'x').status, 409, 'sem login em andamento');
   w.logins.start(w.acc.id); assert.ok(await until(() => snap(w).needsCode));
   for (const bad of ['', 'a\nb', 'a\u0000b', 'a\u001b[31m', 'a'.repeat(2049), 5, null, undefined, '\r', '\t', 'a\u2028b']) assert.equal(w.logins.input(w.acc.id, bad).status, 400, JSON.stringify(bad));
-  assert.equal(w.logins.input('system', 'GOOD').status, 409, 'não escreve no login de outra conta'); assert.equal(w.logins.input(w.acc.id, 'a'.repeat(2048)).ok, true, 'exatamente 2048 passa');
+  assert.equal(w.logins.input('acc_0000beef', 'GOOD').status, 409, 'não escreve no login de outra conta'); assert.equal(w.logins.input(w.acc.id, 'a'.repeat(2048)).ok, true, 'exatamente 2048 passa');
   assert.ok(await finished(w)); const f = snap(w); assert.equal(f.state, 'failed'); assert.match(f.error, /^O login não foi concluído/); assert.ok(!/boom|segredo/.test(f.error));
   assert.equal(w.logins.input(w.acc.id, 'GOOD').status, 409, 'depois de terminar não há entrada');
   assert.equal(w.calls().filter((c) => c.cmd === 'login-input').length, 1, 'só a entrada válida chegou à CLI'); assert.equal(w.calls().find((c) => c.cmd === 'login-input').len, 2048);
@@ -118,16 +122,17 @@ test('`done` só com código 0 E status loggedIn: CLI que sai 0 sem login real =
 
 test('um login por vez no servidor (outro => 409), em qualquer conta; depois de cancelar libera', async () => {
   const w = world({ mode: 'hang' }); assert.equal(w.logins.start(w.acc.id).ok, true);
-  let r = w.logins.start(w.acc.id); assert.deepEqual([r.status, r.code], [409, 'login_busy']); r = w.logins.start('system'); assert.deepEqual([r.status, r.code], [409, 'login_busy']);
+  const other = w.accounts.create({ provider: 'claude', label: 'Outra' }).account.id;
+  let r = w.logins.start(w.acc.id); assert.deepEqual([r.status, r.code], [409, 'login_busy']); r = w.logins.start(other); assert.deepEqual([r.status, r.code], [409, 'login_busy']);
   assert.equal(w.calls().filter((c) => c.cmd === 'login').length <= 1, true);
   assert.equal((await w.logins.cancel(w.acc.id)).ok, true); assert.equal(snap(w).state, 'cancelled');
-  assert.equal(w.logins.start('system').ok, true); assert.equal(snap(w, 'system').state, 'running'); await w.logins.cancel('system');
+  assert.equal(w.logins.start(other).ok, true); assert.equal(snap(w, other).state, 'running'); await w.logins.cancel(other);
 });
 
 test('cancelar: estado cancelled, processo encerrado; sem login ativo => 409; cancelar a conta errada não mexe no login', async () => {
   const w = world({ mode: 'tree' }); w.logins.start(w.acc.id); assert.ok(await until(() => fs.existsSync(w.pidFile) && w.calls().some((c) => c.cmd === 'login')));
   const { child, grandchild } = w.pids(); assert.ok(pidAlive(child) && pidAlive(grandchild));
-  assert.equal((await w.logins.cancel('system')).status, 409); assert.equal(snap(w).state, 'running');
+  assert.equal((await w.logins.cancel('acc_0000beef')).status, 409); assert.equal(snap(w).state, 'running');
   assert.equal((await w.logins.cancel(w.acc.id)).ok, true); const s = snap(w); assert.deepEqual([s.state, s.error], ['cancelled', null]);
   assert.ok(await until(() => !pidAlive(child) && !pidAlive(grandchild)), 'a ÁRVORE inteira morreu (filho e neto)');
   assert.equal((await w.logins.cancel(w.acc.id)).status, 409);
@@ -193,10 +198,12 @@ test('saída 0 com status inconclusivo: repete UMA vez; se persistir => failed c
   assert.equal(f.state, 'failed'); assert.equal(f.error, 'Não foi possível confirmar o estado da conta. Feche e confira em Contas.');
   assert.equal(w.calls().filter((c) => c.cmd === 'status').length, 2, 'uma consulta + UMA repetição');
   // inconclusivo na 1ª e conclusivo na 2ª => done
-  let n = 0; const run = async () => (++n === 1 ? { err: null, stdout: 'lixo' } : { err: null, stdout: JSON.stringify({ loggedIn: true, email: 'a@b.test' }) });
+  // `run` tem a assinatura do execFile (file, args, opts, cb): só o status passa por ele; o login continua sendo a CLI falsa
+  const fakeRun = (out) => (file, args, opts, cb) => { setImmediate(() => cb(null, out())); return { pid: undefined }; };
+  let n = 0; const run = fakeRun(() => (++n === 1 ? 'lixo' : JSON.stringify({ loggedIn: true, email: 'a@b.test' })));
   const ok = world({ mode: 'auto', accOver: { run } }); ok.logins.start(ok.acc.id); assert.ok(await finished(ok)); assert.equal(snap(ok).state, 'done'); assert.equal(n, 2);
   // conclusivo "não logado" não repete e mantém a mensagem antiga
-  let m = 0; const run2 = async () => { m++; return { err: null, stdout: JSON.stringify({ loggedIn: false }) }; };
+  let m = 0; const run2 = fakeRun(() => { m++; return JSON.stringify({ loggedIn: false }); });
   const no = world({ mode: 'auto', accOver: { run: run2 } }); no.logins.start(no.acc.id); assert.ok(await finished(no)); assert.match(snap(no).error, /não aparece como conectada/); assert.equal(m, 1);
 });
 

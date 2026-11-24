@@ -2,7 +2,7 @@
 import { resolveClaude } from './providers/claude.js';
 
 // Segurança do caminho `.cmd` (instalação do Claude Code via npm no Windows): o cmd.exe interpreta & | < > ^ % ! " ( ) e espaços. Os argumentos que chegam
-// ao argv são SÓ os fixos da sonda (`--version`, claude-probe.js) e os de `claude auth` (lista fechada em accounts.js/account-login.js); o cwd não é argumento. Mesmo assim, por defesa em profundidade, no caminho .cmd todo argumento precisa passar nesta lista permitida; senão a execução é recusada.
+// ao argv são SÓ os fixos da sonda (`--version`, claude-probe.js) e os de `claude auth` (lista fechada em providers/claude.js); o cwd não é argumento. Mesmo assim, por defesa em profundidade, no caminho .cmd todo argumento precisa passar nesta lista permitida; senão a execução é recusada.
 const SHELL_SAFE_ARG = /^[A-Za-z0-9][A-Za-z0-9._:,=\[\]\/-]*$|^-{1,2}[A-Za-z0-9][A-Za-z0-9-]*$/;
 export const shellSafeArgs = (list) => list.every((a) => typeof a === 'string' && SHELL_SAFE_ARG.test(a));
 
@@ -40,17 +40,6 @@ export function launchSpec({ injected, command, prefixArgs }, extraArgs, { resol
   return { file: r.file, args: ['/d', '/s', '/c', `"${[`"${script}"`, ...parts].join(' ')}"`], verbatim: true };
 }
 
-// Variáveis que SOBREPÕEM o login de uma conta do FORGE: numa conta isolada (CLAUDE_CONFIG_DIR própria) a CLI tem de usar o login DAQUELA conta, não uma chave do ambiente.
-const OVERRIDING_AUTH_ENV = ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_CUSTOM_HEADERS']; // provedor/endpoint/cabeçalhos do ambiente também desviariam a conta
-
-/**
- * Ambiente do filho para uma conta. `configDir` null = conta "Sistema": vale o ambiente do processo, sem sobrescrever nada.
- * Conta do FORGE: CLAUDE_CONFIG_DIR = pasta da conta e sem as variáveis de autenticação do ambiente (senão elas "ganhariam" do login da conta).
- */
-export function envForAccount(base, configDir) {
-  const env = { ...base };
-  if (typeof configDir !== 'string' || !configDir) return env;
-  for (const k of Object.keys(env)) if (OVERRIDING_AUTH_ENV.includes(k.toUpperCase())) delete env[k];
-  env.CLAUDE_CONFIG_DIR = configDir;
-  return env;
-}
+// Ambiente do `claude` de uma conta: a regra vive no bloco `account` do provider (providers/claude.js > claudeAccountEnv). Mantido com o nome antigo para o terminals.js (etapa 4).
+// `configDir` null = conta da máquina (ambiente do processo como está); pasta = CLAUDE_CONFIG_DIR dela e sem as variáveis de autenticação do ambiente.
+export { claudeAccountEnv as envForAccount } from './providers/claude.js';

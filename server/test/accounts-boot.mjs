@@ -6,6 +6,6 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const { createClaudeProbe } = await import('../claude-probe.js');
 globalThis.__ORCH_TEST_DEPS__ = {
   claudeProbe: createClaudeProbe({ command: process.execPath, prefixArgs: [path.join(here, 'fake-cli.mjs')] }),
-  accountsCli: { command: process.execPath, prefixArgs: [path.join(here, 'fake-claude-auth.mjs')] },
+  accountsCli: { command: process.execPath, prefixArgs: [path.join(here, 'fake-claude-auth.mjs')], detect: { codex: () => false } }, // Codex ausente: a migração do boot não depende do PATH da máquina
 };
 await import('../index.js');

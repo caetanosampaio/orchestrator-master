@@ -24,7 +24,7 @@ import { createTerminalManager, setupTerminals } from './terminals.js';
 import { setupFlows } from './flows.js';
 import { createPreviewManager, setupLivePreview } from './live-preview.js';
 import { createChangesService, setupLiveChanges } from './live-changes.js';
-import { createAccounts, setupAccounts } from './accounts.js';
+import { createAccounts, setupAccounts, migrateAtBoot, createDbBackup } from './accounts.js';
 import { createLoginManager } from './account-login.js';
 import { createUsageReader, claudeConfigDir } from './terminal-usage.js';
 import { createProviderActivity, parseDaysParam } from './provider-activity.js';
@@ -81,11 +81,14 @@ const loadoutsDir = process.env.ORCH_DATA_DIR ? path.join(store.dataDir, 'loadou
 const statusDir = process.env.ORCH_DATA_DIR ? path.join(store.dataDir, 'agent-status') : path.join(devHome, 'agent-status');
 const agentStatus = createAgentStatus({ dir: statusDir });
 const loadouts = createLoadouts({ db, dir: loadoutsDir, hooks: hooksJson({ node: process.execPath, script: fileURLToPath(new URL('./agent-status-hook.mjs', import.meta.url)), dir: statusDir }) });
-// Contas do Claude Code (accounts.js): cada conta é uma pasta de configuração própria. Testes que injetam a sonda e não injetam `accountsCli` rodam SEM Claude Code (nunca chamam o real).
+// Contas (accounts.js, modelo v2): toda conta é um login de algum provider (a do computador ou uma pasta isolada). Testes que injetam a sonda e não injetam `accountsCli` rodam SEM CLI (nunca chamam a real).
 const accountsCli = testDeps.accountsCli ?? (testDeps.claudeProbe ? { unavailable: true } : {});
 let logins = null;
 const accounts = createAccounts({ db, dataDir: store.dataDir, persist: store.saveOrThrow, uid, ...accountsCli, isInUse: (id) => terminals.usesAccount(id), isLoginActive: (id) => logins?.isActive(id) === true });
-logins = createLoginManager({ accounts, ...accountsCli, track: childRegistry.track });
+// Migração v2 ANTES do gerente de terminais: adota as contas do computador (CLIs instaladas) e reescreve as referências antigas, com cópia única do banco antes (db.json.pre-accounts-v2).
+// Falha de cópia ou de gravação desfaz tudo em memória: o servidor segue em modo compatível e tenta de novo no próximo boot.
+migrateAtBoot({ db, persist: store.saveOrThrow, installed: accounts.installedMap(), uid, now, backup: createDbBackup(store.dataDir), log: (m) => console.log(`[forge] ${m}`) });
+logins = createLoginManager({ accounts, ...(accountsCli.unavailable ? { unavailable: true } : {}), track: childRegistry.track });
 // Limite real de uso das contas (janela de 5 h e semanal): a status line do Claude Code grava aqui (claude-statusline-hook.mjs) e o Codex vem dos rollouts; e, quando o login permite, o uso REAL da conta vem do provedor (usage-api.js: lê o token só em memória e consulta o endpoint de uso; desliga com ORCH_LIMITS_API=off) (rate-limits.js). Pasta fora do workspace.
 const limitsDir = process.env.ORCH_DATA_DIR ? path.join(store.dataDir, 'rate-limits') : path.join(devHome, 'rate-limits');
 // Uso real da conta no provedor (inclui o gasto fora do FORGE): só no servidor de verdade; testes com ORCH_DATA_DIR não leem credenciais nem usam a rede, salvo ORCH_LIMITS_API=on.
@@ -232,7 +235,7 @@ app.get('/api/provider-activity', (req, res) => {
   if (days === null) return bad(res, 'Parâmetro days inválido (use 30, 90 ou 0).', 400);
   try { res.set('Cache-Control', 'no-store').json(providerActivity.view({ days })); } catch { bad(res, 'Não foi possível ler a atividade de tokens.', 500); }
 });
-setupAccounts(app, { accounts, logins }); // GET/POST/DELETE /api/accounts[/:id/(default|login...)]: leituras com token de sessão quando configurado
+setupAccounts(app, { accounts, logins }); // GET/POST/PATCH/DELETE /api/accounts[/:id[/login...]]: leituras com token de sessão quando configurado
 setupMaestro(app, { maestro, onAutonomy: (enabled) => { // a escolha do usuário sobrevive ao reinício; falha ao gravar desfaz o estado parcial
   db.settings ??= {};
   const had = Object.hasOwn(db.settings, 'maestro'), prev = db.settings.maestro;

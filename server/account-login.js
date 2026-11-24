@@ -1,18 +1,15 @@
-// Login de uma conta: roda `claude auth login [--console|--sso]` como processo filho SEM shell, com CLAUDE_CONFIG_DIR da conta, e expõe o andamento (URL de login, linhas
+// Login de uma conta: roda o login da CLI do provider (bloco `account` > loginSpec; no Claude, `claude auth login [--console|--sso]`) como processo filho SEM shell, no ambiente da conta, e expõe o andamento (URL de login, linhas
 // recentes, pedido de código colado) para a interface. Só UM login por vez no servidor. A árvore de processos é encerrada no cancelamento, no timeout e no shutdown.
 // A saída da CLI é dado não confiável: ANSI e caracteres de controle saem, a URL só vale com host da Anthropic, e o texto digitado pelo usuário (código) nunca é registrado em log.
 import { spawn } from 'node:child_process';
-import { launchSpec, envForAccount } from './claude-cli.js';
-import { resolveClaude } from './providers/claude.js';
+import { accountSpecOf } from './providers/index.js';
 import { killTree as killTreeAsync } from './proc.js';
 import { killTreeSync as killTreeSyncDefault } from './orphans.js';
 import { pidAlive } from './instance-lock.js';
-import { SYSTEM_ID, NOT_FOUND } from './accounts.js';
 
 export const LOGIN_TIMEOUT_MS = 5 * 60 * 1000;
 export const MAX_LINES = 12, MAX_LINE = 300, MAX_INPUT = 2048;
 export const MAX_INPUTS_PER_LOGIN = 20, MIN_START_INTERVAL_MS = 2000; // limites: entradas por login e intervalo entre dois inícios
-const METHOD_ARGS = Object.freeze({ claudeai: ['--claudeai'], console: ['--console'], sso: ['--sso'] }); // lista fechada: nada de --email nem argumento vindo do cliente
 // Tipo no child-registry: depois de uma queda do servidor o boot reclama o login órfão (encerra a árvore se a identidade do processo for confirmada).
 export const LOGIN_TRACK_KIND = 'login';
 const ALLOWED_HOSTS = ['claude.ai', 'claude.com', 'console.anthropic.com', 'anthropic.com'];
@@ -41,8 +38,7 @@ export function findUrl(text, final = true) {
 }
 const wantsCode = (line) => /\bpaste\b/i.test(line) && /\bcode\b/i.test(line);
 
-export function createLoginManager({ accounts, command, prefixArgs = [], unavailable = false, resolve = resolveClaude, env = () => process.env, track = null, killTree = killTreeAsync, killTreeSync = killTreeSyncDefault, timeoutMs = LOGIN_TIMEOUT_MS, spawnFn = spawn, now = () => new Date().toISOString(), minIntervalMs = MIN_START_INTERVAL_MS, maxInputs = MAX_INPUTS_PER_LOGIN, goneTimeoutMs = 3000, isAlive = pidAlive, clock = Date.now } = {}) {
-  const injected = command !== undefined;
+export function createLoginManager({ accounts, unavailable = false, env = () => process.env, track = null, killTree = killTreeAsync, killTreeSync = killTreeSyncDefault, timeoutMs = LOGIN_TIMEOUT_MS, spawnFn = spawn, now = () => new Date().toISOString(), minIntervalMs = MIN_START_INTERVAL_MS, maxInputs = MAX_INPUTS_PER_LOGIN, goneTimeoutMs = 3000, isAlive = pidAlive, clock = Date.now } = {}) {
   let lastStartAt = -Infinity; // instante do último início bem-sucedido (intervalo mínimo)
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   let s = null; // sessão atual ou a última concluída: { accountId, state, child, lines, partial, url, needsCode, startedAt, error, timer, tracked, finished }
@@ -90,19 +86,23 @@ export function createLoginManager({ accounts, command, prefixArgs = [], unavail
     return true;
   }
 
-  function start(accountId, method = 'claudeai') {
-    if (typeof method !== 'string' || !Object.hasOwn(METHOD_ARGS, method)) return fail(400, 'Método de login inválido. Use claudeai, console ou sso.');
-    if (!accounts.usable(accountId)) return fail(404, 'Conta não encontrada.');
+  function start(accountId, method) {
+    const acc = typeof accountId === 'string' && accounts.usable(accountId) ? accounts.find(accountId) : null;
+    if (!acc) return fail(404, 'Conta não encontrada.');
+    const prov = accountSpecOf(acc.provider);
+    if (!prov) return fail(404, 'Conta não encontrada.');
+    if (!prov.canLogin) return fail(400, prov.note ?? `O FORGE não faz o login do ${prov.label}.`, { code: 'login_unsupported' });
+    const methods = prov.loginMethods, chosen = method === undefined ? methods[0] : method; // omitido = o primeiro da lista do provider (null e afins são recusados)
+    if (typeof chosen !== 'string' || !methods.includes(chosen)) return fail(400, `Método de login inválido. Use ${methods.join(', ')}.`, { code: 'invalid_method' });
     if (running()) return fail(409, 'Já existe um login em andamento: conclua ou cancele-o antes de iniciar outro.', { code: 'login_busy' });
     if (clock() - lastStartAt < minIntervalMs) return fail(429, `Aguarde ${Math.ceil((minIntervalMs - (clock() - lastStartAt)) / 1000)} s antes de iniciar outro login.`, { code: 'login_too_soon' });
-    if (unavailable || (!injected && !resolve())) return fail(409, `${NOT_FOUND}.`, { code: 'claude_missing' });
-    const spec = launchSpec({ injected, command, prefixArgs }, ['auth', 'login', ...METHOD_ARGS[method]], { resolve });
-    if (spec.error) return fail(400, spec.error);
+    if (unavailable || !accounts.available(acc.provider)) return fail(409, `${prov.label} não encontrado.`, { code: 'cli_missing' });
     try { accounts.ensureDir(accountId); } catch { return fail(500, 'Não foi possível preparar a pasta da conta.'); }
-    const dir = accountId === SYSTEM_ID ? null : accounts.configDirOf(accountId);
+    const spec = prov.loginSpec({ method: chosen, home: accounts.configDirOf(accountId), env: env(), resolve: accounts.ctxResolve(acc.provider) });
+    if (spec.error) return fail(spec.code === 'not_found' ? 409 : 400, spec.error, { code: spec.code === 'not_found' ? 'cli_missing' : spec.code ?? 'login_error' });
     let child;
-    try { child = spawnFn(spec.file, spec.args, { shell: false, windowsHide: true, windowsVerbatimArguments: spec.verbatim, stdio: ['pipe', 'pipe', 'pipe'], env: envForAccount(env(), dir) }); }
-    catch { return fail(500, 'Não foi possível iniciar o Claude Code.'); }
+    try { child = spawnFn(spec.file, spec.args, { shell: false, windowsHide: true, windowsVerbatimArguments: spec.verbatim, stdio: ['pipe', 'pipe', 'pipe'], env: spec.env }); }
+    catch { return fail(500, `Não foi possível iniciar o ${prov.label}.`); }
     const sess = { accountId, state: 'running', child, lines: [], partial: '', url: null, needsCode: false, startedAt: now(), error: null, timer: null, tracked: null, finished: false, closing: false, inputs: 0 };
     s = sess;
     try { sess.tracked = track?.(LOGIN_TRACK_KIND, child.pid, { accountLogin: true }) ?? null; } // sem registro o filho não seria achado depois de uma queda: não segue vivo
@@ -113,11 +113,11 @@ export function createLoginManager({ accounts, command, prefixArgs = [], unavail
     child.stdin.on('error', () => { /* o processo pode fechar a entrada antes */ });
     sess.timer = setTimeout(() => { if (sess.finished || sess.state !== 'running' || sess.closing) return; settle(sess, 'failed', `Tempo esgotado (${Math.round(timeoutMs / 60000)} min): o login não foi concluído.`, { keepTrack: true }); Promise.resolve(killTree(child)).then(() => releaseWhenGone(sess)).catch(() => {}); }, timeoutMs);
     sess.timer.unref?.();
-    child.on('error', () => { if (sess.state === 'running') settle(sess, 'failed', 'Não foi possível iniciar o Claude Code.'); });
+    child.on('error', () => { if (sess.state === 'running') settle(sess, 'failed', `Não foi possível iniciar o ${prov.label}.`); });
     child.on('close', (code) => {
       if (sess.finished) return;
       if (sess.state !== 'running') return settle(sess, sess.state, sess.error);
-      if (code !== 0) return settle(sess, 'failed', 'O login não foi concluído (a CLI do Claude Code encerrou com erro).');
+      if (code !== 0) return settle(sess, 'failed', `O login não foi concluído (a CLI do ${prov.label} encerrou com erro).`);
       // Código 0 sozinho não prova nada: só vale `done` se o status da conta disser que há login.
       sess.closing = true; // janela de confirmação: input e cancelar respondem 409 login_closing
       const UNCONFIRMED = 'Não foi possível confirmar o estado da conta. Feche e confira em Contas.';

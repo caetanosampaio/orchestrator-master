@@ -140,7 +140,7 @@ async function codexStatus({ home = null, env = process.env, run = execFile, res
   } catch { return { ...empty, error: 'Não foi possível consultar o login do Codex.' }; }
 }
 
-export const CODEX_LOGIN_NOTE = 'O login é feito no próprio Codex CLI ("codex login" num terminal); o FORGE não gerencia contas do Codex.'; // mesmo texto de accounts.js (PROVIDERS)
+export const CODEX_LOGIN_NOTE = 'O login é feito no próprio Codex CLI ("codex login" num terminal); o FORGE não gerencia contas do Codex.';
 
 export const codexAccount = Object.freeze({
   label: 'Codex CLI',
