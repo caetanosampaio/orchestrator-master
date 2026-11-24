@@ -21,8 +21,8 @@ import { pidAlive } from './instance-lock.js';
 import { worktreeProblem } from './worktrees.js';
 import { asyncRoute } from './async-route.js';
 import { inspectProjectConfig } from './project-config.js';
-import { getProvider, isProvider, providerIds as providerIdsList, validateChoice, tolerantChoice } from './providers/index.js';
-import { envForAccount } from './claude-cli.js';
+import { getProvider, isProvider, providerIds as providerIdsList, validateChoice, tolerantChoice, accountSpecOf } from './providers/index.js';
+import { resolveLegacyAccountId } from './account-compat.js';
 import { cleanLine } from './harness.js';
 
 const ID_RE = /^term_[0-9a-f]{8}$/, REC_RE = /^ses_[0-9a-f]{8}$/, WT_ID_RE = /^wt_[0-9a-f]{8}$/, UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -69,7 +69,7 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
   const sessions = new Map();
   const allSubs = new Set(); // UMA conexão SSE leva a saída de TODOS os terminais: o navegador só abre ~6 conexões por origem; com uma por pane, 7+ terminais travavam a tela e até o botão de fechar
   const live = () => [...sessions.values()].filter((s) => s.status === 'running');
-  const describe = (s) => ({ id: s.id, role: s.role, provider: s.provider ?? provider.id, providerLabel: provOf(s.provider).label, roleLabel: ROLES[s.role]?.label ?? s.role, color: ROLES[s.role]?.color ?? null, title: s.title, workspaceId: s.workspaceId, topicId: s.topicId ?? null, cwd: s.cwd, worktreeId: s.worktreeId, branch: branchOf(s.worktreeId), recordId: s.recordId ?? null, accountId: s.accountId ?? 'system', model: s.model ?? null, effort: s.effort ?? null, fullAccess: s.fullAccess === true,
+  const describe = (s) => ({ id: s.id, role: s.role, provider: s.provider ?? provider.id, providerLabel: provOf(s.provider).label, roleLabel: ROLES[s.role]?.label ?? s.role, color: ROLES[s.role]?.color ?? null, title: s.title, workspaceId: s.workspaceId, topicId: s.topicId ?? null, cwd: s.cwd, worktreeId: s.worktreeId, branch: branchOf(s.worktreeId), recordId: s.recordId ?? null, accountId: s.accountId ?? null, model: s.model ?? null, effort: s.effort ?? null, fullAccess: s.fullAccess === true,
     usage: safeUsage(s), status: s.status, pid: s.pid, cols: s.cols, rows: s.rows, startedAt: s.startedAt, endedAt: s.endedAt, exitCode: s.exitCode, lastOutputAt: s.lastOutputAt, bytes: s.bytes, agent: s.status === 'running' ? safeAgent(s) : null, squadId: s.squadKey ?? null,
     skills: [...(s.skills ?? [])], templateId: s.templateId ?? null, slotIndex: s.slotIndex ?? null }); // skills EFETIVAS do pane (o que o plugin dele recebeu; [] no Codex) e o time/vaga de onde ele veio
   /**
@@ -108,9 +108,21 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
   const safeAgent = (s) => { try { if (!can(provOf(s.provider), 'hooks')) return s.osc ?? null; return agentStatus?.read(s.claudeSessionId, { since: s.startedAt }) ?? null; } catch { return null; } };
   /** tokens/custo do pane, lidos do transcript do Claude Code (null sem leitor, sem arquivo ainda ou em qualquer falha: é informativo, nunca derruba a listagem) */
   const safeUsage = (s) => { try { if (!can(provOf(s.provider), 'transcript')) return null; return usage?.read(s.claudeSessionId, dirOf(s.accountId)) ?? null; } catch { return null; } };
-  // Pasta de configuração do Claude da CONTA da sessão (accounts.js): undefined = a padrão do processo (conta Sistema ou sem módulo de contas); conta removida = pasta inexistente.
-  const dirOf = (accountId) => accounts?.configDirOf(accountId ?? 'system') ?? undefined;
-  const accountOk = (accountId) => !accounts || accounts.usable(accountId ?? 'system');
+  // ---- contas (accounts.js, modelo v2): sessões e registros guardam o id REAL da conta (acc_…) ou null (gerenciador sem módulo de contas) ----
+  /** Conta de um registro/sessão: o id gravado; registro antigo (sem o campo ou com a referência legada) é traduzido para a conta do computador DO PROVIDER dele (account-compat.js), ou null. */
+  const accOf = (r) => resolveLegacyAccountId(db, r?.accountId, r?.provider ?? 'claude');
+  /** Pasta de configuração da conta (leitura de transcrição/consumo): undefined = a padrão do processo (conta do computador ou sem módulo de contas); conta removida = pasta inexistente (nunca a global). */
+  const dirOf = (accountId) => (accounts && typeof accountId === 'string' ? accounts.configDirOf(accountId) ?? undefined : undefined);
+  const recDir = (r) => dirOf(accOf(r));
+  /** A conta pode abrir um terminal deste provider AGORA? Existe, não está em remoção e é do mesmo provider. Sem módulo de contas vale sempre (testes antigos). */
+  const accountOk = (accountId, providerId) => !accounts || (accountId === null && !accountSpecOf(providerId)) // provider sem bloco `account`: não usa conta (coerente com createReserved)
+    || (typeof accountId === 'string' && accounts.usable(accountId) && accounts.find(accountId)?.provider === providerId);
+  /** Ambiente BASE do filho, genérico pelo bloco `account` do provider (Claude: CLAUDE_CONFIG_DIR e sem as variáveis de autenticação na conta isolada; Codex: CODEX_HOME). Provider sem bloco: o de sempre. Pode lançar. */
+  function baseEnv(prov, accountId) {
+    const spec = accountSpecOf(prov.id);
+    if (!spec) return prov.envFor ? prov.envFor(process.env) : { ...process.env };
+    return spec.env(process.env, accounts && typeof accountId === 'string' ? accounts.configDirOf(accountId) ?? null : null);
+  }
   const revokeMcp = (id) => { try { mcp?.revoke?.(id); } catch { /* informativo */ } };
 
   // ---- histórico de sessões retomáveis (db.terminalSessions) ----
@@ -255,11 +267,20 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
     const prov = provOf(providerId ?? undefined);
     // Padrões da tabela "Quem faz cada tarefa" (harness.js): o Maestro novo abre com o modelo e o esforço do piloto e a instrução do agente dele; nunca sobrescreve o que foi escolhido nem vale na retomada.
     let extraPrompt = ''; try { const d = defaults?.(role, prov.id) ?? {}; if (model === null && d.model) model = d.model; if (effort === null && d.effort) effort = d.effort; if (typeof d.extraPrompt === 'string') extraPrompt = d.extraPrompt; } catch { /* sem padrões: abre como sempre */ }
-    // conta: opcional (padrão = conta padrão do FORGE); precisa existir (400) e é conferida de novo no launch, depois dos awaits
-    const accountsOn = can(prov, 'accounts'); // contas do FORGE são pastas de configuração do Claude Code: outro provedor usa sempre a configuração dele (Sistema)
-    if (accountsOn && accountId !== undefined && accountId !== null && typeof accountId !== 'string') return fail(400, 'accountId deve ser o identificador de uma conta.', { code: 'account_not_found' });
-    const account = accountsOn ? (accountId ?? accounts?.defaultId() ?? 'system') : 'system';
-    if (!accountOk(account)) return fail(400, 'Conta não encontrada: escolha uma conta cadastrada em Configurações.', { code: 'account_not_found' });
+    // Conta (qualquer provider): a pedida ou a ÚNICA utilizável do provider (accounts.resolveFor); sem conta padrão no servidor. Erro = o status e o code do resolveFor, sem nenhum efeito.
+    // Conferida de novo no launch (síncrono, logo antes do spawn), depois dos awaits. Sem módulo de contas (testes antigos): sem conta, ambiente do processo.
+    // A CLI ausente vem ANTES da conta: sem a CLI não há conta do computador adotada, e "adicione uma conta" seria o conselho errado.
+    const cmd = cmdOf(prov); if (!cmd) return fail(409, prov.notFoundMessage ?? `${prov.label} não foi encontrado no PATH.`); // resolvida UMA vez (antes da conta) e reaproveitada no spawn
+    let account = null;
+    if (accounts) {
+      if (!accountSpecOf(prov.id)) { // provider sem bloco `account` não oferece contas
+        if (accountId !== undefined && accountId !== null) return fail(400, `${prov.label} não usa contas do FORGE.`, { code: 'account_provider_mismatch' });
+      } else {
+        const r = accounts.resolveFor(prov.id, accountId);
+        if (!r?.ok) return fail(r?.status ?? 409, r?.error ?? 'Conta indisponível.', { code: r?.code ?? 'no_account' });
+        account = r.account.id;
+      }
+    }
     // workspaceId explícito é conferido contra o cadastro (400 se não existir): o terminal nunca roda no contexto de outro espaço. Sem ele vale o ativo (como antes).
     const explicit = workspaceId !== undefined && workspaceId !== null;
     if (explicit && typeof workspaceId !== 'string') return fail(400, 'workspaceId deve ser o identificador de um espaço de trabalho.', { code: 'workspace_not_found' });
@@ -288,7 +309,6 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
       const pc = await inspectConfig(flowWt ? flowWt.path : v.path, prov.projectConfig);
       if (pc.length) return fail(409, `${flowWt ? 'O worktree desta etapa' : 'Este espaço de trabalho'} tem configuração do ${prov.label} que executa comandos e não está revisada no Git: ${pc.map((f) => `${f.path} (${f.why})`).join('; ')}. Confirme só se foi você quem a escreveu.`, { code: 'project_config_unreviewed', files: pc });
     }
-    const cmd = cmdOf(prov); if (!cmd) return fail(409, prov.notFoundMessage ?? `${prov.label} não foi encontrado no PATH.`);
     const pty = ptyLib ?? loadPty(); if (!pty) return fail(503, 'O módulo de terminal (node-pty) não está disponível neste ambiente.');
     const gone = () => !(db.workspaces ?? []).some((w) => w.id === ws.id); // o cadastro pode mudar durante os awaits (inspeção, worktree): nunca nasce terminal de workspace removido
     if (gone()) return fail(409, 'O espaço de trabalho foi removido enquanto o terminal era preparado.', { code: 'workspace_not_found' });
@@ -317,6 +337,7 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
     }
     const launched = launch({ prov, id, ws, role, label, cwd, wt, cols, rows, claudeSessionId: newSessionId(), mode: 'new', topicId: tp.topicId, accountId: account, model, effort, extraPrompt, team, fullAccess: fullAccess === true, cmd, pty, squadKey: wt && !wt.flow ? (peer?.squadKey ?? uid('sq')) : null }); // worktree de missão sem chave de squad: ninguém se anexa a ele pela rota
     if (warning && launched.ok) launched.warning = warning;
+    if (launched.ok && account) { try { accounts.remember(prov.id, account); } catch { /* pré-seleção da interface: melhor esforço */ } } // só depois que o terminal abriu de fato
     return launched;
   }
 
@@ -325,7 +346,7 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
    * Na retomada o Claude Code restaura histórico, prompt de sistema, nome e permission mode: NÃO se repassa nada disso. O MCP não é restaurado: credencial NOVA a cada retomada.
    * Falha ao gravar o histórico desfaz tudo (processo, credencial, registro): nunca fica um pane vivo sem registro.
    */
-  function launch({ prov = provider, id, ws, role, label, cwd, wt, cols, rows, claudeSessionId, mode, topicId = null, rec = null, cmd, pty, squadKey = null, accountId = 'system', model = null, effort = null, extraPrompt = '', team = null, fullAccess = false }) {
+  function launch({ prov = provider, id, ws, role, label, cwd, wt, cols, rows, claudeSessionId, mode, topicId = null, rec = null, cmd, pty, squadKey = null, accountId = null, model = null, effort = null, extraPrompt = '', team = null, fullAccess = false }) {
     const resumed = mode !== 'new';
     // Maestro autônomo ligado = acesso total (bypass) SEMPRE ligado nos terminais que abrem agora (Cockpit e missões). `autoFullAccess` vem do boot (index.js) e lê o estado do Maestro na hora do spawn;
     // a retomada do Codex fica de fora (resumeBlock a recusa, provider_no_resume; o paneArgs dele só aceita sessão nova). Um terminal já aberto não muda de modo: vale para os próximos.
@@ -334,8 +355,11 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
     const readOnly = READ_ONLY_ROLES.includes(role); // planejador: somente leitura imposta pela própria CLI (providers/*.js paneArgs) e NUNCA acesso total, nem por opt-in interno nem herdado
     const autoFull = !readOnly && typeof autoFullAccess === 'function' && (mode === 'new' || prov.id === 'claude') && (() => { try { return autoFullAccess() === true; } catch { return false; } })();
     const full = !readOnly && (fullAccess === true || autoFull); // quem chama decide: sessão nova (opt-in da missão) ou retomada/fork/reabertura de uma sessão que JÁ tinha acesso total gravado (resumeReserved); nunca vem de texto livre
-    if (!accountOk(accountId)) return fail(409, 'A conta deste terminal não existe mais (ou está sendo removida); o terminal não foi aberto.', { code: 'account_missing' }); // conferido aqui, síncrono, imediatamente antes do spawn
-    const env = { ...(prov.envFor ? prov.envFor(process.env) : envForAccount(process.env, accounts?.configDirOf(accountId) ?? null)), TERM: 'xterm-256color', COLORTERM: 'truecolor' }; delete env.ELECTRON_RUN_AS_NODE; delete env.NODE_OPTIONS;
+    if (!accountOk(accountId, prov.id)) return fail(409, 'A conta deste terminal não existe mais (ou está sendo removida); o terminal não foi aberto.', { code: 'account_missing' }); // conferido aqui, síncrono, imediatamente antes do spawn
+    let env;
+    try { env = { ...baseEnv(prov, accountId), TERM: 'xterm-256color', COLORTERM: 'truecolor' }; } // nunca cai em outra conta: sem o ambiente da conta, o terminal não abre
+    catch { return fail(500, 'Não foi possível preparar o ambiente da conta deste terminal; o terminal não foi aberto.', { code: 'account_env' }); }
+    delete env.ELECTRON_RUN_AS_NODE; delete env.NODE_OPTIONS;
     for (const [k, v] of Object.entries(prov.paneEnv ?? {})) if (env[k] === undefined) env[k] = v; // ex.: renderer em tela cheia do Claude Code (providers/claude.js)
     if (!prov.envFor) delete env.CLAUDE_CODE_CHILD_SESSION; // herdada de uma sessão do Claude Code que abriu o servidor: com ela o filho NÃO grava transcrição (sem consumo e sem retomada). As demais CLAUDE_CODE_* ficam.
     const c = clampInt(cols, 20, 400, 120), r = clampInt(rows, 5, 200, 32);
@@ -351,13 +375,14 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
     if (pluginDir && cmd.viaShell && /[&|<>^%"!()]/.test(pluginDir)) pluginDir = null;
     let skills = []; // o que o pane recebeu DE FATO: sem plugin (Codex, falha, caminho inseguro) nenhuma skill, e o hint do Maestro não cita /squad:
     if (pluginDir) { try { const l = loadouts?.skillsOf?.(role, extraSkills); skills = Array.isArray(l) ? l.filter((x) => typeof x === 'string') : []; } catch { skills = []; } }
-    let settingsFile = null; // status line do FORGE (rate-limits.js): grava o limite real da conta; sem ela (desligada, do usuário, caminho inseguro) o terminal abre igual
+    let settingsFile = null; // status line do FORGE (rate-limits.js): grava o limite real da conta (id real; null sem módulo de contas); sem ela (desligada, do usuário, caminho inseguro) o terminal abre igual
     try { settingsFile = prov.capabilities?.statusLine === true ? statusLine?.settingsFileFor(accountId) ?? null : null; } catch { settingsFile = null; }
     if (settingsFile && cmd.viaShell && /[&|<>^%"!()]/.test(settingsFile)) settingsFile = null;
     if (mcpCfg?.token) env[prov.mcpTokenEnv] = mcpCfg.token; // transporte por ambiente (Codex): o token vive só no ambiente deste processo, nunca em arquivo nem na linha de comando
     const mcpArg = !mcpCfg ? null : mcpCfg.token ? { url: mcpCfg.url, serverName: mcp.serverName } : { configPath: mcpCfg.configPath, serverName: mcp.serverName };
     // Avisos de "confiar nesta pasta?": o Claude Code guarda a resposta em arquivo (gravada aqui, antes do spawn); o Codex recebe a confiança por argumento. Só quando o boot liga `trustFolders` (nunca nos testes).
-    if (typeof trustFolders === 'function') { try { trustFolders({ provider: prov.id, cwd, configDir: prov.id === 'claude' ? accounts?.configDirOf(accountId) ?? null : null }); } catch { /* melhor esforço: a pergunta aparece normalmente */ } }
+    // `configDir` = pasta da conta (null = a do computador); quem recebe decide por provider (o boot só grava a confiança do Claude Code).
+    if (typeof trustFolders === 'function') { try { trustFolders({ provider: prov.id, cwd, configDir: dirOf(accountId) ?? null }); } catch { /* melhor esforço: a pergunta aparece normalmente */ } }
     const rolePrompt = extraPrompt ? `${ROLES[role].prompt} Instrucao do agente escolhido pelo usuario para este papel: ${extraPrompt}` : ROLES[role].prompt;
     const prompt = team?.instruction ? `${rolePrompt} Instrucao do time escolhido pelo usuario: ${team.instruction}` : rolePrompt; // a do time vem por último: vale para todas as vagas dele
     const args = prov.paneArgs({ mode, prompt, label, sessionId: claudeSessionId, resumeSessionId: rec?.claudeSessionId, mcp: mcpArg, pluginDir, settingsFile, model, effort, fullAccess: full, readOnly, quote: !cmd.viaShell, trustDir: typeof trustFolders === 'function' ? cwd : null });
@@ -374,7 +399,7 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
     // histórico: retomada normal reaproveita o registro (é a mesma sessão do Claude Code); novo e fork criam um registro
     const list = records(true), before = [...list], links = list.map((x) => [x, x.forkedFrom]), prev = mode === 'resume' ? { ...rec } : null;
     let nrec;
-    if (mode === 'resume') { nrec = rec; Object.assign(rec, { terminalId: id, topicId, state: 'running', endedAt: null, exitCode: null, lastResumedAt: s.startedAt, resumes: (rec.resumes ?? 0) + 1 }); delete rec.interruptedAt; delete rec.closedReason; delete rec.unconfirmedExit; }
+    if (mode === 'resume') { nrec = rec; Object.assign(rec, { terminalId: id, topicId, ...(accountId ? { accountId } : {}), state: 'running', endedAt: null, exitCode: null, lastResumedAt: s.startedAt, resumes: (rec.resumes ?? 0) + 1 }); delete rec.interruptedAt; delete rec.closedReason; delete rec.unconfirmedExit; }
     else { nrec = { id: uid('ses'), terminalId: id, provider: prov.id, accountId, ...(model ? { model } : {}), ...(effort ? { effort } : {}), claudeSessionId, role, title: label, workspaceId: ws.id, topicId, cwd, worktreeId: wt?.id ?? null, ...(wt && worktreeUsers(wt.id, id).length ? { sharedWorktree: true } : {}), usesMcp: !!mcpCfg, state: 'running', startedAt: s.startedAt, endedAt: null, exitCode: null, resumes: 0, forkedFrom: mode === 'fork' ? rec.id : null, ...(team ? { templateId: team.templateId, slotIndex: team.slotIndex } : {}), ...(fullAccess === true ? { fullAccess: true } : {}) }; list.push(nrec); trimRecords(list, rec); }
     try { persistStrict(); } catch (e) {
       if (prev) { for (const k of Object.keys(rec)) delete rec[k]; Object.assign(rec, prev); } else db.terminalSessions = before;
@@ -401,16 +426,16 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
   /** Como achar a transcrição: injetada (testes), em lote (um passe só no disco) ou uma a uma. */
   function transcriptLookup(recs) {
     // por REGISTRO: cada sessão tem a transcrição na pasta da conta dela (e não numa pasta global)
-    if (transcriptExists) return (rec) => { try { return !!transcriptExists(rec.claudeSessionId, dirOf(rec.accountId)); } catch { return false; } };
+    if (transcriptExists) return (rec) => { try { return !!transcriptExists(rec.claudeSessionId, recDir(rec)); } catch { return false; } };
     if (typeof usage?.present === 'function') {
       try {
         const groups = new Map(); // pasta -> ids (uma varredura por pasta)
-        for (const r of recs) { const d = dirOf(r.accountId); const g = groups.get(d) ?? groups.set(d, []).get(d); g.push(r.claudeSessionId); }
+        for (const r of recs) { const d = recDir(r); const g = groups.get(d) ?? groups.set(d, []).get(d); g.push(r.claudeSessionId); }
         const sets = new Map([...groups].map(([d, ids]) => [d, usage.present(ids, d)]));
-        return (rec) => sets.get(dirOf(rec.accountId))?.has(rec.claudeSessionId) === true;
+        return (rec) => sets.get(recDir(rec))?.has(rec.claudeSessionId) === true;
       } catch { /* cai na consulta individual */ }
     }
-    return (rec) => { try { return !!usage?.has?.(rec.claudeSessionId, dirOf(rec.accountId)); } catch { return false; } };
+    return (rec) => { try { return !!usage?.has?.(rec.claudeSessionId, recDir(rec)); } catch { return false; } };
   }
   /**
    * Regra ÚNICA do que impede retomar um registro (síncrona, sem efeitos): serve à retomada e ao `resumable` do histórico. O histórico é informativo; o endpoint de retomada
@@ -427,7 +452,8 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
     if (!reopen && !can(prov, 'resume')) return no('provider_no_resume', `${prov.label} não oferece retomada de sessão: abra um terminal novo.`);
     if (!UUID_RE.test(String(rec.claudeSessionId))) return no('invalid_record', 'O registro desta sessão não tem um identificador válido do Claude Code.');
     if (!ROLES[rec.role]) return no('role_unknown', 'O papel registrado desta sessão não existe mais.');
-    if (!accountOk(rec.accountId)) return no('account_missing', 'A conta usada por esta sessão foi removida: ela não pode ser retomada em outra conta (o histórico fica em outra pasta). Reabra o trabalho em um terminal novo.'); // sessões antigas (sem accountId) valem como Sistema
+    // conta DO REGISTRO (registro antigo: a do computador do provider dele); removida, inexistente ou de outro provider = bloqueia, nunca cai em outra conta
+    if (!accountOk(accOf(rec), prov.id)) return no('account_missing', 'A conta usada por esta sessão foi removida: ela não pode ser retomada em outra conta (o histórico fica em outra pasta). Reabra o trabalho em um terminal novo.');
     if (rec.state === 'running' || sessionActive(rec.claudeSessionId)) return no('session_active', 'Esta sessão já está ativa em um terminal: não é possível abri-la de novo (dois processos escreveriam na mesma transcrição).');
     if (lingeringFor(rec.claudeSessionId)) return no('session_active', 'O processo anterior desta sessão não confirmou o encerramento e pode estar vivo; aguarde ou encerre-o antes de retomar.');
     let alive = false; try { alive = !!isChildAlive?.(rec.terminalId); } catch { alive = true; }
@@ -488,7 +514,7 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
     if ((fork || reopen) && (!UUID_RE.test(String(claudeSessionId)) || records().some((x) => x.claudeSessionId === claudeSessionId))) return fail(500, 'Não foi possível gerar um identificador novo para o fork.');
     const keepFull = rec.fullAccess === true && (reopen || prov.id === 'claude'); // o Claude Code NÃO restaura o bypass ao retomar: sem isto o terminal voltava pedindo permissão (a missão tinha acesso total)
     const team = teamForRecord(rec); // skills da vaga e instrução do time recalculadas agora (o plugin não faz parte da sessão gravada)
-    const launched = launch({ prov, id: uid('term'), ws: again.ws, role: rec.role, label: rec.title, cwd: again.cwd, wt: again.wt, cols, rows, claudeSessionId, mode: reopen ? 'new' : fork ? 'fork' : 'resume', accountId: rec.accountId ?? 'system', ...(reopen ? tolerantChoice(prov.id, rec) : {}), fullAccess: keepFull, team, topicId: checkTopic(rec.topicId, again.ws).topicId ?? null, rec, cmd, pty, squadKey: again.wt && !again.wt.flow ? ([...sessions.values()].find((x) => x.status === 'running' && x.worktreeId === again.wt.id)?.squadKey ?? uid('sq')) : null }); // tópico sumido/arquivado/de outro workspace: a sessão volta para Geral (null), sem bloquear a retomada
+    const launched = launch({ prov, id: uid('term'), ws: again.ws, role: rec.role, label: rec.title, cwd: again.cwd, wt: again.wt, cols, rows, claudeSessionId, mode: reopen ? 'new' : fork ? 'fork' : 'resume', accountId: accounts ? accOf(rec) : null,...(reopen ? tolerantChoice(prov.id, rec) : {}), fullAccess: keepFull, team, topicId: checkTopic(rec.topicId, again.ws).topicId ?? null, rec, cmd, pty, squadKey: again.wt && !again.wt.flow ? ([...sessions.values()].find((x) => x.status === 'running' && x.worktreeId === again.wt.id)?.squadKey ?? uid('sq')) : null }); // tópico sumido/arquivado/de outro workspace: a sessão volta para Geral (null), sem bloquear a retomada
     if (reopen && launched.ok) { rec.supersededBy = launched.session.recordId; persistLoose(); }
     return launched;
   }
@@ -500,7 +526,7 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
     const recs = records().filter(Boolean), has = transcriptLookup(recs.filter((r) => UUID_RE.test(String(r.claudeSessionId))));
     return recs.map((r) => {
       const { block } = resumeBlock(r, has);
-      return { id: r.id, role: r.role, provider: r.provider ?? 'claude', roleLabel: ROLES[r.role]?.label ?? r.role, color: ROLES[r.role]?.color ?? null, title: r.title, workspaceId: r.workspaceId, accountId: r.accountId ?? 'system', topicId: r.topicId ?? null, worktreeId: r.worktreeId ?? null, state: r.state, startedAt: r.startedAt, endedAt: r.endedAt ?? null, interruptedAt: r.interruptedAt ?? null, exitCode: r.exitCode ?? null, usesMcp: r.usesMcp === true, resumes: r.resumes ?? 0, forkedFrom: r.forkedFrom ?? null, active: r.state === 'running' && sessionActive(r.claudeSessionId), resumable: block === null, reopenable: block !== null && resumeBlock(r, has, { reopen: true }).block === null, blockedReason: block?.code ?? null, blockedMessage: block?.message ?? null, closedReason: REASONS.includes(r.closedReason) ? r.closedReason : null };
+      return { id: r.id, role: r.role, provider: r.provider ?? 'claude', roleLabel: ROLES[r.role]?.label ?? r.role, color: ROLES[r.role]?.color ?? null, title: r.title, workspaceId: r.workspaceId, accountId: accOf(r), topicId: r.topicId ?? null, worktreeId: r.worktreeId ?? null, state: r.state, startedAt: r.startedAt, endedAt: r.endedAt ?? null, interruptedAt: r.interruptedAt ?? null, exitCode: r.exitCode ?? null, usesMcp: r.usesMcp === true, resumes: r.resumes ?? 0, forkedFrom: r.forkedFrom ?? null, active: r.state === 'running' && sessionActive(r.claudeSessionId), resumable: block === null, reopenable: block !== null && resumeBlock(r, has, { reopen: true }).block === null, blockedReason: block?.code ?? null, blockedMessage: block?.message ?? null, closedReason: REASONS.includes(r.closedReason) ? r.closedReason : null };
     }).reverse();
   };
 
@@ -594,8 +620,8 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
   function killAllSync() { for (const s of live()) kill(s, 'shutdown'); }
 
   /** Leitura INTERNA mínima de um registro de sessão (runner de missões, N2: a sessão pertence à cópia conferida?). Sem UUID do Claude Code nem caminhos; nenhuma rota a expõe. */
-  const recordInfo = (recordId) => { const r = records().find((x) => x && x.id === recordId); return r ? { id: r.id, workspaceId: r.workspaceId ?? null, worktreeId: r.worktreeId ?? null } : null; };
-  return { create, resume, recordInfo, history, write, resize, readOutput, peek, close, subscribe, subscribeAll, killAllSync, get: (id) => { const s = get(id); return s ? describe(s) : null; }, list: () => [...sessions.values()].map(describe), count: () => live().length, usesAccount: (accountId) => live().some((x) => (x.accountId ?? 'system') === accountId) || [...lingering.values()].some((l) => (l.accountId ?? 'system') === accountId), roles: () => roleIds().map((k) => ({ id: k, label: ROLES[k].label, color: ROLES[k].color, edits: ROLES[k].edits === true, team: TEAM_ROLES.includes(k) })), providers: () => providerIdsList().map((id) => { const p = provOf(id); let ok = false; try { ok = !!cmdOf(p); } catch { ok = false; } return { id: p.id, label: p.label, available: ok, capabilities: { resume: can(p, 'resume') } }; }) };
+  const recordInfo = (recordId) => { const r = records().find((x) => x && x.id === recordId); return r ? { id: r.id, workspaceId: r.workspaceId ?? null, worktreeId: r.worktreeId ?? null, accountId: accOf(r) } : null; }; // accountId: o id real (registro antigo traduzido) ou null
+  return { create, resume, recordInfo, history, write, resize, readOutput, peek, close, subscribe, subscribeAll, killAllSync, get: (id) => { const s = get(id); return s ? describe(s) : null; }, list: () => [...sessions.values()].map(describe), count: () => live().length, usesAccount: (accountId) => typeof accountId === 'string' && (live().some((x) => x.accountId === accountId) || [...lingering.values()].some((l) => l.accountId === accountId)), roles: () => roleIds().map((k) => ({ id: k, label: ROLES[k].label, color: ROLES[k].color, edits: ROLES[k].edits === true, team: TEAM_ROLES.includes(k) })), providers: () => providerIdsList().map((id) => { const p = provOf(id); let ok = false; try { ok = !!cmdOf(p); } catch { ok = false; } return { id: p.id, label: p.label, available: ok, capabilities: { resume: can(p, 'resume') } }; }) };
 }
 
 export function setupTerminals(app, { manager }) {

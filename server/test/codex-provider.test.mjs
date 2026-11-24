@@ -77,11 +77,11 @@ function world(over = {}) {
   return { spawned, db, mgr, issued, revoked, inspected, usageCalls };
 }
 
-test('terminais: create({provider:"codex"}) abre o Codex com os argumentos dele, token só no ambiente, sem arquivo MCP, registro com provider e conta Sistema', async () => {
+test('terminais: create({provider:"codex"}) abre o Codex com os argumentos dele, token só no ambiente, sem arquivo MCP, registro com provider; sem módulo de contas o accountId é ignorado', async () => {
   const w = world();
   const r = await w.mgr.create({ role: 'builder', provider: 'codex', accountId: 'qualquer-coisa' });
   assert.equal(r.ok, true, r.error); assert.equal(r.status, 201);
-  assert.equal(r.session.provider, 'codex'); assert.equal(r.session.providerLabel, 'Codex CLI'); assert.equal(r.session.accountId, 'system', 'contas do FORGE não se aplicam ao Codex');
+  assert.equal(r.session.provider, 'codex'); assert.equal(r.session.providerLabel, 'Codex CLI'); assert.equal(r.session.accountId, null, 'sem módulo de contas o accountId é ignorado (a conta do Codex é coberta em terminals-accounts-v2)');
   const p = w.spawned[0];
   assert.equal(p.file, '/fake/codex');
   assert.ok(p.args.includes('--no-alt-screen') && p.args.includes(`mcp_servers.${NAME}.url="${URL_}"`), p.args.join(' '));

@@ -6,6 +6,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { resolveLegacyAccountId } from './account-compat.js';
 
 export const MAX_MSG_CHARS = 20_000;       // por mensagem (o excedente é cortado e marcado)
 export const MAX_LOG_BYTES = 4 * 1024 * 1024; // por sessão: depois disso para de copiar e marca `truncated`
@@ -46,15 +47,19 @@ export function messageOf(o) {
   return { r: o.type === 'user' ? 'u' : 'a', t: cut ? `${text}\n[…cortado]` : text, at: typeof o.timestamp === 'string' && o.timestamp.length <= 40 ? o.timestamp : null };
 }
 
-// `configDirOf(accountId)` (accounts.js) devolve a pasta do Claude da CONTA do registro (null = a padrão do processo); sem ele vale sempre `configDir`.
-export function createConversationStore({ dir, configDir = claudeConfigDir(), configDirOf = null, now = () => new Date().toISOString() } = {}) {
+// `configDirOf(accountId)` (accounts.js) devolve a pasta do Claude da CONTA do registro (null = a padrão do processo, ou seja, a conta do computador); sem ele vale sempre `configDir`.
+// `db` (opcional) só serve para traduzir registro antigo (sem accountId ou com a referência legada) para a conta do computador do provider (account-compat.js). Sem ele, o registro
+// antigo é lido na pasta padrão do processo, que é exatamente a da conta do computador (a pasta dela é sempre a do ambiente): o resultado é o mesmo.
+export function createConversationStore({ dir, configDir = claudeConfigDir(), configDirOf = null, db = null, now = () => new Date().toISOString() } = {}) {
   if (!dir) throw new Error('createConversationStore: dir é obrigatório');
   const wsDir = (ws) => path.join(dir, ws), metaPath = (ws, rec) => path.join(dir, ws, `${rec}.json`), logPath = (ws, rec) => path.join(dir, ws, `${rec}.log`), tombPath = (ws, rec) => path.join(dir, ws, `${rec}.del`);
-  const rootOf = (accountId) => path.join((configDirOf ? configDirOf(accountId ?? 'system') : null) ?? configDir, 'projects');
+  const accountOf = (rec) => resolveLegacyAccountId(isObj(db) ? db : {}, rec?.accountId, rec?.provider ?? 'claude'); // id real ou null
+  /** Pasta `projects` de onde vem a transcrição do registro: a da conta dele; conta removida = pasta inexistente (accounts.js), nunca a global; sem conta = a padrão do processo. */
+  const rootOf = (rec) => { const id = configDirOf ? accountOf(rec) : null; return path.join((id ? configDirOf(id) : null) ?? configDir, 'projects'); };
   const lastSig = new Map(); // `${ws}/${rec}` -> assinatura do último resumo gravado (sem nada novo, não regrava)
 
   const isFile = (f) => { try { return fs.lstatSync(f).isFile(); } catch { return false; } }; // lstat: symlink não conta
-  function locate(claudeId, projectsRoot = rootOf(null)) {
+  function locate(claudeId, projectsRoot = path.join(configDir, 'projects')) {
     if (!UUID_RE.test(String(claudeId))) return null;
     let dirs; try { dirs = fs.readdirSync(projectsRoot, { withFileTypes: true }); } catch { return null; }
     for (const d of dirs) { if (!d.isDirectory()) continue; const f = path.join(projectsRoot, d.name, `${claudeId}.jsonl`); if (isFile(f)) return f; }
@@ -81,7 +86,7 @@ export function createConversationStore({ dir, configDir = claudeConfigDir(), co
       if (!isObj(rec) || !REC_RE.test(String(rec.id)) || !WS_RE.test(String(rec.workspaceId))) return { ok: false, reason: 'registro_invalido' };
       const ws = rec.workspaceId, key = `${ws}/${rec.id}`;
       let m = readMeta(ws, rec.id);
-      const root = rootOf(rec.accountId), file = knownFile(m, rec.claudeSessionId, root) ?? locate(rec.claudeSessionId, root); if (!file) return { ok: false, reason: 'sem_transcricao' };
+      const root = rootOf(rec), file = knownFile(m, rec.claudeSessionId, root) ?? locate(rec.claudeSessionId, root); if (!file) return { ok: false, reason: 'sem_transcricao' };
       let size = 0; try { size = fs.statSync(file).size; } catch { return { ok: false, reason: 'sem_transcricao' }; }
       fs.mkdirSync(wsDir(ws), { recursive: true });
       const tomb = readTomb(ws, rec.id);

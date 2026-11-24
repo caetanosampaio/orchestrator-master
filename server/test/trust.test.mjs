@@ -85,7 +85,9 @@ function world(over = {}) {
   const db = { settings: { activeWorkspaceId: 'ws1' }, workspaces: [{ id: 'ws1', name: 'W', path: ws }], worktrees: [], topics: [] };
   const mgr = T.createTerminalManager({ db, ptyLib: lib, resolveCommand: () => ({ file: '/fake/claude', args: [], viaShell: false }), resolveCommands: { codex: () => ({ file: '/fake/codex', args: [], viaShell: false }) },
     killTree: () => {}, waitFor: () => true, newSessionId: () => `00000000-0000-4000-8000-${String(++n2).padStart(12, '0')}`, mcp: null, track: () => ({ release() {} }),
-    inspectConfig: async () => [], sweepMs: 0, usage: null, persist: () => {}, accounts: { defaultId: () => 'acc1', usable: () => true, configDirOf: (id) => (id === 'acc1' ? '/contas/acc1' : undefined) },
+    inspectConfig: async () => [], sweepMs: 0, usage: null, persist: () => {}, accounts: { // modelo v2: uma conta por provider (resolveFor escolhe a única); a do Claude é isolada, a do Codex é a do computador (configDirOf null)
+      resolveFor: (p) => ({ ok: true, account: { id: p === 'claude' ? 'acc_00000001' : 'acc_00000002', provider: p } }), find: (id) => ({ id, provider: id === 'acc_00000001' ? 'claude' : 'codex' }),
+      usable: () => true, configDirOf: (id) => (id === 'acc_00000001' ? '/contas/acc1' : null), remember() {} },
     trustFolders: (info) => trusted.push(info), ...over });
   return { spawned, mgr, trusted, ws };
 }

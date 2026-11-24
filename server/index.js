@@ -96,7 +96,7 @@ const usageApi = (!process.env.ORCH_DATA_DIR && !process.env.NODE_TEST_CONTEXT) 
 const rateLimits = createRateLimits({ db, accounts, dir: limitsDir, script: fileURLToPath(new URL('./claude-statusline-hook.mjs', import.meta.url)), codexAuth: () => codexProvider.authProbe(), usageApi });
 if (usageApi) rateLimits.view(); // aquece a 1ª leitura do uso real
 rateLimits.sweep();
-const conversations = createConversationStore({ dir: historyDir, configDirOf: (id) => accounts.configDirOf(id) }); // histórico de conversas próprio, por workspace (texto das trocas; ver conversations.js); cada sessão é lida na pasta da conta dela
+const conversations = createConversationStore({ dir: historyDir, db, configDirOf: (id) => accounts.configDirOf(id) }); // histórico de conversas próprio, por workspace (texto das trocas; ver conversations.js); cada sessão é lida na pasta da conta dela
 // Avisos ao abrir terminais: (1) "confiar nesta pasta?" do Claude Code e do Codex é respondido pelo FORGE (trust.js; o Codex recebe por argumento); (2) a confirmação "Abrir mesmo assim?" por configuração de projeto
 // não revisada no Git (project-config.js) é EXIGIDA por padrão (hooks, MCP e comandos do projeto não rodam sem o usuário confirmar). Para DESLIGAR a confirmação: ORCH_STRICT_PROJECT_CONFIG=0; para não gravar a confiança do Claude Code: ORCH_NO_TRUST=1. Testes ficam de fora.
 const inTest = Object.keys(testDeps).length > 0 || !!process.env.NODE_TEST_CONTEXT;
