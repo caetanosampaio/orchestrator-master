@@ -4,9 +4,9 @@
 //
 // Cada pendência vira um bloco do popup de "Antes de começar": título, explicação, passos e se BLOQUEIA o uso.
 //  - agent  (nenhuma IA encontrada): bloqueia, porque sem um agente o FORGE não faz nada. Só aparece com o Claude Code ausente E o Codex ausente;
-//  - login  (conta do Claude Code não conectada): informativo, porque a detecção é de melhor esforço (pode haver chave de API, Bedrock ou Vertex);
-//  - codexLogin (Codex é a única IA instalada e não está conectado): informativo, mesmo motivo;
+//  - login  (nenhuma conta conectada de NENHUMA IA; o servidor decide em `prereqs.login`): informativo, porque a detecção é de melhor esforço (pode haver chave de API, Bedrock ou Vertex);
 //  - git    (Git não encontrado): informativo, porque o resto do app funciona (só worktrees e relatórios dependem dele).
+// O FORGE é agnóstico de provider: não há aviso por IA (basta UMA conta conectada de alguma).
 export const PREREQ = Object.freeze({
   agent: Object.freeze({
     title: 'Nenhuma IA encontrada',
@@ -14,16 +14,10 @@ export const PREREQ = Object.freeze({
     steps: Object.freeze(['Instale o Claude Code (veja a documentação oficial da Anthropic) ou o Codex CLI (`npm i -g @openai/codex`).', 'Abra um terminal e rode `claude` ou `codex login` uma vez para entrar com a sua conta.', 'Volte aqui e clique em Verificar novamente.']),
     blocking: true,
   }),
-  codexLogin: Object.freeze({
-    title: 'Conta do Codex não conectada',
-    text: 'O Codex CLI foi encontrado, mas não há uma conta conectada a ele.',
-    steps: Object.freeze(['Abra um terminal e rode `codex login` para entrar com a sua conta.', 'Volte aqui e clique em Verificar novamente.']),
-    blocking: false,
-  }),
   login: Object.freeze({
-    title: 'Conta do Claude Code não conectada',
-    text: 'Não encontramos uma conta conectada ao Claude Code. Se você usa chave de API, Bedrock ou Vertex, pode continuar.',
-    steps: Object.freeze(['Clique em Entrar na conta (ou em Configurações > Contas) e conclua o login no navegador.', 'Volte aqui e clique em Verificar novamente.']),
+    title: 'Nenhuma conta conectada',
+    text: 'O FORGE precisa de uma conta conectada de alguma IA (Claude Code ou Codex CLI). Se você usa chave de API, Bedrock ou Vertex no Claude Code, pode continuar.',
+    steps: Object.freeze(['Clique em Entrar na conta (ou em Configurações > Contas) e conecte uma conta: a do Claude Code entra pelo navegador; a do Codex, com `codex login` num terminal.', 'Volte aqui e clique em Verificar novamente.']),
     blocking: false,
   }),
   git: Object.freeze({
@@ -53,12 +47,12 @@ export function prereqIssues(state, providers = null) {
   const add = (id, detail) => out.push({ id, ...PREREQ[id], detail });
   const codex = Array.isArray(providers) ? providers.find((x) => x?.id === 'codex') : null;
   const codexOn = codex?.available === true;
-  if (claudeOff) {
-    if (!Array.isArray(providers)) { /* provedores ainda não chegaram: sem aviso por enquanto */ }
-    else if (!codexOn) add('agent', extra(p?.claude?.detail ?? state.executor?.detail));
-    else if (codex.auth?.known === true && codex.auth.loggedIn === false) add('codexLogin', ''); // o Codex é a IA que sobrou: avisa se ele não está conectado
-  } else if (p?.login?.known === true && p.login.loggedIn === false) {
-    // o login do Claude só importa com ele instalado e só quando o servidor TEM certeza (`known`): no macOS e em servidor antigo não há aviso falso
+  const noAgent = claudeOff && Array.isArray(providers) && !codexOn;
+  const waiting = claudeOff && !Array.isArray(providers); // Claude ausente e provedores ainda não chegaram: a decisão depende do Codex, então nada de IA/login por enquanto
+  if (noAgent) add('agent', extra(p?.claude?.detail ?? state.executor?.detail));
+  else if (!waiting && p?.login?.known === true && p.login.loggedIn === false) {
+    // login = alguma conta conectada de ALGUMA IA (o servidor decide); só quando ele TEM certeza (`known`): servidor antigo ou consulta sem resposta não geram aviso falso.
+    // Sem nenhuma IA instalada o login é irrelevante (a pendência da IA já bloqueia).
     add('login', ''); // o detalhe do servidor repetiria os passos; só o texto fixo vale
   }
   if (p?.git && p.git.available === false) add('git', extra(p.git.detail));

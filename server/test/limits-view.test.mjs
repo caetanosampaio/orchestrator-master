@@ -31,29 +31,30 @@ test('tempo até o reset: compacto como na barra (min, h, d), por extenso no pai
 
 const RAW = () => ({ updatedAt: at(0), providers: [
   { provider: 'claude', label: 'Claude Code', accounts: [
-    { id: 'system', label: 'Sistema', connected: true, plan: 'max', source: 'statusline', session: { usedPct: 12, resetsAt: at(9 * 3600e3), windowMinutes: 300 }, week: { usedPct: 96, resetsAt: at(5 * 3600e3), windowMinutes: 10080 }, updatedAt: at(-1000) },
+    { id: 'acc_00000000', label: 'Meu Mac', home: 'machine', connected: true, plan: 'max', source: 'statusline', session: { usedPct: 12, resetsAt: at(9 * 3600e3), windowMinutes: 300 }, week: { usedPct: 96, resetsAt: at(5 * 3600e3), windowMinutes: 10080 }, updatedAt: at(-1000) },
     { id: 'acc_11111111', label: '', connected: false, source: 'sem-dados', session: null, week: null },
     { id: 'acc_22222222', label: 'Pessoal', connected: null, source: 'estranha', session: { usedPct: 250, resetsAt: at(3600e3) }, week: { usedPct: 10, resetsAt: at(-5000) } },
     null, { label: 'sem id' } ] },
-  { provider: 'codex', label: 'Codex CLI', accounts: [{ id: 'codex', label: 'Codex', connected: true, plan: 'plus', source: 'rollout', session: { usedPct: 2, resetsAt: at(3 * 3600e3) }, week: { usedPct: 8, resetsAt: at(86400e3) } }] },
+  { provider: 'codex', label: 'Codex CLI', accounts: [{ id: 'acc_c0000000', label: 'Codex', home: 'machine', connected: true, plan: 'plus', source: 'rollout', session: { usedPct: 2, resetsAt: at(3 * 3600e3) }, week: { usedPct: 8, resetsAt: at(86400e3) } }] },
 ] });
 
-test('normalizeLimits: aceita o contrato, recusa o resto (servidor antigo = null), sanitiza e numera as contas do Claude', () => {
+test('normalizeLimits: aceita o contrato, recusa o resto (servidor antigo = null), sanitiza e numera as contas de CADA provider', () => {
   assert.equal(normalizeLimits(null, NOW), null); assert.equal(normalizeLimits({}, NOW), null); assert.equal(normalizeLimits({ providers: 'x' }, NOW), null); assert.equal(normalizeLimits('texto', NOW), null);
   const n = normalizeLimits(RAW(), NOW), cl = n.providers[0].accounts;
-  assert.equal(cl.length, 3, 'entradas sem id são descartadas'); assert.deepEqual(cl.map((a) => a.index), [1, 2, 3]); assert.equal(n.providers[1].accounts[0].index, null, 'o Codex não é numerado');
+  assert.equal(cl.length, 3, 'entradas sem id são descartadas'); assert.deepEqual(cl.map((a) => a.index), [1, 2, 3]); assert.equal(n.providers[1].accounts[0].index, 1, 'o Codex também é numerado (agnóstico de provider)');
+  assert.deepEqual(cl.map((a) => a.home), ['machine', 'forge', 'forge'], 'sem `home` = isolada');
   assert.equal(cl[1].label, 'acc_11111111', 'sem nome usa o id'); assert.equal(cl[2].source, 'sem-dados', 'fonte desconhecida vira sem-dados'); assert.equal(cl[2].connected, null);
   assert.equal(cl[2].session.usedPct, 100, 'percentual acima de 100 é limitado'); assert.equal(cl[2].week, null, 'janela cujo reset já passou é descartada, mesmo se o servidor a mandou');
   assert.equal(cl[0].critical, 'week', 'a janela mais perto do limite define o tempo mostrado'); assert.equal(resetLabel(cl[0], NOW), '5h');
   assert.equal(cl[1].critical, null); assert.equal(resetLabel(cl[1], NOW), DASH);
-  assert.deepEqual(visibleAccounts(n.providers[0]).map((a) => a.id), ['system', 'acc_22222222'], 'conta desconectada não ocupa a faixa');
+  assert.deepEqual(visibleAccounts(n.providers[0]).map((a) => a.id), ['acc_00000000', 'acc_22222222'], 'conta desconectada não ocupa a faixa');
 });
 
 test('textos: motivo da falta de leitura e resumo para leitor de tela', () => {
   assert.match(sourceNote({ source: 'statusline-propria' }, 'claude'), /status line própria/); assert.match(sourceNote({ source: 'desligado' }, 'claude'), /ORCH_CLAUDE_STATUSLINE=off/);
   assert.match(sourceNote({ source: 'sem-dados' }, 'claude'), /primeira resposta/); assert.match(sourceNote({ source: 'sem-dados' }, 'codex'), /Codex/); assert.equal(sourceNote({ source: 'statusline' }, 'claude'), null);
   const sum = limitsSummary(normalizeLimits(RAW(), NOW), NOW);
-  assert.match(sum, /Claude Code conta 1 \(Sistema\): 5 h 12% \(reseta em 9 h\), semana 96% \(reseta em 5 h\)/); assert.match(sum, /Codex CLI: 5 h 2%/); assert.doesNotMatch(sum, /acc_11111111/);
+  assert.match(sum, /Claude Code conta 1 \(Meu Mac\): 5 h 12% \(reseta em 9 h\), semana 96% \(reseta em 5 h\)/); assert.match(sum, /Codex CLI conta 1 \(Codex\): 5 h 2%/); assert.doesNotMatch(sum, /acc_11111111/);
   assert.equal(limitsSummary(null, NOW), 'Limites das contas: sem leitura.'); assert.match(limitsSummary({ providers: [] }, NOW), /nenhuma conta conectada/);
   assert.deepEqual(WINDOWS.map((w) => w.key), ['session', 'week']);
 });
@@ -71,9 +72,9 @@ test('interface: os limites moram na barra de status (rodapé), um item por prov
 
 test('uma dupla de barras por PROVEDOR: vale a conta mais perto do limite em cada janela e o painel lista as contas do provedor', () => {
   const n = normalizeLimits(RAW(), NOW), cl = providerSummary(n.providers[0]), cx = providerSummary(n.providers[1]);
-  assert.deepEqual(cl.accounts.map((a) => a.id), ['system', 'acc_22222222'], 'só contas conectadas');
-  assert.equal(cl.session.usedPct, 100, 'a conta mais usada define a barra diária (100 % da Pessoal contra 12 % da Sistema)');
-  assert.equal(cl.week.usedPct, 96, 'e a semanal (a semana da Pessoal já reiniciou: sobra a da Sistema)');
+  assert.deepEqual(cl.accounts.map((a) => a.id), ['acc_00000000', 'acc_22222222'], 'só contas conectadas');
+  assert.equal(cl.session.usedPct, 100, 'a conta mais usada define a barra diária (100 % da Pessoal contra 12 % da do computador)');
+  assert.equal(cl.week.usedPct, 96, 'e a semanal (a semana da Pessoal já reiniciou: sobra a do computador)');
   assert.equal(cl.critical, 'session'); assert.equal(resetLabel(cl, NOW), '1h'); assert.equal(cl.provider, 'claude');
   assert.deepEqual([cx.session.usedPct, cx.week.usedPct, cx.critical], [2, 8, 'week'], 'o Codex tem as suas próprias barras, separadas das do Claude'); assert.equal(resetLabel(cx, NOW), '1d');
   assert.deepEqual(providerSummary({ provider: 'claude', label: 'C', accounts: [] }), { provider: 'claude', label: 'C', accounts: [], session: null, week: null, critical: null });
@@ -83,14 +84,14 @@ test('uma dupla de barras por PROVEDOR: vale a conta mais perto do limite em cad
 
 test('source "api" é aceito no contrato e não gera nota (a barra está preenchida)', () => {
   const now = Date.now(), at = (ms) => new Date(now + ms).toISOString();
-  const n = normalizeLimits({ updatedAt: at(0), providers: [{ provider: 'claude', label: 'Claude Code', accounts: [{ id: 'system', label: 'Sistema', source: 'api', session: { usedPct: 5, resetsAt: at(3600e3), windowMinutes: 300 }, week: null }] }] }, now);
+  const n = normalizeLimits({ updatedAt: at(0), providers: [{ provider: 'claude', label: 'Claude Code', accounts: [{ id: 'acc_00000000', label: 'Meu Mac', source: 'api', session: { usedPct: 5, resetsAt: at(3600e3), windowMinutes: 300 }, week: null }] }] }, now);
   assert.equal(n.providers[0].accounts[0].source, 'api'); assert.equal(sourceNote({ source: 'api' }, 'claude'), null);
 });
 
 test('última leitura: fonte aceita e aviso de idade só quando a leitura não é recente (o valor não zera; a idade aparece)', async () => {
   const { staleNote, fmtAgo, normalizeLimits: norm } = await import('../../client/src/limits-view.js');
   const now = Date.parse('2026-11-10T12:00:00Z'), at = (s) => new Date(now + s * 1000).toISOString();
-  const raw = (updatedAt, source = 'ultima-leitura') => ({ providers: [{ provider: 'claude', label: 'Claude Code', accounts: [{ id: 'system', label: 'Sistema', source, updatedAt, session: { usedPct: 41, resetsAt: at(3600), windowMinutes: 300 }, week: null }] }] });
+  const raw = (updatedAt, source = 'ultima-leitura') => ({ providers: [{ provider: 'claude', label: 'Claude Code', accounts: [{ id: 'acc_00000000', label: 'Meu Mac', source, updatedAt, session: { usedPct: 41, resetsAt: at(3600), windowMinutes: 300 }, week: null }] }] });
   const a = norm(raw(at(-1200)), now).providers[0].accounts[0];
   assert.equal(a.source, 'ultima-leitura'); assert.equal(a.session.usedPct, 41);
   assert.match(staleNote(a, now), /Última leitura há 20 min/);

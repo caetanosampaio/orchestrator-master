@@ -5,7 +5,7 @@ const group = (id, label, items) => Object.freeze({ id, label, items: Object.fre
 export const NAV = Object.freeze([
   group('ias', 'IAs e contas', [
     item('ias', 'Suas IAs', 'terminal', 'Os agentes que rodam nos terminais do FORGE e as outras IAs que podem vir.', ['claude', 'codex', 'provider', 'agentes', 'cli', 'instalado', 'login']),
-    item('accounts', 'Contas', 'user', 'Entre com mais de uma conta do Claude Code e escolha qual cada terminal usa.', ['login', 'claude', 'entrar', 'assinatura']),
+    item('accounts', 'Contas', 'user', 'As contas de cada IA (Claude Code, Codex CLI): conecte, renomeie e desvincule.', ['login', 'claude', 'codex', 'entrar', 'assinatura']),
     item('mascotes', 'Mascotes', 'agents', 'Cada IA tem o seu mascote: o corpo é o mesmo e a cor muda.', ['bonecos', 'cor', 'pixel', 'cara']),
   ]),
   group('times', 'Missões e times', [

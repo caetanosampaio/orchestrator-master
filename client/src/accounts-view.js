@@ -46,7 +46,7 @@ export function planLabel(s) {
 /** Resumo "e-mail · plano · organização" (só as partes que existem). */
 export function accountSummary(account) {
   const st = account?.status ?? {};
-  return [st.email, planLabel(st.subscriptionType), st.orgName].map((x) => String(x ?? '').trim()).filter(Boolean).join(' · ');
+  return [st.email, planLabel(st.plan), st.orgName].map((x) => String(x ?? '').trim()).filter(Boolean).join(' · ');
 }
 
 /** Estado exibido: { kind: 'ok'|'off'|'wait'|'bad', text, detail }. */
@@ -64,30 +64,60 @@ export const loginButtonLabel = (account) => (account?.status?.loggedIn === true
 
 export const isLoginRunning = (login) => login?.state === 'running';
 
-/** Lista de contas segura: ignora entradas sem id e normaliza campos. */
+const isObj = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
+
+/**
+ * Lista de contas segura (GET /api/accounts): ignora entradas sem id e normaliza campos. Não existe conta "Sistema" nem "padrão": a conta do computador é uma conta comum (`home: 'machine'`).
+ * `lastUsed` = { [provider]: id } só com ids que estão na lista (pré-seleção do seletor de conta).
+ */
 export function normalizeAccounts(data) {
   const list = Array.isArray(data?.accounts) ? data.accounts.filter((a) => a && typeof a.id === 'string' && a.id) : [];
-  return {
-    accounts: list.map((a) => ({ ...a, label: String(a.label ?? a.id), system: a.system === true, isDefault: a.isDefault === true })),
-    providers: Array.isArray(data?.providers) ? data.providers.filter((p) => p && typeof p.id === 'string') : [],
-  };
+  const accounts = list.map((a) => {
+    const provider = typeof a.provider === 'string' && a.provider ? a.provider : 'claude';
+    return { ...a, provider, providerLabel: typeof a.providerLabel === 'string' && a.providerLabel ? a.providerLabel : provider, label: String(a.label ?? a.id), home: a.home === 'machine' ? 'machine' : 'forge', canLogin: a.canLogin === true };
+  });
+  const lastUsed = {};
+  if (isObj(data?.lastUsed)) for (const [p, id] of Object.entries(data.lastUsed)) if (typeof id === 'string' && accounts.some((a) => a.id === id && a.provider === p)) lastUsed[p] = id;
+  return { accounts, providers: Array.isArray(data?.providers) ? data.providers.filter((p) => p && typeof p.id === 'string') : [], lastUsed };
 }
+
+/** Contas agrupadas por provider, na ordem dos providers do servidor (os desconhecidos vão ao fim); dentro do grupo, a do computador primeiro. */
+export function groupByProvider(accounts, providers = []) {
+  const order = (Array.isArray(providers) ? providers : []).map((p) => p.id);
+  for (const a of accounts ?? []) if (!order.includes(a.provider)) order.push(a.provider);
+  return order.map((id) => {
+    const p = (providers ?? []).find((x) => x?.id === id);
+    const mine = (accounts ?? []).filter((a) => a.provider === id).sort((x, y) => (x.home === 'machine' ? 0 : 1) - (y.home === 'machine' ? 0 : 1));
+    return { id, label: p?.label ?? mine[0]?.providerLabel ?? id, provider: p ?? null, accounts: mine };
+  }).filter((g) => g.accounts.length > 0 || (g.provider && g.provider.available !== false));
+}
+
+/** Providers que podem ganhar a "conta deste computador": instalados e ainda sem uma (o servidor recusa a segunda com `machine_exists`). */
+export const machineCandidates = (providers, accounts) => (Array.isArray(providers) ? providers : []).filter((p) => p && p.available === true && !(accounts ?? []).some((a) => a.provider === p.id && a.home === 'machine'));
 
 /**
  * Habilitação dos botões de um cartão. `busy` = há uma chamada em andamento neste cartão; `loginRunningId` = conta com login em andamento (um por vez).
- * Remover: nunca na conta Sistema nem com login dela em andamento; o servidor ainda recusa se um terminal a usa (409).
+ * Login só onde o FORGE sabe fazer (`canLogin`; o do Codex é no próprio CLI). Remover vale para qualquer conta; a do computador só é DESVINCULADA (sem logout nem pasta apagada).
+ * O servidor ainda recusa se um terminal usa a conta (409 account_in_use).
  */
 export function accountActions(account, { busy = false, loginRunningId = null } = {}) {
   const other = !!loginRunningId && loginRunningId !== account?.id;
   const mine = !!loginRunningId && loginRunningId === account?.id;
+  const canLogin = account?.canLogin === true;
   return {
-    login: !busy && !loginRunningId,
-    loginReason: other ? 'Já há um login em andamento em outra conta. Termine ou cancele esse primeiro.' : '',
-    makeDefault: !busy && !account?.isDefault,
-    remove: !busy && !account?.system && !mine,
-    canRemove: !account?.system,
+    canLogin,
+    login: canLogin && !busy && !loginRunningId,
+    loginReason: canLogin && other ? 'Já há um login em andamento em outra conta. Termine ou cancele esse primeiro.' : '',
+    rename: !busy && !mine,
+    remove: !busy && !mine,
+    removeLabel: account?.home === 'machine' ? 'Desvincular' : 'Remover',
   };
 }
+
+/** Texto da confirmação de remoção: desvincular a do computador não mexe no login dele; a isolada perde o login guardado pelo FORGE. */
+export const removalPrompt = (account) => (account?.home === 'machine'
+  ? `Desvincular “${account.label}”? O FORGE deixa de usar o login deste computador nesta conta, mas não faz logout nem apaga nada. Você pode vinculá-la de novo depois.`
+  : `Remover a conta “${account?.label ?? ''}”? Ela será desconectada e os dados de login dela serão apagados do FORGE. Isso não pode ser desfeito.`);
 
 /** Pode adicionar? Limite de contas, nome válido e provedor que o FORGE sabe conectar (Claude Code; o Codex usa o login do próprio CLI). */
 export function canAddAccount({ count = 0, name = '', provider = null, busy = false } = {}) {
@@ -110,13 +140,33 @@ export function tailLines(lines, n = 6) {
   return (Array.isArray(lines) ? lines : []).map((l) => String(l ?? '').replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, '').slice(0, 300)).filter((l) => l.trim()).slice(-n);
 }
 
-/** Nome da conta para a etiqueta do terminal; null quando for a Sistema, desconhecida ou sem lista. */
+/** Nome da conta pelo id; null quando desconhecida ou sem lista. */
 export function accountTagName(accountId, accounts) {
-  if (!accountId || accountId === 'system' || !Array.isArray(accounts)) return null;
+  if (typeof accountId !== 'string' || !accountId || !Array.isArray(accounts)) return null;
   const a = accounts.find((x) => x?.id === accountId);
-  if (!a || a.system) return null;
-  const t = String(a.label ?? '').trim();
+  const t = String(a?.label ?? '').trim();
   return t || null;
+}
+
+/** Contas de UM provider (o seletor de conta do Cockpit), a do computador primeiro. */
+export const accountsOf = (accounts, provider) => (Array.isArray(accounts) ? accounts.filter((a) => a && typeof a.id === 'string' && (a.provider ?? 'claude') === provider) : []).sort((x, y) => (x.home === 'machine' ? 0 : 1) - (y.home === 'machine' ? 0 : 1));
+
+/** Etiqueta da conta no terminal: só quando o provider dele tem MAIS de uma conta (com uma só, o nome não diz nada). */
+export function paneAccountTag(session, accounts) {
+  if (!session || accountsOf(accounts, session.provider ?? 'claude').length < 2) return null;
+  return accountTagName(session.accountId, accounts);
+}
+
+/**
+ * Conta a pedir ao abrir um terminal do provider: a escolhida no seletor (se ainda existe e é dele), senão a última usada, senão null (o servidor escolhe a única;
+ * com várias responde 409 account_required e a interface mostra o seletor).
+ */
+export function pickAccount({ accounts, provider, chosen = null, lastUsed = null } = {}) {
+  const mine = accountsOf(accounts, provider);
+  const ok = (id) => typeof id === 'string' && mine.some((a) => a.id === id);
+  if (ok(chosen)) return chosen;
+  const last = isObj(lastUsed) ? lastUsed[provider] : null;
+  return ok(last) ? last : null;
 }
 
 /** Mensagem em português por código de erro do servidor; sem código conhecido devolve null (o chamador usa o `error` do servidor). */
@@ -134,10 +184,11 @@ export const shouldRestoreCode = (code) => code !== 'login_closing';
 /** Texto de erro de uma chamada: mensagem do código, ou o `error` do servidor (ex.: account_in_use), ou o padrão. */
 export const apiErrorText = (e, fallback) => errorMessageFor(e?.code) ?? (e?.message || fallback);
 
-/** Mensagem após remover: { kind: 'ok'|'err', text }. Pasta que não pôde ser apagada é ERRO (dados de login ficaram no disco). */
-export function removalMessage({ folderRemoved, defaultChangedTo, id } = {}) {
+/** Mensagem após remover: { kind: 'ok'|'err', text }. A do computador só é desvinculada. Pasta isolada que não pôde ser apagada é ERRO (dados de login ficaram no disco). */
+export function removalMessage({ unlinked, folderRemoved, id } = {}) {
+  if (unlinked === true) return { kind: 'ok', text: 'Conta desvinculada. O login deste computador continua como estava.' };
   if (folderRemoved === false) return { kind: 'err', text: `A conta foi removida, mas a pasta com o login dela não pôde ser apagada. Apague manualmente a pasta accounts/${id} dentro da pasta de dados do FORGE.` };
-  return { kind: 'ok', text: defaultChangedTo === 'system' ? 'Conta removida. A conta padrão voltou a ser Sistema.' : 'Conta removida.' };
+  return { kind: 'ok', text: 'Conta removida.' };
 }
 
 export const LOGIN_INTERRUPTED = 'O login foi interrompido (o FORGE pode ter reiniciado). Tente de novo.';

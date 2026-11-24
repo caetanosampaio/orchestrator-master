@@ -70,7 +70,7 @@ const SOURCES = new Set(['api', 'ultima-leitura', 'statusline', 'rollout', 'stat
 
 /**
  * Normaliza a resposta de /api/limits. Servidor antigo (sem a rota) ou resposta inválida = null (a barra mostra "—").
- * Cada conta ganha `index` (1, 2, 3 ... só para as do Claude Code, na ordem) e `critical`: a janela mais perto do limite (a que define o tempo mostrado ao lado das barras).
+ * Cada conta ganha `index` (1, 2, 3 ... por provider, na ordem do servidor: a do computador primeiro), `home` ('machine' | 'forge') e `critical`: a janela mais perto do limite (a que define o tempo mostrado ao lado das barras).
  * @returns {null | { providers: Array<{ provider: string, label: string, accounts: Array<object> }> }}
  */
 export function normalizeLimits(raw, now = Date.now()) {
@@ -83,7 +83,7 @@ export function normalizeLimits(raw, now = Date.now()) {
       return {
         id: a.id, label: typeof a.label === 'string' && a.label ? a.label : a.id, connected: a.connected === true ? true : a.connected === false ? false : null,
         plan: typeof a.plan === 'string' && a.plan ? a.plan : null, source: SOURCES.has(a.source) ? a.source : 'sem-dados', session, week, critical,
-        updatedAt: typeof a.updatedAt === 'string' ? a.updatedAt : null, index: p.provider === 'claude' ? ++n : null,
+        updatedAt: typeof a.updatedAt === 'string' ? a.updatedAt : null, index: ++n, home: a.home === 'machine' ? 'machine' : 'forge',
       };
     });
     return { provider: p.provider, label: typeof p.label === 'string' ? p.label : p.provider, accounts };
@@ -143,7 +143,7 @@ export function limitsSummary(norm, now = Date.now()) {
   for (const p of norm.providers) for (const a of visibleAccounts(p)) {
     const w = (win) => (a[win.key] ? `${win.short} ${Math.round(a[win.key].usedPct)}% (reseta em ${fmtResetLong(a[win.key].resetsAt, now) ?? 'instantes'})` : null);
     const bits = WINDOWS.map(w).filter(Boolean);
-    parts.push(`${p.label}${a.index ? ` conta ${a.index}` : ''}${a.label && p.provider === 'claude' ? ` (${a.label})` : ''}: ${bits.length ? bits.join(', ') : 'sem leitura'}`);
+    parts.push(`${p.label}${a.index ? ` conta ${a.index}` : ''}${a.label ? ` (${a.label})` : ''}: ${bits.length ? bits.join(', ') : 'sem leitura'}`);
   }
   return parts.length ? `Limites das contas. ${parts.join('. ')}.` : 'Limites das contas: nenhuma conta conectada.';
 }

@@ -2,11 +2,12 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
 import { useStore } from '../store.jsx';
 import { Btn as BaseBtn } from './ui.jsx';
-import { providerById, codexAccountState } from '../provider-view.js';
+import ProviderLogo from './ProviderLogo.jsx';
 import {
   LOGIN_METHODS, DEFAULT_METHOD, LOGIN_INTRO, LOGIN_POLL_MS, NAME_MAX, MAX_ACCOUNTS,
-  safeLoginUrl, accountState, loginButtonLabel, accountActions, canAddAccount, providerSelectable,
-  canSendCode, tailLines, normalizeAccounts, isLoginRunning, apiErrorText, shouldRestoreCode, removalMessage, loginInterrupted, LOGIN_INTERRUPTED,
+  safeLoginUrl, accountState, loginButtonLabel, accountActions, canAddAccount, providerSelectable, validateName,
+  canSendCode, tailLines, normalizeAccounts, isLoginRunning, apiErrorText, shouldRestoreCode, removalMessage, removalPrompt, loginInterrupted, LOGIN_INTERRUPTED,
+  groupByProvider, machineCandidates,
 } from '../accounts-view.js';
 
 /** Btn do projeto usa `kind` (classes); aqui `variant`/`size` ficam legíveis. */
@@ -110,7 +111,37 @@ function LoginPanel({ account, resume, onFinished, onClose, onRunning }) {
   );
 }
 
-/** Aba "Contas" das Configurações: contas do Claude Code (login pelo navegador, conta padrão e remoção) e o estado do login do Codex CLI (que é do próprio CLI). */
+/** Renomear uma conta (PATCH /api/accounts/:id, só o rótulo). */
+function RenameForm({ account, onDone, onCancel }) {
+  const [name, setName] = useState(account.label);
+  const [err, setErr] = useState(''), [saving, setSaving] = useState(false);
+  const v = validateName(name);
+  const save = async (e) => {
+    e.preventDefault();
+    if (!v.ok || saving) return;
+    setSaving(true); setErr('');
+    try { await api.patch(`/api/accounts/${encodeURIComponent(account.id)}`, { label: v.value }); onDone(); }
+    catch (er) { setErr(apiErrorText(er, 'Não foi possível renomear a conta.')); setSaving(false); }
+  };
+  return (
+    <form className="acc-confirm" onSubmit={save} aria-label={`Renomear a conta ${account.label}`}>
+      <label className="acc-field"><span>Novo nome</span>
+        <input type="text" value={name} onChange={(e) => setName(e.target.value)} maxLength={NAME_MAX} data-autofocus="" autoComplete="off" />
+      </label>
+      {!v.ok && name && <p className="dim small" role="status">{v.error}</p>}
+      {err && <p className="oc-note err" role="alert">{err}</p>}
+      <div className="acc-actions">
+        <Btn type="submit" variant="primary" size="sm" disabled={!v.ok || saving || v.value === account.label}>{saving ? 'Salvando…' : 'Salvar'}</Btn>
+        <Btn variant="quiet" size="sm" onClick={onCancel} disabled={saving}>Cancelar</Btn>
+      </div>
+    </form>
+  );
+}
+
+/**
+ * Aba "Contas" das Configurações: as contas de TODAS as IAs, agrupadas por provider. Não existe conta "Sistema" nem "padrão": a conta deste computador é uma conta comum
+ * (o login que você já usa fora do FORGE), que pode ser desvinculada e vinculada de novo; as outras são isoladas, com o login guardado pelo FORGE (só onde o FORGE sabe logar).
+ */
 export default function AccountsPanel() {
   const { refresh, loadAccounts } = useStore();
   const [data, setData] = useState({ accounts: [], providers: [] });
@@ -121,11 +152,12 @@ export default function AccountsPanel() {
   const [loginFor, setLoginFor] = useState(null); // { id, resume }
   const [runningId, setRunningId] = useState(null); // conta com login em andamento (um por vez)
   const [confirmId, setConfirmId] = useState(null);
+  const [renameId, setRenameId] = useState(null);
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState('');
   const [prov, setProv] = useState('claude');
   const [saving, setSaving] = useState(false);
-  const [checking, setChecking] = useState(false); // "Verificar de novo" do cartão do Codex
+  const [checking, setChecking] = useState(false); // "Verificar de novo" (contas cujo login é feito no próprio CLI)
   const alive = useRef(true);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
 
@@ -194,61 +226,71 @@ export default function AccountsPanel() {
     finally { setSaving(false); }
   };
   const addState = canAddAccount({ count: data.accounts.length, name, provider: selected });
-  const codex = data.providers.length ? providerById(data.providers, 'codex') : null, cx = codex ? codexAccountState(codex) : null; // sem a lista do servidor (servidor antigo) o cartão não afirma nada
-  const codexCard = cx && (
-    <section className="acc-card acc-codex" aria-label="Codex CLI">
-      <div className="acc-head"><b className="acc-name">{codex.label}</b><span className="oc-pill" title={codex.note || undefined}>login no próprio CLI</span></div>
-      <div className={`oc-state ${cx.kind === 'ok' ? 'ok' : cx.kind === 'bad' ? 'bad' : ''}`} role="status"><i aria-hidden="true" /><span>{cx.text}</span></div>
-      <p className="dim small acc-sum">{cx.detail}</p>
-      <div className="acc-actions"><Btn size="sm" disabled={checking} onClick={async () => { setChecking(true); try { await load(true); } finally { if (alive.current) setChecking(false); } }}>{checking ? 'Verificando…' : 'Verificar de novo'}</Btn></div>
-    </section>
-  );
+  const groups = groupByProvider(data.accounts, data.providers);
+  const machines = machineCandidates(data.providers, data.accounts);
+  const recheck = async () => { setChecking(true); try { await load(true); } finally { if (alive.current) setChecking(false); } };
+  const linkMachine = (p) => run(`machine:${p.id}`, async () => { await api.post('/api/accounts', { provider: p.id, home: 'machine' }); refresh?.(); }, `Conta deste computador vinculada ao ${p.label}.`);
+
+  const card = (a, provider) => {
+    const st = accountState(a), act = accountActions(a, { busy: busyId === a.id, loginRunningId: runningId });
+    const open = loginFor?.id === a.id, confirming = confirmId === a.id, renaming = renameId === a.id;
+    const idle = !open && !confirming && !renaming;
+    return (
+      <li key={a.id} className="acc-card">
+        <div className="acc-head">
+          <b className="acc-name">{a.label}</b>
+          {a.home === 'machine' && <span className="oc-pill" title="O login que este computador já usa fora do FORGE. Desvincular não faz logout.">deste computador</span>}
+        </div>
+        <div className={`oc-state ${st.kind === 'ok' ? 'ok' : st.kind === 'bad' ? 'bad' : ''}`} role="status">
+          <i aria-hidden="true" /><span>{st.text}</span>
+        </div>
+        {st.detail && <p className="dim small acc-sum">{st.detail}</p>}
+        {!act.canLogin && st.kind !== 'ok' && <p className="dim small">{provider?.note || 'O login desta IA é feito no próprio CLI, num terminal.'}</p>}
+        {idle && (
+          <div className="acc-actions">
+            {act.canLogin
+              ? <Btn variant="primary" size="sm" onClick={() => setLoginFor({ id: a.id, resume: false })} disabled={!act.login} title={act.loginReason || undefined}>{loginButtonLabel(a)}</Btn>
+              : <Btn size="sm" disabled={checking} onClick={recheck}>{checking ? 'Verificando…' : 'Verificar de novo'}</Btn>}
+            <Btn size="sm" onClick={() => { setRenameId(a.id); setMsg(null); }} disabled={!act.rename}>Renomear</Btn>
+            <Btn variant="danger" size="sm" onClick={() => setConfirmId(a.id)} disabled={!act.remove}>{act.removeLabel}</Btn>
+          </div>
+        )}
+        {!open && act.loginReason && <p className="dim small">{act.loginReason}</p>}
+        {renaming && <RenameForm account={a} onCancel={() => setRenameId(null)} onDone={() => { setRenameId(null); setMsg({ kind: 'ok', text: 'Conta renomeada.' }); load(); }} />}
+        {confirming && (
+          <div className="acc-confirm" role="alertdialog" aria-label={`${act.removeLabel} a conta ${a.label}`}>
+            <p className="small">{removalPrompt(a)}</p>
+            <div className="acc-actions">
+              <Btn variant="danger" size="sm" data-autofocus="" onClick={async () => { setConfirmId(null); await run(a.id, async () => { const r = await api.del(`/api/accounts/${encodeURIComponent(a.id)}`); refresh?.(); return removalMessage({ ...r, id: a.id }); }); }}>{a.home === 'machine' ? 'Desvincular' : 'Remover conta'}</Btn>
+              <Btn variant="quiet" size="sm" onClick={() => setConfirmId(null)}>Cancelar</Btn>
+            </div>
+          </div>
+        )}
+        {open && <LoginPanel account={a} resume={loginFor.resume} onFinished={onFinished} onClose={closeLogin} onRunning={(v) => setRunningId(v ? a.id : null)} />}
+      </li>
+    );
+  };
 
   return (
     <div className="acc">
-      <p className="dim small oc-lead">Cada conta tem o próprio login do Claude Code, guardado só neste computador. A conta Sistema é a do Claude Code que você já usa fora do FORGE. O Codex CLI usa o login dele mesmo, mostrado mais abaixo.</p>
+      <p className="dim small oc-lead">O FORGE usa as contas que você conectar aqui, de qualquer IA (Claude Code, Codex CLI). A conta “deste computador” é o login que você já usa fora do FORGE; as outras ficam isoladas, com o login guardado só pelo FORGE. Basta uma conta conectada de alguma IA.</p>
       {msg && <p className={`oc-note ${msg.kind === 'err' ? 'err' : 'ok'}`} role={msg.kind === 'err' ? 'alert' : 'status'}>{msg.text}</p>}
       {loadErr && <p className="oc-note err" role="alert">{loadErr}</p>}
       {!loaded && <p className="dim small" role="status">Carregando contas…</p>}
-      <ul className="acc-list" aria-label="Contas">
-        {data.accounts.map((a) => {
-          const st = accountState(a), act = accountActions(a, { busy: busyId === a.id, loginRunningId: runningId });
-          const open = loginFor?.id === a.id, confirming = confirmId === a.id;
-          return (
-            <li key={a.id} className={`acc-card${a.isDefault ? ' def' : ''}`}>
-              <div className="acc-head">
-                <b className="acc-name">{a.label}</b>
-                {a.system && <span className="oc-pill" title="É a conta do próprio Claude Code, fora do FORGE. Não pode ser removida.">Sistema</span>}
-                {a.isDefault && <span className="oc-pill ok" title="Usada nos novos terminais">Padrão</span>}
-              </div>
-              <div className={`oc-state ${st.kind === 'ok' ? 'ok' : st.kind === 'bad' ? 'bad' : ''}`} role="status">
-                <i aria-hidden="true" /><span>{st.text}</span>
-              </div>
-              {st.detail && <p className="dim small acc-sum">{st.detail}</p>}
-              {!open && !confirming && (
-                <div className="acc-actions">
-                  <Btn variant="primary" size="sm" onClick={() => setLoginFor({ id: a.id, resume: false })} disabled={!act.login} title={act.loginReason || undefined}>{loginButtonLabel(a)}</Btn>
-                  {!a.isDefault && <Btn size="sm" onClick={() => run(a.id, () => api.post(`/api/accounts/${encodeURIComponent(a.id)}/default`), 'Conta padrão atualizada.')} disabled={!act.makeDefault}>Tornar padrão</Btn>}
-                  {act.canRemove && <Btn variant="danger" size="sm" onClick={() => setConfirmId(a.id)} disabled={!act.remove}>Remover</Btn>}
-                </div>
-              )}
-              {!open && act.loginReason && <p className="dim small">{act.loginReason}</p>}
-              {confirming && (
-                <div className="acc-confirm" role="alertdialog" aria-label={`Remover a conta ${a.label}`}>
-                  <p className="small">Remover a conta “{a.label}”? Ela será desconectada e os dados de login dela serão apagados do FORGE. Isso não pode ser desfeito.</p>
-                  <div className="acc-actions">
-                    <Btn variant="danger" size="sm" data-autofocus="" onClick={async () => { setConfirmId(null); await run(a.id, async () => { const r = await api.del(`/api/accounts/${encodeURIComponent(a.id)}`); return removalMessage({ ...r, id: a.id }); }); }}>Remover conta</Btn>
-                    <Btn variant="quiet" size="sm" onClick={() => setConfirmId(null)}>Cancelar</Btn>
-                  </div>
-                </div>
-              )}
-              {open && <LoginPanel account={a} resume={loginFor.resume} onFinished={onFinished} onClose={closeLogin} onRunning={(v) => setRunningId(v ? a.id : null)} />}
-            </li>
-          );
-        })}
-      </ul>
-      {loaded && !loadErr && !data.accounts.length && <p className="dim small">Nenhuma conta ainda.</p>}
-      {loaded && !loadErr && codexCard}
+      {groups.map((g) => (
+        <section key={g.id} className="acc-group" aria-label={`Contas do ${g.label}`}>
+          <h3 className="acc-gh"><ProviderLogo id={g.id} size={14} />{g.label}</h3>
+          {g.accounts.length > 0
+            ? <ul className="acc-list" aria-label={`Contas do ${g.label}`}>{g.accounts.map((a) => card(a, g.provider))}</ul>
+            : <p className="dim small">Nenhuma conta do {g.label} ainda.</p>}
+        </section>
+      ))}
+      {loaded && !loadErr && !data.accounts.length && !groups.length && <p className="dim small">Nenhuma conta ainda. Instale o Claude Code ou o Codex CLI e verifique de novo.</p>}
+      {loaded && !loadErr && machines.length > 0 && (
+        <div className="acc-actions">
+          {machines.map((p) => <Btn key={p.id} onClick={() => linkMachine(p)} disabled={busyId === `machine:${p.id}`} title={`Usar no FORGE o login do ${p.label} que este computador já tem (não faz login nem logout).`}>{busyId === `machine:${p.id}` ? 'Vinculando…' : `Adicionar conta deste computador (${p.label})`}</Btn>)}
+        </div>
+      )}
 
       {!loadErr && (adding ? (
         <form className="acc-add" onSubmit={add} aria-label="Adicionar conta">
@@ -274,7 +316,7 @@ export default function AccountsPanel() {
         </form>
       ) : (
         <div className="acc-actions">
-          <Btn onClick={() => { setAdding(true); setMsg(null); }} disabled={data.accounts.length >= MAX_ACCOUNTS} title={data.accounts.length >= MAX_ACCOUNTS ? `Limite de ${MAX_ACCOUNTS} contas atingido.` : undefined}>Adicionar conta</Btn>
+          <Btn onClick={() => { setAdding(true); setMsg(null); }} disabled={data.accounts.length >= MAX_ACCOUNTS} title={data.accounts.length >= MAX_ACCOUNTS ? `Limite de ${MAX_ACCOUNTS} contas atingido.` : 'Uma conta isolada, com o login guardado só pelo FORGE (por exemplo, a do trabalho ao lado da pessoal).'}>Adicionar conta</Btn>
         </div>
       ))}
     </div>

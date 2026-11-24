@@ -56,7 +56,7 @@ export default function Setup({ onFinish }) {
   const claudeOk = p.claude ? p.claude.available === true : state?.executor?.available !== false;
   const codex = (terminals?.providers ?? []).find((x) => x.id === 'codex');
   const anyAi = claudeOk || codex?.available === true; // nenhuma IA é obrigatória em si: basta uma delas
-  const loginOk = !(p.login?.known === true && p.login.loggedIn === false);
+  const loginOk = !(p.login?.known === true && p.login.loggedIn === false); // alguma conta conectada de alguma IA (o servidor decide)
   const go = (n) => { setDir(n > i ? 1 : -1); setI(Math.max(0, Math.min(STEPS.length - 1, n))); };
   const finish = () => { setPref('setupDone', true); onFinish?.(); };
   const recheck = async () => { setChecking(true); try { await api.get('/api/state?fresh=1').catch(() => {}); await refresh(); } finally { setChecking(false); } };
@@ -115,7 +115,7 @@ export default function Setup({ onFinish }) {
           </>}
           {step.id === 'account' && <>
             <h1 id="fx-setup-t">Conecte a sua conta</h1>
-            <p className="fx-setup-lead">{loginOk ? 'Encontramos uma conta conectada. Você pode adicionar outras agora ou depois, em Configurações > Contas.' : 'Entre com a sua conta do Claude (ou do Codex). O login abre no navegador e volta para cá sozinho.'}</p>
+            <p className="fx-setup-lead">{loginOk ? 'Encontramos uma conta conectada. Você pode adicionar outras agora ou depois, em Configurações > Contas.' : 'O Forge precisa de uma conta conectada de alguma IA. A do Claude Code entra pelo navegador e volta para cá sozinha; a do Codex, com codex login num terminal.'}</p>
             <div className="fx-setup-embed"><AccountsPanel /></div>
             <div className="fx-setup-actions">
               <button type="button" className="btn quiet" onClick={() => go(1)}>Voltar</button>

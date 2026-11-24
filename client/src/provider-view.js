@@ -1,5 +1,5 @@
 // Estado de um provider (CLI de agente) para a interface, só a partir do que o servidor informa em GET /api/terminals (`providers`) e GET /api/accounts (`providers`).
-// PURO (sem React, sem rede). Nada é presumido: sem `auth` o login é desconhecido e o texto diz só o que se sabe ("instalado"). O login do Claude Code é tratado em Configurações > Contas.
+// PURO (sem React, sem rede). Nada é presumido: sem `auth` o login é desconhecido e o texto diz só o que se sabe ("instalado"). O login de cada conta é tratado em Configurações > Contas.
 
 import { CATALOG, catalogColor } from './provider-catalog.js';
 
@@ -17,27 +17,24 @@ export function providerStatus(p) {
   return { kind: 'ok', text: 'instalado' };
 }
 
-/** Dá ao Claude Code o estado de login da conta padrão (prereqs.login de /api/state: { known, loggedIn }); o servidor só informa `auth` para o Codex. Sem informação, devolve a lista como veio. */
-export function withClaudeLogin(providers, login) {
-  if (!Array.isArray(providers) || login?.known !== true) return providers;
-  return providers.map((p) => (p && p.id === 'claude' ? { ...p, auth: { known: true, loggedIn: login.loggedIn === true } } : p));
+/**
+ * Dá a cada provider o estado de login das CONTAS dele (GET /api/accounts com status): alguma conectada = conectado; todas verificadas e desconectadas = não conectado.
+ * Sem contas verificadas do provider (ou sem a lista), o provider segue como veio (o Codex ainda tem a sonda própria de /api/terminals).
+ */
+export function withAccountsLogin(providers, accounts) {
+  if (!Array.isArray(providers) || !Array.isArray(accounts)) return providers;
+  return providers.map((p) => {
+    if (!p) return p;
+    const mine = accounts.filter((a) => a && (a.provider ?? 'claude') === p.id && a.status?.checked === true && typeof a.status.loggedIn === 'boolean');
+    if (!mine.length) return p;
+    const on = mine.some((a) => a.status.loggedIn === true);
+    if (!on && mine.length < accounts.filter((a) => a && (a.provider ?? 'claude') === p.id).length) return p; // há conta ainda sem resposta: não afirma "não conectado"
+    return { ...p, auth: { known: true, loggedIn: on } };
+  });
 }
 
 /** Provider pelo id na lista do servidor (ou undefined). */
 export const providerById = (list, id) => (Array.isArray(list) ? list.find((p) => p && p.id === id) : undefined);
-
-/**
- * Cartão do Codex na aba Contas: estado e orientação. O login é do próprio Codex CLI (o FORGE não o faz nem gerencia várias contas dele).
- * @returns {{kind:'ok'|'bad'|'off', text:string, detail:string}}
- */
-export function codexAccountState(p) {
-  const s = providerStatus(p);
-  if (!p) return { ...s, detail: 'Não foi possível consultar o Codex CLI.' };
-  if (p.available === false) return { ...s, detail: 'Instale com "npm i -g @openai/codex" e entre com "codex login" num terminal.' };
-  if (s.text === 'conectado') return { ...s, detail: 'O Codex usa o login do próprio Codex CLI, em todos os terminais Codex. O FORGE não gerencia várias contas dele.' };
-  if (s.text === 'não conectado') return { ...s, detail: 'Rode "codex login" num terminal e atualize esta tela. O FORGE não faz o login do Codex.' };
-  return { ...s, text: 'login não verificado', detail: 'O Codex CLI está instalado, mas não foi possível confirmar o login. Rode "codex login status" num terminal.' };
-}
 
 /** Cor de identidade de cada IA (o mascote e os selos usam esta): vem do catálogo (provider-catalog.js); IA desconhecida fica em cinza. */
 export const PROVIDER_COLORS = Object.freeze(Object.fromEntries(CATALOG.filter((x) => x.integrated).map((x) => [x.id, x.color])));

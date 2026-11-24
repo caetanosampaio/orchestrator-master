@@ -59,7 +59,7 @@ export function ProviderPanel({ sum, now, anchor, onClose }) {
           const note = !a.session && !a.week ? sourceNote(a, sum.provider) : null;
           return (
             <li key={a.id} className="lm-row">
-              <div className="lm-row-h"><b>{a.index !== null && sum.accounts.length > 1 ? `Conta ${a.index} · ${a.label}` : a.label}</b>{a.plan && <span className="lm-plan">{a.plan}</span>}</div>
+              <div className="lm-row-h"><b>{a.index !== null && sum.accounts.length > 1 ? `Conta ${a.index} · ${a.label}` : a.label}</b>{a.home === 'machine' && <span className="lm-plan" title="O login que este computador já usa fora do FORGE">deste computador</span>}{a.plan && <span className="lm-plan">{a.plan}</span>}</div>
               {note ? <p className="small dim lm-note">{note}</p> : WINDOWS.map((w) => <WindowBlock key={w.key} win={w} data={a[w.key]} now={now} />)}
               {!note && staleNote(a, now) && <p className="small dim lm-note">{staleNote(a, now)}</p>}
             </li>

@@ -24,18 +24,19 @@ test('nenhuma IA (Claude Code e Codex ausentes): pendência BLOQUEANTE e primeir
   assert.match(c.text, /Claude Code ou Codex CLI/);
 });
 
-test('Claude Code ausente mas Codex instalado: NÃO bloqueia (basta uma IA); só avisa se o Codex não estiver conectado', () => {
-  assert.deepEqual(ids(st({ claude: off() }), withCodex()), [], 'Codex disponível: nada a avisar');
-  assert.deepEqual(ids(st({ claude: off() }), withCodex({ known: true, loggedIn: true })), []);
-  assert.deepEqual(ids(st({ claude: off() }), withCodex({ known: false, loggedIn: null })), [], 'login desconhecido: sem aviso falso');
-  const [x] = prereqIssues(st({ claude: off() }), withCodex({ known: true, loggedIn: false }));
-  assert.equal(x.id, 'codexLogin'); assert.equal(x.blocking, false); assert.equal(hasBlocking([x]), false);
+test('Claude Code ausente mas Codex instalado: NÃO bloqueia (basta uma IA); o login é o do servidor (alguma conta de alguma IA), não um aviso por IA', () => {
+  assert.deepEqual(ids(st({ claude: off() }), withCodex()), [], 'Codex disponível e alguma conta conectada: nada a avisar');
+  assert.deepEqual(ids(st({ claude: off() }), withCodex({ known: true, loggedIn: false })), [], 'a sonda própria do Codex não gera aviso: quem decide é prereqs.login');
+  const [x] = prereqIssues(st({ claude: off(), login: login(false) }), withCodex());
+  assert.equal(x.id, 'login'); assert.equal(x.blocking, false); assert.equal(hasBlocking([x]), false);
   assert.equal(canContinue({ issues: [x], tries: 0 }), true);
+  assert.deepEqual(ids(st({ claude: off(), login: login(false, false) }), withCodex()), [], 'login desconhecido: sem aviso falso');
 });
 
-test('Claude Code instalado: Codex ausente ou desconectado não gera pendência', () => {
+test('Claude Code instalado: o Codex ausente ou desconectado não gera pendência própria', () => {
   assert.deepEqual(prereqIssues(st({}), noCodex), []);
   assert.deepEqual(prereqIssues(st({}), [{ id: 'codex', available: true, auth: { known: true, loggedIn: false } }]), []);
+  assert.equal(Object.hasOwn(PREREQ, 'codexLogin'), false, 'não há pendência de login por IA');
 });
 
 test('Claude Code ausente com os provedores ainda não carregados: espera (sem bloqueio piscando para quem usa só Codex)', () => {
@@ -43,12 +44,14 @@ test('Claude Code ausente com os provedores ainda não carregados: espera (sem b
   assert.deepEqual(prereqIssues(st({ claude: off(), git: off() }), null).map((i) => i.id), ['git'], 'o resto continua sendo avisado');
 });
 
-test('login: só avisa com o Claude Code instalado e quando o servidor TEM certeza; é informativo (não bloqueia)', () => {
+test('login: nenhuma conta conectada de NENHUMA IA, só quando o servidor TEM certeza; é informativo (não bloqueia)', () => {
   assert.deepEqual(ids(st({ login: login(false) })), ['login']);
   assert.equal(prereqIssues(st({ login: login(false) }))[0].blocking, false);
-  assert.deepEqual(ids(st({ login: login(false, false) })), [], 'macOS/desconhecido: sem aviso falso');
+  assert.match(PREREQ.login.title, /Nenhuma conta conectada/); assert.doesNotMatch(PREREQ.login.title, /Claude/, 'o aviso não é de uma IA específica');
+  assert.deepEqual(ids(st({ login: login(false, false) })), [], 'desconhecido: sem aviso falso');
   assert.deepEqual(ids(st({ login: login(true) })), []);
-  assert.deepEqual(ids(st({ claude: off(), login: login(false) })), ['agent'], 'sem o Claude Code o login do Claude é irrelevante');
+  assert.deepEqual(ids(st({ claude: off(), login: login(false) })), ['agent'], 'sem nenhuma IA instalada o login é irrelevante (a IA já bloqueia)');
+  assert.deepEqual(ids(st({ claude: off(), login: login(false) }), null), [], 'Claude ausente e provedores ainda não carregados: espera');
   assert.deepEqual(ids({ prereqs: { claude: ok, git: ok } }), [], 'servidor sem o campo login: sem aviso');
 });
 
@@ -89,7 +92,7 @@ test('texto do popup: sem links inventados (o único é o do Git) e com a orient
   const urls = all.match(/https?:\/\/[^\s"')]+/g) ?? [];
   assert.deepEqual([...new Set(urls)].map((u) => u.replace(/[.,;]+$/, '')), ['https://git-scm.com/downloads']);
   assert.match(RESTART_HINT, /feche o FORGE por completo e abra de novo/);
-  for (const k of ['agent', 'codexLogin', 'login', 'git']) { assert.ok(PREREQ[k].title && PREREQ[k].text && PREREQ[k].steps.length >= 2, k); assert.ok(Object.isFrozen(PREREQ[k])); }
+  for (const k of ['agent', 'login', 'git']) { assert.ok(PREREQ[k].title && PREREQ[k].text && PREREQ[k].steps.length >= 2, k); assert.ok(Object.isFrozen(PREREQ[k])); }
 });
 
 test('inlineParts: `código` e links https viram elementos; nada de HTML cru e nenhum outro protocolo vira link', () => {

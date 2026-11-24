@@ -1,7 +1,7 @@
 // Estado dos providers na interface (client/src/provider-view.js, env-view.js, system-status.js): só dados do servidor, nada presumido; sem "em breve".
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { providerStatus, providerById, codexAccountState, withClaudeLogin } from '../../client/src/provider-view.js';
+import { providerStatus, providerById, withAccountsLogin } from '../../client/src/provider-view.js';
 import { providerSummary } from '../../client/src/env-view.js';
 import { systemStatus } from '../../client/src/system-status.js';
 
@@ -14,16 +14,6 @@ test('providerStatus: não instalado, não conectado, conectado e instalado (log
   assert.deepEqual(providerStatus({ available: true }), { kind: 'ok', text: 'instalado' });
   assert.equal(providerById([{ id: 'codex', label: 'x' }], 'codex').label, 'x');
   assert.equal(providerById(null, 'codex'), undefined);
-});
-
-test('codexAccountState: orienta cada caso e nunca diz "em breve"', () => {
-  const cases = [undefined, { available: false }, { available: true, auth: { known: true, loggedIn: false } }, { available: true, auth: { known: true, loggedIn: true } }, { available: true }];
-  const out = cases.map(codexAccountState);
-  assert.deepEqual(out.map((s) => s.kind), ['off', 'off', 'bad', 'ok', 'ok']);
-  assert.deepEqual(out.map((s) => s.text), ['indisponível', 'não instalado', 'não conectado', 'conectado', 'login não verificado']);
-  for (const s of out) { assert.ok(s.detail.length > 10); assert.doesNotMatch(`${s.text} ${s.detail}`, /em breve/i); }
-  assert.match(out[1].detail, /npm i -g @openai\/codex/);
-  assert.match(out[2].detail, /codex login/);
 });
 
 test('providerSummary com a lista real do servidor: disponibilidade e login; sem a lista vale o padrão estático', () => {
@@ -51,19 +41,22 @@ test('providerStatus: ativo (terminais em uso) vence conectado e instalado, mas 
   assert.deepEqual(providerStatus({ available: false, active: 1 }), { kind: 'off', text: 'não instalado' });
 });
 
-test('withClaudeLogin: o login da conta padrão vira `auth` do Claude; sem informação, a lista segue igual', () => {
+const acc = (provider, loggedIn, checked = true) => ({ id: `acc_${Math.random().toString(16).slice(2, 10)}`, provider, status: { checked, loggedIn } });
+test('withAccountsLogin: o login de cada provider vem das contas DELE (alguma conectada = conectado); sem contas verificadas, a lista segue igual', () => {
   const list = [{ id: 'claude', available: true }, { id: 'codex', available: true, auth: { known: true, loggedIn: true } }];
-  const r = withClaudeLogin(list, { known: true, loggedIn: true });
-  assert.deepEqual(r[0].auth, { known: true, loggedIn: true });
-  assert.equal(r[1], list[1]);
-  assert.deepEqual(withClaudeLogin(list, { known: true, loggedIn: false })[0].auth, { known: true, loggedIn: false });
-  assert.equal(withClaudeLogin(list, { known: false, loggedIn: null }), list);
-  assert.equal(withClaudeLogin(list, undefined), list);
-  assert.equal(withClaudeLogin(null, { known: true, loggedIn: true }), null);
+  const r = withAccountsLogin(list, [acc('claude', false), acc('claude', true)]);
+  assert.deepEqual(r[0].auth, { known: true, loggedIn: true }, 'uma das contas conectada basta');
+  assert.equal(r[1], list[1], 'provider sem contas na lista: como veio (a sonda própria do Codex)');
+  assert.deepEqual(withAccountsLogin(list, [acc('claude', false), acc('claude', false)])[0].auth, { known: true, loggedIn: false });
+  assert.equal(withAccountsLogin(list, [acc('claude', false), acc('claude', null, false)])[0], list[0], 'há conta ainda sem resposta: não afirma "não conectado"');
+  assert.deepEqual(withAccountsLogin(list, [acc('codex', false)])[1].auth, { known: true, loggedIn: false }, 'a conta do Codex vence a sonda antiga');
+  assert.deepEqual(withAccountsLogin(list, []), list);
+  assert.equal(withAccountsLogin(list, undefined), list);
+  assert.equal(withAccountsLogin(null, [acc('claude', true)]), null);
 });
 
 test('integração: providerSummary + status dão ativo para quem tem terminal rodando e conectado para quem só está logado', () => {
-  const live = withClaudeLogin([{ id: 'claude', available: true }, { id: 'codex', available: true, auth: { known: true, loggedIn: true } }], { known: true, loggedIn: true });
+  const live = withAccountsLogin([{ id: 'claude', available: true }, { id: 'codex', available: true, auth: { known: true, loggedIn: true } }], [acc('claude', true)]);
   const sessions = [{ id: 't1', status: 'running', provider: 'claude', agent: { state: 'running' } }, { id: 't2', status: 'exited', exitCode: 0, provider: 'codex' }];
   const rows = Object.fromEntries(providerSummary(sessions, new Set(), live).map((r) => [r.id, providerStatus(r).text]));
   assert.deepEqual(rows, { claude: 'ativo', codex: 'conectado' });

@@ -1256,11 +1256,12 @@ test('envio ao remoto (tela): diálogo com a lista e o destino, botão só com a
 
 // ---------- consumo de tokens e conta da missão (entra no limite da conta como os terminais do Cockpit) ----------
 test('stepUsage: tokens como o terminal mostra (entrada + saída, cache fora) e a conta; sem consumo = null (nunca zero inventado)', () => {
-  const accounts = [{ id: 'acc_11111111', label: 'Trabalho' }, { id: 'system', system: true, label: 'Sistema' }];
+  const accounts = [{ id: 'acc_11111111', label: 'Trabalho' }, { id: 'acc_22222222', home: 'machine', label: 'Claude Code' }];
   const u = FV.stepUsage({ id: 't1', accountId: 'acc_11111111', usage: { input: 1200, output: 300, cacheWrite: 24000, cacheRead: 50000, total: 75500, costUsd: null } }, accounts);
   assert.equal(u.tokens, (1500).toLocaleString('pt-BR')); assert.equal(u.account, 'Trabalho'); assert.equal(u.accountId, 'acc_11111111'); assert.match(u.title, /entrada/);
-  assert.equal(FV.stepUsage({ id: 't2', accountId: 'system', usage: { input: 10, output: 5 } }, accounts).account, null, 'conta Sistema não leva etiqueta');
-  assert.equal(FV.stepUsage({ id: 't3', accountId: 'system', usage: null }, accounts), null);
+  assert.equal(FV.stepUsage({ id: 't2', accountId: 'acc_22222222', usage: { input: 10, output: 5 } }, accounts).account, 'Claude Code', 'contas v2: a do computador é uma conta comum e leva o nome dela');
+  assert.equal(FV.stepUsage({ id: 't2b', accountId: 'acc_desconhecida', usage: { input: 10, output: 5 } }, accounts).account, null, 'conta desconhecida não leva etiqueta');
+  assert.equal(FV.stepUsage({ id: 't3', accountId: 'acc_22222222', usage: null }, accounts), null);
   assert.equal(FV.stepUsage(null, accounts), null); assert.equal(FV.stepUsage({ id: 't4' }, accounts), null);
 });
 

@@ -13,7 +13,7 @@ function Inline({ text }) {
 }
 
 /**
- * "Antes de começar": popup central, com o fundo escurecido e desfocado, mostrado quando falta algo para o FORGE funcionar (uma IA suportada, login da conta, Git).
+ * "Antes de começar": popup central, com o fundo escurecido e desfocado, mostrado quando falta algo para o FORGE funcionar (uma IA suportada, uma conta conectada de alguma IA, Git).
  * Sem NENHUMA IA instalada (nem Claude Code nem Codex) BLOQUEIA o uso; "Continuar mesmo assim" só aparece depois de uma verificação que continuou falhando (um falso negativo nunca prende o usuário).
  * Pendências informativas (login, Git) podem ser dispensadas na hora. Dispensar vale até o conjunto de pendências mudar. Some sozinho quando tudo é resolvido.
  */
@@ -46,7 +46,7 @@ export default function PrereqModal({ onOpenAccounts = null, suspended = false }
 
   if (!open) return null;
   const recheck = async () => { setBusy(true); try { await api.get('/api/state?fresh=1').catch(() => {}); await refresh(); } finally { setBusy(false); setTries((t) => t + 1); } };
-  const hasLogin = issues.some((i) => i.id === 'login'); // só o login do Claude abre Configurações > Contas; o do Codex é feito no terminal (`codex login`)
+  const hasLogin = issues.some((i) => i.id === 'login'); // nenhuma conta conectada: Configurações > Contas mostra as contas de todas as IAs
   return (
     <div className="oc-modal prereq-modal" data-testid="prereq-modal">
       <div className="oc-dialog" role="alertdialog" aria-modal="true" aria-labelledby="prereq-t" aria-describedby="prereq-d" ref={box} tabIndex={-1}>
@@ -62,7 +62,7 @@ export default function PrereqModal({ onOpenAccounts = null, suspended = false }
               </li>
             ))}
           </ul>
-          {issues.some((i) => i.id !== 'login' && i.id !== 'codexLogin') ? <p className="dim small prereq-hint">{RESTART_HINT}</p> : null}
+          {issues.some((i) => i.id !== 'login') ?<p className="dim small prereq-hint">{RESTART_HINT}</p> : null}
           <div className="prereq-actions">
             {hasLogin && onOpenAccounts ? <button type="button" className="btn" onClick={onOpenAccounts}>Entrar na conta</button> : null}
             <button type="button" className="btn primary" onClick={recheck} disabled={busy} ref={primary}>{busy ? 'Verificando…' : 'Verificar novamente'}</button>

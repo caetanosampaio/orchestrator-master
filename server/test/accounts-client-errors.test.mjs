@@ -22,7 +22,9 @@ test('código colado: restaura, exceto em login_closing', () => {
 test('removalMessage', () => {
   assert.deepEqual(v.removalMessage({ folderRemoved: true, id: 'a' }), { kind: 'ok', text: 'Conta removida.' });
   assert.deepEqual(v.removalMessage({ id: 'a' }), { kind: 'ok', text: 'Conta removida.' }, 'servidor antigo sem o campo');
-  assert.match(v.removalMessage({ folderRemoved: true, defaultChangedTo: 'system', id: 'a' }).text, /A conta padrão voltou a ser Sistema\./);
+  const u = v.removalMessage({ unlinked: true, folderRemoved: false, id: 'a' });
+  assert.equal(u.kind, 'ok', 'a do computador só é desvinculada: não ter pasta apagada não é erro'); assert.match(u.text, /desvinculada/); assert.match(u.text, /login deste computador continua/);
+  assert.doesNotMatch(JSON.stringify([u, v.removalMessage({ id: 'a' })]), /Sistema|padrão/, 'não existe conta Sistema nem padrão');
   const e = v.removalMessage({ folderRemoved: false, id: 'acc-9' });
   assert.equal(e.kind, 'err'); assert.match(e.text, /accounts\/acc-9 dentro da pasta de dados do FORGE/);
 });
