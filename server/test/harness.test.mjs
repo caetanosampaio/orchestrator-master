@@ -63,7 +63,7 @@ test('piloto: muda IA/modelo/esforço/reserva; trocar de IA zera o que era da ou
   assert.equal(Object.hasOwn(disk().harness.pilot, 'model'), false);
   r = await jr(await call('/api/harness/pilot', 'PUT', { provider: null, model: null, effort: null })); assert.deepEqual(r.j.pilot.effective, { ...H.PILOT_DEFAULT });
   const bad = async (body, re) => { const x = await jr(await call('/api/harness/pilot', 'PUT', body)); assert.equal(x.status, 400, JSON.stringify(body)); assert.match(x.j.error, re); };
-  await bad({ model: 'gpt-5' }, /model/); await bad({ provider: 'gemini' }, /IA inválida/); await bad({ effort: 'turbo' }, /effort/); await bad({ reserveModel: 'nao-existe' }, /reserveModel/);
+  await bad({ model: 'gpt-5' }, /model/); await bad({ provider: 'xpto' }, /IA inválida/); await bad({ provider: 'gemini' }, /não conversa com o Maestro/); await bad({ effort: 'turbo' }, /effort/); await bad({ reserveModel: 'nao-existe' }, /reserveModel/);
   await bad({ nope: 1 }, /não permitidas/); await bad({}, /ao menos um campo/); await bad({ agentId: 'agt_00000000' }, /Agente/); await bad([1], /objeto/);
   assert.equal((await jr(await call('/api/harness/pilot', 'DELETE'))).status, 200);
 });

@@ -12,7 +12,7 @@
 // Tudo que chega pela API é validado de forma ESTRITA (listas fechadas de IA/modelo/esforço/skills); leitura do banco é tolerante; falha ao gravar desfaz o estado parcial e responde 500.
 import * as store from './store.js';
 import { now, uid } from './store.js';
-import { providerIds, providerOptions, validateChoice, isProvider, getProvider } from './providers/index.js';
+import { providerIds, providerOptions, validateChoice, isProvider, getProvider, coordinates, noCoordinationMessage } from './providers/index.js';
 import { SKILLS, isSkillId, ROLE_DEFAULTS, skillsFor } from './loadouts.js';
 
 export const MAX_AGENTS = 20, MAX_NAME = 40, MAX_INSTRUCTION = 1500, MAX_ROW_SKILLS = 6, MAX_CODE = 96 * 1024;
@@ -113,7 +113,7 @@ export function harnessView(db) {
   const pilotDef = { ...PILOT_DEFAULT }, pilot = effectivePilot(h);
   return {
     pilot: { effective: pilot, defaults: pilotDef, customized: !same(pilot, pilotDef), skills: skillsFor('maestro', db?.settings) },
-    groups: [...GROUPS], rows, agents: h.agents, providers: providerIds(), options: providerOptions(),
+    groups: [...GROUPS], rows, agents: h.agents, providers: providerIds().filter(coordinates), options: providerOptions(), // só IAs com o Maestro: o piloto e as linhas viram Maestro e etapas de missão
     skills: Object.values(SKILLS).map((s) => ({ id: s.name, description: s.description })), roleSkills: Object.fromEntries(Object.keys(ROLE_DEFAULTS).map((r) => [r, skillsFor(r, db?.settings)])),
     limits: { maxAgents: MAX_AGENTS, maxName: MAX_NAME, maxInstruction: MAX_INSTRUCTION, maxRowSkills: MAX_ROW_SKILLS },
   };
@@ -133,7 +133,7 @@ function validatePatch(b, keys, { agents, isPilot }) {
     if (b[k] === undefined) continue;
     const v = b[k];
     if (v === null) { patch[k] = null; continue; }
-    if (k === 'provider') { if (!isProvider(v)) return { error: 'IA inválida: use uma das instaladas na lista de agentes.' }; }
+    if (k === 'provider') { if (!isProvider(v)) return { error: 'IA inválida: use uma das instaladas na lista de agentes.' }; if (!coordinates(v)) return { error: noCoordinationMessage(v) }; } // o piloto e as linhas viram Maestro/etapas de missão
     else if (k === 'agentId') { if (typeof v !== 'string' || !agents.some((a) => a.id === v)) return { error: 'Agente não encontrado.' }; }
     else if (k === 'skills') { if (!Array.isArray(v) || v.length > MAX_ROW_SKILLS || !v.every(isSkillId) || new Set(v).size !== v.length) return { error: `skills deve ser uma lista de até ${MAX_ROW_SKILLS} ids do catálogo, sem repetir.` }; }
     else if (typeof v !== 'string') return { error: `${k} inválido.` };

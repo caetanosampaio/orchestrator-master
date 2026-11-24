@@ -50,7 +50,7 @@
 // que não se desfaz (terminal criado, tarefa entregue) o estado em memória segue a realidade e a gravação é tentada de novo na próxima mutação (store.save grava o banco inteiro).
 import * as store from './store.js';
 import { ROLES, MAX_SESSIONS } from './terminals.js';
-import { isProvider, validateChoice, providerIds, providerOptions, getProvider, accountSpecOf, DEFAULT_PROVIDER } from './providers/index.js';
+import { isProvider, validateChoice, providerIds, providerOptions, getProvider, accountSpecOf, DEFAULT_PROVIDER, coordinates, noCoordinationMessage } from './providers/index.js';
 import { ACCOUNT_ID_RE } from './account-compat.js';
 import { cleanLine, compactOutput, MAX_TASK_TEXT, MAX_SUMMARY } from './maestro.js';
 import { asyncRoute } from './async-route.js';
@@ -148,6 +148,7 @@ export function validateFlowAccounts(raw) {
   const out = {};
   for (const k of keys) {
     if (!isProvider(k)) return { error: `accounts: provedor desconhecido (${String(k).slice(0, 20)}).` };
+    if (!accountSpecOf(k)) return { error: `accounts: ${getProvider(k).label} não usa contas do FORGE.` }; // Gemini, OpenCode, Cursor: o login é na própria CLI
     const id = raw[k];
     if (id === null || id === undefined) continue; // null = sem escolha para este provider (regra do resolveFor)
     if (typeof id !== 'string' || !ACCOUNT_ID_RE.test(id)) return { error: `accounts.${k} deve ser o identificador de uma conta (acc_…).` };
@@ -206,6 +207,7 @@ export function validateSteps(raw) {
     const title = text(s.title, `${at}: título`, { max: MAX_TITLE, required: true }); if (title.error) return title;
     const prompt = text(s.prompt, `${at}: prompt`, { max: MAX_PROMPT, required: true, multiline: true }); if (prompt.error) return prompt;
     if (!isProvider(s.provider)) return { error: `${at}: provider inválido.` };
+    if (!coordinates(s.provider)) return { error: `${at}: ${noCoordinationMessage(s.provider)}` }; // a etapa avisa o fim pelo MCP: sem ele, nunca terminaria
     if (typeof s.role !== 'string' || !STEP_ROLES.includes(s.role)) return { error: `${at}: role inválido. Use um destes: ${STEP_ROLES.join(', ')}.` };
     const choice = validateChoice(s.provider, { model: s.model, effort: s.effort }); if (choice.error) return { error: `${at}: ${choice.error}` };
     if (s.dependsOn !== undefined && s.dependsOn !== null && (!Array.isArray(s.dependsOn) || s.dependsOn.length > MAX_STEPS - 1 || s.dependsOn.some((d) => typeof d !== 'string'))) return { error: `${at}: dependsOn deve ser uma lista de ids de etapa.` };
@@ -534,7 +536,7 @@ export function createFlows({ db, terminals, maestro, accounts = null, flowGit =
     const ctx = plannerContext(caller); if (ctx.error) return { ok: false, error: ctx.error };
     let provs = []; try { provs = terminals.providers?.() ?? []; } catch { provs = []; }
     const opts = providerOptions();
-    const providers = providerIds().map((id) => {
+    const providers = providerIds().filter(coordinates).map((id) => { // só IAs com o Maestro: as etapas avisam o fim pelo MCP
       const p = Array.isArray(provs) ? provs.find((x) => x?.id === id) : null;
       return { id, label: p?.label ?? getProvider(id).label, available: p ? p.available !== false : true, models: opts[id]?.models ?? [], efforts: opts[id]?.efforts ?? [] }; // sem a lista de terminais: vale como disponível (o início da missão confere de novo)
     });
@@ -594,6 +596,7 @@ export function createFlows({ db, terminals, maestro, accounts = null, flowGit =
     const ws = wsOf(body.workspaceId); if (!ws) return fail(404, 'Espaço de trabalho não encontrado.');
     const provider = body.provider === undefined || body.provider === null ? DEFAULT_PROVIDER : body.provider;
     if (!isProvider(provider)) return fail(400, 'provider inválido.');
+    if (!coordinates(provider)) return fail(409, noCoordinationMessage(provider), 'provider_no_coordination'); // o planejador propõe a missão pelo MCP
     const choice = validateChoice(provider, { model: body.model, effort: body.effort }); if (choice.error) return fail(400, choice.error);
     let provs = []; try { provs = terminals.providers?.() ?? []; } catch { provs = []; }
     const p = Array.isArray(provs) ? provs.find((x) => x?.id === provider) : null;

@@ -1,17 +1,21 @@
-// Registro de provedores de agentes (CLIs). Claude Code e Codex CLI.
+// Registro de provedores de agentes (CLIs). Claude Code e Codex CLI (integrados por completo); Gemini CLI, OpenCode e Cursor CLI no nível 1 (só terminal, sem coordenação).
 //
 // Interface de um provedor (tudo fixo no servidor; nada vem do cliente):
 //   id          : identificador estável, gravado nas sessões ('claude')
 //   label       : nome para a interface
 //   resolve()   : { file, args, viaShell } da CLI no PATH, ou null se não estiver instalada
 //   paneArgs()  : argumentos do terminal interativo para new | resume | fork (ver claude.js)
-//   capabilities: { resume, fork, hooks, plugins, accounts }; submit: { bracketed, delayMs } (entrega de tarefas do Maestro); notFoundMessage; projectConfig/envFor (opcionais)
+//   capabilities: { resume, fork, hooks, plugins, accounts, transcript, mcp, readOnly } (ausente = true; `mcp: false` = sem o Maestro: fica fora de missões e times;
+//                 `readOnly: false` = a CLI não garante somente leitura: não abre o planejador); submit: { bracketed, delayMs } (entrega de tarefas do Maestro); notFoundMessage; projectConfig/envFor (opcionais)
 //   account     : contrato de conta (opcional; ver accountSpecOf no fim do arquivo)
 import { claudeProvider } from './claude.js';
 import { codexProvider } from './codex.js';
+import { geminiProvider } from './gemini.js';
+import { opencodeProvider } from './opencode.js';
+import { cursorProvider } from './cursor.js';
 
 export const DEFAULT_PROVIDER = 'claude';
-const PROVIDERS = Object.freeze({ [claudeProvider.id]: claudeProvider, [codexProvider.id]: codexProvider });
+const PROVIDERS = Object.freeze(Object.fromEntries([claudeProvider, codexProvider, geminiProvider, opencodeProvider, cursorProvider].map((p) => [p.id, p])));
 
 export const providerIds = () => Object.keys(PROVIDERS);
 /** O id é um provedor cadastrado? (Object.hasOwn: `__proto__`, `constructor` e afins nunca passam.) */
@@ -21,6 +25,13 @@ export function getProvider(id = DEFAULT_PROVIDER) {
   if (!isProvider(id)) throw new Error(`Provedor desconhecido: ${typeof id === 'string' ? id.slice(0, 40) : typeof id}`);
   return PROVIDERS[id];
 }
+
+/** O provedor tem a capacidade? Ausente vale true (como no terminals.js); id desconhecido, false. */
+export const providerCan = (id, cap) => isProvider(id) && PROVIDERS[id].capabilities?.[cap] !== false;
+/** Coordenação com o Maestro (MCP): sem ela o provedor só abre terminal livre, fora de missões e times. */
+export const coordinates = (id) => providerCan(id, 'mcp');
+/** Mensagem única para quem recusa um provedor sem coordenação. */
+export const noCoordinationMessage = (id) => `${isProvider(id) ? PROVIDERS[id].label : 'Esta IA'} ainda não conversa com o Maestro (sem coordenação): use num terminal livre, fora de missões e times.`;
 
 const isObj = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 /** Opções fechadas de cada provedor: { <id>: { models:[{id,label}], efforts:[{id,label}] } } (cópia nova; vai para a interface). */
@@ -136,4 +147,4 @@ export const accountSpecOf = (id) => ACCOUNTS.specOf(id);
 export const accountProviderIds = () => ACCOUNTS.ids();
 export const accountProviders = () => ACCOUNTS.list();
 
-export { claudeProvider, codexProvider };
+export { claudeProvider, codexProvider, geminiProvider, opencodeProvider, cursorProvider };

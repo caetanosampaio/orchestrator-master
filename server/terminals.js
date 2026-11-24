@@ -21,7 +21,7 @@ import { pidAlive } from './instance-lock.js';
 import { worktreeProblem } from './worktrees.js';
 import { asyncRoute } from './async-route.js';
 import { inspectProjectConfig } from './project-config.js';
-import { getProvider, isProvider, providerIds as providerIdsList, validateChoice, tolerantChoice, accountSpecOf } from './providers/index.js';
+import { getProvider, isProvider, providerIds as providerIdsList, validateChoice, tolerantChoice, accountSpecOf, noCoordinationMessage } from './providers/index.js';
 import { resolveLegacyAccountId } from './account-compat.js';
 import { cleanLine } from './harness.js';
 
@@ -195,6 +195,11 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
     // time/vaga (opcionais): antes de qualquer efeito; as skills e a instrução vêm do time no servidor, nunca do corpo da requisição
     const tm = checkTeam(opts?.templateId, opts?.slotIndex, opts?.role ?? 'builder', provOf(opts?.provider ?? undefined).id);
     if (!tm.ok) return tm;
+    { // IA sem coordenação / sem somente leitura: recusada aqui, antes de criar worktree (a mesma regra vale de novo no createReserved, para as outras entradas)
+      const pv = provOf(opts?.provider ?? undefined), role = opts?.role ?? 'builder', squad = opts?.squadId !== undefined && opts?.squadId !== null;
+      if (!can(pv, 'mcp') && (role === 'maestro' || tm.team || squad || flowWorktreeId !== null)) return fail(409, noCoordinationMessage(pv.id), { code: 'provider_no_coordination' });
+      if (READ_ONLY_ROLES.includes(role) && !can(pv, 'readOnly')) return fail(409, `${pv.label} não garante somente leitura: o planejador não pode usar esta IA.`, { code: 'provider_no_read_only' });
+    }
     opts = { ...opts, team: tm.team };
     // flowWorktreeId é exclusivo com isolate/squadId: quem chama com os dois tem um erro de lógica, e nenhum deles pode decidir sozinho qual worktree vale.
     const fwId = flowWorktreeId === undefined ? null : flowWorktreeId, wtGiven = fwId !== null;
@@ -265,6 +270,10 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
   function releaseWorktree(wtId, exceptId) { if (!wtId || worktreeUsers(wtId, exceptId).length) return; try { worktrees?.release?.(wtId, 'terminal_ended'); } catch { /* informativo */ } }
   async function createReserved({ workspaceId, topicId, role = 'builder', title, cols, rows, isolate = false, squadId = null, acknowledgeProjectConfig = false, accountId, provider: providerId = null, isolateAuto = false, model = null, effort = null, team = null, fullAccess = false } = {}, { flowWorktreeId = null } = {}) {
     const prov = provOf(providerId ?? undefined);
+    // IA sem coordenação (providers/*.js capabilities.mcp === false: Gemini, OpenCode, Cursor no nível 1) só abre terminal livre: o Maestro, as vagas de time, os squads e as etapas
+    // de missão dependem do MCP para o agente avisar o que fez. IA que não garante somente leitura (OpenCode) não abre o planejador. Antes de qualquer efeito.
+    if (!can(prov, 'mcp') && (role === 'maestro' || team || squadId || flowWorktreeId !== null)) return fail(409, noCoordinationMessage(prov.id), { code: 'provider_no_coordination' });
+    if (READ_ONLY_ROLES.includes(role) && !can(prov, 'readOnly')) return fail(409, `${prov.label} não garante somente leitura: o planejador não pode usar esta IA.`, { code: 'provider_no_read_only' });
     // Padrões da tabela "Quem faz cada tarefa" (harness.js): o Maestro novo abre com o modelo e o esforço do piloto e a instrução do agente dele; nunca sobrescreve o que foi escolhido nem vale na retomada.
     let extraPrompt = ''; try { const d = defaults?.(role, prov.id) ?? {}; if (model === null && d.model) model = d.model; if (effort === null && d.effort) effort = d.effort; if (typeof d.extraPrompt === 'string') extraPrompt = d.extraPrompt; } catch { /* sem padrões: abre como sempre */ }
     // Conta (qualquer provider): a pedida ou a ÚNICA utilizável do provider (accounts.resolveFor); sem conta padrão no servidor. Erro = o status e o code do resolveFor, sem nenhum efeito.
@@ -364,7 +373,7 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
     if (!prov.envFor) delete env.CLAUDE_CODE_CHILD_SESSION; // herdada de uma sessão do Claude Code que abriu o servidor: com ela o filho NÃO grava transcrição (sem consumo e sem retomada). As demais CLAUDE_CODE_* ficam.
     const c = clampInt(cols, 20, 400, 120), r = clampInt(rows, 5, 200, 32);
     let mcpCfg = null; // credencial MCP própria do pane (token + arquivo só do usuário); revogada quando o terminal acaba ou não nasce
-    if (!resumed || rec.usesMcp === true) {
+    if (can(prov, 'mcp') && (!resumed || rec.usesMcp === true)) { // IA sem coordenação: nenhuma credencial do Maestro é emitida
       try { mcpCfg = mcp?.issue?.({ terminalId: id, role, file: prov.mcpTransport !== 'env' }) ?? null; } catch (e) { return fail(500, `Não foi possível preparar a coordenação do terminal (${String(e?.code || e?.message || e).slice(0, 80)}).`); }
       if (mcpCfg?.configPath && cmd.viaShell && /[&|<>^%"!()]/.test(mcpCfg.configPath)) { revokeMcp(id); mcpCfg = null; } // wrapper .cmd (cmd.exe): caminho com metacaracteres quebraria a linha de comando; o terminal abre sem a coordenação
     }
@@ -621,7 +630,7 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
 
   /** Leitura INTERNA mínima de um registro de sessão (runner de missões, N2: a sessão pertence à cópia conferida?). Sem UUID do Claude Code nem caminhos; nenhuma rota a expõe. */
   const recordInfo = (recordId) => { const r = records().find((x) => x && x.id === recordId); return r ? { id: r.id, workspaceId: r.workspaceId ?? null, worktreeId: r.worktreeId ?? null, accountId: accOf(r) } : null; }; // accountId: o id real (registro antigo traduzido) ou null
-  return { create, resume, recordInfo, history, write, resize, readOutput, peek, close, subscribe, subscribeAll, killAllSync, get: (id) => { const s = get(id); return s ? describe(s) : null; }, list: () => [...sessions.values()].map(describe), count: () => live().length, usesAccount: (accountId) => typeof accountId === 'string' && (live().some((x) => x.accountId === accountId) || [...lingering.values()].some((l) => l.accountId === accountId)), roles: () => roleIds().map((k) => ({ id: k, label: ROLES[k].label, color: ROLES[k].color, edits: ROLES[k].edits === true, team: TEAM_ROLES.includes(k) })), providers: () => providerIdsList().map((id) => { const p = provOf(id); let ok = false; try { ok = !!cmdOf(p); } catch { ok = false; } return { id: p.id, label: p.label, available: ok, capabilities: { resume: can(p, 'resume') } }; }) };
+  return { create, resume, recordInfo, history, write, resize, readOutput, peek, close, subscribe, subscribeAll, killAllSync, get: (id) => { const s = get(id); return s ? describe(s) : null; }, list: () => [...sessions.values()].map(describe), count: () => live().length, usesAccount: (accountId) => typeof accountId === 'string' && (live().some((x) => x.accountId === accountId) || [...lingering.values()].some((l) => l.accountId === accountId)), roles: () => roleIds().map((k) => ({ id: k, label: ROLES[k].label, color: ROLES[k].color, edits: ROLES[k].edits === true, team: TEAM_ROLES.includes(k) })), providers: () => providerIdsList().map((id) => { const p = provOf(id); let ok = false; try { ok = !!cmdOf(p); } catch { ok = false; } return { id: p.id, label: p.label, available: ok, capabilities: { resume: can(p, 'resume'), plugins: can(p, 'plugins'), mcp: can(p, 'mcp'), readOnly: can(p, 'readOnly') }, ...(typeof p.install === 'string' ? { install: p.install } : {}), ...(typeof p.permissionsNote === 'string' ? { note: p.permissionsNote } : {}) }; }) };
 }
 
 export function setupTerminals(app, { manager }) {

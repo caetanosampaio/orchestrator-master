@@ -89,7 +89,7 @@ test('POST /api/flows: validação (400 em português): id vindo do cliente, cam
   await bad(body({ fullAccess: 'true' }), /fullAccess/); await bad(body({ fullAccess: 1 }), /fullAccess/);
   await bad(body({ steps: [{ id: 's1', title: 'a', prompt: 'a', provider: 'claude', role: 'builder', dependsOn: ['s2'] }, { id: 's2', title: 'b', prompt: 'b', provider: 'claude', role: 'builder', dependsOn: ['s1'] }] }), /ciclo/);
   await bad(body({ steps: [{ id: 's1', title: 'a', prompt: 'a', provider: 'claude', role: 'builder', dependsOn: ['s7'] }] }), /não existe/);
-  await bad(body({ steps: [{ title: 'a', prompt: 'a', provider: 'gemini', role: 'builder' }] }), /provider/);
+  await bad(body({ steps: [{ title: 'a', prompt: 'a', provider: 'xpto', role: 'builder' }] }), /provider/);
   await bad(body({ steps: [{ title: 'a', prompt: 'a', provider: 'claude', role: 'maestro' }] }), /role/);
   await bad(body({ steps: [] }), /1 a 12/); await bad(body({ maxParallel: 9 }), /maxParallel/); await bad(body({ title: '' }), /title/);
   const arr = await jr(await call('/api/flows', 'POST', [1])); assert.equal(arr.status, 400);

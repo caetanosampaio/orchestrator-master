@@ -67,8 +67,9 @@ test('validateFlowAccounts: formato fechado (provider conhecido -> acc_ de 8 hex
   for (const v of [undefined, null, {}, { claude: null }]) assert.deepEqual(F.validateFlowAccounts(v), { value: null });
   assert.deepEqual(F.validateFlowAccounts({ claude: C1, codex: X1 }), { value: { claude: C1, codex: X1 } });
   for (const bad of ['x', 1, [], [C1], true]) assert.match(F.validateFlowAccounts(bad).error, /accounts deve ser um objeto/);
-  assert.match(F.validateFlowAccounts({ gemini: C1 }).error, /provedor desconhecido/);
-  assert.match(F.validateFlowAccounts({ __proto__: null, cursor: C1 }).error, /provedor desconhecido/);
+  assert.match(F.validateFlowAccounts({ xpto: C1 }).error, /provedor desconhecido/);
+  assert.match(F.validateFlowAccounts({ __proto__: null, cursor: C1 }).error, /Cursor CLI não usa contas do FORGE/, 'IA real sem bloco de contas');
+  assert.match(F.validateFlowAccounts({ gemini: C1 }).error, /Gemini CLI não usa contas do FORGE/);
   for (const id of [LEGACY_SYSTEM_ID, 'acc_0000C001', 'acc_123', '../acc_0000c001', 'acc_0000c001/../x', 42, {}, '']) assert.match(F.validateFlowAccounts({ claude: id }).error, /accounts\.claude deve ser o identificador/, String(id));
 });
 
@@ -81,7 +82,7 @@ test('validateFlowInput: conta só para provider usado pelas etapas (400); edita
   assert.deepEqual(F.validateFlowInput({ steps: [S('s1')] }, { create: false, current }).value.accounts, { claude: C1 }, 'o Codex saiu das etapas: a escolha dele sai junto');
   assert.equal(F.validateFlowInput({ steps: [S('s1', { provider: 'codex', role: 'reviewer' })] }, { create: false, current: { ...current, accounts: { claude: C1 } } }).value.accounts, null);
   assert.equal(F.validateFlowInput({ title: 'Outro' }, { create: false, current }).value.accounts, undefined, 'sem mexer nas etapas, a escolha fica');
-  assert.match(F.validateFlowInput({ accounts: { gemini: C1 } }, { create: false, current }).error, /provedor desconhecido/);
+  assert.match(F.validateFlowInput({ accounts: { xpto: C1 } }, { create: false, current }).error, /provedor desconhecido/);
   assert.ok(!F.RUN_SAFE_PATCH_KEYS.includes('accounts')); assert.equal(F.runSafePatch({ accounts: { claude: C1 } }), false); assert.equal(F.runSafePatch({ schedule: null, accounts: null }), false);
 });
 

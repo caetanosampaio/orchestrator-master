@@ -62,7 +62,8 @@ test('workspaceId, kind, schedule, fullAccess (booleano estrito)', () => {
 });
 
 test('etapa: provider, role, model e effort de listas fechadas (o Maestro não é papel de etapa)', () => {
-  for (const p of [undefined, '', 'gemini', 'CLAUDE', '__proto__', 'constructor', 5, {}]) bad(flowBody({ steps: [step({ provider: p })] }), /provider/);
+  for (const p of [undefined, '', 'xpto', 'CLAUDE', '__proto__', 'constructor', 5, {}]) bad(flowBody({ steps: [step({ provider: p })] }), /provider/);
+  for (const p of ['gemini', 'opencode', 'cursor']) bad(flowBody({ steps: [step({ provider: p })] }), /não conversa com o Maestro/); // IA real sem coordenação: fora de missões
   for (const r of [undefined, '', 'maestro', 'hacker', '__proto__', 'constructor', 'toString', 5]) bad(flowBody({ steps: [step({ role: r })] }), /role/);
   for (const r of ['builder', 'reviewer', 'scout']) assert.equal(F.validateFlowInput(flowBody({ steps: [step({ role: r })] }), { create: true }).error, undefined, r);
   assert.deepEqual(F.STEP_ROLES, ['builder', 'reviewer', 'scout']);

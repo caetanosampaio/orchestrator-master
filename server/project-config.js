@@ -23,10 +23,14 @@ const git = (cwd, args) => new Promise((resolve) => execFile('git', ['-c', 'core
 
 const isFilled = (v) => v !== undefined && v !== null && v !== false && v !== '' && !(Array.isArray(v) && !v.length) && !(typeof v === 'object' && !Array.isArray(v) && !Object.keys(v).length);
 
-/** Chaves executáveis presentes no JSON do arquivo, ou null se ele não puder ser interpretado com segurança. */
-export function activeKeys(text) {
+/**
+ * Chaves executáveis presentes no JSON do arquivo, ou null se ele não puder ser interpretado com segurança. `only` = '*' (provedor cuja configuração inteira pode executar coisas,
+ * ex.: OpenCode com plugins e MCP): qualquer chave preenchida conta.
+ */
+export function activeKeys(text, only = null) {
   let j; try { j = JSON.parse(text); } catch { return null; }
   if (!j || typeof j !== 'object' || Array.isArray(j)) return null;
+  if (only === '*') return Object.keys(j).filter((k) => k !== '$schema' && isFilled(j[k])).slice(0, 8);
   const keys = ACTIVE_KEYS.filter((k) => isFilled(j[k]));
   if (j.permissions?.defaultMode === 'bypassPermissions') keys.push('permissions.defaultMode'); // desliga as confirmações do próprio Claude Code
   return keys;
@@ -47,7 +51,7 @@ async function notReviewed(dir, rel) {
 const hasFiles = (abs) => { try { return fs.readdirSync(abs, { recursive: true, withFileTypes: true }).some((e) => !e.isDirectory()); } catch { return false; } };
 
 /** Configuração de projeto executável que NÃO está versionada e intacta. Devolve `[{ path, why }]` (vazio = nada a confirmar). `files`/`dirs` (padrão: os do Claude Code) vêm do provedor: o Codex só usa pastas (.codex), sem interpretar TOML. */
-export async function inspectProjectConfig(dir, { files = CONFIG_FILES, dirs = CONFIG_DIRS } = {}) {
+export async function inspectProjectConfig(dir, { files = CONFIG_FILES, dirs = CONFIG_DIRS, keys: only = null } = {}) {
   const found = [];
   for (const rel of files) {
     const abs = path.join(dir, ...rel.split('/'));
@@ -55,7 +59,7 @@ export async function inspectProjectConfig(dir, { files = CONFIG_FILES, dirs = C
     if (st.isSymbolicLink()) { found.push({ path: rel, why: 'é um link simbólico' }); continue; }
     if (!st.isFile()) continue;
     if (st.size > MAX_BYTES) { found.push({ path: rel, why: 'arquivo grande demais para ser verificado' }); continue; }
-    let keys; try { keys = activeKeys(fs.readFileSync(abs, 'utf8')); } catch { keys = null; }
+    let keys; try { keys = activeKeys(fs.readFileSync(abs, 'utf8'), only); } catch { keys = null; }
     if (keys && !keys.length) continue; // legível e sem nada executável (ex.: só permissões comuns)
     const what = keys ? `contém ${keys.join(', ')}` : 'não pôde ser interpretado como JSON';
     const why = await notReviewed(dir, rel);

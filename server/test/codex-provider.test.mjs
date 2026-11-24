@@ -99,7 +99,7 @@ test('terminais: sem provider continua sendo o Claude (arquivo MCP, --session-id
   const c = await w.mgr.create({ role: 'builder' });
   assert.equal(c.session.provider, 'claude'); assert.ok(w.spawned[0].args.includes('--mcp-config') && w.spawned[0].args.includes('--session-id')); assert.equal(w.issued[0].file, true);
   assert.equal(w.spawned[0].opts.env[MCP_TOKEN_ENV], undefined, 'o Claude não recebe o token no ambiente');
-  for (const bad of ['gemini', '', '__proto__', 7, false]) { const r = await w.mgr.create({ provider: bad }); assert.equal(r.status, 400, String(bad)); assert.equal(r.code, 'provider_invalid'); }
+  for (const bad of ['xpto', '', '__proto__', 7, false]) { const r = await w.mgr.create({ provider: bad }); assert.equal(r.status, 400, String(bad)); assert.equal(r.code, 'provider_invalid'); }
   const none = world({ resolveCommands: { codex: () => null } });
   const r = await none.mgr.create({ provider: 'codex' }); assert.equal(r.status, 409); assert.match(r.error, /Codex CLI não foi encontrado/); assert.equal(none.spawned.length, 0);
 });
@@ -123,11 +123,11 @@ test('terminais: sessão do Codex não é retomável (histórico informa e a ret
   assert.ok(r.session.id);
 });
 
-test('terminais: providers() lista os dois com disponibilidade e capacidade de retomada; a API traz o mesmo', async () => {
+test('terminais: providers() lista Claude e Codex com disponibilidade e capacidades (os novos em new-providers.test.mjs); a API traz o mesmo', async () => {
   const w = world({ resolveCommands: { codex: () => null } });
-  assert.deepEqual(w.mgr.providers(), [
-    { id: 'claude', label: 'Claude Code', available: true, capabilities: { resume: true } },
-    { id: 'codex', label: 'Codex CLI', available: false, capabilities: { resume: false } },
+  assert.deepEqual(w.mgr.providers().slice(0, 2), [
+    { id: 'claude', label: 'Claude Code', available: true, capabilities: { resume: true, plugins: true, mcp: true, readOnly: true } },
+    { id: 'codex', label: 'Codex CLI', available: false, capabilities: { resume: false, plugins: false, mcp: true, readOnly: true } },
   ]);
 });
 

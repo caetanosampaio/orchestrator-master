@@ -110,9 +110,10 @@ test('rotas: provider, isolate "auto" e expectEditors chegam ao gerenciador; GET
   const post = async (p, b) => { const r = await fetch(`${base}${p}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b ?? {}) }); return { status: r.status, body: await r.json() }; };
   try {
     const list = await (await fetch(`${base}/api/terminals`)).json();
-    assert.deepEqual(list.providers.map((p) => [p.id, p.available]), [['claude', true], ['codex', true]]);
+    assert.deepEqual(list.providers.slice(0, 2).map((p) => [p.id, p.available]), [['claude', true], ['codex', true]]);
+    assert.deepEqual(list.providers.slice(2).map((p) => p.id), ['gemini', 'opencode', 'cursor'], 'as IAs novas vêm depois (a disponibilidade delas depende do PATH real)');
     let r = await post('/api/terminals', { role: 'builder', provider: 'codex' }); assert.equal(r.status, 201, JSON.stringify(r.body)); assert.equal(r.body.session.provider, 'codex'); assert.equal(w.spawned[0].file, '/fake/codex');
-    r = await post('/api/terminals', { role: 'builder', provider: 'gemini' }); assert.deepEqual([r.status, r.body.code], [400, 'provider_invalid']);
+    r = await post('/api/terminals', { role: 'builder', provider: 'xpto' }); assert.deepEqual([r.status, r.body.code], [400, 'provider_invalid']);
     r = await post('/api/terminals', { role: 'builder', provider: { $ne: 1 } }); assert.equal(r.status, 400);
     r = await post('/api/terminals', { role: 'builder', isolate: 'auto', expectEditors: 2 }); assert.equal(r.status, 201); assert.match(r.body.warning, /Worktree próprio não criado/);
     r = await post('/api/terminals', { role: 'builder', isolate: 'qualquer' }); assert.equal(r.status, 201); assert.equal(r.body.warning, undefined, 'isolate só aceita true ou "auto"');

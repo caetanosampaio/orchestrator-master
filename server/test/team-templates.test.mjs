@@ -48,7 +48,7 @@ test('criar: grava, devolve id tpl_xxxxxxxx e persiste no disco', async () => {
 test('validação estrita: papel/provedor fora da lista, vagas demais ou de menos, nome vazio/longo, propriedade desconhecida e corpo inválido', async () => {
   const bad = async (body, re) => { const r = await jr(await call('/api/team-templates', 'POST', body)); assert.equal(r.status, 400, JSON.stringify(body)); assert.match(r.j.error, re); };
   await bad({ name: 'x', slots: slots(['hacker', 'claude']) }, /slots/);
-  await bad({ name: 'x', slots: slots(['builder', 'gemini']) }, /slots/);
+  await bad({ name: 'x', slots: slots(['builder', 'xpto']) }, /slots/); await bad({ name: 'x', slots: slots(['builder', 'gemini']) }, /não conversa com o Maestro/);
   await bad({ name: 'x', slots: slots(['__proto__', 'claude']) }, /slots/);
   await bad({ name: 'x', slots: [] }, /slots/);
   await bad({ name: 'x', slots: Array.from({ length: T.MAX_SLOTS + 1 }, () => ({ role: 'builder', provider: 'claude' })) }, /slots/);

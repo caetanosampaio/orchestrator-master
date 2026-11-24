@@ -29,7 +29,7 @@ const after_ = (args, flag) => args[args.indexOf(flag) + 1];
 
 test('opções: listas fechadas por provedor, congeladas, e providerOptions() devolve cópia { models, efforts } com { id, label }', () => {
   const o = P.providerOptions();
-  assert.deepEqual(Object.keys(o).sort(), ['claude', 'codex']);
+  assert.deepEqual(Object.keys(o).sort(), ['claude', 'codex', 'cursor', 'gemini', 'opencode']); // os três novos no nível 1 (new-providers.test.mjs)
   for (const id of ['claude', 'codex']) {
     assert.ok(o[id].models.length >= 1 && o[id].efforts.length >= 1);
     for (const x of [...o[id].models, ...o[id].efforts]) assert.deepEqual(Object.keys(x).sort(), ['id', 'label']);
@@ -47,7 +47,7 @@ test('validateChoice: omitido vale; fora da lista, vazio, não-texto e `__proto_
   assert.equal(P.validateChoice('claude', { effort: 'max' }).value.effort, 'max');
   assert.equal(P.validateChoice('codex', { effort: 'max' }).field, 'effort', 'max não existe no Codex');
   for (const bad of ['', ' opus', 'opus --dangerously-skip-permissions', '__proto__', 'constructor', 7, false, {}, ['opus']]) assert.equal(P.validateChoice('claude', { model: bad }).field, 'model', JSON.stringify(bad));
-  assert.equal(P.validateChoice('gemini', {}).field, 'provider');
+  assert.equal(P.validateChoice('xpto', {}).field, 'provider');
   assert.deepEqual(P.tolerantChoice('claude', { model: 'opus', effort: 'nope' }), { model: 'opus' });
   assert.deepEqual(P.tolerantChoice('claude', null), {});
 });
