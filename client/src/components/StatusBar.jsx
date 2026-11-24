@@ -10,6 +10,9 @@ import StatusGlyph from './StatusGlyph.jsx';
 import SystemStatus from './SystemStatus.jsx';
 import { ProviderPanel } from './LimitsStrip.jsx';
 import { Icon } from './ui.jsx';
+import PetCreature from './PetCreature.jsx';
+import { usePet, petMood } from '../use-pet.js';
+import '../pet.css';
 
 /** "42% 2h 48m": uso da janela e quanto falta para ela reiniciar. Sem leitura = "—". */
 const win = (w, now) => (w ? `${Math.round(w.usedPct)}%${untilShort(w.resetsAt, now) ? ` ${untilShort(w.resetsAt, now)}` : ''}` : DASH);
@@ -30,6 +33,18 @@ function ProviderItem({ sum, now, refresh }) {
       </button>
       {open && <ProviderPanel sum={sum} now={now} anchor={btn} onClose={() => setOpen(false)} />}
     </>
+  );
+}
+
+/** O bichinho em miniatura: abre Configurações > Bichinho; um ponto avisa quando ele precisa de você (como o bipe do Tamagotchi). */
+function PetBadge() {
+  const s = usePet(), m = petMood(s);
+  if (!s.pet || !m) return null;
+  const name = s.pet.name || 'bichinho', need = m.needs.length > 0;
+  return (
+    <button type="button" className={`fx-sb-i fx-sb-btn fx-sb-pet${need ? ' need' : ''}`} onClick={() => { location.hash = '#/settings/bichinho'; }} title={need ? `${name} precisa de você` : `${name} está ${m.label}`} aria-label={need ? `Abrir o bichinho: ${name} precisa de você` : `Abrir o bichinho (${m.label})`}>
+      <PetCreature stage={s.pet.stage} form={s.pet.form} mood={m.id} size={16} />{need && <i className="fx-sb-pet-dot" aria-hidden="true" />}
+    </button>
   );
 }
 
@@ -58,6 +73,7 @@ export default function StatusBar({ liveOpen = false, onToggleLive = null }) {
       </div>
       <span className="grow" />
       <div className="fx-sb-g">
+        <PetBadge />
         <span className="fx-sb-status"><SystemStatus limits={false} label={label} /></span>
         <span className="fx-sb-i dim" title={s.max ? `${s.ativos} de ${s.max} terminais em uso (todos os workspaces)` : `${s.ativos} terminais em uso`}><Icon name="terminal" size={13} />{s.max ? `${s.ativos}/${s.max}` : s.ativos}</span>
         <span className={`fx-sb-i${offline ? ' err' : ' dim'}`} role="status" title={offline ? 'Sem conexão com o servidor do FORGE' : 'Conectado ao servidor do FORGE'}><i className={`fx-sb-dot${offline ? ' off' : ''}`} aria-hidden="true" />{offline ? 'offline' : 'conectado'}</span>

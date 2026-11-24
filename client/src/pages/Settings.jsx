@@ -5,7 +5,7 @@ import { filterNav, itemById, resolveTab } from '../settings-nav.js';
 import TeamsSettings from '../components/TeamsSettings.jsx';
 import AccountsPanel from '../components/AccountsPanel.jsx';
 import { AisSection } from '../components/settings/AisSection.jsx';
-import { MascotsSection } from '../components/settings/MascotsSection.jsx';
+import { PetSection } from '../components/settings/PetSection.jsx';
 import { ProfileSection, GeneralSection, LayoutSection, AppearanceSection, FilesSection } from '../components/settings/AppSections.jsx';
 import { OrchestrationSection, WorktreesSection } from '../components/settings/TeamSections.jsx';
 import HarnessSection from '../components/harness/HarnessSection.jsx';
@@ -30,7 +30,7 @@ export default function Settings({ onClose, initial = 'perfil', onOpenWorkspaces
     e.preventDefault(); setTab(n); document.getElementById(`set-tab-${n}`)?.focus();
   };
   const body = {
-    ias: <AisSection go={setTab} />, accounts: <AccountsPanel />, mascotes: <MascotsSection />,
+    ias: <AisSection go={setTab} />, accounts: <AccountsPanel />, bichinho: <PetSection />,
     equipes: <TeamsSettings />, tarefas: <HarnessSection />, skills: <SkillsSection go={setTab} />, orquestracao: <OrchestrationSection />, worktrees: <WorktreesSection />,
     perfil: <ProfileSection />, geral: <GeneralSection />, visualizacao: <LayoutSection />, aparencia: <AppearanceSection />, arquivos: <FilesSection onOpenWorkspaces={onOpenWorkspaces} />,
   }[cur.id];

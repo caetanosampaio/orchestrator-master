@@ -124,6 +124,6 @@ export function StoreProvider({ children }) {
   const selectTopic = (workspaceId, topicId) => act(() => (topicId ? nav.activateTopic(topicId) : nav.activateGeneral(workspaceId)));
 
   return (
-    <Ctx.Provider value={{ ...data, openWorkspaceIds, topics, activeTopicIds, selectTopic, error, refresh, act, notify, toast, terminals, maestro, setMaestro: updateMaestro, workingIds, loadTerminals, noteInteraction, unseenWs, setHiddenTerminals, accounts, lastAccount, loadAccounts }}>{children}</Ctx.Provider>
+    <Ctx.Provider value={{ ...data, openWorkspaceIds, topics, activeTopicIds, selectTopic, error, refresh, act, notify, toast, terminals, maestro, setMaestro: updateMaestro, workingIds, loadTerminals, noteInteraction, unseenWs, setHiddenTerminals, accounts, lastAccount, loadAccounts, workEnds }}>{children}</Ctx.Provider>
   );
 }

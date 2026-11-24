@@ -45,7 +45,7 @@ test('o Forjador: arte própria (bigorna com chama, rosto de brasa, martelo e fa
   assert.equal(SPARK_SHAPES.filter((s) => s.cls === 'eye').length, 2);
   const px = src('pixel-mascot.js'); assert.ok(!/forge|steel|ember/i.test(px.replace(/\/\/[^\n]*/g, '')), 'o mascote das IAs não tem peças do Forjador');
   const css = src('harness.css'); for (const k of ['fm-steel', 'fm-ember', 'fm-gold', 'fm-flame', 'fm-wood', 'fm-eye']) assert.match(css, new RegExp(`\\.${k}\\b`));
-  assert.match(src('components/settings/MascotsSection.jsx'), /ForgeMascot size=\{120\}/, 'o FORGE usa o Forjador na página de mascotes');
+  assert.ok(!/ForgeMascot|PixelMascot|ProviderMascot|forge-mascot|pixel-mascot/.test(src('components/settings/PetSection.jsx') + src('components/PetCreature.jsx')), 'o bichinho é um visual novo, sem os mascotes antigos');
 });
 
 test('página: seção Quem faz cada tarefa na navegação (com o próprio cabeçalho), hook ligado às rotas, introdução, Maestro, tabela com filtro/editor, agentes e compartilhar', () => {

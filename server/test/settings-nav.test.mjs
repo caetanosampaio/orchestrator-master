@@ -13,14 +13,15 @@ test('navegação: três grupos, ids únicos, cada seção com rótulo, ícone e
   const items = flatItems(); assert.equal(new Set(items.map((i) => i.id)).size, items.length);
   for (const i of items) assert.ok(i.label && i.icon && i.hint, i.id);
   assert.equal(itemById('equipes').label, 'Times prontos'); assert.equal(itemById('equipes').tag, 'Squads');
-  for (const id of ['orquestracao', 'accounts', 'equipes', 'ias', 'mascotes', 'perfil']) assert.ok(itemById(id), id); // abertas por TerminalGrid, MaestroPopover, PrereqModal e pelos links
+  for (const id of ['orquestracao', 'accounts', 'equipes', 'ias', 'bichinho', 'perfil']) assert.ok(itemById(id), id); // abertas por TerminalGrid, MaestroPopover, PrereqModal e pelos links
   assert.equal(DEFAULT_TAB, 'perfil');
 });
 
 test('resolveTab: nomes antigos (cli, providers) levam a Suas IAs; desconhecido ou não-texto cai no padrão', () => {
   assert.equal(resolveTab('cli'), 'ias'); assert.equal(resolveTab('providers'), 'ias'); assert.equal(resolveTab('equipes'), 'equipes');
   for (const bad of ['x', '', null, undefined, 7, { id: 'ias' }, '__proto__', 'constructor']) assert.equal(resolveTab(bad), 'perfil');
-  assert.equal(resolveTab('nao-existe', 'ias'), 'ias'); assert.deepEqual(Object.keys(ALIASES).sort(), ['cli', 'providers']);
+  assert.equal(resolveTab('nao-existe', 'ias'), 'ias'); assert.deepEqual(Object.keys(ALIASES).sort(), ['cli', 'mascotes', 'providers']);
+  assert.equal(resolveTab('mascotes'), 'bichinho', 'o link antigo dos mascotes abre o Bichinho');
 });
 
 test('busca: por nome, descrição ou palavra-chave, sem diferenciar maiúsculas nem acentos; grupo sem resultado some; vazio = tudo', () => {
@@ -47,7 +48,7 @@ test('página: cada seção da navegação tem um componente, a busca e o cartã
   assert.match(page, /Buscar nas Configurações/); assert.match(page, /filterNav\(query\)/); assert.match(page, /className="set-me"/); assert.match(page, /role="tablist"/);
   const ais = src('components/settings/AisSection.jsx'), next = ais.slice(ais.indexOf('<Block title="Para ligar"'));
   assert.match(next, /plannedAis\(\)/); assert.match(next, /em breve/); assert.ok(!/<button/.test(next), 'IA ainda não integrada não tem botão de ligar');
-  assert.match(src('components/settings/MascotsSection.jsx'), /Ainda não integrado ao FORGE/);
+  assert.match(src('components/settings/PetSection.jsx'), /Como cuidar/); assert.ok(!itemById('mascotes'), 'a seção Mascotes deu lugar ao Bichinho');
 });
 
 test('barra lateral no formato do Orca: marca Forge no topo (com recolher), busca ⌘K, navegação, workspaces em cartões e, no rodapé, Configurações, Arquivos e Sessões; o terminal leva a logo do agente', () => {

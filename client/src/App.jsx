@@ -10,6 +10,7 @@ import Setup from './pages/Setup.jsx';
 import WorkspaceDialog from './components/WorkspaceDialog.jsx';
 import SessionsDialog from './components/SessionsDialog.jsx';
 import { useStore } from './store.jsx';
+import { startPet, usePetTreats } from './use-pet.js';
 import { nav } from './api.js';
 import { useFlows } from './use-flows.js';
 import { createTerminalStream } from './terminal-stream.js';
@@ -44,18 +45,20 @@ export default function App() {
   const [focusReq, setFocusReq] = useState(null); // terminal clicado na sidebar: o Cockpit o amplia assim que ele é do workspace aberto
   const desktop = desktopInfo()?.platform === 'darwin';
   const [dialog, setDialog] = useState(null); // 'workspaces' | 'sessions' | null (as Configurações são uma página: view 'settings')
-  const [settingsTab, setSettingsTab] = useState(() => /^#\/settings\/([a-z-]+)/.exec(location.hash)?.[1] ?? 'perfil'), [settingsKey, setSettingsKey] = useState(0); // #/settings/<seção> abre direto na seção (ex.: #/settings/mascotes) // a chave refaz a página para ela abrir na aba pedida
+  const [settingsTab, setSettingsTab] = useState(() => /^#\/settings\/([a-z-]+)/.exec(location.hash)?.[1] ?? 'perfil'), [settingsKey, setSettingsKey] = useState(0); // #/settings/<seção> abre direto na seção (ex.: #/settings/bichinho) // a chave refaz a página para ela abrir na aba pedida
   const [ui] = useUi();
   const narrow = useNarrow();
   const menuRef = useRef(null);
   const [prefs] = usePrefs();
-  const { error, toast, state, openWorkspaceIds, act, workspaces, terminals, workingIds, setHiddenTerminals } = useStore();
+  const { error, toast, state, openWorkspaceIds, act, workspaces, terminals, workingIds, setHiddenTerminals, workEnds } = useStore();
   const [view, setView] = useState(() => (location.hash.startsWith('#/settings') ? 'settings' : location.hash.startsWith('#/missions') ? 'missions' : location.hash.startsWith('#/cockpit') ? 'cockpit' : 'home')); // página: 'home' (Início, a de abertura: #/ ou #/home) | 'cockpit' (terminais) | 'missions' (central de missões) | 'settings' (Configurações; #/settings: link antigo)
   const backTo = useRef(view === 'settings' ? 'home' : view); // de onde as Configurações foram abertas: o "Voltar" retorna para lá
   const cockpitFrom = useRef(view === 'cockpit' ? 'cockpit' : 'home'); // última página do Cockpit (Início ou Terminais): o "Voltar ao Cockpit" das Missões retorna para lá
   useEffect(() => { if (view === 'home' || view === 'cockpit') cockpitFrom.current = view; }, [view]);
   // Missões v2 (flows): um único polling serve a página Missões e o indicador da barra lateral (visível em qualquer página). `flowsSeenAt` = quando você viu Missões pela última vez: run que termina depois disso aparece como "concluída/falhou" na sidebar até você abrir a página.
   const flowsData = useFlows({ intervalMs: 2500 });
+  useEffect(() => { startPet(); }, []); // o bichinho vive enquanto o app está aberto (o tempo corre e ele grava no servidor)
+  usePetTreats({ workEnds, flows: flowsData.flows }); // petiscos: fins de trabalho dos agentes e missões concluídas
   const [flowsSeenAt, setFlowsSeenAt] = useState(() => Date.now());
   useEffect(() => { if (view === 'missions') setFlowsSeenAt(Date.now()); }, [view, flowsData.flows]);
   const flowTermIds = useMemo(() => flowTerminalIds(flowsData.flows), [flowsData.flows]); // terminais das missões: só aparecem na página Missões

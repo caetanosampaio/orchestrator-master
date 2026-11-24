@@ -71,7 +71,7 @@ test('toolbar: só os controles operacionais (sem chip de workspace nem menu de 
 });
 
 test('Visualização mora nas Configurações e as Sessões (histórico) moram no rodapé da barra lateral do Cockpit, com o mesmo conteúdo de antes', () => {
-  const st = ['pages/Settings.jsx', 'settings-nav.js', 'components/settings/SettingsUi.jsx', 'components/settings/AppSections.jsx', 'components/settings/TeamSections.jsx', 'components/settings/AisSection.jsx', 'components/settings/MascotsSection.jsx'].map(src).join('\n');
+  const st = ['pages/Settings.jsx', 'settings-nav.js', 'components/settings/SettingsUi.jsx', 'components/settings/AppSections.jsx', 'components/settings/TeamSections.jsx', 'components/settings/AisSection.jsx', 'components/settings/PetSection.jsx'].map(src).join('\n');
   assert.match(st, /item\('visualizacao', 'Visualização'/); assert.match(st, /LAYOUT_MODES\.map/); assert.match(st, /useLayoutMode\(openWs\?\.id\)/);
   assert.doesNotMatch(st, /item\('historico'|SessionHistoryBody|HistorySection/, 'o histórico de sessões saiu das Configurações');
   const dlg = src('components/SessionsDialog.jsx'); assert.match(dlg, /<SessionHistoryBody ws=\{ws\}/); assert.match(dlg, /onAutoRestore=\{setAutoRestore\}/, 'o interruptor da restauração automática continua no histórico');

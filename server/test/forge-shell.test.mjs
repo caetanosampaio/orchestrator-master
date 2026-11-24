@@ -92,5 +92,5 @@ test('identidade: tokens neutros (sem cor de marca nem por papel), glifos animad
   for (const k of ['fx-spin', 'fx-breathe', 'fx-pop', 'fx-draw']) assert.match(css, new RegExp(`@keyframes ${k} `));
   assert.match(css, /html\[data-motion="reduced"\] \.fx-app \*/); assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
   assert.ok(!/variant="mascot"/.test(grid), 'o cabeçalho do terminal usa a logo, não o mascote'); assert.ok(!/ForgeMascot/.test(home), 'o Início sem mascote');
-  assert.match(src('pages/Settings.jsx'), /mascotes: <MascotsSection \/>/, 'os mascotes continuam nas Configurações');
+  assert.match(src('pages/Settings.jsx'), /bichinho: <PetSection \/>/, 'o bichinho (que substituiu os mascotes) mora nas Configurações');
 });
