@@ -63,7 +63,7 @@ test('piloto: muda IA/modelo/esforço/reserva; trocar de IA zera o que era da ou
   assert.equal(Object.hasOwn(disk().harness.pilot, 'model'), false);
   r = await jr(await call('/api/harness/pilot', 'PUT', { provider: null, model: null, effort: null })); assert.deepEqual(r.j.pilot.effective, { ...H.PILOT_DEFAULT });
   const bad = async (body, re) => { const x = await jr(await call('/api/harness/pilot', 'PUT', body)); assert.equal(x.status, 400, JSON.stringify(body)); assert.match(x.j.error, re); };
-  await bad({ model: 'gpt-5' }, /model/); await bad({ provider: 'xpto' }, /IA inválida/); await bad({ provider: 'gemini' }, /não conversa com o Maestro/); await bad({ effort: 'turbo' }, /effort/); await bad({ reserveModel: 'nao-existe' }, /reserveModel/);
+  await bad({ model: 'gpt-5' }, /model/); await bad({ provider: 'xpto' }, /IA inválida/); await bad({ provider: 'opencode' }, /não conversa com o Maestro/); await bad({ effort: 'turbo' }, /effort/); await bad({ reserveModel: 'nao-existe' }, /reserveModel/);
   await bad({ nope: 1 }, /não permitidas/); await bad({}, /ao menos um campo/); await bad({ agentId: 'agt_00000000' }, /Agente/); await bad([1], /objeto/);
   assert.equal((await jr(await call('/api/harness/pilot', 'DELETE'))).status, 200);
 });
@@ -111,7 +111,7 @@ test('compartilhar: exportar e importar um código; ids de agente refeitos; cód
   assert.equal(r.j.pilot.effective.effort, 'xhigh'); assert.equal(r.j.agents.length, 1); assert.notEqual(r.j.agents[0].id, ag.id, 'ids refeitos'); assert.equal(rowOf(r.j, 'review-text').effective.agentId, r.j.agents[0].id);
   const before = JSON.stringify(disk().harness);
   const enc = (o) => H.CODE_PREFIX + Buffer.from(JSON.stringify(o), 'utf8').toString('base64url');
-  for (const bad of ['', 'lixo', 'forge-harness:1:@@@', enc({ extra: 1 }), enc({ rows: { 'nao-existe': { effort: 'low' } } }), enc({ rows: { docs: { model: 'gpt-5' } } }), enc({ pilot: { provider: 'gemini' } }), enc({ rows: { docs: { skills: ['x'] } } }), enc({ agents: [{ name: 'a', instruction: 'x' }, { name: 'A', instruction: 'y' }] }), enc({ agents: [{ name: '', instruction: 'x' }] }), H.CODE_PREFIX + 'A'.repeat(H.MAX_CODE)]) {
+  for (const bad of ['', 'lixo', 'forge-harness:1:@@@', enc({ extra: 1 }), enc({ rows: { 'nao-existe': { effort: 'low' } } }), enc({ rows: { docs: { model: 'gpt-5' } } }), enc({ pilot: { provider: 'opencode' } }), enc({ rows: { docs: { skills: ['x'] } } }), enc({ agents: [{ name: 'a', instruction: 'x' }, { name: 'A', instruction: 'y' }] }), enc({ agents: [{ name: '', instruction: 'x' }] }), H.CODE_PREFIX + 'A'.repeat(H.MAX_CODE)]) {
     const x = await jr(await call('/api/harness/import', 'POST', { code: bad })); assert.equal(x.status, 400, String(bad).slice(0, 50)); assert.equal(JSON.stringify(disk().harness), before, 'nada mudou');
   }
   assert.equal((await jr(await call('/api/harness/import', 'POST', { code: 5 }))).status, 400); assert.equal((await jr(await call('/api/harness/import', 'POST', { code, x: 1 }))).status, 400);

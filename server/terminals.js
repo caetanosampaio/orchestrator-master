@@ -21,7 +21,10 @@ import { pidAlive } from './instance-lock.js';
 import { worktreeProblem } from './worktrees.js';
 import { asyncRoute } from './async-route.js';
 import { inspectProjectConfig } from './project-config.js';
-import { getProvider, isProvider, providerIds as providerIdsList, validateChoice, tolerantChoice, accountSpecOf, noCoordinationMessage } from './providers/index.js';
+import { getProvider, isProvider, providerIds as providerIdsList, validateChoice, tolerantChoice, accountSpecOf, coordinationBlock } from './providers/index.js';
+import os from 'node:os';
+
+const plannerBlock = (prov) => (prov.capabilities?.readOnly === false ? `${prov.label} não garante somente leitura: o planejador não pode usar esta IA.` : prov.capabilities?.planner === false ? `${prov.label} ainda não abre o planejador de missão: use o Claude Code ou o Codex CLI.` : null);
 import { resolveLegacyAccountId } from './account-compat.js';
 import { cleanLine } from './harness.js';
 
@@ -60,7 +63,7 @@ export const MAX_TEAM_INSTRUCTION = 1500;
  * `ptyLib`, `resolveCommand(s)`, `track` e `worktrees` só são injetados nos testes/boot; o padrão é o node-pty real e a CLI do provedor no PATH. `provider` é o PADRÃO (panes e registros sem o campo).
  * `findTemplate(id)`: o time (salvo ou pronto) com esse id, ou null (o boot liga team-templates.js findTeam). Sem ele, nenhum `templateId` é aceito.
  */
-export function createTerminalManager({ db, ptyLib = null, provider = getProvider(), loadouts = null, agentStatus = null, resolveCommand = provider.resolve, resolveCommands = {}, trustFolders = null, autoFullAccess = null, track = null, worktrees = null, maxSessions = MAX_SESSIONS, now = store.now, uid = store.uid, killTree = killTreeSync, waitFor = waitGone, usage = null, defaults = null, newSessionId = randomUUID, mcp = null, inspectConfig = inspectProjectConfig, persist = null, isChildAlive = null, transcriptExists = null, pidIsAlive = pidAlive, maxRecords = MAX_RECORDS, sweepMs = SWEEP_MS, setTimer = setInterval, clearTimer = clearInterval, onEnd = null, accounts = null, statusLine = null, findTemplate = null } = {}) {
+export function createTerminalManager({ db, ptyLib = null, provider = getProvider(), loadouts = null, agentStatus = null, resolveCommand = provider.resolve, resolveCommands = {}, trustFolders = null, autoFullAccess = null, track = null, worktrees = null, maxSessions = MAX_SESSIONS, now = store.now, uid = store.uid, killTree = killTreeSync, waitFor = waitGone, usage = null, defaults = null, newSessionId = randomUUID, mcp = null, inspectConfig = inspectProjectConfig, persist = null, isChildAlive = null, transcriptExists = null, pidIsAlive = pidAlive, maxRecords = MAX_RECORDS, sweepMs = SWEEP_MS, setTimer = setInterval, clearTimer = clearInterval, onEnd = null, accounts = null, statusLine = null, findTemplate = null, paneFilesDir = null, hookNode = process.execPath, homeDir = os.homedir() } = {}) {
   // Provedor de cada pane: o padrão do gerenciador ou o registrado no pane/registro (id desconhecido cai no padrão: nunca lança numa leitura).
   const provOf = (id) => (id === undefined || id === null || id === provider.id ? provider : isProvider(id) ? getProvider(id) : provider);
   const cmdOf = (p) => (p === provider ? resolveCommand() : (resolveCommands[p.id] ?? p.resolve)());
@@ -124,6 +127,30 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
     return spec.env(process.env, accounts && typeof accountId === 'string' ? accounts.configDirOf(accountId) ?? null : null);
   }
   const revokeMcp = (id) => { try { mcp?.revoke?.(id); } catch { /* informativo */ } };
+  // Arquivos do pane (providers/*.js paneFiles, hoje o Gemini: padrões do sistema com o MCP do FORGE e o papel): uma pasta só do terminal, 0700/0600, apagada quando ele acaba.
+  // Nunca guardam o token (ele vai no ambiente). Na partida não há terminal vivo: sobras de uma execução anterior que caiu são apagadas.
+  const paneDirOf = (id) => (paneFilesDir && /^term_[A-Za-z0-9]{1,40}$/.test(String(id)) ? path.join(paneFilesDir, id) : null);
+  const removePaneFiles = (id) => { const d = paneDirOf(id); if (d) { try { fs.rmSync(d, { recursive: true, force: true }); } catch { /* informativo */ } } };
+  if (paneFilesDir) { try { for (const e of fs.readdirSync(paneFilesDir)) if (/^term_/.test(e)) fs.rmSync(path.join(paneFilesDir, e), { recursive: true, force: true }); } catch { /* pasta ainda não existe */ } }
+  /**
+   * Preparo do provedor (prepare: ex. a entrada global do Cursor) + arquivos do pane, e o ambiente extra. Qualquer falha = sem a coordenação (o pane abre igual e o Maestro o trata
+   * como livre). Ambiente sem arquivos (ex.: o endereço do MCP do Cursor) não precisa da pasta do pane.
+   */
+  function writePaneFiles(prov, id, { prompt, mcp: mcpArg }) {
+    if (typeof prov.paneFiles !== 'function') return {};
+    const d = paneDirOf(id);
+    try {
+      if (typeof prov.prepare === 'function' && prov.prepare({ mcp: mcpArg, homeDir })?.ok !== true) return {};
+      const out = prov.paneFiles({ dir: d, prompt, mcp: mcpArg, node: hookNode, platform: process.platform }) ?? {};
+      const files = out.files && typeof out.files === 'object' ? out.files : {};
+      const envOut = () => (out.env && typeof out.env === 'object' ? Object.fromEntries(Object.entries(out.env).filter(([k, v]) => /^[A-Z][A-Z0-9_]{0,63}$/.test(k) && typeof v === 'string')) : {});
+      if (!Object.keys(files).length) return envOut();
+      if (!d) return {}; // há arquivos a gravar, mas sem pasta de arquivos do pane (servidor sem paneFilesDir): sem a coordenação
+      fs.mkdirSync(d, { recursive: true, mode: 0o700 });
+      for (const [name, content] of Object.entries(files)) { if (!/^[a-z0-9._-]{1,40}$/i.test(name) || typeof content !== 'string') throw new Error('arquivo inválido'); fs.writeFileSync(path.join(d, name), content, { mode: 0o600 }); }
+      return envOut();
+    } catch { removePaneFiles(id); return {}; }
+  }
 
   // ---- histórico de sessões retomáveis (db.terminalSessions) ----
   // Só metadados: NUNCA guarda token nem caminho de credencial MCP (a credencial é emitida de novo a cada retomada). Bancos antigos não têm a lista: nasce vazia.
@@ -197,8 +224,8 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
     if (!tm.ok) return tm;
     { // IA sem coordenação / sem somente leitura: recusada aqui, antes de criar worktree (a mesma regra vale de novo no createReserved, para as outras entradas)
       const pv = provOf(opts?.provider ?? undefined), role = opts?.role ?? 'builder', squad = opts?.squadId !== undefined && opts?.squadId !== null;
-      if (!can(pv, 'mcp') && (role === 'maestro' || tm.team || squad || flowWorktreeId !== null)) return fail(409, noCoordinationMessage(pv.id), { code: 'provider_no_coordination' });
-      if (READ_ONLY_ROLES.includes(role) && !can(pv, 'readOnly')) return fail(409, `${pv.label} não garante somente leitura: o planejador não pode usar esta IA.`, { code: 'provider_no_read_only' });
+      const cb = coordinationBlock(pv.id, { role, group: !!tm.team || squad, step: flowWorktreeId !== null }); if (cb) return fail(409, cb.message, { code: cb.code });
+      if (READ_ONLY_ROLES.includes(role) && plannerBlock(pv)) return fail(409, plannerBlock(pv), { code: can(pv, 'readOnly') ? 'provider_no_planner' : 'provider_no_read_only' });
     }
     opts = { ...opts, team: tm.team };
     // flowWorktreeId é exclusivo com isolate/squadId: quem chama com os dois tem um erro de lógica, e nenhum deles pode decidir sozinho qual worktree vale.
@@ -272,8 +299,8 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
     const prov = provOf(providerId ?? undefined);
     // IA sem coordenação (providers/*.js capabilities.mcp === false: Gemini, OpenCode, Cursor no nível 1) só abre terminal livre: o Maestro, as vagas de time, os squads e as etapas
     // de missão dependem do MCP para o agente avisar o que fez. IA que não garante somente leitura (OpenCode) não abre o planejador. Antes de qualquer efeito.
-    if (!can(prov, 'mcp') && (role === 'maestro' || team || squadId || flowWorktreeId !== null)) return fail(409, noCoordinationMessage(prov.id), { code: 'provider_no_coordination' });
-    if (READ_ONLY_ROLES.includes(role) && !can(prov, 'readOnly')) return fail(409, `${prov.label} não garante somente leitura: o planejador não pode usar esta IA.`, { code: 'provider_no_read_only' });
+    { const cb = coordinationBlock(prov.id, { role, group: !!team || !!squadId, step: flowWorktreeId !== null }); if (cb) return fail(409, cb.message, { code: cb.code }); }
+    if (READ_ONLY_ROLES.includes(role) && plannerBlock(prov)) return fail(409, plannerBlock(prov), { code: can(prov, 'readOnly') ? 'provider_no_planner' : 'provider_no_read_only' });
     // Padrões da tabela "Quem faz cada tarefa" (harness.js): o Maestro novo abre com o modelo e o esforço do piloto e a instrução do agente dele; nunca sobrescreve o que foi escolhido nem vale na retomada.
     let extraPrompt = ''; try { const d = defaults?.(role, prov.id) ?? {}; if (model === null && d.model) model = d.model; if (effort === null && d.effort) effort = d.effort; if (typeof d.extraPrompt === 'string') extraPrompt = d.extraPrompt; } catch { /* sem padrões: abre como sempre */ }
     // Conta (qualquer provider): a pedida ou a ÚNICA utilizável do provider (accounts.resolveFor); sem conta padrão no servidor. Erro = o status e o code do resolveFor, sem nenhum efeito.
@@ -394,10 +421,11 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
     if (typeof trustFolders === 'function') { try { trustFolders({ provider: prov.id, cwd, configDir: dirOf(accountId) ?? null }); } catch { /* melhor esforço: a pergunta aparece normalmente */ } }
     const rolePrompt = extraPrompt ? `${ROLES[role].prompt} Instrucao do agente escolhido pelo usuario para este papel: ${extraPrompt}` : ROLES[role].prompt;
     const prompt = team?.instruction ? `${rolePrompt} Instrucao do time escolhido pelo usuario: ${team.instruction}` : rolePrompt; // a do time vem por último: vale para todas as vagas dele
+    Object.assign(env, writePaneFiles(prov, id, { prompt, mcp: mcpArg }));
     const args = prov.paneArgs({ mode, prompt, label, sessionId: claudeSessionId, resumeSessionId: rec?.claudeSessionId, mcp: mcpArg, pluginDir, settingsFile, model, effort, fullAccess: full, readOnly, quote: !cmd.viaShell, trustDir: typeof trustFolders === 'function' ? cwd : null });
     let p;
     try { p = pty.spawn(cmd.file, [...cmd.args, ...args], { name: 'xterm-256color', cols: c, rows: r, cwd, env, useConpty: true }); }
-    catch (e) { revokeMcp(id); return fail(500, `Não foi possível iniciar o terminal: ${String(e?.message ?? e).slice(0, 160)}`); }
+    catch (e) { revokeMcp(id); removePaneFiles(id); return fail(500, `Não foi possível iniciar o terminal: ${String(e?.message ?? e).slice(0, 160)}`); }
     const s = { id, role, provider: prov.id, accountId, model, effort, fullAccess: full, squadKey, claudeSessionId, recordId: null, skills, templateId: team?.templateId ?? null, slotIndex: team?.slotIndex ?? null, holdInput: resumed, title: label, workspaceId: ws.id, topicId, cwd, worktreeId: wt?.id ?? null, status: 'running', pid: p.pid, cols: c, rows: r, startedAt: now(), endedAt: null, exitCode: null, lastOutputAt: null, bytes: 0, chunks: [], chunkBytes: 0, subs: new Set(), tracked: null, p };
     if (full) { // trilha de auditoria: quando e por que um terminal abriu com acesso total (sem texto de usuário nem segredos)
       const why = autoFull && fullAccess !== true ? 'Maestro autônomo ligado' : rec?.fullAccess === true ? 'herdado da sessão gravada' : 'opt-in da missão';
@@ -542,7 +570,7 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
   /** `confirmed: false` = o encerramento do processo NÃO foi confirmado: registro de filho e worktree em uso ficam retidos (ver `lingering`). */
   function finish(s, exitCode, { confirmed = true, reason = 'exit' } = {}) {
     if (s.status === 'exited') return;
-    releasePty(s.p); revokeMcp(s.id);
+    releasePty(s.p); revokeMcp(s.id); removePaneFiles(s.id);
     if (confirmed) releaseWorktree(s.worktreeId, s.id); // volta a "execução terminada" quando o último terminal do worktree sai: nada é removido nem integrado
     s.status = 'exited'; s.exitCode = Number.isInteger(exitCode) ? exitCode : null; s.endedAt = now();
     if (confirmed) { try { s.tracked?.release(); } catch { /* informativo */ } } else { lingering.set(s.id, { pid: s.pid, claudeSessionId: s.claudeSessionId, worktreeId: s.worktreeId, accountId: s.accountId, tracked: s.tracked }); startSweep(); }
@@ -630,7 +658,7 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
 
   /** Leitura INTERNA mínima de um registro de sessão (runner de missões, N2: a sessão pertence à cópia conferida?). Sem UUID do Claude Code nem caminhos; nenhuma rota a expõe. */
   const recordInfo = (recordId) => { const r = records().find((x) => x && x.id === recordId); return r ? { id: r.id, workspaceId: r.workspaceId ?? null, worktreeId: r.worktreeId ?? null, accountId: accOf(r) } : null; }; // accountId: o id real (registro antigo traduzido) ou null
-  return { create, resume, recordInfo, history, write, resize, readOutput, peek, close, subscribe, subscribeAll, killAllSync, get: (id) => { const s = get(id); return s ? describe(s) : null; }, list: () => [...sessions.values()].map(describe), count: () => live().length, usesAccount: (accountId) => typeof accountId === 'string' && (live().some((x) => x.accountId === accountId) || [...lingering.values()].some((l) => l.accountId === accountId)), roles: () => roleIds().map((k) => ({ id: k, label: ROLES[k].label, color: ROLES[k].color, edits: ROLES[k].edits === true, team: TEAM_ROLES.includes(k) })), providers: () => providerIdsList().map((id) => { const p = provOf(id); let ok = false; try { ok = !!cmdOf(p); } catch { ok = false; } return { id: p.id, label: p.label, available: ok, capabilities: { resume: can(p, 'resume'), plugins: can(p, 'plugins'), mcp: can(p, 'mcp'), readOnly: can(p, 'readOnly') }, ...(typeof p.install === 'string' ? { install: p.install } : {}), ...(typeof p.permissionsNote === 'string' ? { note: p.permissionsNote } : {}) }; }) };
+  return { create, resume, recordInfo, history, write, resize, readOutput, peek, close, subscribe, subscribeAll, killAllSync, get: (id) => { const s = get(id); return s ? describe(s) : null; }, list: () => [...sessions.values()].map(describe), count: () => live().length, usesAccount: (accountId) => typeof accountId === 'string' && (live().some((x) => x.accountId === accountId) || [...lingering.values()].some((l) => l.accountId === accountId)), roles: () => roleIds().map((k) => ({ id: k, label: ROLES[k].label, color: ROLES[k].color, edits: ROLES[k].edits === true, team: TEAM_ROLES.includes(k) })), providers: () => providerIdsList().map((id) => { const p = provOf(id); let ok = false; try { ok = !!cmdOf(p); } catch { ok = false; } return { id: p.id, label: p.label, available: ok, capabilities: { resume: can(p, 'resume'), plugins: can(p, 'plugins'), mcp: can(p, 'mcp'), readOnly: can(p, 'readOnly'), ...Object.fromEntries(['mcpVerified', 'planner', 'state', 'rolePrompt'].filter((k) => p.capabilities?.[k] === false).map((k) => [k, false])) }, ...(typeof p.install === 'string' ? { install: p.install } : {}), ...(typeof p.permissionsNote === 'string' ? { note: p.permissionsNote } : {}) }; }) };
 }
 
 export function setupTerminals(app, { manager }) {

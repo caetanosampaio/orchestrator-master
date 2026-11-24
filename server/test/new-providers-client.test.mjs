@@ -65,5 +65,5 @@ test('status do sistema: IA nova só aparece quando instalada ou em uso', () => 
 
 test('Quem faz cada tarefa: só oferece IAs com o Maestro (o piloto e as linhas viram Maestro e etapas de missão)', () => {
   const v = H.harnessView({});
-  assert.deepEqual(v.providers, ['claude', 'codex']);
+  assert.deepEqual(v.providers, ['claude', 'codex', 'gemini'], 'o Gemini (nível 2) entra; OpenCode e Cursor não');
 });

@@ -1,13 +1,56 @@
 // Provedor Gemini CLI (`gemini`, pacote npm @google/gemini-cli): o que é específico dele num terminal interativo (pane). Mesma interface do claude.js/codex.js.
 //
-// NÍVEL 1 (só terminal). Conferido contra a documentação oficial (geminicli.com/docs, jun/2026), NÃO contra a CLI instalada (sem ela nesta máquina):
+// NÍVEL 2 (terminal + Maestro). Conferido contra a documentação oficial (geminicli.com/docs, jun/2026) e o código-fonte (settingsSchema.ts, settings.ts, hookRunner.ts),
+// NÃO contra a CLI instalada (sem ela nesta máquina):
 //   - modelo: `-m <alias>` (auto, pro, flash, flash-lite); aprovação: `--approval-mode default|auto_edit|yolo|plan` (`plan` = só planeja, não edita);
 //   - retomada existe (`--resume <uuid|latest>`), mas o id é escolhido pelo próprio Gemini: o FORGE não tem como reabrir a sessão certa, então fica desligada (capabilities);
 //   - estado do agente: o título do terminal (`ui.dynamicWindowTitle`, ligado por padrão) mostra "Ready ◇", "Action Required ✋" e "Working ✦" (oscState abaixo);
-//   - SEM coordenação (mcp: false): o MCP do Maestro só entraria por arquivo de configuração e o papel só pelo prompt de sistema INTEIRO (GEMINI_SYSTEM_MD substitui tudo);
-//     por isso o pane abre como agente livre, sem o papel e sem o Maestro. Missões e times ficam de fora até a coordenação ser verificada com a CLI real.
+//   - COORDENAÇÃO sem tocar na configuração do usuário nem no projeto: cada pane recebe um arquivo de PADRÕES DO SISTEMA próprio (GEMINI_CLI_SYSTEM_DEFAULTS_PATH, a camada de MENOR
+//     precedência) numa pasta do FORGE. `mcpServers` é mesclado por nome (SHALLOW_MERGE) e os hooks somados (CONCAT) com os do usuário. O servidor MCP do FORGE vai com
+//     `Authorization: Bearer ${FORGE_MCP_TOKEN}`: o Gemini troca a variável ao ler o arquivo, então o TOKEN fica só no ambiente do processo, nunca em arquivo; `trust: true` dispensa a
+//     confirmação das ferramentas do FORGE. O PAPEL chega por um hook BeforeAgent (gemini-role-hook.mjs), uma vez por sessão, como contexto extra do turno.
+//   - NÃO VERIFICADO (mcpVerified: false): o Maestro só manda tarefa a este pane depois que ele SE CONECTA de fato ao MCP do FORGE (maestro.js). Se o mecanismo falhar na
+//     prática, o pane fica como terminal livre, sem tarefa presa. O planejador de missão fica de fora (planner: false): no modo `plan` as ferramentas MCP podem ser bloqueadas.
 //   - plano gratuito: a documentação avisa que, desde 18/06/2026, contas gratuitas e Google One usam a Antigravity CLI; o Gemini CLI segue com chave de API ou plano pago.
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { resolveOnPath, withoutClaudeEnv, frozenList } from './cli-path.js';
+
+export const MCP_TOKEN_ENV = 'FORGE_MCP_TOKEN'; // o mesmo nome do Codex: o terminals.js põe o token só no ambiente do pane
+export const HOOK_SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'gemini-role-hook.mjs');
+const SERVER_KEY_RE = /^[A-Za-z0-9_-]{1,64}$/;
+// Caminhos que entram na linha de comando do hook (shell do Gemini): com aspas, crase, $, % ou controle o hook não é registrado (o pane abre igual, só sem o papel).
+const UNSAFE_PATH = /["'`$%!\r\n\t]/;
+
+/**
+ * Linha de comando do hook do papel. POSIX (sh): caminhos entre aspas duplas. Windows: HIPÓTESE (não verificada) de que o shell do hook é o PowerShell (o hookRunner acrescenta o
+ * tratamento de $LASTEXITCODE dele), então a chamada leva `& ` na frente. Barras normais nos dois. null = algum caminho inseguro.
+ */
+export function roleHookCommand({ node, script = HOOK_SCRIPT, roleFile, platform = process.platform }) {
+  const parts = [node, script, roleFile].map((x) => String(x ?? '').replace(/\\/g, '/'));
+  if (parts.some((x) => !x || UNSAFE_PATH.test(x))) return null;
+  const line = parts.map((x) => `"${x}"`).join(' ');
+  return platform === 'win32' ? `& ${line}` : line;
+}
+
+/**
+ * Arquivos do pane (escritos pelo terminals.js numa pasta só dele, 0600, apagada quando o terminal acaba) e o ambiente que aponta para eles.
+ * `mcp` = { url, serverName } (sem o token: ele vai no ambiente); `prompt` = papel + instrução do time; `node` = executável que roda o hook.
+ */
+export function geminiPaneFiles({ dir, prompt = '', mcp = null, node = process.execPath, platform = process.platform }) {
+  const files = {}, settings = {};
+  if (mcp && SERVER_KEY_RE.test(String(mcp.serverName)) && /^http:\/\/127\.0\.0\.1:\d{1,5}\/mcp$/.test(String(mcp.url))) {
+    settings.mcpServers = { [mcp.serverName]: { httpUrl: mcp.url, headers: { Authorization: `Bearer \${${MCP_TOKEN_ENV}}` }, trust: true, timeout: 20000 } };
+  }
+  if (typeof prompt === 'string' && prompt.trim()) {
+    const roleFile = path.join(dir, 'papel.txt');
+    const command = roleHookCommand({ node, roleFile, platform });
+    if (command) { files['papel.txt'] = prompt.trim(); settings.hooks = { BeforeAgent: [{ hooks: [{ type: 'command', name: 'forge-papel', command, timeout: 5000 }] }] }; }
+  }
+  if (!Object.keys(settings).length) return { files: {}, env: {} };
+  files['settings.json'] = JSON.stringify(settings, null, 2);
+  return { files, env: { GEMINI_CLI_SYSTEM_DEFAULTS_PATH: path.join(dir, 'settings.json') } };
+}
 
 export const resolveGemini = (opts = {}) => resolveOnPath(['gemini'], opts);
 
@@ -38,7 +81,9 @@ export const geminiProvider = Object.freeze({
   oscState: geminiOscState,
   notFoundMessage: 'O Gemini CLI não foi encontrado no PATH (instale com "npm i -g @google/gemini-cli" e entre na sua conta ao abrir o gemini).',
   install: 'npm i -g @google/gemini-cli',
-  capabilities: Object.freeze({ resume: false, fork: false, hooks: false, plugins: false, accounts: false, transcript: false, mcp: false, readOnly: true }),
+  capabilities: Object.freeze({ resume: false, fork: false, hooks: false, plugins: false, accounts: false, transcript: false, mcp: true, mcpVerified: false, readOnly: true, planner: false }),
+  mcpTransport: 'env', mcpTokenEnv: MCP_TOKEN_ENV, // credencial do Maestro só no ambiente do processo
+  paneFiles: geminiPaneFiles,
   // HIPÓTESE (não verificada sem a CLI): o TUI aceita colagem entre colchetes, como o Codex; o Enter segue separado.
   submit: Object.freeze({ bracketed: true, delayMs: 300 }),
   // Configuração de projeto que o Gemini carrega e que executa coisas (hooks, servidores MCP, comandos): toda a pasta .gemini; qualquer arquivo não versionado ou alterado pede confirmação.

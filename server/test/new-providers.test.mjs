@@ -1,4 +1,4 @@
-// Gemini CLI, OpenCode e Cursor CLI no NÍVEL 1 (só terminal, sem coordenação): detecção no PATH, argumentos de cada CLI, estado do Gemini pelo título do terminal, o
+// Gemini CLI (NÍVEL 2: com o Maestro, a confirmar pela conexão real), Cursor CLI (NÍVEL 2 parcial: só vagas que recebem tarefas) e OpenCode (NÍVEL 1: só terminal): detecção no PATH, argumentos de cada CLI, estado do Gemini pelo título do terminal, o
 // registro (capacidades, opções fechadas) e as recusas (Maestro, time, squad, missão e planejador). PTY SIMULADO (nenhuma CLI real), banco em memória, ORCH_DATA_DIR temporário.
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -20,7 +20,7 @@ const PC = await import('../project-config.js');
 const M = await import('../maestro.js');
 after(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
-const NEW = ['gemini', 'opencode', 'cursor'];
+const NEW = ['gemini', 'opencode', 'cursor'], FREE = ['opencode'];
 const bin = (name, files) => { const d = path.join(tmp, name); fs.mkdirSync(d, { recursive: true }); for (const f of files) fs.writeFileSync(path.join(d, f), '#!/bin/sh\n'); return d; };
 
 test('resolveOnPath: primeiro nome achado no PATH, na ordem; .cmd no Windows vai pelo cmd.exe; nome fora do padrão nunca vira executável; ausente = null', () => {
@@ -71,17 +71,18 @@ test('estado do Gemini: o símbolo do título do terminal (◇ pronto, ✦ traba
   assert.equal(geminiOscState('\x1b]0;' + 'x'.repeat(400)).carry, '', 'sequência sem fim e longa demais não fica presa');
 });
 
-test('registro: os cinco provedores, os novos sem coordenação; opções fechadas; ambiente sem variáveis do Claude; configuração de projeto de cada um', () => {
+test('registro: os cinco provedores; Gemini e Cursor com coordenação a confirmar (o Cursor sem liderar nem ser etapa), OpenCode sem; opções fechadas; ambiente sem variáveis do Claude; configuração de projeto de cada um', () => {
   assert.deepEqual(P.providerIds(), ['claude', 'codex', ...NEW]);
   for (const id of NEW) {
     const p = P.getProvider(id);
     assert.ok(Object.isFrozen(p) && Object.isFrozen(p.capabilities), id);
-    assert.equal(P.coordinates(id), false, `${id}: sem coordenação`); assert.equal(p.capabilities.resume, false); assert.equal(p.capabilities.plugins, false); assert.equal(p.capabilities.transcript, false);
-    assert.match(P.noCoordinationMessage(id), new RegExp(p.label)); assert.equal(typeof p.install, 'string'); assert.match(p.notFoundMessage, /não foi encontrado no PATH/);
+    assert.equal(P.coordinates(id), id !== 'opencode', `${id}: Gemini e Cursor coordenam`); assert.equal(P.needsProof(id), id !== 'opencode'); assert.equal(P.canLead(id), id === 'gemini', `${id}: Maestro`); assert.equal(P.canStep(id), id === 'gemini', `${id}: etapa`); assert.equal(P.canPlan(id), false, `${id}: não abre o planejador`); assert.equal(p.capabilities.resume, false); assert.equal(p.capabilities.plugins, false); assert.equal(p.capabilities.transcript, false);
+    assert.match(P.noCoordinationMessage(id), new RegExp(p.label.replace(/[()]/g, ''))); assert.equal(typeof p.install, 'string'); assert.match(p.notFoundMessage, /não foi encontrado no PATH/);
     assert.deepEqual(p.envFor({ PATH: '/bin', CLAUDE_CODE_CHILD_SESSION: '1', ANTHROPIC_API_KEY: 'k', GEMINI_API_KEY: 'g' }), { PATH: '/bin', GEMINI_API_KEY: 'g' });
     assert.equal(P.accountSpecOf(id), null, `${id}: sem contas do FORGE`);
   }
   assert.equal(P.coordinates('claude'), true); assert.equal(P.coordinates('codex'), true); assert.equal(P.coordinates('xpto'), false);
+  assert.equal(P.needsProof('claude'), false); assert.equal(P.needsProof('codex'), false); assert.equal(P.canPlan('claude'), true); assert.equal(P.canPlan('codex'), true);
   assert.equal(P.providerCan('gemini', 'readOnly'), true); assert.equal(P.providerCan('cursor', 'readOnly'), true); assert.equal(P.providerCan('opencode', 'readOnly'), false);
   assert.deepEqual(P.validateChoice('gemini', { model: 'pro' }), { value: { model: 'pro' } });
   assert.equal(P.validateChoice('gemini', { model: 'gemini-2.5-pro; rm -rf' }).field, 'model', 'fora da lista fechada é recusado');
@@ -105,7 +106,7 @@ function world(over = {}) {
   const lib = { spawn(file, args, opts) { const p = { pid: ++pid, file, args, opts, onData(cb) { p.feed = cb; }, onExit(cb) { p.exitCb = cb; }, write() {}, resize() {}, exit(code = 0) { p.exitCb({ exitCode: code }); } }; spawned.push(p); return p; } };
   const ws = path.join(tmp, `ws${Math.random().toString(16).slice(2)}`); fs.mkdirSync(ws, { recursive: true });
   const db = { settings: { activeWorkspaceId: 'ws1' }, workspaces: [{ id: 'ws1', name: 'W', path: ws }], worktrees: [], topics: [] };
-  const mcp = { serverName: 'forge_ab12cd', issue: (a) => { issued.push(a); return { configPath: `/tmp/${a.terminalId}.json` }; }, revoke() {} };
+  const mcp = { serverName: 'forge_ab12cd', issue: (a) => { issued.push(a); return a.file === false ? { token: 'e'.repeat(48), url: 'http://127.0.0.1:4999/mcp' } : { configPath: `/tmp/${a.terminalId}.json` }; }, revoke() {} }; // como o maestro.issue real
   const fake = (id) => () => ({ file: `/fake/${id}`, args: [], viaShell: false });
   const mgr = T.createTerminalManager({ db, ptyLib: lib, resolveCommand: fake('claude'), resolveCommands: Object.fromEntries(['codex', ...NEW].map((id) => [id, fake(id)])),
     killTree: () => {}, waitFor: () => true, newSessionId: () => `00000000-0000-4000-8000-${String(++n).padStart(12, '0')}`, mcp, track: () => ({ release() {} }),
@@ -113,8 +114,8 @@ function world(over = {}) {
   return { spawned, db, mgr, issued, inspected };
 }
 
-test('terminais: Gemini, OpenCode e Cursor abrem como terminal livre, com os argumentos deles, SEM credencial do Maestro, sem papel e sem token no ambiente', async () => {
-  for (const id of NEW) {
+test('terminais: OpenCode e Cursor abrem como terminal livre, com os argumentos deles, SEM credencial do Maestro, sem papel e sem token no ambiente', async () => {
+  for (const id of FREE) {
     const w = world();
     const r = await w.mgr.create({ role: 'builder', provider: id });
     assert.equal(r.ok, true, `${id}: ${r.error}`); assert.equal(r.session.provider, id);
@@ -127,14 +128,14 @@ test('terminais: Gemini, OpenCode e Cursor abrem como terminal livre, com os arg
   }
   const w = world();
   const g = await w.mgr.create({ role: 'reviewer', provider: 'gemini', model: 'pro' }); assert.equal(g.ok, true, g.error);
+  assert.equal(w.issued[0].file, false, 'Gemini: credencial sem arquivo (token no ambiente)');
   assert.deepEqual(w.spawned[0].args, ['--approval-mode', 'default', '-m', 'pro']);
   assert.equal((await w.mgr.create({ provider: 'gemini', model: 'opus' })).code, 'model_invalid', 'modelo de outra IA é recusado');
-  assert.equal((await w.mgr.create({ provider: 'cursor', role: 'planner' })).ok, true, 'o Cursor abre o planejador em modo ask');
-  assert.deepEqual(w.spawned.at(-1).args, ['--mode', 'ask']);
+  assert.equal((await w.mgr.create({ provider: 'cursor', role: 'planner' })).code, 'provider_no_planner', 'o Cursor não abre o planejador de missão');
 });
 
-test('terminais: sem coordenação, recusa Maestro, vaga de time, squad e etapa de missão (409, nada aberto); OpenCode não abre o planejador', async () => {
-  for (const id of NEW) {
+test('terminais: sem coordenação, recusa Maestro, vaga de time, squad e etapa de missão (409, nada aberto); OpenCode e Gemini não abrem o planejador', async () => {
+  for (const id of FREE) {
     const w = world();
     for (const [opts, second] of [[{ role: 'maestro', provider: id }], [{ role: 'builder', provider: id, squadId: 'sq_1' }], [{ role: 'builder', provider: id }, { flowWorktreeId: 'wt_1' }]]) {
       const r = await w.mgr.create(opts, second ?? {});
@@ -145,8 +146,10 @@ test('terminais: sem coordenação, recusa Maestro, vaga de time, squad e etapa 
   const w = world();
   const r = await w.mgr.create({ role: 'planner', provider: 'opencode' });
   assert.equal(r.status, 409); assert.equal(r.code, 'provider_no_read_only'); assert.equal(w.spawned.length, 0);
-  const team = world({ findTemplate: () => ({ id: 'tpl_x', name: 'T', slots: [{ role: 'builder', provider: 'gemini' }] }) });
-  const t = await team.mgr.create({ role: 'builder', provider: 'gemini', templateId: 'tpl_x', slotIndex: 0 });
+  const gp = await w.mgr.create({ role: 'planner', provider: 'gemini' });
+  assert.equal(gp.status, 409); assert.equal(gp.code, 'provider_no_planner'); assert.equal(w.spawned.length, 0);
+  const team = world({ findTemplate: () => ({ id: 'tpl_x', name: 'T', slots: [{ role: 'builder', provider: 'opencode' }] }) });
+  const t = await team.mgr.create({ role: 'builder', provider: 'opencode', templateId: 'tpl_x', slotIndex: 0 });
   assert.equal(t.code, 'provider_no_coordination', 'vaga de time (mesmo de um time antigo gravado) é recusada'); assert.equal(team.spawned.length, 0);
 });
 
@@ -155,7 +158,8 @@ test('terminais: providers() traz disponibilidade, capacidades (retomada, skills
   const list = w.mgr.providers();
   assert.deepEqual(list.map((p) => [p.id, p.available]), [['claude', true], ['codex', false], ['gemini', true], ['opencode', false], ['cursor', false]]);
   assert.deepEqual(list[0].capabilities, { resume: true, plugins: true, mcp: true, readOnly: true });
-  assert.deepEqual(list[2].capabilities, { resume: false, plugins: false, mcp: false, readOnly: true });
+  assert.deepEqual(list[2].capabilities, { resume: false, plugins: false, mcp: true, readOnly: true, mcpVerified: false, planner: false });
+  assert.deepEqual(list[4].capabilities, { resume: false, plugins: false, mcp: true, readOnly: true, mcpVerified: false, planner: false, state: false, rolePrompt: false });
   assert.deepEqual(list[3].capabilities, { resume: false, plugins: false, mcp: false, readOnly: false });
   assert.equal(list[2].install, 'npm i -g @google/gemini-cli'); assert.match(list[3].note, /permissões seguem a configuração do próprio OpenCode/);
   assert.equal(list[0].install, undefined, 'Claude e Codex sem install aqui (já têm a tela própria)');
@@ -171,13 +175,19 @@ test('estado do Gemini chega ao terminal pelo título (sem hooks): trabalhando -
   w.spawned[0].feed('\x1b]0;◇  Ready\x07'); assert.equal(state(), 'idle');
 });
 
-test('times e missões: vaga ou etapa com IA sem coordenação é recusada na validação, com a mensagem do Maestro', () => {
-  for (const id of NEW) {
+test('times e missões: vaga ou etapa com IA sem coordenação é recusada na validação, com a mensagem do Maestro; o Gemini (nível 2) entra', () => {
+  assert.equal(TT.validateTemplateBody({ name: 'Time', slots: [{ role: 'maestro', provider: 'gemini' }, { role: 'builder', provider: 'gemini', model: 'flash' }] }).error, undefined);
+  assert.equal(F.validateSteps([{ title: 'Etapa', prompt: 'Faça algo', provider: 'gemini', role: 'builder' }]).error, undefined);
+  for (const id of FREE) {
     const t = TT.validateTemplateBody({ name: 'Time', slots: [{ role: 'maestro', provider: 'claude' }, { role: 'builder', provider: id }] });
     assert.match(t.error ?? '', /slots\[1\]: .*Maestro/, id);
     const s = F.validateSteps([{ title: 'Etapa', prompt: 'Faça algo', provider: id, role: 'builder' }]);
     assert.match(s.error ?? '', /Etapa 1: .*Maestro/, id);
   }
+  // Cursor: vaga que recebe tarefas sim; Maestro e etapa de missão não
+  assert.equal(TT.validateTemplateBody({ name: 'Time', slots: [{ role: 'maestro', provider: 'claude' }, { role: 'builder', provider: 'cursor' }, { role: 'reviewer', provider: 'cursor' }] }).error, undefined);
+  assert.match(TT.validateTemplateBody({ name: 'Time', slots: [{ role: 'maestro', provider: 'cursor' }] }).error ?? '', /slots\[0\]: Cursor CLI ainda não pode ser o Maestro/);
+  assert.match(F.validateSteps([{ title: 'Etapa', prompt: 'Faça algo', provider: 'cursor', role: 'builder' }]).error ?? '', /Etapa 1: Cursor CLI ainda não entra em etapas de missão/);
   assert.equal(TT.validateTemplateBody({ name: 'Time', slots: [{ role: 'builder', provider: 'codex' }] }).error, undefined, 'Codex continua aceito');
   assert.equal(F.validateSteps([{ title: 'Etapa', prompt: 'Faça algo', provider: 'claude', role: 'builder' }]).error, undefined, 'Claude continua aceito');
 });
@@ -193,12 +203,115 @@ test('Maestro: o terminal livre (IA sem coordenação) aparece em list_panes com
   m.setAutonomous(true);
   const by = Object.fromEntries(JSON.parse(call('list_panes').content[0].text).map((x) => [x.pane_id, x]));
   assert.equal(by[GE].coordinated, false); assert.equal(by[OC].coordinated, false); assert.equal('coordinated' in by[CL], false, 'pane com coordenação: o campo nem aparece');
-  for (const id of [GE, OC]) {
+  for (const [id, why] of [[GE, /ainda não se conectou ao Maestro.*NÃO foi enviada/], [OC, /terminal livre.*NÃO foi enviada/]]) {
     const r = call('send_task', { pane_id: id, task: 'faça isso' });
-    assert.equal(r.isError, true, id); assert.match(r.content[0].text, /terminal livre.*NÃO foi enviada/);
-    const d = m.dispatch({ to: id, text: 'faça isso' }); assert.equal(d.ok, false); assert.match(d.error, /terminal livre/);
+    assert.equal(r.isError, true, id); assert.match(r.content[0].text, why);
+    const d = m.dispatch({ to: id, text: 'faça isso' }); assert.equal(d.ok, false); assert.notEqual(d.transient, true, 'sem data de início: não é "recém-aberto"');
   }
   assert.equal(written.length, 0, 'nada foi digitado nos terminais livres');
   assert.match(call('send_task', { pane_id: CL, task: 'faça isso' }).content[0].text, /entregue/, 'o pane do Claude continua recebendo');
   assert.equal(written[0][0], CL);
+  // missão: Gemini recém-aberto ainda conectando = "não pronto" (tenta de novo), não falha
+  panes.get(GE).startedAt = new Date().toISOString();
+  const young = m.dispatch({ to: GE, text: 'faça isso' }); assert.equal(young.ok, false); assert.equal(young.transient, true); assert.match(young.error, /se conectando/);
+  // a PROVA: o pane do Gemini fala com o MCP usando a credencial dele -> passa a coordenar
+  const cred = m.issue({ terminalId: GE, role: 'builder', file: false });
+  assert.equal(m.connected(GE), false); assert.ok(m.authenticate(`Bearer ${cred.token}`)); assert.equal(m.connected(GE), true);
+  assert.equal('coordinated' in Object.fromEntries(JSON.parse(call('list_panes').content[0].text).map((x) => [x.pane_id, x]))[GE], false, 'conectado: sai a marca de livre');
+  while (timers.length) timers.shift()();
+  assert.match(call('send_task', { pane_id: GE, task: 'faça isso no gemini' }).content[0].text, /entregue/, 'conectado: recebe a tarefa');
+  assert.ok(written.some(([id]) => id === GE));
+  m.revoke(GE); assert.equal(m.connected(GE), false, 'a revogação apaga a prova');
+});
+
+test('Gemini: arquivos do pane = padrões do sistema com o MCP do FORGE (token só como ${FORGE_MCP_TOKEN}) e o hook do papel; caminho inseguro não registra o hook', async () => {
+  const G = await import('../providers/gemini.js');
+  const mcp = { url: 'http://127.0.0.1:4999/mcp', serverName: 'forge_ab12cd' };
+  const out = G.geminiPaneFiles({ dir: '/tmp/forge/term_x', prompt: 'Voce e o CONSTRUTOR', mcp, node: '/usr/bin/node', platform: 'darwin' });
+  assert.deepEqual(out.env, { GEMINI_CLI_SYSTEM_DEFAULTS_PATH: path.join('/tmp/forge/term_x', 'settings.json') });
+  const st = JSON.parse(out.files['settings.json']);
+  assert.deepEqual(st.mcpServers, { forge_ab12cd: { httpUrl: mcp.url, headers: { Authorization: 'Bearer ${FORGE_MCP_TOKEN}' }, trust: true, timeout: 20000 } });
+  assert.equal(out.files['papel.txt'], 'Voce e o CONSTRUTOR');
+  assert.equal(st.hooks.BeforeAgent[0].hooks[0].command, `"/usr/bin/node" "${G.HOOK_SCRIPT.replace(/\\/g, '/')}" "${path.join('/tmp/forge/term_x', 'papel.txt').replace(/\\/g, '/')}"`);
+  assert.match(G.roleHookCommand({ node: 'C:\\node\\node.exe', roleFile: 'C:\\d\\papel.txt', platform: 'win32' }), /^& "C:\/node\/node.exe" ".*" "C:\/d\/papel.txt"$/, 'Windows: chamada do PowerShell e barras normais');
+  for (const bad of ['/a"b', '/a$b', "/a'b", '/a`b', '/a%b', '/a\nb']) assert.equal(G.roleHookCommand({ node: bad, roleFile: '/x' }), null, bad);
+  const noHook = G.geminiPaneFiles({ dir: '/tmp/a$b', prompt: 'x', mcp, node: '/usr/bin/node' });
+  assert.equal(JSON.parse(noHook.files['settings.json']).hooks, undefined, 'pasta insegura: sem hook, o MCP segue'); assert.equal(noHook.files['papel.txt'], undefined);
+  for (const bad of [{ url: 'http://evil.example/mcp', serverName: 'forge_ab12cd' }, { url: mcp.url, serverName: 'a.b"c' }]) assert.equal(JSON.parse(G.geminiPaneFiles({ dir: '/d', prompt: 'x', mcp: bad, node: '/n' }).files['settings.json']).mcpServers, undefined, JSON.stringify(bad));
+  assert.deepEqual(G.geminiPaneFiles({ dir: '/d', prompt: '', mcp: null }), { files: {}, env: {} });
+});
+
+test('hook do papel do Gemini: entrega o papel UMA vez por sessão como additionalContext; sem arquivo ou com erro, sai com {} e código 0', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const G = await import('../providers/gemini.js');
+  const d = fs.mkdtempSync(path.join(tmp, 'hook-')), role = path.join(d, 'papel.txt'); fs.writeFileSync(role, 'Voce e o REVISOR');
+  const run = (sid, file = role) => JSON.parse(execFileSync(process.execPath, [G.HOOK_SCRIPT, file], { input: '{}', env: { ...process.env, GEMINI_SESSION_ID: sid } }).toString());
+  const first = run('sess-1');
+  assert.deepEqual(first, { hookSpecificOutput: { hookEventName: 'BeforeAgent', additionalContext: '[Instrução do FORGE para este terminal] Voce e o REVISOR' } });
+  assert.deepEqual(run('sess-1'), {}, 'segundo turno da mesma sessão: nada'); assert.ok(run('sess-2').hookSpecificOutput, 'sessão nova (ex.: /clear): entrega de novo');
+  assert.deepEqual(run('../../x'), first, 'id de sessão estranho é limpo (a marca fica na pasta do papel)'); assert.ok(!fs.existsSync(path.join(d, '..', '..', 'x')));
+  assert.deepEqual(run('s', path.join(d, 'nao-existe.txt')), {});
+});
+
+test('terminais: o pane do Gemini recebe a credencial só no ambiente e os arquivos numa pasta própria (0600, sem token), apagada quando ele acaba; boot limpa sobras', async () => {
+  const dir = fs.mkdtempSync(path.join(tmp, 'pane-files-'));
+  fs.mkdirSync(path.join(dir, 'term_sobra00')); fs.writeFileSync(path.join(dir, 'term_sobra00', 'settings.json'), '{}');
+  const w = world({ paneFilesDir: dir, hookNode: '/usr/bin/node' });
+  assert.ok(!fs.existsSync(path.join(dir, 'term_sobra00')), 'sobra de uma execução anterior removida na partida');
+  const r = await w.mgr.create({ role: 'builder', provider: 'gemini' });
+  assert.equal(r.ok, true, r.error);
+  const p = w.spawned[0], pd = path.join(dir, r.session.id), env = p.opts.env;
+  assert.equal(env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH, path.join(pd, 'settings.json'));
+  assert.equal(env.FORGE_MCP_TOKEN, 'e'.repeat(48), 'token só no ambiente'); assert.equal(w.issued[0].file, false);
+  assert.ok(!p.args.some((x) => x.includes('e'.repeat(48))), 'nunca na linha de comando');
+  const st = fs.readFileSync(path.join(pd, 'settings.json'), 'utf8');
+  assert.ok(!st.includes('e'.repeat(48)), 'nunca no arquivo');
+  assert.match(st, /Bearer \$\{FORGE_MCP_TOKEN\}/); assert.match(fs.readFileSync(path.join(pd, 'papel.txt'), 'utf8'), /CONSTRUTOR/);
+  if (process.platform !== 'win32') { assert.equal(fs.statSync(path.join(pd, 'settings.json')).mode & 0o777, 0o600); assert.equal(fs.statSync(pd).mode & 0o777, 0o700); }
+  p.exit(0); assert.ok(!fs.existsSync(pd), 'pasta do pane apagada no fim');
+  const c = await w.mgr.create({ role: 'builder', provider: 'claude' }); assert.equal(c.ok, true);
+  assert.deepEqual(fs.readdirSync(dir), [], 'o Claude não ganha pasta de arquivos do pane');
+});
+
+test('Cursor: a entrada forge-maestro no ~/.cursor/mcp.json — criada sem porta nem token, o resto preservado, cópia de segurança, nada gravado sem mudança; JSON inválido ou link não são tocados', async () => {
+  const C = await import('../cursor-mcp.js');
+  const home = fs.mkdtempSync(path.join(tmp, 'home-')), file = path.join(home, '.cursor', 'mcp.json');
+  assert.deepEqual(C.ensureCursorMcpEntry({ homeDir: home }), { ok: true, changed: true }, 'sem arquivo: cria');
+  assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), { mcpServers: { 'forge-maestro': { url: '${env:FORGE_MCP_URL}', headers: { Authorization: 'Bearer ${env:FORGE_MCP_TOKEN}' } } } });
+  if (process.platform !== 'win32') assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+  assert.deepEqual(C.ensureCursorMcpEntry({ homeDir: home }), { ok: true, changed: false }, 'igual: nada a gravar');
+  fs.writeFileSync(file, JSON.stringify({ mcpServers: { meu: { url: 'https://x' }, 'forge-maestro': { url: 'velho' } }, outra: 1 })); fs.chmodSync(file, 0o644);
+  assert.deepEqual(C.ensureCursorMcpEntry({ homeDir: home }), { ok: true, changed: true });
+  const j = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.deepEqual(j.mcpServers.meu, { url: 'https://x' }, 'os servidores do usuário ficam'); assert.equal(j.outra, 1); assert.equal(j.mcpServers['forge-maestro'].url, '${env:FORGE_MCP_URL}');
+  assert.match(fs.readFileSync(`${file}.forge-backup`, 'utf8'), /"velho"/, 'cópia de segurança do arquivo antes da mudança');
+  if (process.platform !== 'win32') assert.equal(fs.statSync(file).mode & 0o777, 0o644, 'mantém a permissão do arquivo do usuário');
+  assert.ok(!fs.readdirSync(path.dirname(file)).some((f) => f.endsWith('.tmp')), 'sem temporário largado');
+  for (const bad of ['{ // comentário', '[1]', '{"mcpServers": []}']) {
+    fs.writeFileSync(file, bad); const r = C.ensureCursorMcpEntry({ homeDir: home });
+    assert.equal(r.ok, false, bad); assert.match(r.why, /não mexe nele/); assert.equal(fs.readFileSync(file, 'utf8'), bad, 'intocado');
+  }
+  if (process.platform !== 'win32') {
+    const h2 = fs.mkdtempSync(path.join(tmp, 'home-')), real = path.join(h2, 'real.json'); fs.mkdirSync(path.join(h2, '.cursor')); fs.writeFileSync(real, '{}'); fs.symlinkSync(real, path.join(h2, '.cursor', 'mcp.json'));
+    assert.equal(C.ensureCursorMcpEntry({ homeDir: h2 }).ok, false, 'link simbólico não é seguido'); assert.equal(fs.readFileSync(real, 'utf8'), '{}');
+  }
+  assert.equal(C.ensureCursorMcpEntry({ homeDir: '' }).ok, false);
+});
+
+test('terminais: o pane do Cursor grava a entrada global, recebe endereço e token só no ambiente; falha ao gravar = pane sem coordenação; Maestro e etapa recusados; vaga de time aceita', async () => {
+  const home = fs.mkdtempSync(path.join(tmp, 'home-'));
+  const w = world({ homeDir: home, findTemplate: () => ({ id: 'tpl_c', name: 'T', slots: [{ role: 'maestro', provider: 'claude' }, { role: 'builder', provider: 'cursor' }] }) });
+  const r = await w.mgr.create({ role: 'builder', provider: 'cursor', templateId: 'tpl_c', slotIndex: 1 });
+  assert.equal(r.ok, true, r.error); assert.equal(w.issued[0].file, false);
+  const env = w.spawned[0].opts.env;
+  assert.equal(env.FORGE_MCP_URL, 'http://127.0.0.1:4999/mcp'); assert.equal(env.FORGE_MCP_TOKEN, 'e'.repeat(48));
+  assert.ok(!w.spawned[0].args.some((x) => x.includes('e'.repeat(48)) || x.includes('--approve-mcps')), 'sem token na linha de comando e sem aprovar TODOS os servidores');
+  const cfg = fs.readFileSync(path.join(home, '.cursor', 'mcp.json'), 'utf8'); assert.ok(!cfg.includes('e'.repeat(48)) && !cfg.includes('4999'), 'nem token nem porta no arquivo');
+  assert.equal((await w.mgr.create({ role: 'maestro', provider: 'cursor' })).code, 'provider_no_lead');
+  assert.equal((await w.mgr.create({ role: 'builder', provider: 'cursor' }, { flowWorktreeId: 'wt_1' })).code, 'provider_no_step');
+  const h2 = fs.mkdtempSync(path.join(tmp, 'home-')); fs.mkdirSync(path.join(h2, '.cursor')); fs.writeFileSync(path.join(h2, '.cursor', 'mcp.json'), 'lixo');
+  const w2 = world({ homeDir: h2 });
+  const r2 = await w2.mgr.create({ role: 'builder', provider: 'cursor' });
+  assert.equal(r2.ok, true, 'o terminal abre mesmo assim'); assert.equal(w2.spawned[0].opts.env.FORGE_MCP_URL, undefined, 'sem a entrada, sem o endereço: o Maestro o trata como livre');
+  assert.equal(fs.readFileSync(path.join(h2, '.cursor', 'mcp.json'), 'utf8'), 'lixo');
 });

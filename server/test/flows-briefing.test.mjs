@@ -89,7 +89,7 @@ test('mission_options: workspace do PANE (nome e git), provedores com listas fec
   const r = tool(as(addPane('planner')), 'mission_options'); assert.ok(!r.isError, txt(r));
   const o = JSON.parse(txt(r)); const opts = providerOptions();
   assert.deepEqual(o.workspace, { name: 'proj', git: true });
-  assert.deepEqual(o.providers.map((p) => [p.id, p.label, p.available]), [['claude', 'Claude Code', true], ['codex', 'Codex CLI', true]]);
+  assert.deepEqual(o.providers.map((p) => [p.id, p.label, p.available]), [['claude', 'Claude Code', true], ['codex', 'Codex CLI', true], ['gemini', 'Gemini CLI', true]]); // só IAs com o Maestro (o Gemini no nível 2; OpenCode e Cursor ficam de fora); fora da lista de terminais vale como disponível
   assert.deepEqual(o.providers[0].models, opts.claude.models); assert.deepEqual(o.providers[1].efforts, opts.codex.efforts);
   assert.deepEqual(o.roles.map((x) => [x.id, x.edits]), [['builder', true], ['reviewer', false], ['scout', false]]); assert.ok(o.roles.every((x) => x.label && x.what));
   assert.deepEqual(o.limits, { maxSteps: F.MAX_STEPS, maxParallel: F.MAX_PARALLEL, maxTitle: F.MAX_TITLE, maxGoal: F.MAX_GOAL, maxPrompt: F.MAX_PROMPT });

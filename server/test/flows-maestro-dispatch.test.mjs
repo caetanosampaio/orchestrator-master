@@ -101,5 +101,5 @@ test('o Maestro existente não mudou: send_task continua pendente (sem aprovaç�
   const r = call('send_task', { pane_id: B1, task: 'tarefa normal' });
   assert.match(r.content[0].text, /AGUARDANDO aprovação/); assert.equal(w.written.length, 0);
   assert.equal(w.m.snapshot().tasks[0].status, 'pending');
-  assert.deepEqual(Object.keys(w.m).sort(), ['authenticate', 'decide', 'dispatch', 'isAutonomous', 'issue', 'revoke', 'rpc', 'serverName', 'setAutonomous', 'setPlanner', 'snapshot', 'taskState']); // setPlanner: porta do planejador de missões (docs/missions-v2-briefing.md), ligada no boot
+  assert.deepEqual(Object.keys(w.m).sort(), ['authenticate', 'connected', 'decide', 'dispatch', 'isAutonomous', 'issue', 'revoke', 'rpc', 'serverName', 'setAutonomous', 'setPlanner', 'snapshot', 'taskState']); // setPlanner: porta do planejador de missões (docs/missions-v2-briefing.md), ligada no boot
 });

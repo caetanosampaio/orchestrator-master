@@ -48,7 +48,7 @@ test('criar: grava, devolve id tpl_xxxxxxxx e persiste no disco', async () => {
 test('validação estrita: papel/provedor fora da lista, vagas demais ou de menos, nome vazio/longo, propriedade desconhecida e corpo inválido', async () => {
   const bad = async (body, re) => { const r = await jr(await call('/api/team-templates', 'POST', body)); assert.equal(r.status, 400, JSON.stringify(body)); assert.match(r.j.error, re); };
   await bad({ name: 'x', slots: slots(['hacker', 'claude']) }, /slots/);
-  await bad({ name: 'x', slots: slots(['builder', 'xpto']) }, /slots/); await bad({ name: 'x', slots: slots(['builder', 'gemini']) }, /não conversa com o Maestro/);
+  await bad({ name: 'x', slots: slots(['builder', 'xpto']) }, /slots/); await bad({ name: 'x', slots: slots(['builder', 'opencode']) }, /não conversa com o Maestro/);
   await bad({ name: 'x', slots: slots(['__proto__', 'claude']) }, /slots/);
   await bad({ name: 'x', slots: [] }, /slots/);
   await bad({ name: 'x', slots: Array.from({ length: T.MAX_SLOTS + 1 }, () => ({ role: 'builder', provider: 'claude' })) }, /slots/);
@@ -145,7 +145,7 @@ test('leitura tolerante: entradas inválidas, duplicadas ou de papel/provedor de
 // ---- model/effort por vaga + options (contrato novo) ----
 test('GET devolve options fechadas por provedor ({ models:[{id,label}], efforts:[{id,label}] })', async () => {
   const { j } = await jr(await call('/api/team-templates'));
-  assert.deepEqual(Object.keys(j.options).sort(), ['claude', 'codex']);
+  assert.deepEqual(Object.keys(j.options).sort(), ['claude', 'codex', 'cursor', 'gemini'], 'times: só IAs com o Maestro (o Cursor nas vagas que recebem tarefas)');
   for (const p of ['claude', 'codex']) {
     assert.deepEqual(Object.keys(j.options[p]).sort(), ['efforts', 'models']);
     for (const x of [...j.options[p].models, ...j.options[p].efforts]) { assert.equal(typeof x.id, 'string'); assert.equal(typeof x.label, 'string'); assert.deepEqual(Object.keys(x).sort(), ['id', 'label']); }

@@ -6,7 +6,7 @@
 import * as store from './store.js';
 import { now, uid } from './store.js';
 import { TEAM_ROLES } from './terminals.js';
-import { isProvider, getProvider, providerOptions, validateChoice, tolerantChoice, coordinates, noCoordinationMessage } from './providers/index.js';
+import { isProvider, getProvider, providerOptions, validateChoice, tolerantChoice, coordinates, coordinationBlock } from './providers/index.js';
 import { isSkillId } from './loadouts.js';
 import { cleanLine } from './harness.js';
 import { TEAM_PRESETS, presetById } from './team-presets.js';
@@ -32,7 +32,7 @@ function cleanSlots(slots) {
   for (const [i, s] of slots.entries()) {
     if (isObj(s) && s.role === 'planner') return { error: `slots[${i}]: ${PLANNER_NOT_IN_TEAM}` }; // recusa explícita (o papel existe, mas não é de time)
     if (!isObj(s) || !roleOk(s.role) || !isProvider(s.provider)) return generic;
-    if (!coordinates(s.provider)) return { error: `slots[${i}]: ${noCoordinationMessage(s.provider)}` }; // a vaga conversa com o Maestro pelo MCP
+    { const cb = coordinationBlock(s.provider, { role: s.role, group: true }); if (cb) return { error: `slots[${i}]: ${cb.message}` }; } // a vaga conversa com o Maestro pelo MCP; a do Maestro precisa liderar
     const extra = Object.keys(s).filter((k) => !SLOT_KEYS.includes(k));
     if (extra.length) return { error: `slots[${i}]: propriedades não permitidas: ${extra.map((k) => k.slice(0, 40)).join(', ')}.` };
     const c = validateChoice(s.provider, s);

@@ -25,7 +25,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import * as store from './store.js';
 import { isAllowedHost } from './origin-guard.js';
-import { isProvider, getProvider, DEFAULT_PROVIDER, coordinates } from './providers/index.js';
+import { isProvider, getProvider, DEFAULT_PROVIDER, coordinates, needsProof } from './providers/index.js';
 import { SKILLS } from './loadouts.js';
 
 export const MAX_TASK_TEXT = 2000, MAX_SUMMARY = 2000, MAX_PENDING = 20, MAX_TASKS = 100, PENDING_TTL_MS = 10 * 60 * 1000, AUTO_PER_MINUTE = 12, READ_DEFAULT = 4000, READ_MAX = 8000;
@@ -158,10 +158,12 @@ export function createMaestro({ getTerminals, harness = null, mcpDir, url, serve
   }
   function revoke(terminalId) {
     const r = byTerminal.get(terminalId); if (!r) return;
-    byHash.delete(r.hash); byTerminal.delete(terminalId);
+    byHash.delete(r.hash); byTerminal.delete(terminalId); seen.delete(terminalId);
     if (r.file) { try { fs.rmSync(r.file, { force: true }); } catch { /* informativo */ } }
   }
-  const authenticate = (header) => { const m = /^Bearer ([0-9a-f]{48})$/.exec(String(header ?? '')); return m ? byHash.get(hashToken(m[1])) ?? null : null; };
+  // Terminais que já falaram com o MCP com a credencial deles: a PROVA de que a coordenação funciona de fato (vale para as IAs com mcpVerified: false, hoje o Gemini).
+  const seen = new Set();
+  const authenticate = (header) => { const m = /^Bearer ([0-9a-f]{48})$/.exec(String(header ?? '')); const c = m ? byHash.get(hashToken(m[1])) ?? null : null; if (c) seen.add(c.terminalId); return c; };
 
   const terms = () => getTerminals();
   const paneOf = (id) => (typeof id === 'string' && TERM_ID_RE.test(id) ? (terms().peek ?? terms().get)(id) : null); // peek: sem ler o transcript de uso
@@ -319,8 +321,13 @@ export function createMaestro({ getTerminals, harness = null, mcpDir, url, serve
 
   // Terminal livre: IA sem coordenação (providers/*.js capabilities.mcp === false: Gemini, OpenCode, Cursor no nível 1). A entrega funcionaria (é só digitar), mas o agente não tem
   // report_done: a tarefa ficaria aberta para sempre. Provider desconhecido (sessão antiga) vale o padrão, que coordena.
-  const free = (p) => { const id = p?.provider ?? DEFAULT_PROVIDER; return isProvider(id) && !coordinates(id); };
-  const freeMsg = (p) => `Esse terminal (${getProvider(p.provider).label}) é um terminal livre: a IA dele ainda não conversa com o Maestro e não teria como avisar o fim (report_done). A tarefa NÃO foi enviada; use um pane com coordenação (veja coordinated em list_panes).`;
+  // Também é tratado como livre o pane de IA com coordenação NÃO verificada (needsProof) que ainda não se conectou ao MCP: se o mecanismo dela falhar na prática, a tarefa nunca fica presa.
+  const unproven = (p) => { const id = p?.provider ?? DEFAULT_PROVIDER; return isProvider(id) && coordinates(id) && needsProof(id) && !seen.has(p.id); };
+  const free = (p) => { const id = p?.provider ?? DEFAULT_PROVIDER; return isProvider(id) && (!coordinates(id) || unproven(p)); };
+  const freeMsg = (p) => (unproven(p)
+    ? `Esse terminal (${getProvider(p.provider).label}) ainda não se conectou ao Maestro (a integração desta IA não foi verificada com a CLI real; ela pode estar abrindo ou o login pode faltar). A tarefa NÃO foi enviada; tente de novo em instantes ou use outro pane.`
+    : `Esse terminal (${getProvider(p.provider).label}) é um terminal livre: a IA dele ainda não conversa com o Maestro e não teria como avisar o fim (report_done). A tarefa NÃO foi enviada; use um pane com coordenação (veja coordinated em list_panes).`);
+  const CONNECT_GRACE_MS = 90_000; // missão: pane recém-aberto ainda conectando conta como "não pronto" (tenta de novo); passou disso, falha com a explicação
   function sendTask(caller, args) {
     sweep();
     const to = paneOf(args?.pane_id);
@@ -476,7 +483,10 @@ export function createMaestro({ getTerminals, harness = null, mcpDir, url, serve
     if (!target) return { ok: false, error: 'Terminal de destino inválido.' };
     if (target.status !== 'running') return { ok: false, error: 'Esse terminal já terminou.' };
     if (NO_TASK_ROLES.has(target.role)) return { ok: false, error: noTaskMsg(target.role) };
-    if (free(target)) return { ok: false, error: freeMsg(target) };
+    if (free(target)) {
+      const young = unproven(target) && Date.now() - (Date.parse(target.startedAt) || 0) < CONNECT_GRACE_MS;
+      return young ? { ok: false, transient: true, error: 'O terminal de destino ainda está se conectando ao Maestro.' } : { ok: false, error: freeMsg(target) };
+    }
     const line = cleanLine(text, MAX_TASK_TEXT + 1);
     if (!line) return { ok: false, error: 'A tarefa está vazia.' };
     if (line.length > MAX_TASK_TEXT) return { ok: false, error: `A tarefa passa de ${MAX_TASK_TEXT} caracteres e NÃO foi enviada (seria cortada).` };
@@ -497,7 +507,7 @@ export function createMaestro({ getTerminals, harness = null, mcpDir, url, serve
     return { status: t.status, summary: t.status === 'done' ? t.summary ?? null : null, note: t.note ?? null, doneAt: t.doneAt ?? null, auto: t.status === 'done' && t.auto === true };
   }
 
-  return { serverName, issue, revoke, authenticate, rpc, snapshot, setAutonomous, decide, isAutonomous: () => autonomous, dispatch, taskState, setPlanner };
+  return { serverName, issue, revoke, authenticate, connected: (id) => seen.has(id), rpc, snapshot, setAutonomous, decide, isAutonomous: () => autonomous, dispatch, taskState, setPlanner };
 }
 
 export function setupMaestro(app, { maestro, onAutonomy = null }) {
