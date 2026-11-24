@@ -3,10 +3,10 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { api } from './api.js';
 import { normalizeActivity } from './home-view.js';
-import { stageFor, totalsByProvider, alloyOf, records, liveMood, cleanName, shownIndex, sessionTokens, TOKEN_FRESH_MS, STAGES } from './golem.js';
+import { stageFor, totalsByProvider, alloyOf, records, liveState, cleanName, shownIndex, sessionTokens, STAGES } from './golem.js';
 
 const POLL_MS = 30_000;
-let snap = { activity: null, name: '', seenStage: null, shownStage: null, loaded: false, error: null, working: 0, tokensAt: null, lastActive: null, lastEnd: null, tick: 0 };
+let snap = { activity: null, name: '', seenStage: null, shownStage: null, loaded: false, error: null, working: 0, waiting: 0, tokensAt: null, lastActive: null, lastEnd: null, tick: 0 };
 const subs = new Set();
 const set = (patch) => { snap = { ...snap, ...patch }; for (const f of subs) f(); };
 let started = false;
@@ -28,7 +28,7 @@ export function startGolem() {
   if (started) return; started = true;
   loadGolem(); loadActivity();
   setInterval(() => { if (!document.hidden) loadActivity(); }, POLL_MS);
-  setInterval(() => { if (!document.hidden) set({ tick: snap.tick + 1 }); }, 2000); // o "ao vivo" muda com o tempo (comemorar acaba, cochilar começa)
+  setInterval(() => { if (!document.hidden) set({ tick: snap.tick + 1 }); }, 1000); // o "ao vivo" muda com o tempo (os golpes diminuem, a comemoração acaba, ele esfria e cochila)
   addEventListener('visibilitychange', () => { if (!document.hidden) loadActivity(); });
 }
 
@@ -41,13 +41,14 @@ export const golemActions = {
   refresh: loadActivity,
 };
 
-/** Visão calculada: fase, liga, recordes e humor ao vivo. */
+/** Visão calculada: fase, liga, recordes e humor ao vivo (`mood`, `burst` = tokens acabaram de subir, `waiting` = agentes esperando você). */
 export function golemView(s = snap, now = Date.now()) {
   const totals = totalsByProvider(s.activity), rec = records(s.activity, new Date(now)), st = stageFor(rec.total);
+  const live = liveState({ working: s.working, tokensAt: s.tokensAt, lastActive: s.lastActive, lastEnd: s.lastEnd, now });
   return {
     loaded: s.loaded && s.activity !== null, error: s.error, name: s.name, seenStage: s.seenStage,
     totals, total: rec.total, records: rec, ...st, shown: shownIndex(s.shownStage, st.index), chosen: s.shownStage, alloy: alloyOf(totals),
-    mood: liveMood({ working: s.working + (s.tokensAt !== null && now - s.tokensAt < TOKEN_FRESH_MS ? 1 : 0), lastActive: s.lastActive, lastEnd: s.lastEnd, now }), working: s.working, stages: STAGES,
+    mood: live.mood, burst: live.burst, waiting: s.waiting, working: s.working, stages: STAGES,
   };
 }
 export function useGolem() {
@@ -56,23 +57,25 @@ export function useGolem() {
 }
 
 /**
- * No App: informa o "ao vivo" e avisa quando o golem evolui com o app aberto. Ele MARTELA enquanto há tokens sendo gastos: um terminal trabalhando (`workingIds`)
- * OU o consumo dos terminais subindo (`terminals.sessions[].usage`, o mesmo número do Cockpit). Fim de trabalho (`workEnds`) = comemora. `notify(texto)` = o aviso do app.
+ * No App: informa o "ao vivo" e avisa quando o golem evolui com o app aberto. Ele MARTELA enquanto há tokens sendo gastos: `working` = terminais executando pelo
+ * MESMO estado dos indicadores do Cockpit (hooks do agente; sem hooks, a leitura pela saída), OU o consumo dos terminais subindo (`sessions[].usage`). `waiting` =
+ * agentes esperando você (ele mostra um "!"). Fim de trabalho (`workEnds`) = comemora depois dos últimos golpes. `notify(texto)` = o aviso do app.
  */
-export function useGolemLive({ workingIds, workEnds, sessions, notify }) {
+export function useGolemLive({ working = 0, waiting = 0, workEnds, sessions, notify }) {
   const ends = useRef(null), stage = useRef(null), tokens = useRef(null);
   useEffect(() => {
     const n = sessionTokens(sessions);
-    if (tokens.current !== null && n > tokens.current) set({ tokensAt: Date.now(), lastActive: Date.now() });
+    if (tokens.current !== null && n > tokens.current) set({ tokensAt: Date.now() });
     tokens.current = n;
   }, [sessions]);
   useEffect(() => {
-    const n = workingIds?.size ?? 0;
-    if (n !== snap.working || n > 0) set({ working: n, ...(n > 0 ? { lastActive: Date.now() } : {}) });
-  }, [workingIds]);
+    // o fim da parada conta a partir de quando o ÚLTIMO agente parou (não de quando começou): grava o instante na transição para zero
+    if (working !== snap.working) set({ working, ...(working === 0 && snap.working > 0 ? { lastActive: Date.now() } : {}) });
+  }, [working]);
+  useEffect(() => { if (waiting !== snap.waiting) set({ waiting }); }, [waiting]);
   useEffect(() => {
     const cur = workEnds && typeof workEnds === 'object' ? workEnds : {};
-    if (ends.current && Object.entries(cur).some(([ws, at]) => ends.current[ws] !== at)) { set({ lastEnd: Date.now(), lastActive: Date.now() }); loadActivity(); } // trabalho terminou: comemora e relê os tokens
+    if (ends.current && Object.entries(cur).some(([ws, at]) => ends.current[ws] !== at)) { set({ lastEnd: Date.now() }); loadActivity(); } // trabalho terminou: comemora e relê os tokens
     ends.current = cur;
   }, [workEnds]);
   const s = useSyncExternalStore((f) => { subs.add(f); return () => subs.delete(f); }, () => snap, () => snap);

@@ -53,7 +53,8 @@ test('recordes: total, maior dia, sequência terminando hoje ou ontem, primeiro 
 test('humor ao vivo, tokens em texto, nome e a evolução acumulada', () => {
   const now = 10_000_000;
   assert.equal(G.liveMood({ working: 2, now }), 'working');
-  assert.equal(G.liveMood({ lastEnd: now - 1000, lastActive: now - 1000, now }), 'cheer');
+  assert.equal(G.liveMood({ lastEnd: now - 1000, lastActive: now - 1000, now }), 'slowing', 'o trabalho acabou de terminar: primeiro os últimos golpes');
+  assert.equal(G.liveMood({ lastEnd: now - G.SLOW_MS - 500, lastActive: now - G.SLOW_MS - 500, now }), 'cheer', 'depois dos últimos golpes, comemora');
   assert.equal(G.liveMood({ lastActive: now - 60_000, now }), 'idle'); assert.equal(G.liveMood({ lastActive: now - G.SLEEP_AFTER_MS, now }), 'sleep'); assert.equal(G.liveMood({ now }), 'sleep', 'sem trabalho nesta sessão: cochilando');
   assert.deepEqual([950, 12_345, 3_147_122, 25_000_000, 2.4e9].map(G.fmtTokens), ['950', '12 mil', '3,1 mi', '25 mi', '2,4 bi']);
   assert.equal(G.cleanName('  Bigorna\u0000 de Cobre muito comprido '), 'Bigorna de Cobre mui');
@@ -93,6 +94,39 @@ test('martela enquanto há tokens sendo gastos: soma o consumo dos terminais (su
   const now = 50_000_000;
   assert.equal(G.liveMood({ working: 1, lastActive: now - 1000, now }), 'working', 'um terminal com tokens recentes conta como trabalhando');
   assert.ok(G.TOKEN_FRESH_MS >= 5000 && G.TOKEN_FRESH_MS <= 30_000);
+});
+
+test('vai parando aos poucos: martela -> últimos golpes -> (comemora) -> esfria -> parado -> com sono -> cochila', () => {
+  const t0 = 80_000_000, at = (ms, extra = {}) => G.liveMood({ lastActive: t0, now: t0 + ms, ...extra });
+  assert.equal(G.liveMood({ working: 1, lastActive: t0 - 5 * 60_000, now: t0 }), 'working', 'trabalhando vale mais que qualquer horário antigo');
+  assert.equal(at(0), 'slowing'); assert.equal(at(G.SLOW_MS - 1), 'slowing');
+  assert.equal(at(G.SLOW_MS), 'cooling', 'sem fim de trabalho (os tokens só pararam): esfria direto, sem comemorar');
+  assert.equal(at(G.SLOW_MS, { lastEnd: t0 }), 'cheer'); assert.equal(at(G.SLOW_MS + G.CHEER_MS - 1, { lastEnd: t0 }), 'cheer');
+  assert.equal(at(G.SLOW_MS + G.CHEER_MS, { lastEnd: t0 }), 'cooling', 'a comemoração acaba e ele esfria');
+  assert.equal(at(G.SLOW_MS, { lastEnd: t0 - 60_000 }), 'cooling', 'um fim de trabalho antigo não faz comemorar de novo');
+  assert.equal(at(G.COOL_MS - 1), 'cooling'); assert.equal(at(G.COOL_MS), 'idle');
+  assert.equal(at(G.SLEEP_AFTER_MS - G.DROWSY_MS - 1), 'idle'); assert.equal(at(G.SLEEP_AFTER_MS - G.DROWSY_MS), 'drowsy'); assert.equal(at(G.SLEEP_AFTER_MS), 'sleep');
+  assert.equal(G.liveMood({ now: t0 }), 'sleep', 'nada nesta sessão: cochilando');
+  assert.equal(G.liveMood({ lastEnd: t0 - 1000, now: t0 }), 'cheer', 'fim de trabalho sem instante ativo conhecido: comemora');
+  assert.equal(G.liveMood({ lastActive: t0 + 5000, now: t0 }), 'slowing', 'relógio que andou para trás não quebra a sequência');
+});
+
+test('ao vivo pelos tokens: subiu agora = rajada; para TOKEN_FRESH_MS depois da última subida e então desacelera', () => {
+  const t0 = 90_000_000, st = (ms, extra = {}) => G.liveState({ tokensAt: t0, now: t0 + ms, ...extra });
+  assert.deepEqual(st(500), { mood: 'working', burst: true });
+  assert.deepEqual(st(G.BURST_MS), { mood: 'working', burst: false }, 'ainda trabalhando, mas sem rajada');
+  assert.equal(st(G.TOKEN_FRESH_MS).mood, 'slowing', 'os tokens pararam: começa a desacelerar a partir daí, não pula a desaceleração');
+  assert.equal(st(G.TOKEN_FRESH_MS + G.SLOW_MS).mood, 'cooling');
+  assert.deepEqual(G.liveState({ working: 1, now: t0 }), { mood: 'working', burst: false }, 'agente executando sem tokens novos: martela no ritmo normal');
+  assert.equal(G.liveState({ lastActive: t0, now: t0 + 1000 }).mood, 'slowing', 'o último agente acabou de parar');
+  assert.equal(G.liveState({ now: t0 }).mood, 'sleep');
+});
+
+test('agentes executando e esperando você pelo MESMO estado dos indicadores (hooks antes da saída)', () => {
+  const run = (id, agent, extra = {}) => ({ id, status: 'running', agent: agent ? { state: agent } : null, ...extra });
+  const sessions = [run('a', 'running'), run('b', 'idle'), run('c', 'waiting'), run('d', null), run('e', null), { id: 'f', status: 'exited', exitCode: 0 }, null];
+  assert.deepEqual(G.liveCounts(sessions, new Set(['b', 'd'])), { working: 2, waiting: 1 }, "o hook diz 'idle' em b: a saída crescendo (redesenho) não conta; d sem hooks conta pela saída");
+  assert.deepEqual(G.liveCounts(null, null), { working: 0, waiting: 0 });
 });
 
 test('pixel art: cada fase é uma grade com corpo, olhos e efeitos dentro dela; letras só da paleta; fases crescem', async () => {

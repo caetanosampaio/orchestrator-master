@@ -11,6 +11,7 @@ import WorkspaceDialog from './components/WorkspaceDialog.jsx';
 import SessionsDialog from './components/SessionsDialog.jsx';
 import { useStore } from './store.jsx';
 import { startGolem, useGolemLive } from './use-golem.js';
+import { liveCounts } from './golem.js';
 import { nav } from './api.js';
 import { useFlows } from './use-flows.js';
 import { createTerminalStream } from './terminal-stream.js';
@@ -58,7 +59,8 @@ export default function App() {
   // Missões v2 (flows): um único polling serve a página Missões e o indicador da barra lateral (visível em qualquer página). `flowsSeenAt` = quando você viu Missões pela última vez: run que termina depois disso aparece como "concluída/falhou" na sidebar até você abrir a página.
   const flowsData = useFlows({ intervalMs: 2500 });
   useEffect(() => { startGolem(); }, []); // o golem de liga: cresce com os tokens de todas as IAs (com o histórico) e reage ao trabalho ao vivo
-  useGolemLive({ workingIds, workEnds, sessions: terminals?.sessions, notify }); // martela enquanto há tokens sendo gastos (terminal trabalhando ou consumo subindo), comemora no fim e avisa quando evolui
+  const golemLive = useMemo(() => liveCounts(terminals?.sessions, workingIds), [terminals, workingIds]);
+  useGolemLive({ working: golemLive.working, waiting: golemLive.waiting, workEnds, sessions: terminals?.sessions, notify }); // martela enquanto há tokens sendo gastos (agente executando ou consumo subindo), vai parando aos poucos, comemora no fim e avisa quando evolui
   const [flowsSeenAt, setFlowsSeenAt] = useState(() => Date.now());
   useEffect(() => { if (view === 'missions') setFlowsSeenAt(Date.now()); }, [view, flowsData.flows]);
   const flowTermIds = useMemo(() => flowTerminalIds(flowsData.flows), [flowsData.flows]); // terminais das missões: só aparecem na página Missões

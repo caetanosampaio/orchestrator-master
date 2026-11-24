@@ -1,6 +1,7 @@
 // Golem de liga (Configurações > Golem): lógica PURA (sem React, sem rede). O golem é forjado pelo seu trabalho: cresce com os tokens (entrada + saída, sem cache) de TODAS
 // as IAs da máquina, desde o primeiro dia (GET /api/provider-activity?days=0), e a LIGA de que ele é feito é a sua mistura de IAs (cada IA é um metal). Nada de cuidar:
 // ele nunca adoece nem some. Testado em server/test/golem.test.mjs.
+import { paneState } from './env-view.js';
 
 /** Fases, do carvão ao titã. `min` = tokens para chegar nela (escala pensada para ~300 mil tokens/dia: o aço em semanas, o titã em meses). */
 export const STAGES = Object.freeze([
@@ -105,24 +106,52 @@ export function fmtTokens(n) {
 }
 
 /**
- * Estado ao vivo: 'working' (há agentes executando: juntas em brasa e faíscas), 'cheer' (um trabalho acabou de terminar), 'idle' (parado há pouco) ou
- * 'sleep' (nada há 20 min ou mais). `lastActive` = ms da última vez em que algum agente estava trabalhando (null = ainda não nesta sessão).
+ * Estado ao vivo, como uma forja que esfria aos poucos. Trabalhando = algum agente executando (o mesmo estado dos indicadores do Cockpit) OU tokens subindo há menos
+ * de TOKEN_FRESH_MS. Quando para, ele NÃO congela de uma vez: 'working' (martela) -> 'slowing' (os últimos golpes, cada vez mais lentos) -> 'cheer' (só se um trabalho
+ * terminou: pula de alegria) -> 'cooling' (solta vapor, as brasas baixam) -> 'idle' (respira, olha em volta) -> 'drowsy' (pálpebras pesadas) -> 'sleep' (cochila).
+ * `lastActive` = ms do último instante em que havia trabalho (null = ainda não nesta sessão); `lastEnd` = ms do último fim de trabalho.
  */
-export const SLEEP_AFTER_MS = 20 * 60_000, CHEER_MS = 6000;
+export const SLEEP_AFTER_MS = 20 * 60_000, DROWSY_MS = 2 * 60_000, SLOW_MS = 2500, CHEER_MS = 4000, COOL_MS = 20_000;
 export function liveMood({ working = 0, lastActive = null, lastEnd = null, now = Date.now() } = {}) {
   if (working > 0) return 'working';
-  if (lastEnd !== null && now - lastEnd < CHEER_MS) return 'cheer';
-  if (lastActive === null || now - lastActive >= SLEEP_AFTER_MS) return 'sleep';
-  return 'idle';
+  if (lastActive === null) return lastEnd !== null && now - lastEnd < CHEER_MS ? 'cheer' : 'sleep';
+  const since = Math.max(0, now - lastActive);
+  if (since < SLOW_MS) return 'slowing';
+  // o fim do trabalho chega junto do último instante ativo (ou um pouco antes/depois, conforme a consulta): comemora logo depois dos últimos golpes
+  if (lastEnd !== null && lastEnd >= lastActive - 5000 && now - Math.max(lastEnd, lastActive + SLOW_MS) < CHEER_MS) return 'cheer';
+  if (since < COOL_MS) return 'cooling';
+  if (since < SLEEP_AFTER_MS - DROWSY_MS) return 'idle';
+  return since < SLEEP_AFTER_MS ? 'drowsy' : 'sleep';
 }
 /** Total de tokens (entrada + saída) dos terminais abertos, pelo consumo que o servidor mede de cada um (o mesmo número do Cockpit). Subiu = há tokens sendo gastos. */
 export const sessionTokens = (sessions) => (Array.isArray(sessions) ? sessions : []).reduce((a, s) => {
   const u = s?.usage, n = Number.isFinite(u?.io) ? u.io : Number.isFinite(u?.input) && Number.isFinite(u?.output) ? u.input + u.output : 0;
   return a + (n > 0 ? n : 0);
 }, 0);
-/** Tokens subiram há menos que isso = ainda trabalhando (o consumo dos terminais chega a cada poucos segundos). */
-export const TOKEN_FRESH_MS = 12_000;
-export const MOOD_LABEL = Object.freeze({ working: 'forjando', cheer: 'comemorando', idle: 'esfriando', sleep: 'cochilando' });
+/** Tokens subiram há menos que isso = ainda trabalhando (o consumo chega a cada 1,5 s, mas o transcript só grava ao fim de cada mensagem do agente). */
+export const TOKEN_FRESH_MS = 6000;
+/** Tokens subiram há menos que isso = rajada: ele martela mais rápido e solta mais faíscas. */
+export const BURST_MS = 3000;
+/** Humor efetivo e se está numa rajada. `tokensAt` = ms da última subida de tokens; `working` = agentes executando agora. */
+export function liveState({ working = 0, tokensAt = null, lastActive = null, lastEnd = null, now = Date.now() } = {}) {
+  const fresh = tokensAt !== null && now - tokensAt < TOKEN_FRESH_MS;
+  const active = working > 0 || fresh;
+  // sem agente executando, o trabalho "acabou" quando os tokens deixaram de ser frescos (não no instante da última subida)
+  const last = active ? now : Math.max(lastActive ?? -Infinity, tokensAt !== null ? tokensAt + TOKEN_FRESH_MS : -Infinity);
+  const mood = liveMood({ working: active ? 1 : 0, lastActive: Number.isFinite(last) ? last : null, lastEnd, now });
+  return { mood, burst: mood === 'working' && tokensAt !== null && now - tokensAt < BURST_MS };
+}
+/** Terminais executando e esperando você, pelo MESMO estado dos indicadores do Cockpit (paneState: hooks do agente; sem hooks, `workingIds` pela saída). */
+export function liveCounts(sessions, workingIds) {
+  let working = 0, waiting = 0;
+  for (const s of Array.isArray(sessions) ? sessions : []) {
+    if (!s || typeof s !== 'object') continue;
+    const st = paneState(s, workingIds instanceof Set ? workingIds : new Set());
+    if (st === 'working') working++; else if (st === 'waiting') waiting++;
+  }
+  return { working, waiting };
+}
+export const MOOD_LABEL = Object.freeze({ working: 'forjando', slowing: 'diminuindo o ritmo', cheer: 'comemorando', cooling: 'esfriando', idle: 'descansando', drowsy: 'com sono', sleep: 'cochilando' });
 
 /** Nome: até 20 caracteres, sem caracteres de controle. */
 export const NAME_MAX = 20;
