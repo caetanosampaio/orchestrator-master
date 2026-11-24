@@ -1,25 +1,27 @@
 // Golem de liga (Configurações > Golem): o golem cresce com os tokens de todas as IAs (calculado no cliente a partir de GET /api/provider-activity) e
-// aqui só se guarda o que é do usuário: o NOME e a última fase que ele já viu (`seenStage`), para a animação de evolução tocar uma vez só, mesmo trocando de navegador
-// ou de porta do app. Validação estrita; falha ao gravar desfaz (padrão saveOrThrow + rollback).
+// aqui só se guarda o que é do usuário: o NOME, a última fase que ele já viu (`seenStage`, para a animação de evolução tocar uma vez só, mesmo trocando de navegador
+// ou de porta do app) e a forma que ele escolheu exibir (`shownStage`; null = a fase atual). Exibir só uma forma JÁ desbloqueada é conferido no cliente, que sabe os tokens. Validação estrita; falha ao gravar desfaz (padrão saveOrThrow + rollback).
 import * as store from './store.js';
 
 export const NAME_MAX = 20, MAX_STAGE = 6;
 const isObj = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 const CONTROL = /[\p{Cc}\p{Cf}]/u;
 
-/** Leitura tolerante de db.golem: { name, seenStage (0..6 ou null) }. */
+const stageOrNull = (v) => (Number.isInteger(v) && v >= 0 && v <= MAX_STAGE ? v : null);
+/** Leitura tolerante de db.golem: { name, seenStage, shownStage } (fases 0..6 ou null). */
 export function readGolem(db) {
   const r = isObj(db.golem) ? db.golem : {};
   return {
     name: typeof r.name === 'string' && r.name.length <= NAME_MAX && !CONTROL.test(r.name) ? r.name : '',
-    seenStage: Number.isInteger(r.seenStage) && r.seenStage >= 0 && r.seenStage <= MAX_STAGE ? r.seenStage : null,
+    seenStage: stageOrNull(r.seenStage),
+    shownStage: stageOrNull(r.shownStage),
   };
 }
 
-/** Corpo do PUT (parcial): { name?, seenStage? }. Devolve { patch } ou { error }; nada é corrigido em silêncio. */
+/** Corpo do PUT (parcial): { name?, seenStage?, shownStage? (null = a atual) }. Devolve { patch } ou { error }; nada é corrigido em silêncio. */
 export function validateGolemPatch(b) {
   if (!isObj(b)) return { error: 'O corpo deve ser um objeto.' };
-  const extra = Object.keys(b).filter((k) => k !== 'name' && k !== 'seenStage');
+  const extra = Object.keys(b).filter((k) => !['name', 'seenStage', 'shownStage'].includes(k));
   if (extra.length) return { error: `Propriedades não permitidas: ${extra.join(', ')}.` };
   const patch = {};
   if (b.name !== undefined) {
@@ -30,10 +32,14 @@ export function validateGolemPatch(b) {
     if (!Number.isInteger(b.seenStage) || b.seenStage < 0 || b.seenStage > MAX_STAGE) return { error: `seenStage deve ser um inteiro de 0 a ${MAX_STAGE}.` };
     patch.seenStage = b.seenStage;
   }
+  if (b.shownStage !== undefined) {
+    if (b.shownStage !== null && (!Number.isInteger(b.shownStage) || b.shownStage < 0 || b.shownStage > MAX_STAGE)) return { error: `shownStage deve ser null ou um inteiro de 0 a ${MAX_STAGE}.` };
+    patch.shownStage = b.shownStage;
+  }
   return { patch };
 }
 
-/** GET /api/golem e PUT /api/golem { name?, seenStage? }. */
+/** GET /api/golem e PUT /api/golem { name?, seenStage?, shownStage? }. */
 export function setupGolem(app, { db, save = store.saveOrThrow } = {}) {
   app.get('/api/golem', (req, res) => res.set('Cache-Control', 'no-store').json(readGolem(db)));
   app.put('/api/golem', (req, res) => {

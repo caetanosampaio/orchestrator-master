@@ -62,10 +62,11 @@ test('humor ao vivo, tokens em texto, nome e a evolução acumulada', () => {
 });
 
 test('servidor: leitura tolerante e validação estrita do PUT', () => {
-  assert.deepEqual(readGolem({}), { name: '', seenStage: null });
-  assert.deepEqual(readGolem({ golem: { name: 'a\u0007', seenStage: 9 } }), { name: '', seenStage: null }, 'banco editado à mão: inválido volta ao padrão');
+  assert.deepEqual(readGolem({}), { name: '', seenStage: null, shownStage: null });
+  assert.deepEqual(readGolem({ golem: { name: 'a\u0007', seenStage: 9, shownStage: -2 } }), { name: '', seenStage: null, shownStage: null }, 'banco editado à mão: inválido volta ao padrão');
+  assert.deepEqual(validateGolemPatch({ shownStage: null }).patch, { shownStage: null }, 'null volta para a fase atual'); assert.deepEqual(validateGolemPatch({ shownStage: 2 }).patch, { shownStage: 2 });
   assert.deepEqual(validateGolemPatch({ name: '  Bigorna ', seenStage: 3 }).patch, { name: 'Bigorna', seenStage: 3 });
-  for (const bad of [null, [], { x: 1 }, { name: 5 }, { name: 'a'.repeat(21) }, { name: 'a\nb' }, { seenStage: 7 }, { seenStage: -1 }, { seenStage: 1.5 }, { seenStage: '2' }]) assert.ok(validateGolemPatch(bad).error, JSON.stringify(bad));
+  for (const bad of [null, [], { x: 1 }, { name: 5 }, { name: 'a'.repeat(21) }, { name: 'a\nb' }, { seenStage: 7 }, { seenStage: -1 }, { seenStage: 1.5 }, { seenStage: '2' }, { shownStage: 7 }, { shownStage: 'x' }, { shownStage: false }]) assert.ok(validateGolemPatch(bad).error, JSON.stringify(bad));
 });
 
 test('rotas: GET padrão, PUT parcial (nome e fase vista) e rollback quando a gravação falha', async () => {
@@ -76,9 +77,10 @@ test('rotas: GET padrão, PUT parcial (nome e fase vista) e rollback quando a gr
   const base = `http://127.0.0.1:${srv.address().port}`;
   const call = async (method, body) => { const res = await fetch(`${base}/api/golem`, { method, headers: body ? { 'content-type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined }); return { status: res.status, body: await res.json() }; };
   try {
-    assert.deepEqual((await call('GET')).body, { name: '', seenStage: null });
-    assert.deepEqual((await call('PUT', { name: 'Bigorna' })).body, { name: 'Bigorna', seenStage: null });
-    assert.deepEqual((await call('PUT', { seenStage: 3 })).body, { name: 'Bigorna', seenStage: 3 }, 'parcial: o nome fica');
+    assert.deepEqual((await call('GET')).body, { name: '', seenStage: null, shownStage: null });
+    assert.deepEqual((await call('PUT', { name: 'Bigorna' })).body, { name: 'Bigorna', seenStage: null, shownStage: null });
+    assert.deepEqual((await call('PUT', { seenStage: 3 })).body, { name: 'Bigorna', seenStage: 3, shownStage: null }, 'parcial: o nome fica');
+    assert.deepEqual((await call('PUT', { shownStage: 1 })).body, { name: 'Bigorna', seenStage: 3, shownStage: 1 });
     assert.equal((await call('PUT', { seenStage: 3, tokens: 1e9 })).status, 400, 'os tokens não entram pelo PUT (vêm da atividade real)');
     st.fail = true; const before = JSON.stringify(db.golem);
     assert.equal((await call('PUT', { name: 'Outro' })).status, 500); assert.equal(JSON.stringify(db.golem), before);

@@ -3,10 +3,10 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { api } from './api.js';
 import { normalizeActivity } from './home-view.js';
-import { stageFor, totalsByProvider, alloyOf, records, liveMood, cleanName, STAGES } from './golem.js';
+import { stageFor, totalsByProvider, alloyOf, records, liveMood, cleanName, shownIndex, STAGES } from './golem.js';
 
 const POLL_MS = 30_000;
-let snap = { activity: null, name: '', seenStage: null, loaded: false, error: null, working: 0, lastActive: null, lastEnd: null, tick: 0 };
+let snap = { activity: null, name: '', seenStage: null, shownStage: null, loaded: false, error: null, working: 0, lastActive: null, lastEnd: null, tick: 0 };
 const subs = new Set();
 const set = (patch) => { snap = { ...snap, ...patch }; for (const f of subs) f(); };
 let started = false;
@@ -19,7 +19,7 @@ async function loadActivity() {
   } catch (e) { if (!snap.activity) set({ error: e?.status === 404 ? 'Este servidor ainda não conta os tokens. Atualize o FORGE.' : 'Sem conexão com o servidor do FORGE.' }); }
 }
 async function loadGolem() {
-  try { const g = await api.get('/api/golem'); set({ name: typeof g?.name === 'string' ? g.name : '', seenStage: Number.isInteger(g?.seenStage) ? g.seenStage : null }); } catch { /* sem a rota: nome vazio, sem animação gravada */ }
+  try { const g = await api.get('/api/golem'); set({ name: typeof g?.name === 'string' ? g.name : '', seenStage: Number.isInteger(g?.seenStage) ? g.seenStage : null, shownStage: Number.isInteger(g?.shownStage) ? g.shownStage : null }); } catch { /* sem a rota: nome vazio, sem animação gravada */ }
   set({ loaded: true });
 }
 
@@ -36,15 +36,17 @@ export const golemActions = {
   async rename(name) { const n = cleanName(name); const g = await api.put('/api/golem', { name: n }); set({ name: g.name }); },
   /** Grava a fase já mostrada (a animação de evolução não toca de novo). */
   async markSeen(index) { set({ seenStage: index }); try { await api.put('/api/golem', { seenStage: index }); } catch { /* tenta de novo na próxima abertura */ } },
+  /** Forma exibida (só as já desbloqueadas; null = sempre a fase atual). Muda na hora e grava; falha volta ao que era. */
+  async show(index) { const prev = snap.shownStage; set({ shownStage: index }); try { await api.put('/api/golem', { shownStage: index }); } catch { set({ shownStage: prev }); } },
   refresh: loadActivity,
 };
 
 /** Visão calculada: fase, liga, recordes e humor ao vivo. */
 export function golemView(s = snap, now = Date.now()) {
-  const totals = totalsByProvider(s.activity), rec = records(s.activity, new Date(now));
+  const totals = totalsByProvider(s.activity), rec = records(s.activity, new Date(now)), st = stageFor(rec.total);
   return {
     loaded: s.loaded && s.activity !== null, error: s.error, name: s.name, seenStage: s.seenStage,
-    totals, total: rec.total, records: rec, ...stageFor(rec.total), alloy: alloyOf(totals),
+    totals, total: rec.total, records: rec, ...st, shown: shownIndex(s.shownStage, st.index), chosen: s.shownStage, alloy: alloyOf(totals),
     mood: liveMood({ working: s.working, lastActive: s.lastActive, lastEnd: s.lastEnd, now }), working: s.working, stages: STAGES,
   };
 }

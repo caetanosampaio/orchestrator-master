@@ -121,6 +121,9 @@ export const MOOD_LABEL = Object.freeze({ working: 'forjando', cheer: 'comemoran
 export const NAME_MAX = 20;
 export const cleanName = (s) => (typeof s === 'string' ? s.replace(/[\p{Cc}\p{Cf}]/gu, '').trim().slice(0, NAME_MAX) : '');
 
+/** Forma exibida: a escolhida pelo usuário, se ele já a desbloqueou (fase <= a atual); senão a fase atual. Nunca mostra uma forma ainda bloqueada. */
+export const shownIndex = (chosen, current) => (Number.isInteger(chosen) && chosen >= 0 && chosen <= current ? chosen : current);
+
 /** Fases que o golem atravessou desde a última vista (`seen` = índice já mostrado; null = nunca viu: anima do começo). Lista de índices a animar, em ordem. */
 export function evolutionSteps(seen, current) {
   const from = Number.isInteger(seen) && seen >= 0 ? seen : 0;
