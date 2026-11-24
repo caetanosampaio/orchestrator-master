@@ -7,7 +7,7 @@ import { useStore } from '../store.jsx';
 import { usePrefs, useLayouts, useLayoutMode, useAutoRestore } from '../hooks.js';
 import { orderSessions, mergeOrder, sameList, EMPTY as EMPTY_LAYOUT } from '../layout-state.js';
 import { historyRows, resumeBody, needsConfigAck, restorePlan, batchSummary, lastShutdownRestore, attemptKey } from '../session-history.js';
-import { accountTagName } from '../accounts-view.js';
+import { paneAccountTag, accountsOf, pickAccount } from '../accounts-view.js';
 import { Btn, Icon } from './ui.jsx';
 import { paneUsage, squadUsage } from '../usage-view.js';
 import { createTerminalStream, isOld } from '../terminal-stream.js';
@@ -33,7 +33,7 @@ const STATE_LABEL = { working: 'executando', idle: 'ocioso', done: 'concluído',
 /** Um pane = um terminal xterm ligado ao PTY do servidor: saída por SSE, entrada e tamanho por POST (nunca WebSocket: passa pela checagem de Host/Origin). */
 export function TerminalPane({ session, role, state, waiting, maximized, fontSize, stream, onClose, onMaximize, onFocus }) {
   const { noteInteraction, notify, accounts } = useStore();
-  const accTag = accountTagName(session.accountId, accounts); // só contas que não são a Sistema
+  const accTag = paneAccountTag(session, accounts); // só quando o provider do terminal tem mais de uma conta
   const hostRef = useRef(null), termRef = useRef(null), fitRef = useRef(null);
   const id = session.id, running = session.status === 'running';
   const runningRef = useRef(running); runningRef.current = running;
@@ -195,9 +195,12 @@ function TermTab({ s, state, on, onPick, onClose }) {
 }
 
 export default function TerminalGrid({ onOpenWorkspaces, onOpenSettings, onOpenSessions, stream: shared = null, liveOpen = false, onToggleLive = null, narrow = false, onMenu = null, menuIcon = 'menu', focusRequest = null, onFocusHandled = null, hiddenIds = null }) {
-  const { state, notify, terminals, maestro, setMaestro, workingIds, loadTerminals } = useStore();
+  const { state, notify, terminals, maestro, setMaestro, workingIds, loadTerminals, accounts, lastAccount, loadAccounts } = useStore();
   const [prefs, setPref] = usePrefs();
   const [busy, setBusy] = useState(false);
+  // Conta por provider ao abrir terminais: a escolhida no seletor (nesta sessão da tela), senão a última usada (servidor). Sem nenhuma das duas, o servidor escolhe a única ou responde account_required.
+  const [chosenAccount, setChosenAccount] = useState({});
+  const accountFor = (p) => pickAccount({ accounts, provider: p, chosen: chosenAccount[p], lastUsed: lastAccount });
   const sq = useSquads(); // equipes salvas (/api/team-templates); a gestão delas mora em Configurações > Equipes
   const [launchingId, setLaunchingId] = useState(null);
   const [layouts, layoutActions, layoutsReady] = useLayouts(); // layout por workspace (ordem, ampliado, trilhas), no servidor
@@ -304,7 +307,8 @@ export default function TerminalGrid({ onOpenWorkspaces, onOpenSettings, onOpenS
       // Worktree DESLIGADO = automático: o servidor dá worktree próprio a cada agente que edita assim que há mais de um no workspace (qualquer agente); LIGADO = worktree sempre, um squad compartilha UM.
       // time salvo/pronto: `templateId` + `slotIndex` da vaga (sempre os dois juntos) e o servidor aplica as skills e a instrução do time, conferindo papel e agente da vaga
       const slotOfTeam = (i) => (templateId && Number.isInteger(slotIndexes?.[i]) ? { templateId, slotIndex: slotIndexes[i] } : {});
-      const spawn = (r, i, ack, squadId) => api.post('/api/terminals', { role: r, provider: (perSlot && perSlot[i]) || useProvider, ...(perModel?.[i] ? { model: perModel[i] } : {}), ...(perEffort?.[i] ? { effort: perEffort[i] } : {}), ...slotOfTeam(i), isolate: isolate ? true : 'auto', ...(!isolate && editors > 1 ? { expectEditors: editors } : {}), ...(squadId ? { squadId } : {}), workspaceId: ws.id, topicId, ...(ack ? { acknowledgeProjectConfig: true } : {}), ...(n ? { title: `${byRole[r]?.label ?? r} S${n}.${i + 1}` } : {}) });
+      const accOf = (i) => { const id = accountFor((perSlot && perSlot[i]) || useProvider); return id ? { accountId: id } : {}; };
+      const spawn = (r, i, ack, squadId) => api.post('/api/terminals', { role: r, provider: (perSlot && perSlot[i]) || useProvider, ...accOf(i), ...(perModel?.[i] ? { model: perModel[i] } : {}), ...(perEffort?.[i] ? { effort: perEffort[i] } : {}), ...slotOfTeam(i), isolate: isolate ? true : 'auto', ...(!isolate && editors > 1 ? { expectEditors: editors } : {}), ...(squadId ? { squadId } : {}), workspaceId: ws.id, topicId, ...(ack ? { acknowledgeProjectConfig: true } : {}), ...(n ? { title: `${byRole[r]?.label ?? r} S${n}.${i + 1}` } : {}) });
       // Worktree: um squad inteiro compartilha UM worktree. O 1º terminal o cria; os outros entram nele (esperam o 1º para saber o id). Terminal avulso continua com o seu.
       let rs;
       if (isolate && squad && list.length > 1) {
@@ -321,8 +325,9 @@ export default function TerminalGrid({ onOpenWorkspaces, onOpenSettings, onOpenS
       }
       for (const x of rs) if (x.status === 'fulfilled' && x.value?.warning) notify(x.value.warning, 'error'); // ex.: sem Git, o isolamento automático não pôde criar o worktree
       const bad = rs.filter((r) => r.status === 'rejected');
-      if (bad.length) notify(`${bad.length} de ${list.length} terminais não abriram: ${bad[0].reason?.message ?? 'erro'}`, 'error');
-    } finally { opening.current = false; setBusy(false); loadTerminals(); }
+      const needAccount = bad.some((x) => x.reason?.code === 'account_required') ? ' Escolha a conta no seletor da barra do workspace.' : bad.some((x) => ['no_account', 'account_disconnected'].includes(x.reason?.code)) ? ' Veja Configurações > Contas.' : '';
+      if (bad.length) notify(`${bad.length} de ${list.length} terminais não abriram: ${bad[0].reason?.message ?? 'erro'}${needAccount}`, 'error');
+    } finally { opening.current = false; setBusy(false); loadTerminals(); loadAccounts?.(); } // o servidor lembra a última conta usada: relê para o seletor
     return true;
   };
   // ---- equipes ----
@@ -390,6 +395,19 @@ export default function TerminalGrid({ onOpenWorkspaces, onOpenSettings, onOpenS
             <label className="oc-iso fx-switch" title="Desligado (automático): cada agente que edita ganha um worktree Git próprio assim que há mais de um no workspace, sem conflito de arquivos (sem Git, abre na pasta normal e avisa). Ligado: sempre worktree, e um squad inteiro compartilha UM (os terminais do squad editam os mesmos arquivos). Exige repositório Git.">
               <input type="checkbox" role="switch" checked={isolate} onChange={(e) => setPref('isolate', e.target.checked)} /><span className="oc-switch-track" aria-hidden="true"><i /></span>Worktree
             </label>
+            {/* Seletor de conta: só para a IA com MAIS de uma conta (com uma só, o servidor usa ela). Vale para os próximos terminais desta IA, avulsos ou de equipe. */}
+            {providers.filter((p) => p.available && accountsOf(accounts, p.id).length > 1).map((p) => {
+              const cur = accountFor(p.id) ?? '';
+              return (
+                <label key={p.id} className="acc-tbx" title={`Conta do ${p.label} nos próximos terminais`}>
+                  <ProviderLogo id={p.id} size={12} />
+                  <select value={cur} aria-label={`Conta do ${p.label} nos próximos terminais`} onChange={(e) => setChosenAccount((c) => ({ ...c, [p.id]: e.target.value || null }))}>
+                    {!cur && <option value="">Escolher conta…</option>}
+                    {accountsOf(accounts, p.id).map((a) => <option key={a.id} value={a.id}>{a.label}{a.home === 'machine' ? ' (deste computador)' : ''}</option>)}
+                  </select>
+                </label>
+              );
+            })}
             {total.panes > 0 && <span className="oc-total" title={total.partialCost ? 'Há panes sem custo conhecido: o total em dólares não é exibido. Crie data/pricing.json com os preços por modelo (USD por milhão de tokens) para ver o custo.' : total.cost === '—' ? 'Custo indisponível: crie data/pricing.json com os preços por modelo (USD por milhão de tokens).' : 'Soma dos terminais deste workspace'}>{total.tokens} tok · {total.cost}</span>}
             {mine.length > 1 && <Btn kind="quiet" disabled={busy} onClick={closeAll} title="Encerrar todos os terminais deste workspace (pede confirmação)" aria-label="Encerrar todos">Encerrar<span className="tbx-l"> todos</span></Btn>}
             {maestro && (maestro.autonomous || maestro.tasks.length > 0 || mine.some((x) => x.role === 'maestro' && x.status === 'running')) && <MaestroPopover onOpenSettings={onOpenSettings} />}

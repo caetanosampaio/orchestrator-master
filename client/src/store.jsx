@@ -4,6 +4,7 @@ import { createActivityTracker } from './activity.js';
 import { createWorkEndTracker, finishedStamps, unseenFinished } from './workspace-nav.js';
 import { paneState } from './env-view.js';
 import { withoutFlowTerminals } from './flow-terminals.js';
+import { normalizeAccounts } from './accounts-view.js';
 
 const Ctx = createContext(null);
 export const useStore = () => useContext(Ctx);
@@ -76,12 +77,12 @@ export function StoreProvider({ children }) {
   }, []);
   // Contas (etiqueta no terminal e aba Contas). Servidor antigo sem a rota: lista vazia, sem erro na tela.
   const [accounts, setAccounts] = useState([]);
+  const [lastAccount, setLastAccount] = useState({}); // { [provider]: id }: última conta usada (pré-seleção do seletor de conta do Cockpit)
   const lastA = useRef('');
   const loadAccounts = useCallback(async () => {
     try {
-      const d = await api.get('/api/accounts?status=0'); // só nomes: o status completo fica com a aba Contas
-      const list = Array.isArray(d?.accounts) ? d.accounts : [];
-      const j = JSON.stringify(list); if (j !== lastA.current) { lastA.current = j; setAccounts(list); }
+      const d = normalizeAccounts(await api.get('/api/accounts?status=0')); // só nomes: o status completo fica com a aba Contas
+      const j = JSON.stringify([d.accounts, d.lastUsed]); if (j !== lastA.current) { lastA.current = j; setAccounts(d.accounts); setLastAccount(d.lastUsed); }
     } catch { /* sem a rota ou fora do ar: mantém o último */ }
   }, []);
   useEffect(() => {
@@ -123,6 +124,6 @@ export function StoreProvider({ children }) {
   const selectTopic = (workspaceId, topicId) => act(() => (topicId ? nav.activateTopic(topicId) : nav.activateGeneral(workspaceId)));
 
   return (
-    <Ctx.Provider value={{ ...data, openWorkspaceIds, topics, activeTopicIds, selectTopic, error, refresh, act, notify, toast, terminals, maestro, setMaestro: updateMaestro, workingIds, loadTerminals, noteInteraction, unseenWs, setHiddenTerminals, accounts, loadAccounts }}>{children}</Ctx.Provider>
+    <Ctx.Provider value={{ ...data, openWorkspaceIds, topics, activeTopicIds, selectTopic, error, refresh, act, notify, toast, terminals, maestro, setMaestro: updateMaestro, workingIds, loadTerminals, noteInteraction, unseenWs, setHiddenTerminals, accounts, lastAccount, loadAccounts }}>{children}</Ctx.Provider>
   );
 }
