@@ -9,6 +9,10 @@ import { elapsed, shortPath } from '../forge-shell.js';
 import { flowsActivity } from '../flows-view.js';
 import { withoutFlowTerminals } from '../flow-terminals.js';
 import { logoSvg } from '../forge-logo.mjs';
+import GolemSprite from './GolemSprite.jsx';
+import { useGolem } from '../use-golem.js';
+import { MOOD_LABEL } from '../golem.js';
+import '../golem.css';
 
 const BRAND = logoSvg({ variant: 'mark', ink: 'currentColor', stroke: 3 }); // SVG fixo gerado do código (nenhum dado externo entra nele)
 
@@ -111,6 +115,20 @@ export const HomeIcon = () => <svg width={15} height={15} viewBox="0 0 24 24" fi
  * (Início, Missões, Terminais, Sessões) e os WORKSPACES em cartões, cada um com os seus terminais aninhados (glifo de estado em tempo real, agente, modelo e tempo).
  * Embaixo, as Configurações e "Arquivos" (abrir, trocar ou adicionar workspace). Em telas estreitas vira uma gaveta modal. Tudo vem de /api/state e /api/terminals.
  */
+/** O golem na barra lateral, acima do rodapé: a forma escolhida, flutuando e reagindo ao trabalho (juntas acesas e faíscas com agentes rodando). Abre Configurações > Golem. */
+function SideGolem({ onOpen }) {
+  const g = useGolem();
+  if (!g.loaded) return null;
+  const name = g.name || 'Golem', mood = g.mood === 'working' ? 'working' : g.mood === 'sleep' ? 'sleep' : 'idle';
+  const status = g.mood === 'working' ? `forjando · ${g.working} ${g.working === 1 ? 'agente' : 'agentes'}` : MOOD_LABEL[g.mood];
+  return (
+    <button type="button" className={`fx-golem${g.mood === 'working' ? ' working' : ''}`} onClick={onOpen} title={`${name} · ${g.stages[g.shown].label}${g.next ? ` · faltam ${Math.max(0, Math.round(g.toNext / 1000)).toLocaleString('pt-BR')} mil tokens para ${g.next.label}` : ''}`} aria-label={`Abrir o golem: ${name}, ${g.stages[g.shown].label}, ${status}`}>
+      <span className="fx-golem-art"><GolemSprite stage={g.shown} colors={g.alloy.colors} mood={mood} size={58} /></span>
+      <span className="fx-golem-t"><b>{name}</b><span><i aria-hidden="true" />{status}</span>{g.next && <span className="fx-golem-bar" aria-hidden="true"><u style={{ width: `${Math.round(g.progress * 100)}%` }} /></span>}</span>
+    </button>
+  );
+}
+
 export default function Sidebar({ modal = false, onClose, onOpenWorkspaces, onOpenSessions = null, onOpenSettings = null, view = 'cockpit', onView = () => {}, onOpenTerminal = null, flows = null, flowsSeenAt = 0, hiddenIds = null, onCollapse = null, desktop = false }) {
   const { workspaces, state, terminals, maestro, workingIds, openWorkspaceIds, act, unseenWs } = useStore();
   const box = useRef(null), searchRef = useRef(null);
@@ -210,6 +228,7 @@ export default function Sidebar({ modal = false, onClose, onOpenWorkspaces, onOp
           : <ul>{shown.map((e) => <EnvCard key={e.id} env={e} terms={termsOf.get(e.id) ?? []} now={now} editing={editId === e.id} onPick={pick} onEdit={setEditId} onSave={(t) => save(e, t)} onCancel={() => setEditId(null)} onOpenTerm={openTerm} />)}</ul>}
       </nav>
 
+      <SideGolem onOpen={() => onOpenSettings?.('golem')} />
       <div className="fx-side-foot">
         <button type="button" className={`fx-ibtn${view === 'settings' ? ' on' : ''}`} onClick={() => onOpenSettings?.()} aria-label="Configurações" title="Configurações"><Icon name="gear" size={15} /></button>
         <button type="button" className="fx-ibtn" onClick={onOpenWorkspaces} aria-label="Arquivos: abrir, trocar ou adicionar workspace" title="Arquivos: abrir, trocar ou adicionar workspace"><Icon name="folderOpen" size={15} /></button>

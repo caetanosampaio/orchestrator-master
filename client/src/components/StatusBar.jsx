@@ -10,10 +10,6 @@ import StatusGlyph from './StatusGlyph.jsx';
 import SystemStatus from './SystemStatus.jsx';
 import { ProviderPanel } from './LimitsStrip.jsx';
 import { Icon } from './ui.jsx';
-import GolemSprite from './GolemSprite.jsx';
-import { useGolem } from '../use-golem.js';
-import { MOOD_LABEL } from '../golem.js';
-import '../golem.css';
 
 /** "42% 2h 48m": uso da janela e quanto falta para ela reiniciar. Sem leitura = "—". */
 const win = (w, now) => (w ? `${Math.round(w.usedPct)}%${untilShort(w.resetsAt, now) ? ` ${untilShort(w.resetsAt, now)}` : ''}` : DASH);
@@ -34,18 +30,6 @@ function ProviderItem({ sum, now, refresh }) {
       </button>
       {open && <ProviderPanel sum={sum} now={now} anchor={btn} onClose={() => setOpen(false)} />}
     </>
-  );
-}
-
-/** O golem em miniatura: abre Configurações > Golem; brilha quando os agentes estão trabalhando. */
-function GolemBadge() {
-  const g = useGolem();
-  if (!g.loaded) return null;
-  const title = `${g.name || 'Golem'} · ${g.stage.label} · ${MOOD_LABEL[g.mood]}`;
-  return (
-    <button type="button" className={`fx-sb-i fx-sb-btn fx-sb-golem${g.mood === 'working' ? ' on' : ''}`} onClick={() => { location.hash = '#/settings/golem'; }} title={title} aria-label={`Abrir o golem (${title})`}>
-      <GolemSprite stage={g.index} colors={g.alloy.colors} mood={g.mood === 'working' ? 'working' : 'idle'} size={g.index >= 3 ? 16 : 13} />
-    </button>
   );
 }
 
@@ -74,7 +58,6 @@ export default function StatusBar({ liveOpen = false, onToggleLive = null }) {
       </div>
       <span className="grow" />
       <div className="fx-sb-g">
-        <GolemBadge />
         <span className="fx-sb-status"><SystemStatus limits={false} label={label} /></span>
         <span className="fx-sb-i dim" title={s.max ? `${s.ativos} de ${s.max} terminais em uso (todos os workspaces)` : `${s.ativos} terminais em uso`}><Icon name="terminal" size={13} />{s.max ? `${s.ativos}/${s.max}` : s.ativos}</span>
         <span className={`fx-sb-i${offline ? ' err' : ' dim'}`} role="status" title={offline ? 'Sem conexão com o servidor do FORGE' : 'Conectado ao servidor do FORGE'}><i className={`fx-sb-dot${offline ? ' off' : ''}`} aria-hidden="true" />{offline ? 'offline' : 'conectado'}</span>

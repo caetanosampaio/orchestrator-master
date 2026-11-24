@@ -1,97 +1,115 @@
-/* Golem de liga (Configurações > Golem): a forja (palco escuro com a fornalha ao fundo), o golem em vetor (GolemSprite.jsx) e os cartões de liga, recordes e fases. */
-.gm { display: grid; grid-template-columns: minmax(300px, 400px) minmax(0, 1fr); gap: 28px; align-items: start; }
-@media (max-width: 960px) { .gm { grid-template-columns: 1fr; } }
+/* Golem de liga (Configurações > Golem e a barra lateral): o golem em vetor (GolemSprite.jsx) SEM fundo, flutuando; a trilha de evolução; liga e recordes. */
+.gm { display: flex; flex-direction: column; gap: 22px; max-width: 980px; }
 
-/* ---------- a forja ---------- */
-.gm-forge { position: relative; display: flex; flex-direction: column; overflow: hidden; min-height: 400px; border: 1px solid rgba(255, 140, 60, .18); border-radius: 16px;
-  background: radial-gradient(120% 70% at 50% 108%, rgba(255, 110, 40, .38), rgba(255, 110, 40, .08) 45%, transparent 70%), radial-gradient(90% 60% at 50% 0%, #2a211c, #161211 70%); }
-.gm-forge::before { content: ""; position: absolute; left: 0; right: 0; bottom: 64px; height: 1px; background: linear-gradient(90deg, transparent, rgba(255, 170, 90, .35), transparent); }
-.gm-forge.m-working { border-color: rgba(255, 150, 60, .45); }
-.gm-forge.m-working::after { content: ""; position: absolute; inset: auto 0 0; height: 55%; background: radial-gradient(60% 80% at 50% 100%, rgba(255, 120, 40, .3), transparent 70%); animation: gm-heat 1.6s ease-in-out infinite; pointer-events: none; }
-.gm-forge.m-sleep { background: radial-gradient(120% 70% at 50% 108%, rgba(255, 110, 40, .12), transparent 60%), radial-gradient(90% 60% at 50% 0%, #1e1b1a, #121010 70%); }
-.gm-chip { position: absolute; z-index: 2; top: 12px; left: 12px; display: inline-flex; align-items: center; gap: 7px; padding: 4px 10px; border-radius: 999px; background: rgba(0, 0, 0, .4); color: #e8d9cc; font: 550 11.5px var(--sans, system-ui); }
-.gm-chip i { width: 7px; height: 7px; border-radius: 50%; background: #8a7f78; }
-.gm-chip.m-working i { background: #ffb347; box-shadow: 0 0 8px #ff8a3d; animation: gm-pulse 1s ease-in-out infinite; }
-.gm-chip.m-cheer i { background: #7be495; }
-.gm-chip.m-sleep i { background: #6f6fb0; }
-.gm-stage { position: relative; flex: 1; display: grid; place-items: end center; padding: 48px 12px 52px; }
-.gm-golem { display: block; line-height: 0; animation: gm-in .5s cubic-bezier(.2, .9, .3, 1.3) both; }
-.gm-forge.evolving .gm-golem { animation: gm-evolve .9s cubic-bezier(.2, .9, .3, 1.3) both; }
-.gm-flash { position: absolute; inset: 0; background: radial-gradient(circle at 50% 70%, rgba(255, 240, 200, .9), rgba(255, 170, 80, .35) 30%, transparent 60%); animation: gm-flash .9s ease-out forwards; pointer-events: none; }
-.gm-zzz { position: absolute; top: 70px; right: 30%; display: flex; gap: 3px; font: 800 15px var(--sans, system-ui); color: #9a9ad8; }
+/* ---------- herói: o golem flutuando, sem fundo ---------- */
+.gm-hero { display: grid; grid-template-columns: minmax(260px, 340px) minmax(0, 1fr); gap: 28px; align-items: center; }
+@media (max-width: 860px) { .gm-hero { grid-template-columns: 1fr; justify-items: center; } }
+.gm-show { position: relative; display: grid; place-items: end center; height: 340px; }
+.gm-float { display: block; line-height: 0; animation: gm-in .5s cubic-bezier(.2, .9, .3, 1.3) both; }
+.gm-float .gl { animation: gm-float 4.2s ease-in-out infinite; }
+.gm-show.evolving .gm-float { animation: gm-evolve .9s cubic-bezier(.2, .9, .3, 1.3) both; }
+.gm-flash { position: absolute; inset: 0; border-radius: 50%; background: radial-gradient(circle at 50% 70%, rgba(255, 236, 190, .75), rgba(255, 170, 80, .2) 35%, transparent 62%); animation: gm-flash .9s ease-out forwards; pointer-events: none; }
+.gm-zzz { position: absolute; top: 40px; right: 18%; display: flex; gap: 3px; font: 800 15px var(--sans, system-ui); color: var(--faint, #888); }
 .gm-zzz i { font-style: normal; animation: gm-zzz 2.6s ease-in-out infinite; } .gm-zzz i:nth-child(2) { animation-delay: .45s; font-size: 18px; } .gm-zzz i:nth-child(3) { animation-delay: .9s; font-size: 22px; }
-.gm-cap { position: relative; z-index: 1; margin: 0; padding: 0 16px 16px; text-align: center; color: #d8c8bb; font-size: 13px; }
-.gm-cap b { color: #fff; }
 
-/* ---------- o golem ---------- */
-.gl .gl-shadow { fill: rgba(0, 0, 0, .35); }
-.gm-golem .gl { animation: gm-breathe 3s ease-in-out infinite; transform-origin: 50% 100%; }
-.gl-m-working .gl-joint, .gl-m-working .gl-core, .gl-m-working .gl-molten { animation: gm-glow .8s ease-in-out infinite alternate; }
-.gl-m-idle .gl-joint, .gl-m-cheer .gl-joint { opacity: .75; }
-.gl-m-sleep .gl-joint, .gl-m-sleep .gl-core, .gl-m-sleep .gl-molten, .gl-m-sleep .gl-seam { opacity: .25; }
-.gl-m-sleep { filter: saturate(.75) brightness(.8); }
-.gl-blink { animation: gm-blink 5s infinite; transform-box: fill-box; transform-origin: center; }
-.gl-flicker { animation: gm-flicker 1.4s ease-in-out infinite; transform-box: fill-box; transform-origin: center bottom; }
-.gl-seam { animation: gm-glow 1.8s ease-in-out infinite alternate; }
-.gl-aura { animation: gm-spin 14s linear infinite; transform-box: fill-box; transform-origin: center; }
-.gl-spark { animation: gm-spark 1.4s ease-out infinite; }
-.gl-spark.s1 { animation-delay: .35s; } .gl-spark.s2 { animation-delay: .7s; } .gl-spark.s3 { animation-delay: 1.05s; }
-.gl-m-cheer .gl-arm { transform-box: fill-box; transform-origin: 50% 10%; }
-.gl-m-cheer .gl-arm.l { animation: gm-wave-l .5s ease-in-out 3; } .gl-m-cheer .gl-arm.r { animation: gm-wave-r .5s ease-in-out 3; }
-.gm-golem .gl-m-cheer { animation: gm-hop .6s ease-out 2; }
-
-/* ---------- lado ---------- */
-.gm-side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
-.gm-name { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.gm-name h2 { margin: 0; font: 650 22px var(--sans, system-ui); color: var(--strong, #fff); }
+.gm-info { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.gm-name { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.gm-name h2 { margin: 0; font: 680 26px/1.15 var(--sans, system-ui); letter-spacing: -.01em; color: var(--strong, #fff); }
 .gm-name input { flex: 1 1 180px; max-width: 260px; }
-.gm-sub { margin: -4px 0 0; max-width: 560px; color: var(--dim, #aaa); font-size: 13px; line-height: 1.5; }
-.gm-card { display: grid; gap: 10px; max-width: 560px; padding: 14px 16px; border: 1px solid var(--line, rgba(255, 255, 255, .08)); border-radius: 12px; background: var(--card, #222); }
+.gm-link { padding: 0; border: 0; background: none; color: var(--dim, #aaa); font: 500 12.5px var(--sans, system-ui); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: rgba(255, 255, 255, .2); }
+.gm-link:hover { color: var(--strong, #fff); } .gm-link:disabled { opacity: .4; cursor: default; }
+.gm-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.gm-tag { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border: 1px solid var(--line-strong, rgba(255, 255, 255, .12)); border-radius: 999px; color: var(--text, #ddd); font: 550 12px var(--sans, system-ui); }
+.gm-tag.stage { border-color: rgba(255, 170, 90, .45); color: #ffd2a6; background: rgba(255, 150, 60, .08); }
+.gm-tag i { width: 8px; height: 8px; border-radius: 50%; background: #8a7f78; flex: none; }
+.gm-tag.alloy i { width: 12px; height: 12px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .25); }
+.gm-tag.mood.m-working i { background: #ffb347; box-shadow: 0 0 8px #ff8a3d; animation: gm-pulse 1s ease-in-out infinite; }
+.gm-tag.mood.m-cheer i { background: #7be495; } .gm-tag.mood.m-sleep i { background: #7c7cc4; } .gm-tag.mood.m-idle i { background: #b9a89a; }
+.gm-sub { margin: 0; max-width: 520px; color: var(--dim, #aaa); font-size: 13.5px; line-height: 1.5; }
+.gm-progress { display: grid; gap: 8px; max-width: 520px; padding: 14px 16px; border: 1px solid var(--line, rgba(255, 255, 255, .08)); border-radius: 12px; background: var(--card, #222); }
 .gm-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--text, #ddd); font-size: 13px; }
-.gm-row b { color: var(--strong, #fff); font-size: 14px; }
+.gm-row b { color: var(--strong, #fff); font-size: 15px; font-variant-numeric: tabular-nums; }
+.gm-row h3, .gm-card > h3, .gm-track-h h3 { margin: 0; color: var(--strong, #fff); font: 620 13.5px var(--sans, system-ui); }
 .gm-bar { height: 8px; overflow: hidden; border-radius: 999px; background: rgba(255, 255, 255, .07); }
-.gm-bar u { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #ff7a2e, #ffb347, #ffe08a); box-shadow: 0 0 10px rgba(255, 140, 60, .5); transition: width .6s ease; }
+.gm-bar u { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #ff7a2e, #ffb347, #ffe08a); box-shadow: 0 0 10px rgba(255, 140, 60, .45); transition: width .6s ease; }
 .gm-note { margin: 0; color: var(--dim, #aaa); font-size: 12.5px; line-height: 1.45; }
-.gm-note b { color: var(--strong, #fff); }
-.gm-alloy { display: flex; height: 14px; overflow: hidden; border-radius: 7px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08); }
+.gm-note b { color: var(--strong, #fff); } .gm-note.dim { color: var(--faint, #888); }
+
+/* ---------- trilha de evolução (escolher a forma exibida) ---------- */
+.gm-track { display: grid; gap: 12px; padding: 16px; border: 1px solid var(--line, rgba(255, 255, 255, .08)); border-radius: 14px; background: var(--card, #222); }
+.gm-track-h { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.gm-track-h > div { display: grid; gap: 3px; }
+.gm-stages { position: relative; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
+.gm-stages::before { content: ""; position: absolute; left: 6%; right: 6%; top: 46px; height: 2px; background: linear-gradient(90deg, rgba(255, 170, 90, .35), rgba(255, 255, 255, .06)); }
+@media (max-width: 860px) { .gm-stages { grid-template-columns: repeat(4, minmax(0, 1fr)); } .gm-stages::before { display: none; } }
+.gm-stages li button { position: relative; display: flex; flex-direction: column; align-items: center; gap: 3px; width: 100%; padding: 8px 4px 10px; border: 1px solid transparent; border-radius: 12px; background: transparent; color: inherit; font: inherit; cursor: pointer; transition: background-color .15s, border-color .15s; }
+.gm-stages li.open button:hover { background: rgba(255, 255, 255, .04); }
+.gm-stages li.on button { border-color: rgba(255, 170, 90, .55); background: rgba(255, 150, 60, .08); }
+.gm-stages li button:focus-visible { outline: 2px solid var(--focus, rgba(255, 255, 255, .55)); outline-offset: 2px; }
+.gm-stages li.locked button { cursor: not-allowed; }
+.gm-mini { display: grid; place-items: end center; height: 84px; line-height: 0; }
+.gm-stages li.locked .gm-mini { filter: grayscale(1) brightness(.28); opacity: .8; }
+.gm-stages b { color: var(--strong, #fff); font: 600 12px/1.25 var(--sans, system-ui); text-align: center; }
+.gm-stages small { display: inline-flex; align-items: center; gap: 4px; color: var(--faint, #888); font-size: 11px; }
+.gm-stages li.now small { color: #ffbf86; }
+.gm-stages li.locked b { color: var(--faint, #888); }
+
+/* ---------- liga e recordes ---------- */
+.gm-grid { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 14px; }
+@media (max-width: 860px) { .gm-grid { grid-template-columns: 1fr; } }
+.gm-card { display: grid; gap: 10px; align-content: start; padding: 14px 16px; border: 1px solid var(--line, rgba(255, 255, 255, .08)); border-radius: 14px; background: var(--card, #222); }
+.gm-alloy { display: flex; height: 12px; overflow: hidden; border-radius: 6px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08); }
 .gm-alloy i { display: block; height: 100%; min-width: 3px; }
 .gm-metals { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .gm-metals li { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto 44px 64px; align-items: center; gap: 8px; color: var(--text, #ddd); font-size: 12.5px; }
 .gm-metals em { color: var(--dim, #aaa); font-style: normal; } .gm-metals b { color: var(--strong, #fff); text-align: right; } .gm-metals small { color: var(--faint, #888); text-align: right; }
-.gm-recs { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
-.gm-recs div { display: flex; flex-direction: column; gap: 2px; }
-.gm-recs span { color: var(--faint, #888); font-size: 11.5px; } .gm-recs b { color: var(--strong, #fff); font-size: 15px; } .gm-recs small { color: var(--faint, #888); font-size: 11px; }
-@media (max-width: 600px) { .gm-recs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-.gm-replay { min-height: 26px; padding: 0 10px; font-size: 12px; }
-.gm-stages { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
-.gm-stages li { display: flex; align-items: center; gap: 8px; min-height: 52px; padding: 6px 8px; border: 1px solid var(--line, rgba(255, 255, 255, .08)); border-radius: 10px; background: rgba(255, 255, 255, .02); }
-.gm-stages li.now { border-color: rgba(255, 160, 70, .6); background: rgba(255, 140, 60, .08); }
-.gm-stages li.next .gm-mini { filter: grayscale(1) brightness(.35); }
-.gm-mini { display: grid; place-items: center; width: 40px; flex: none; line-height: 0; }
-.gm-st { display: flex; flex-direction: column; min-width: 0; }
-.gm-st b { color: var(--strong, #fff); font-size: 12px; line-height: 1.25; } .gm-st small { color: var(--faint, #888); font-size: 11px; }
-.gm-stages li.next .gm-st b { color: var(--faint, #888); }
+.gm-rec-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 10px; }
+.gm-rec-grid div { display: flex; flex-direction: column; gap: 2px; }
+.gm-rec-grid span { color: var(--faint, #888); font-size: 11.5px; } .gm-rec-grid b { color: var(--strong, #fff); font-size: 17px; font-variant-numeric: tabular-nums; } .gm-rec-grid small { color: var(--faint, #888); font-size: 11px; }
 
-/* atalho na barra de status (StatusBar.jsx > GolemBadge) */
-.fx-sb-golem { position: relative; }
-.fx-sb-golem .gl { display: block; }
-.fx-sb-golem.on .gl { filter: drop-shadow(0 0 4px rgba(255, 150, 60, .8)); }
+/* ---------- o golem: animações das peças ---------- */
+.gl .gl-shadow { fill: rgba(0, 0, 0, .35); }
+.gl-m-working .gl-joint, .gl-m-working .gl-core, .gl-m-working .gl-molten, .gl-m-working .gl-furnace { animation: gm-glow .7s ease-in-out infinite alternate; }
+.gl-m-sleep { filter: saturate(.7) brightness(.82); }
+.gl-blink { animation: gm-blink 5s infinite; transform-box: fill-box; transform-origin: center; }
+.gl-flicker { animation: gm-flicker 1.4s ease-in-out infinite; transform-box: fill-box; transform-origin: center bottom; }
+.gl-seam, .gl-pulse { animation: gm-glow 1.8s ease-in-out infinite alternate; }
+.gl-aura { animation: gm-spin 16s linear infinite; transform-box: view-box; transform-origin: 60px 74px; }
+.gl-halo { animation: gm-glow 2.4s ease-in-out infinite alternate; }
+.gl-steam path, .gl-smoke circle { animation: gm-steam 2.6s ease-in-out infinite; }
+.gl-spark { animation: gm-spark 1.4s ease-out infinite; }
+.gl-spark.s1 { animation-delay: .35s; } .gl-spark.s2 { animation-delay: .7s; } .gl-spark.s3 { animation-delay: 1.05s; }
+.gl-arm { transform-box: fill-box; transform-origin: 50% 8%; }
+.gl-m-cheer .gl-arm.l { animation: gm-wave-l .5s ease-in-out 3; } .gl-m-cheer .gl-arm.r { animation: gm-wave-r .5s ease-in-out 3; }
+
+/* barra lateral do Cockpit (Sidebar.jsx > SideGolem): o golem pequeno, flutuando, acima do rodapé */
+.fx-golem { display: flex; align-items: flex-end; gap: 10px; flex: none; margin: 4px -2px 0; padding: 6px 8px 8px; border: 0; border-radius: 10px; background: transparent; color: inherit; text-align: left; cursor: pointer; transition: background-color .15s; }
+.fx-golem:hover { background: rgba(255, 255, 255, .04); }
+.fx-golem:focus-visible { outline: 2px solid var(--focus, rgba(255, 255, 255, .55)); outline-offset: 1px; }
+.fx-golem-art { display: grid; place-items: end center; width: 64px; height: 68px; flex: none; line-height: 0; }
+.fx-golem-art .gl { animation: gm-float 4.2s ease-in-out infinite; }
+.fx-golem-t { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding-bottom: 4px; }
+.fx-golem-t b { overflow: hidden; color: var(--strong, #fff); font: 600 12px var(--sans, system-ui); white-space: nowrap; text-overflow: ellipsis; }
+.fx-golem-t span { overflow: hidden; color: var(--faint, #888); font: 450 11px var(--sans, system-ui); white-space: nowrap; text-overflow: ellipsis; }
+.fx-golem-t span i { display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; background: #8a7f78; vertical-align: 1px; }
+.fx-golem.working .fx-golem-t span i { background: #ffb347; box-shadow: 0 0 6px #ff8a3d; animation: gm-pulse 1s ease-in-out infinite; }
+.fx-golem-bar { display: block; width: 92px; height: 3px; overflow: hidden; border-radius: 2px; background: rgba(255, 255, 255, .08); }
+.fx-golem-bar u { display: block; height: 100%; background: linear-gradient(90deg, #ff7a2e, #ffb347); }
 
 /* ---------- animações ---------- */
-@keyframes gm-breathe { 0%, 100% { transform: scale(1, 1); } 50% { transform: scale(1.015, .985); } }
+@keyframes gm-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
 @keyframes gm-glow { from { opacity: .55; } to { opacity: 1; } }
-@keyframes gm-heat { 0%, 100% { opacity: .6; } 50% { opacity: 1; } }
 @keyframes gm-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.35); } }
 @keyframes gm-blink { 0%, 93%, 100% { transform: scaleY(1); } 96% { transform: scaleY(.15); } }
-@keyframes gm-flicker { 0%, 100% { transform: scale(1, 1); opacity: 1; } 50% { transform: scale(.85, 1.15); opacity: .75; } }
+@keyframes gm-flicker { 0%, 100% { transform: scale(1, 1); opacity: 1; } 50% { transform: scale(.88, 1.12); opacity: .8; } }
 @keyframes gm-spin { to { transform: rotate(360deg); } }
+@keyframes gm-steam { 0% { opacity: 0; transform: translateY(2px); } 40% { opacity: .6; } 100% { opacity: 0; transform: translateY(-6px); } }
 @keyframes gm-spark { 0% { opacity: 0; transform: translate(0, 4px); } 20% { opacity: 1; } 100% { opacity: 0; transform: translate(3px, -18px); } }
 @keyframes gm-wave-l { 0%, 100% { transform: rotate(0); } 50% { transform: rotate(28deg); } }
 @keyframes gm-wave-r { 0%, 100% { transform: rotate(0); } 50% { transform: rotate(-28deg); } }
-@keyframes gm-hop { 0%, 100% { transform: translateY(0); } 40% { transform: translateY(-10px); } }
 @keyframes gm-in { from { opacity: 0; transform: scale(.9); } to { opacity: 1; transform: scale(1); } }
 @keyframes gm-evolve { 0% { opacity: 0; transform: scale(.6); filter: brightness(3); } 60% { opacity: 1; transform: scale(1.08); filter: brightness(1.6); } 100% { transform: scale(1); filter: brightness(1); } }
 @keyframes gm-flash { 0% { opacity: 0; } 25% { opacity: 1; } 100% { opacity: 0; } }
 @keyframes gm-zzz { 0% { opacity: 0; transform: translate(0, 6px); } 40% { opacity: 1; } 100% { opacity: 0; transform: translate(8px, -16px); } }
-@media (prefers-reduced-motion: reduce) { .gm *, .gm *::before, .gm *::after, .gm-forge::after { animation: none !important; transition: none !important; } }
-html[data-motion="reduced"] .gm *, html[data-motion="reduced"] .gm *::before, html[data-motion="reduced"] .gm *::after, html[data-motion="reduced"] .gm-forge::after { animation: none !important; transition: none !important; }
+@media (prefers-reduced-motion: reduce) { .gm *, .gm *::before, .gm *::after, .fx-golem * { animation: none !important; transition: none !important; } }
+html[data-motion="reduced"] .gm *, html[data-motion="reduced"] .gm *::before, html[data-motion="reduced"] .gm *::after, html[data-motion="reduced"] .fx-golem * { animation: none !important; transition: none !important; }
