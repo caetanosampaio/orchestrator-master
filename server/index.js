@@ -127,10 +127,10 @@ const commit = () => store.save();
 const LOGIN_WAIT_MS = 1500, LOGIN_UNKNOWN = { known: false, loggedIn: null, detail: '' };
 const withTimeout = (p, ms, fallback) => new Promise((resolve) => { const t = setTimeout(() => resolve(fallback), ms); t.unref?.(); Promise.resolve(p).then((v) => { clearTimeout(t); resolve(v); }, () => { clearTimeout(t); resolve(fallback); }); });
 app.get('/api/state', asyncRoute(async (req, res) => {
-  if (req.query.fresh === '1') { accounts.invalidate(accounts.defaultId()); claudeProbe.reset?.(); probeGit.reset?.(); } // "Verificar novamente": enxerga um login feito fora do FORGE sem esperar o cache
+  if (req.query.fresh === '1') { for (const a of accounts.list()) accounts.invalidate(a.id); claudeProbe.reset?.(); probeGit.reset?.(); } // "Verificar novamente": enxerga um login feito fora do FORGE (em qualquer conta) sem esperar o cache
   const [probe, git] = await Promise.all([claudeProbe(), probeGit()]); // a sonda deduplica a chamada em andamento
   res.json({
-    prereqs: prereqsOf(probe, git, await withTimeout((testDeps.loginProbe ?? (() => probeLogin({ accounts })))(), LOGIN_WAIT_MS, LOGIN_UNKNOWN)), // aditivo: { claude, git, login } = { available, version, detail } e { known, loggedIn, detail } (login = `claude auth status` da conta padrão, com cache de ~45 s)
+    prereqs: prereqsOf(probe, git, await withTimeout((testDeps.loginProbe ?? (() => probeLogin({ accounts })))(), LOGIN_WAIT_MS, LOGIN_UNKNOWN)), // aditivo: { claude, git, login } = { available, version, detail } e { known, loggedIn, detail } (login = alguma conta conectada de algum provider, pelo status de cada conta, com cache de ~45 s)
     executor: { id: 'claude-code', connected: probe.available, ...probe }, // sonda do Claude Code (available, version, detail): a tela de Setup e a de IAs leem daqui
     persistenceIncident: store.persistenceIncident(), // aditivo (M2): último incidente de gravação (início, nº de falhas, quando foi reconciliado); null se nunca houve
     persistence: store.persistenceStatus(), // aditivo: ok, código do último erro, quando falhou e quantas falhas seguidas (sem caminhos)

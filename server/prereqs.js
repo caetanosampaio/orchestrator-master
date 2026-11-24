@@ -1,6 +1,7 @@
-// Pré-requisitos do app (aditivo em GET /api/state): Claude Code (vem do probe do executor) e Git (aqui).
+// Pré-requisitos do app (aditivo em GET /api/state): Claude Code (vem do probe do executor), Git (aqui) e o login (alguma conta conectada de algum provider).
 // Sem shell, argumentos fixos, timeout curto, cache de 15 s e uma única chamada em andamento compartilhada (várias rotas consultam ao mesmo tempo).
 import { execFile } from 'node:child_process';
+import { accountSpecOf } from './providers/index.js';
 
 export const GIT_MISSING = 'Git não encontrado no PATH. Instale em https://git-scm.com/downloads';
 const TTL_MS = 15_000;
@@ -28,22 +29,46 @@ export function createGitProbe({ command = 'git', prefixArgs = [], ttlMs = TTL_M
 }
 
 /**
- * O Claude Code está com a conta conectada? Usa o estado da CONTA PADRÃO (`claude auth status`, via accounts.js, com cache de ~45 s): não lê arquivos de credenciais.
- * Devolve { known, loggedIn, detail }; `loggedIn` só vale quando `known` é verdadeiro. O `detail` NUNCA traz e-mail nem nome da conta (/api/state é uma leitura aberta).
- * Na conta Sistema, chave de API/Bedrock/Vertex no ambiente do servidor contam como autenticado (a CLI usa essas variáveis); numa conta do FORGE elas são removidas do ambiente do filho
- * (claude-cli.js), então só vale o login da própria conta.
+ * O FORGE tem ALGUMA conta conectada, de qualquer provider? (O FORGE é agnóstico de provider: basta uma conta logada de algum.) Usa o estado de login de cada conta
+ * (accounts.statusOf, com cache de ~45 s por conta): não lê arquivos de credenciais. Devolve { known, loggedIn, detail }; `loggedIn` só vale quando `known` é verdadeiro.
+ * O `detail` NUNCA traz e-mail, organização nem o rótulo da conta (/api/state é uma leitura aberta): só o nome do provider.
+ * A conta do COMPUTADOR do Claude com chave de API/token/Bedrock/Vertex no ambiente do servidor conta como conectada (a CLI usa essas variáveis); numa conta isolada elas são removidas
+ * do ambiente do filho (providers/claude.js), então lá só vale o login da própria conta.
  */
 const AUTH_ENV = ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX'];
+export const NO_ACCOUNT_DETAIL = 'Nenhuma conta conectada: abra Configurações > Contas e conecte uma conta de algum provider (Claude Code, Codex CLI...).';
+const UNKNOWN_DETAIL = 'Não foi possível consultar o login das contas.';
 export async function probeLogin({ env = process.env, accounts = null } = {}) {
-  const defaultId = accounts?.defaultId?.() ?? 'system';
-  if (defaultId === 'system' && AUTH_ENV.some((k) => typeof env[k] === 'string' && env[k] !== '')) return { known: true, loggedIn: true, detail: 'Autenticação por variável de ambiente (chave de API, token, Bedrock ou Vertex).' };
-  if (!accounts?.statusOf) return { known: false, loggedIn: null, detail: 'Não foi possível consultar o login do Claude Code.' };
-  let st; try { st = await accounts.statusOf(defaultId); } catch { st = null; }
-  if (!st || !st.checked || typeof st.loggedIn !== 'boolean') return { known: false, loggedIn: null, detail: st?.error || 'Não foi possível consultar o login do Claude Code.' };
-  return st.loggedIn
-    ? { known: true, loggedIn: true, detail: 'Claude Code conectado (conta padrão).' }
-    : { known: true, loggedIn: false, detail: 'O Claude Code não está conectado: abra Configurações > Contas e faça login.' };
+  if (!accounts?.list || !accounts?.statusOf) return { known: false, loggedIn: null, detail: UNKNOWN_DETAIL };
+  let rows; try { rows = accounts.list(); } catch { rows = null; }
+  if (!Array.isArray(rows)) return { known: false, loggedIn: null, detail: UNKNOWN_DETAIL };
+  if (!rows.length) return { known: true, loggedIn: false, detail: NO_ACCOUNT_DETAIL };
+  const envAuth = AUTH_ENV.some((k) => typeof env[k] === 'string' && env[k] !== '');
+  const machineEnv = envAuth ? rows.find((a) => a.provider === 'claude' && a.home === 'machine') : null;
+  if (machineEnv) return { known: true, loggedIn: true, detail: 'Autenticação por variável de ambiente (chave de API, token, Bedrock ou Vertex).' }; // a CLI usa as variáveis: sem consultar nada
+  // Responde ASSIM QUE alguma conta aparece conectada (uma conta lenta não pode transformar "conectado" em "desconhecido" no teto do /api/state);
+  // só espera todas para concluir "nenhuma conectada" ou "desconhecido".
+  return new Promise((resolve) => {
+    let pending = rows.length, done = false;
+    const results = [];
+    const finish = () => {
+      // Ninguém conectado: basta UMA resposta definitiva "não conectada" para orientar o login; contas sem resposta (CLI ausente, erro) não mascaram isso.
+      if (results.some((st) => st?.checked === true && st.loggedIn === false)) return resolve({ known: true, loggedIn: false, detail: NO_ACCOUNT_DETAIL });
+      const err = results.find((st) => typeof st?.error === 'string' && st.error)?.error;
+      resolve({ known: false, loggedIn: null, detail: err || UNKNOWN_DETAIL });
+    };
+    for (const a of rows) {
+      Promise.resolve().then(() => accounts.statusOf(a.id)).catch(() => null).then((st) => {
+        if (done) return;
+        results.push(st);
+        if (st?.checked === true && st.loggedIn === true) { done = true; return resolve({ known: true, loggedIn: true, detail: `Conta conectada: ${providerLabel(a.provider)}.` }); }
+        if (--pending === 0) { done = true; finish(); }
+      });
+    }
+  });
 }
+/** Nome do provider para o `detail` (nunca dado da conta). */
+const providerLabel = (p) => accountSpecOf(p)?.label ?? 'provider';
 
 /** Monta o contrato `prereqs` a partir do probe do Claude ({available, version?, detail}), do Git e do login (probeLogin). */
 export const prereqsOf = (claudeProbe, git, login = { known: false, loggedIn: null, detail: '' }) => ({
