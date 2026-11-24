@@ -43,7 +43,7 @@ test('rascunho: editar mantém model/effort; duplicar zera o id e põe "(cópia)
 
 
 test('interface: Configurações > Times prontos e Arquivos, e o chip do Cockpit virou "Arquivos" na sidebar', () => {
-  const st = ['pages/Settings.jsx', 'settings-nav.js', 'components/settings/SettingsUi.jsx', 'components/settings/AppSections.jsx', 'components/settings/TeamSections.jsx', 'components/settings/AisSection.jsx', 'components/settings/PetSection.jsx'].map(src).join('\n');
+  const st = ['pages/Settings.jsx', 'settings-nav.js', 'components/settings/SettingsUi.jsx', 'components/settings/AppSections.jsx', 'components/settings/TeamSections.jsx', 'components/settings/AisSection.jsx', 'components/settings/GolemSection.jsx'].map(src).join('\n');
   assert.match(st, /item\('equipes', 'Times prontos'/); assert.match(st, /item\('arquivos', 'Arquivos'/); assert.match(st, /<TeamsSettings \/>/); assert.match(st, /onOpenWorkspaces/);
   const t = src('components/TeamsSettings.jsx');
   assert.match(t, /useSquads\(\)/); assert.match(t, /options: sq\.options/, 'modelo e esforço vêm do `options` do servidor'); assert.match(t, /draftFromCopy\(s\)/);

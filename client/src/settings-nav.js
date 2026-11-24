@@ -6,7 +6,7 @@ export const NAV = Object.freeze([
   group('ias', 'IAs e contas', [
     item('ias', 'Suas IAs', 'terminal', 'Os agentes que rodam nos terminais do FORGE e as outras IAs que podem vir.', ['claude', 'codex', 'provider', 'agentes', 'cli', 'instalado', 'login']),
     item('accounts', 'Contas', 'user', 'As contas de cada IA (Claude Code, Codex CLI): conecte, renomeie e desvincule.', ['login', 'claude', 'codex', 'entrar', 'assinatura']),
-    item('bichinho', 'Bichinho', 'agents', 'Um bichinho estilo Tamagotchi: choca de um ovo, cresce e come os petiscos que os seus agentes ganham trabalhando.', ['tamagotchi', 'pet', 'mascote', 'jogo', 'brincar', 'ovo']),
+    item('golem', 'Golem', 'agents', 'O seu golem de liga: cresce com os tokens que as suas IAs consomem e é feito da mistura delas.', ['bichinho', 'pet', 'mascote', 'tokens', 'liga', 'evolução', 'forja']),
   ]),
   group('times', 'Missões e times', [
     item('equipes', 'Times prontos', 'layers', 'Os times que aparecem no Cockpit vêm daqui: instale os prontos, edite e monte os seus.', ['squad', 'squads', 'equipes', 'times', 'modelo', 'esforço', 'predefinições', 'instalar'], { tag: 'Squads', own: true }), // `own`: a seção desenha o próprio cabeçalho (título, ação e as páginas de ver e editar)
@@ -26,7 +26,7 @@ export const NAV = Object.freeze([
 
 export const DEFAULT_TAB = 'perfil';
 /** Nomes antigos de seções que foram reunidas em outras (o link continua levando ao lugar certo). */
-export const ALIASES = Object.freeze({ cli: 'ias', providers: 'ias', mascotes: 'bichinho' }); // mascotes: link antigo da seção que virou o Bichinho
+export const ALIASES = Object.freeze({ cli: 'ias', providers: 'ias', mascotes: 'golem', bichinho: 'golem' }); // links antigos: a seção Mascotes virou o Bichinho e depois o Golem
 export const flatItems = () => NAV.flatMap((g) => g.items);
 export const itemById = (id) => flatItems().find((x) => x.id === id) ?? null;
 /** Seção válida para um id qualquer: nome antigo vira o novo; desconhecido (ou algo que não é texto) cai em `fallback`. */

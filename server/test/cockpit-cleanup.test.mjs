@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const src = (f) => fs.readFileSync(new URL(`../../client/src/${f}`, import.meta.url), 'utf8');
-const grid = src('components/TerminalGrid.jsx'), settings = ['pages/Settings.jsx', 'settings-nav.js', 'components/settings/SettingsUi.jsx', 'components/settings/AppSections.jsx', 'components/settings/TeamSections.jsx', 'components/settings/AisSection.jsx', 'components/settings/PetSection.jsx'].map(src).join('\n'), pop = src('components/MaestroPopover.jsx'), ctrl = src('components/MaestroControls.jsx'), app = src('App.jsx');
+const grid = src('components/TerminalGrid.jsx'), settings = ['pages/Settings.jsx', 'settings-nav.js', 'components/settings/SettingsUi.jsx', 'components/settings/AppSections.jsx', 'components/settings/TeamSections.jsx', 'components/settings/AisSection.jsx', 'components/settings/GolemSection.jsx'].map(src).join('\n'), pop = src('components/MaestroPopover.jsx'), ctrl = src('components/MaestroControls.jsx'), app = src('App.jsx');
 
 test('o cockpit não renderiza mais as barras permanentes do Maestro e dos Worktrees', () => {
   assert.doesNotMatch(grid, /function MaestroPanel|<MaestroPanel/);
