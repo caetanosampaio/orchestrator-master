@@ -14,8 +14,8 @@ export const FORGE_MASCOT = Object.freeze({ id: 'forge', label: 'FORGE', color: 
 export const catalogById = (id) => CATALOG.find((x) => x.id === id) ?? (id === FORGE_MASCOT.id ? FORGE_MASCOT : null);
 export const catalogColor = (id) => catalogById(id)?.color ?? null;
 export const integratedIds = () => CATALOG.filter((x) => x.integrated).map((x) => x.id);
-/** As IAs ainda sem integração (para a lista "Para ligar"). */
-export const plannedAis = () => CATALOG.filter((x) => !x.integrated);
+/** As IAs ainda sem integração (para a lista "Para ligar"). `known` = ids que o SERVIDOR já integra (GET /api/terminals > providers): essas saem daqui mesmo sem `integrated` no catálogo. */
+export const plannedAis = (known = []) => CATALOG.filter((x) => !x.integrated && !(Array.isArray(known) && known.includes(x.id)));
 /** Nome completo para exibir: o do catálogo ("Claude Code"), senão o que o servidor informou, senão o próprio id. */
 export const aiName = (id, serverLabel = null) => catalogById(id)?.full || serverLabel || catalogById(id)?.label || String(id);
 /** Só o nome da IA, sem o produto ("Claude", "Codex"): o de Configurações > Suas IAs. IA fora do catálogo: o nome do servidor sem " CLI" no fim, senão o id. */

@@ -72,6 +72,10 @@ function CodexMark({ size, className, title }) {
  */
 export function AiIcon({ id, size = 24, title, className = '' }) {
   if (id === 'claude' || id === 'codex') return <ProviderLogo id={id} size={size} title={title} className={className} />;
+  return <AiMonogram id={id} size={size} title={title} className={className} />;
+}
+/** Selo com a inicial na cor da IA (provisório, até o ícone oficial entrar em assets/). */
+function AiMonogram({ id, size, title, className = '' }) {
   const c = catalogById(id), letter = String(c?.label ?? id ?? '?').trim().charAt(0).toUpperCase() || '?';
   return (
     <span className={`ai-mono${className ? ` ${className}` : ''}`} style={{ width: size, height: size, fontSize: Math.round(size * 0.5), '--ai': c?.color ?? '#9aa3b2' }} role={title ? 'img' : undefined} aria-label={title} aria-hidden={title ? undefined : true}>{letter}</span>
@@ -80,12 +84,12 @@ export function AiIcon({ id, size = 24, title, className = '' }) {
 
 /**
  * Logo do provider (`claude` | `codex`). `variant="mascot"` troca a estrela do Claude pelo mascote (cabeçalho do terminal); no Codex não muda nada.
- * Provider desconhecido não renderiza nada (o nome continua ao lado).
+ * As outras IAs do catálogo (Gemini, OpenCode, Cursor…) levam o selo com a inicial; id fora do catálogo não renderiza nada (o nome continua ao lado).
  */
 export default function ProviderLogo({ id, size = 20, title, className = '', variant = 'mark' }) {
   if (id === 'claude') return variant === 'mascot' ? <ClaudeMascot size={size} className={className} title={title} /> : <ClaudeStar size={size} className={className} title={title} />;
   if (id === 'codex') return <CodexMark size={size} className={className} title={title} />;
-  return null;
+  return catalogById(id) && !catalogById(id).brand ? <AiMonogram id={id} size={size} title={title} className={className} /> : null;
 }
 
 /**

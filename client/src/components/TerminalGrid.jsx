@@ -11,7 +11,8 @@ import { paneAccountTag, accountsOf, pickAccount } from '../accounts-view.js';
 import { Btn, Icon } from './ui.jsx';
 import { paneUsage, squadUsage } from '../usage-view.js';
 import { createTerminalStream, isOld } from '../terminal-stream.js';
-import ProviderLogo from './ProviderLogo.jsx';
+import ProviderLogo, { AiIcon } from './ProviderLogo.jsx';
+import { aiShortName } from '../provider-catalog.js';
 import StatusGlyph from './StatusGlyph.jsx';
 import { elapsed, shortPath as shortCwd, dropText } from '../forge-shell.js';
 import { paneState, pendingByPane, paneName, shapeFor, focusPlacement, evenTracks, dragTracks, dividerAt } from '../env-view.js';
@@ -370,7 +371,18 @@ export default function TerminalGrid({ onOpenWorkspaces, onOpenSettings, onOpenS
     onFocusHandled?.();
   }, [focusRequest, ws?.id, mine.map((x) => x.id).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
   const closeTab = (s) => { if (s.status === 'running' && !window.confirm(`Encerrar o terminal "${s.title}"? O agente em andamento será interrompido.`)) return; close(s); };
-  const solo = () => open(['builder'], { squad: false });
+  const solo = (id = provider) => open(['builder'], { squad: false, provider: id });
+  // "+" com mais de uma IA instalada: menu para escolher qual abre (as sem Maestro abrem como terminal livre). Com uma só, abre direto.
+  const installedAis = providers.filter((p) => p.available);
+  const [addMenu, setAddMenu] = useState(false);
+  const addRef = useRef(null);
+  useEffect(() => {
+    if (!addMenu) return undefined;
+    const down = (e) => { if (!addRef.current?.contains(e.target)) setAddMenu(false); };
+    const key = (e) => { if (e.key === 'Escape') { e.stopPropagation(); setAddMenu(false); addRef.current?.querySelector('button')?.focus(); } };
+    document.addEventListener('mousedown', down); document.addEventListener('keydown', key, true);
+    return () => { document.removeEventListener('mousedown', down); document.removeEventListener('keydown', key, true); };
+  }, [addMenu]);
 
   return (
     <div className={`tg fx-cockpit${maxId ? ' tg-full' : ''}`}>
@@ -383,7 +395,18 @@ export default function TerminalGrid({ onOpenWorkspaces, onOpenSettings, onOpenS
           </div>
         )}
         {ws && mine.map((s) => <TermTab key={s.id} s={s} state={paneState(s, workingIds, pendingIds)} on={maxId === s.id} onPick={() => layoutActions.setMaximized(ws.id, maxId === s.id ? null : (s.recordId ?? null))} onClose={() => closeTab(s)} />)}
-        {ws && <button type="button" className="fx-ibtn fx-tab-add" onClick={solo} disabled={busy || room <= 0} aria-label="Abrir um terminal" title={room <= 0 ? 'Limite de terminais atingido' : `Abrir um terminal (${providers.find((p) => p.id === provider)?.label ?? 'Claude Code'})`}><Icon name="plus" size={14} /></button>}
+        {ws && <span className="fx-add" ref={addRef}>
+          <button type="button" className="fx-ibtn fx-tab-add" onClick={() => (installedAis.length > 1 ? setAddMenu((v) => !v) : solo())} disabled={busy || room <= 0}
+            aria-label="Abrir um terminal" aria-haspopup={installedAis.length > 1 ? 'menu' : undefined} aria-expanded={installedAis.length > 1 ? addMenu : undefined}
+            title={room <= 0 ? 'Limite de terminais atingido' : installedAis.length > 1 ? 'Abrir um terminal: escolha a IA' : `Abrir um terminal (${providers.find((p) => p.id === provider)?.label ?? 'Claude Code'})`}><Icon name="plus" size={14} /></button>
+          {addMenu && <div className="fx-add-menu" role="menu" aria-label="IA do novo terminal">
+            {installedAis.map((p) => (
+              <button key={p.id} type="button" role="menuitem" onClick={() => { setAddMenu(false); solo(p.id); }} title={p.capabilities?.mcp === false ? 'Terminal livre: esta IA ainda não conversa com o Maestro' : undefined}>
+                <AiIcon id={p.id} size={14} /><span>{aiShortName(p.id, p.label)}</span>{p.capabilities?.mcp === false && <small>terminal livre</small>}
+              </button>
+            ))}
+          </div>}
+        </span>}
         <span className="grow" />
         {onToggleLive && <button type="button" className={`fx-ibtn${liveOpen ? ' on' : ''}`} onClick={onToggleLive} aria-pressed={liveOpen} aria-label={liveOpen ? 'Fechar o painel Live' : 'Abrir o painel Live'} title={liveOpen ? 'Fechar o painel Live' : 'Painel Live: preview do localhost e a equipe em tempo real'}><Icon name="panel" size={15} /></button>}
       </div>

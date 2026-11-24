@@ -83,7 +83,9 @@ export const PROVIDERS = [
   { id: 'codex', label: 'Codex CLI', available: true },
 ];
 /** Texto do provider nos seletores: "(não instalado)" sem a CLI; "(não conectado)" quando a CLI está instalada mas a sonda de login (`auth`) diz que não há conta. Login desconhecido não alerta. */
-export const providerOptionLabel = (p) => `${p.label}${!p.available ? ' (não instalado)' : p.auth?.known && p.auth.loggedIn === false ? ' (não conectado: rode "codex login")' : ''}`;
+export const providerOptionLabel = (p) => `${p.label}${!p.available ? ' (não instalado)' : p.auth?.known && p.auth.loggedIn === false ? (p.id === 'codex' ? ' (não conectado: rode "codex login")' : ' (não conectado)') : ''}`;
+/** IAs que conversam com o Maestro (capabilities.mcp do servidor; ausente = sim, servidor antigo): só elas entram em times, missões e no Maestro. As demais abrem só terminal livre. */
+export const coordinating = (providers) => (Array.isArray(providers) ? providers : []).filter((p) => p && p.capabilities?.mcp !== false);
 export const providerOf =(s) => (typeof s?.provider === 'string' && s.provider ? s.provider : 'claude');
 
 /**
@@ -93,7 +95,10 @@ export const providerOf =(s) => (typeof s?.provider === 'string' && s.provider ?
 export function providerSummary(sessions = [], workingIds = new Set(), live = null) {
   const known = new Set(PROVIDERS.map((p) => p.id));
   // `live` = providers como o servidor informa (GET /api/terminals): disponibilidade e login reais; sem ele vale o padrão estático (todos disponíveis).
-  const rows = PROVIDERS.map((p) => { const l = Array.isArray(live) ? live.find((x) => x && x.id === p.id) : null; return { ...p, ...(l ? { available: l.available !== false, ...(l.auth ? { auth: l.auth } : {}) } : Array.isArray(live) ? { available: false } : {}) }; });
+  // Do servidor vêm também as capacidades, o comando de instalação e o aviso de permissões; e as IAs que ele conhece além das fixas (Gemini, OpenCode, Cursor…), depois delas.
+  const extra = (l) => ({ ...(l.auth ? { auth: l.auth } : {}), ...(l.capabilities && typeof l.capabilities === 'object' ? { capabilities: l.capabilities } : {}), ...(typeof l.install === 'string' ? { install: l.install } : {}), ...(typeof l.note === 'string' ? { note: l.note } : {}) });
+  const rows = PROVIDERS.map((p) => { const l = Array.isArray(live) ? live.find((x) => x && x.id === p.id) : null; return { ...p, ...(l ? { available: l.available !== false, ...extra(l) } : Array.isArray(live) ? { available: false } : {}) }; });
+  for (const l of Array.isArray(live) ? live : []) if (l && typeof l.id === 'string' && l.id && !known.has(l.id)) { known.add(l.id); rows.push({ id: l.id, label: typeof l.label === 'string' && l.label ? l.label : l.id, available: l.available !== false, ...extra(l) }); }
   for (const s of sessions) if (!known.has(providerOf(s))) { known.add(providerOf(s)); rows.push({ id: providerOf(s), label: providerOf(s), available: true }); }
   return rows.map((r) => {
     const mine = sessions.filter((s) => providerOf(s) === r.id), st = mine.map((s) => paneState(s, workingIds));

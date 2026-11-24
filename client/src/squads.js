@@ -17,7 +17,7 @@ const text = (v, max) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, 
 export function takesSkills(providerId, providers = null) {
   const p = Array.isArray(providers) ? providers.find((x) => x?.id === providerId) : null;
   if (typeof p?.capabilities?.plugins === 'boolean') return p.capabilities.plugins;
-  return providerId !== 'codex';
+  return providerId === 'claude'; // servidor antigo (sem capabilities.plugins): só o Claude Code recebe skills
 }
 const skillList = (list) => [...new Set((Array.isArray(list) ? list : []).filter((x) => typeof x === 'string' && x))].slice(0, MAX_SLOT_SKILLS);
 /** Skills que a vaga leva de fato (para mostrar): vaga Codex nunca tem. */

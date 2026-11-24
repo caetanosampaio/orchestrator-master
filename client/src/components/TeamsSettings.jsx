@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { coordinating } from '../env-view.js';
 import { useStore } from '../store.jsx';
 import { useSquads } from '../use-squads.js';
 import { useSkillCatalog } from '../use-skills.js';
@@ -59,7 +60,7 @@ export default function TeamsSettings() {
   const { terminals, notify } = useStore();
   const sq = useSquads(), cat = useSkillCatalog();
   const [view, setView] = useState({ name: 'list' }), [saving, setSaving] = useState(false), [freshId, setFreshId] = useState(null);
-  const providers = terminals?.providers ?? [], roles = terminals?.roles ?? [], byRole = Object.fromEntries(roles.map((r) => [r.id, r]));
+  const providers = coordinating(terminals?.providers), roles = terminals?.roles ?? [], byRole = Object.fromEntries(roles.map((r) => [r.id, r])); // times: só IAs que conversam com o Maestro
   const available = providers.filter((p) => p.available).map((p) => p.id), known = providers.length > 0, labelOf = labelFor(providers);
   const quick = availableMixes(available).filter((m) => QUICK[m.id]);
   const common = { byRole, labelOf, options: sq.options, available, known, catalog: cat.skills };

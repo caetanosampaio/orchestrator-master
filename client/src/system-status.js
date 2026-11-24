@@ -23,7 +23,8 @@ export function systemStatus({ sessions = [], workingIds = new Set(), tasks = []
   return {
     tone, ativos: c.running, executando: c.working, aguardando: c.waiting, falhas: c.failed, max: m, livres: m === null ? null : Math.max(0, m - c.running),
     groups: { working: cap(g.working), waiting: cap(g.waiting), failed: cap(g.failed) }, more: { working: more(g.working), waiting: more(g.waiting), failed: more(g.failed) },
-    providers: providerSummary(list, workingIds, providers).map((r) => ({ id: r.id, label: r.label, available: r.available, auth: r.auth ?? null, total: r.total, active: r.active })),
+    // as IAs novas só aparecem quando instaladas ou em uso: "não instalado" de cada IA possível seria ruído
+    providers: providerSummary(list, workingIds, providers).filter((r) => ['claude', 'codex'].includes(r.id) || r.available || r.total > 0).map((r) => ({ id: r.id, label: r.label, available: r.available, auth: r.auth ?? null, total: r.total, active: r.active })),
   };
 }
 

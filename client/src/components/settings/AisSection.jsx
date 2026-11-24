@@ -14,6 +14,8 @@ import { Row, Card, Block } from './SettingsUi.jsx';
 /**
  * Configurações > Suas IAs, enxuta: cada IA com o ÍCONE oficial (pequeno) e só o nome dela ("Claude", "Codex"). "Ligadas agora" = os agentes instalados de verdade
  * (de GET /api/terminals), com um ponto de estado (o texto do estado fica no título e nos detalhes); clicar num cartão mostra os detalhes logo abaixo.
+ * "Para instalar" = as que o servidor já integra mas não achou no PATH (Gemini, OpenCode, Cursor…), com o comando de instalação. As integradas no nível 1 (sem o Maestro:
+ * capabilities.mcp === false) abrem só como terminal livre pelo "+" do Cockpit, e o detalhe diz isso.
  * "Para ligar" = as outras IAs, que o FORGE ainda NÃO integra (em breve): aparecem só para acompanhar o que pode vir, sem botão que finja ligar.
  */
 function Detail({ row, go, accounts }) {
@@ -24,11 +26,12 @@ function Detail({ row, go, accounts }) {
   const { options } = useSquads();
   const o = slotOptions(options, row.id);
   const recheck = async () => { setChecking(true); try { await refresh(); } finally { setChecking(false); } };
+  const free = row.capabilities?.mcp === false; // integrada no nível 1: só terminal
   return (
     <Card className="ai-detail">
       <div className="ai-detail-h">
         <AiIcon id={row.id} size={26} />
-        <div><b>{aiShortName(row.id, row.label)}</b><span className="dim small">{row.id === 'claude' ? 'Agente padrão dos terminais.' : 'Ao lado do Claude Code, no mesmo Maestro.'}</span></div>
+        <div><b>{aiShortName(row.id, row.label)}</b><span className="dim small">{row.id === 'claude' ? 'Agente padrão dos terminais.' : free ? 'Terminal livre: ainda não conversa com o Maestro.' : 'Ao lado do Claude Code, no mesmo Maestro.'}</span></div>
         <span className={`oc-pill${st.kind === 'ok' ? ' ok' : st.kind === 'bad' ? ' bad' : ''}`}>{st.text}</span>
       </div>
       <Row title="Terminais" hint="Quantos terminais deste agente estão abertos agora.">{row.active > 0 ? `${row.active} ${row.active === 1 ? 'aberto' : 'abertos'}` : 'nenhum aberto'}</Row>
@@ -44,10 +47,15 @@ function Detail({ row, go, accounts }) {
         <Row title="Permissões" hint="O terminal interativo pede permissões no próprio terminal. Quando o projeto tem configuração do Claude Code que executa comandos e não está revisada no Git, o FORGE pede a sua confirmação antes de abrir." />
       </>}
       {row.id === 'codex' && <Row title="Instalação" hint="Instale com npm i -g @openai/codex e entre com codex login no terminal. O FORGE usa a conta do Codex deste computador; retomada de sessão ainda não existe para o Codex." />}
-      <Row title="Contas" hint={row.id === 'claude' ? 'Entre com mais de uma conta e escolha qual cada terminal usa.' : 'As contas desta IA que o FORGE usa.'}>
+      {free && <>
+        <Row title="Instalação" hint="Encontrada no PATH. O login é feito na própria CLI, ao abrir o terminal."><span className="oc-state ok"><i aria-hidden="true" />Detectada</span></Row>
+        <Row title="Coordenação" hint="Abre como terminal livre pelo + do Cockpit. Missões, times e o Maestro ficam para quando a coordenação for verificada com a CLI real." />
+        {row.note && <Row title="Permissões" hint={row.note} />}
+      </>}
+      {(!free || mine.length > 0) && <Row title="Contas" hint={row.id === 'claude' ? 'Entre com mais de uma conta e escolha qual cada terminal usa.' : 'As contas desta IA que o FORGE usa.'}>
         <span className="dim small">{!accounts ? 'verificando…' : mine.length ? `${mine.length} ${mine.length === 1 ? 'conta' : 'contas'} · ${on} ${on === 1 ? 'conectada' : 'conectadas'}` : 'nenhuma conta'}</span>{' '}
         <Btn onClick={() => go('accounts')}>Gerenciar contas</Btn>
-      </Row>
+      </Row>}
     </Card>
   );
 }
@@ -60,6 +68,7 @@ export function AisSection({ go }) {
   useEffect(() => { let off = false; api.get('/api/accounts').then((d) => { if (!off) setAccounts(Array.isArray(d?.accounts) ? d.accounts : []); }).catch(() => { if (!off) setAccounts([]); }); return () => { off = true; }; }, []);
   const rows = Array.isArray(terminals?.providers) ? providerSummary(terminals.sessions ?? [], workingIds, withAccountsLogin(terminals.providers, accounts)) : null;
   const installed = (rows ?? []).filter((r) => r.available !== false), current = installed.find((r) => r.id === sel) ?? installed[0] ?? null;
+  const toInstall = (rows ?? []).filter((r) => r.available === false && typeof r.install === 'string'); // integradas pelo servidor, ainda não instaladas
   return (
     <>
       <Block title="Ligadas agora" hint="Clique para ver os detalhes." id="ais-on">
@@ -79,9 +88,20 @@ export function AisSection({ go }) {
           </div>}
       </Block>
       {current && <Detail row={current} go={go} accounts={accounts} />}
+      {toInstall.length > 0 && <Block title="Para instalar" hint="O FORGE já abre estas IAs num terminal: instale a CLI e verifique de novo." id="ais-install">
+        <ul className="ai-install" aria-label="IAs integradas que ainda não estão instaladas">
+          {toInstall.map((r) => (
+            <li key={r.id}>
+              <AiIcon id={r.id} size={16} />
+              <span className="ai-card-n">{aiShortName(r.id, r.label)}</span>
+              <code className="mono" title="Comando de instalação (rode num terminal)">{r.install}</code>
+            </li>
+          ))}
+        </ul>
+      </Block>}
       <Block title="Para ligar" hint="IAs que o FORGE ainda não integra. Aparecem aqui para você acompanhar o que pode vir." id="ais-next">
         <ul className="ai-next" aria-label="IAs ainda não integradas">
-          {plannedAis().map((a) => (
+          {plannedAis((rows ?? []).map((r) => r.id)).map((a) => (
             <li key={a.id} className="ai-next-i" title={`${a.label}: em breve`}>
               <AiIcon id={a.id} size={16} />
               <span className="ai-card-n">{a.label}</span>

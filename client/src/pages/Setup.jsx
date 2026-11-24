@@ -55,7 +55,7 @@ export default function Setup({ onFinish }) {
   const issues = useMemo(() => prereqIssues(state, terminals?.providers), [state, terminals]);
   const claudeOk = p.claude ? p.claude.available === true : state?.executor?.available !== false;
   const codex = (terminals?.providers ?? []).find((x) => x.id === 'codex');
-  const anyAi = claudeOk || codex?.available === true; // nenhuma IA é obrigatória em si: basta uma delas
+  const anyAi = claudeOk || (terminals?.providers ?? []).some((x) => x.id !== 'claude' && x.available === true); // nenhuma IA é obrigatória em si: basta uma delas (Codex, Gemini, OpenCode, Cursor…)
   const loginOk = !(p.login?.known === true && p.login.loggedIn === false); // alguma conta conectada de alguma IA (o servidor decide)
   const go = (n) => { setDir(n > i ? 1 : -1); setI(Math.max(0, Math.min(STEPS.length - 1, n))); };
   const finish = () => { setPref('setupDone', true); onFinish?.(); };

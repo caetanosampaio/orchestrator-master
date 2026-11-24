@@ -50,7 +50,7 @@ test('página: cada seção da navegação tem um componente, a busca e o cartã
   for (const i of flatItems()) assert.match(page, new RegExp(`\\b${i.id}: <`), `a seção ${i.id} não tem componente`);
   assert.match(page, /Buscar nas Configurações/); assert.match(page, /filterNav\(query\)/); assert.match(page, /className="set-me"/); assert.match(page, /role="tablist"/);
   const ais = src('components/settings/AisSection.jsx'), next = ais.slice(ais.indexOf('<Block title="Para ligar"'));
-  assert.match(next, /plannedAis\(\)/); assert.match(next, /em breve/); assert.ok(!/aiName\(/.test(ais), 'Suas IAs mostra só o nome da IA (aiShortName), sem "Code"/"CLI"'); assert.ok(!/<button/.test(next), 'IA ainda não integrada não tem botão de ligar');
+  assert.match(next, /plannedAis\(/); assert.match(next, /em breve/); assert.ok(!/aiName\(/.test(ais), 'Suas IAs mostra só o nome da IA (aiShortName), sem "Code"/"CLI"'); assert.ok(!/<button/.test(next), 'IA ainda não integrada não tem botão de ligar');
   assert.match(src('components/settings/GolemSection.jsx'), /Tokens forjados/); assert.ok(!itemById('mascotes') && !itemById('bichinho'), 'Mascotes e Bichinho deram lugar ao Golem');
 });
 

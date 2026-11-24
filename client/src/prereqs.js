@@ -11,7 +11,7 @@ export const PREREQ = Object.freeze({
   agent: Object.freeze({
     title: 'Nenhuma IA encontrada',
     text: 'O FORGE precisa de pelo menos uma IA de linha de comando instalada neste computador (hoje: Claude Code ou Codex CLI) e conectada à sua assinatura.',
-    steps: Object.freeze(['Instale o Claude Code (veja a documentação oficial da Anthropic) ou o Codex CLI (`npm i -g @openai/codex`).', 'Abra um terminal e rode `claude` ou `codex login` uma vez para entrar com a sua conta.', 'Volte aqui e clique em Verificar novamente.']),
+    steps: Object.freeze(['Instale o Claude Code (veja a documentação oficial da Anthropic) ou o Codex CLI (`npm i -g @openai/codex`). Gemini CLI, OpenCode e Cursor CLI também servem, como terminal livre.', 'Abra um terminal e rode `claude` ou `codex login` uma vez para entrar com a sua conta.', 'Volte aqui e clique em Verificar novamente.']),
     blocking: true,
   }),
   login: Object.freeze({
@@ -47,10 +47,13 @@ export function prereqIssues(state, providers = null) {
   const add = (id, detail) => out.push({ id, ...PREREQ[id], detail });
   const codex = Array.isArray(providers) ? providers.find((x) => x?.id === 'codex') : null;
   const codexOn = codex?.available === true;
-  const noAgent = claudeOff && Array.isArray(providers) && !codexOn;
+  // IAs além do Claude e do Codex (Gemini, OpenCode, Cursor…): também contam como "há uma IA". Elas não têm contas no FORGE (o login é na própria CLI), então, quando são as ÚNICAS, o aviso de login não vale.
+  const otherOn = Array.isArray(providers) && providers.some((x) => x?.available === true && x.id !== 'claude' && x.id !== 'codex');
+  const noAgent = claudeOff && Array.isArray(providers) && !codexOn && !otherOn;
+  const onlyOthers = claudeOff && !codexOn && otherOn;
   const waiting = claudeOff && !Array.isArray(providers); // Claude ausente e provedores ainda não chegaram: a decisão depende do Codex, então nada de IA/login por enquanto
   if (noAgent) add('agent', extra(p?.claude?.detail ?? state.executor?.detail));
-  else if (!waiting && p?.login?.known === true && p.login.loggedIn === false) {
+  else if (!waiting && !onlyOthers && p?.login?.known === true && p.login.loggedIn === false) {
     // login = alguma conta conectada de ALGUMA IA (o servidor decide); só quando ele TEM certeza (`known`): servidor antigo ou consulta sem resposta não geram aviso falso.
     // Sem nenhuma IA instalada o login é irrelevante (a pendência da IA já bloqueia).
     add('login', ''); // o detalhe do servidor repetiria os passos; só o texto fixo vale
