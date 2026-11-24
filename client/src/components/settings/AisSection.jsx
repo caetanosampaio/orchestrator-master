@@ -27,11 +27,14 @@ function Detail({ row, go, accounts }) {
   const o = slotOptions(options, row.id);
   const recheck = async () => { setChecking(true); try { await refresh(); } finally { setChecking(false); } };
   const free = row.capabilities?.mcp === false; // integrada no nível 1: só terminal
+  const unverified = !free && row.capabilities?.mcpVerified === false; // nível 2 ainda não verificado com a CLI real (Gemini, Cursor)
+  const tasksOnly = !free && (row.capabilities?.state === false || row.capabilities?.rolePrompt === false); // Cursor: só nas vagas que recebem tarefas
+  const extra = row.id !== 'claude' && row.id !== 'codex';
   return (
     <Card className="ai-detail">
       <div className="ai-detail-h">
         <AiIcon id={row.id} size={26} />
-        <div><b>{aiShortName(row.id, row.label)}</b><span className="dim small">{row.id === 'claude' ? 'Agente padrão dos terminais.' : free ? 'Terminal livre: ainda não conversa com o Maestro.' : 'Ao lado do Claude Code, no mesmo Maestro.'}</span></div>
+        <div><b>{aiShortName(row.id, row.label)}</b><span className="dim small">{row.id === 'claude' ? 'Agente padrão dos terminais.' : free ? 'Terminal livre: ainda não conversa com o Maestro.' : tasksOnly ? 'Recebe tarefas do Maestro (a confirmar na prática).' : unverified ? 'Conversa com o Maestro (a confirmar na prática).' : 'Ao lado do Claude Code, no mesmo Maestro.'}</span></div>
         <span className={`oc-pill${st.kind === 'ok' ? ' ok' : st.kind === 'bad' ? ' bad' : ''}`}>{st.text}</span>
       </div>
       <Row title="Terminais" hint="Quantos terminais deste agente estão abertos agora.">{row.active > 0 ? `${row.active} ${row.active === 1 ? 'aberto' : 'abertos'}` : 'nenhum aberto'}</Row>
@@ -47,12 +50,14 @@ function Detail({ row, go, accounts }) {
         <Row title="Permissões" hint="O terminal interativo pede permissões no próprio terminal. Quando o projeto tem configuração do Claude Code que executa comandos e não está revisada no Git, o FORGE pede a sua confirmação antes de abrir." />
       </>}
       {row.id === 'codex' && <Row title="Instalação" hint="Instale com npm i -g @openai/codex e entre com codex login no terminal. O FORGE usa a conta do Codex deste computador; retomada de sessão ainda não existe para o Codex." />}
-      {free && <>
+      {extra && <>
         <Row title="Instalação" hint="Encontrada no PATH. O login é feito na própria CLI, ao abrir o terminal."><span className="oc-state ok"><i aria-hidden="true" />Detectada</span></Row>
-        <Row title="Coordenação" hint="Abre como terminal livre pelo + do Cockpit. Missões, times e o Maestro ficam para quando a coordenação for verificada com a CLI real." />
+        {free && <Row title="Coordenação" hint="Abre como terminal livre pelo + do Cockpit. Missões, times e o Maestro ficam para quando a coordenação for verificada com a CLI real." />}
+        {unverified && tasksOnly && <Row title="Coordenação" hint={`Entra em times, nas vagas que recebem tarefas (não como Maestro nem em etapas de missão: o FORGE não consegue passar o papel a ele nem saber quando está livre). O Maestro só manda tarefa depois que o terminal se conecta de fato.${row.id === 'cursor' ? ' Ao abrir o primeiro terminal, o FORGE grava a entrada forge-maestro no ~/.cursor/mcp.json (sem porta nem token, com cópia de segurança); na primeira vez, o Cursor pode pedir para aprovar esse servidor no próprio terminal.' : ''}`} />}
+        {unverified && !tasksOnly && <Row title="Coordenação" hint="Entra em times, missões e no Maestro, mas a ligação com o Maestro ainda não foi verificada com a CLI real: o Maestro só manda tarefa a um terminal depois que ele se conecta de fato. O papel do terminal chega no primeiro pedido de cada sessão. Não abre o planejador de missão." />}
         {row.note && <Row title="Permissões" hint={row.note} />}
       </>}
-      {(!free || mine.length > 0) && <Row title="Contas" hint={row.id === 'claude' ? 'Entre com mais de uma conta e escolha qual cada terminal usa.' : 'As contas desta IA que o FORGE usa.'}>
+      {(!extra || mine.length > 0) && <Row title="Contas" hint={row.id === 'claude' ? 'Entre com mais de uma conta e escolha qual cada terminal usa.' : 'As contas desta IA que o FORGE usa.'}>
         <span className="dim small">{!accounts ? 'verificando…' : mine.length ? `${mine.length} ${mine.length === 1 ? 'conta' : 'contas'} · ${on} ${on === 1 ? 'conectada' : 'conectadas'}` : 'nenhuma conta'}</span>{' '}
         <Btn onClick={() => go('accounts')}>Gerenciar contas</Btn>
       </Row>}

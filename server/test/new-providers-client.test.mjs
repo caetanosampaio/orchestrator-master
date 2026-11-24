@@ -13,6 +13,8 @@ const { takesSkills } = await import('../../client/src/squads.js');
 const { prereqIssues } = await import('../../client/src/prereqs.js');
 const { systemStatus } = await import('../../client/src/system-status.js');
 const H = await import('../../server/harness.js');
+const FV = await import('../../client/src/flows-view.js');
+const P = await import('../../server/providers/index.js');
 
 const LIVE = [
   { id: 'claude', label: 'Claude Code', available: true, capabilities: { resume: true, plugins: true, mcp: true, readOnly: true } },
@@ -66,4 +68,10 @@ test('status do sistema: IA nova só aparece quando instalada ou em uso', () => 
 test('Quem faz cada tarefa: só oferece IAs com o Maestro (o piloto e as linhas viram Maestro e etapas de missão)', () => {
   const v = H.harnessView({});
   assert.deepEqual(v.providers, ['claude', 'codex', 'gemini'], 'o Gemini (nível 2) entra; OpenCode e Cursor não');
+});
+
+test('missões: as etapas oferecem as IAs que o servidor aceita em etapa (com o Maestro); o planejador, só as que podem planejar', () => {
+  assert.deepEqual([...FV.STEP_PROVIDERS], P.providerIds().filter(P.canStep), 'a lista do cliente acompanha o servidor');
+  assert.deepEqual([...FV.PROVIDERS], P.providerIds().filter(P.canPlan));
+  for (const p of FV.STEP_PROVIDERS) assert.equal(typeof FV.PROVIDER_LABEL[p], 'string', p);
 });

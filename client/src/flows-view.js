@@ -77,8 +77,10 @@ export const BRANCH_CHECKED_OUT_TEXT = 'A branch da missão está em checkout em
 /** Integração de etapa que trava a missão (não inicia etapas novas) até você tentar de novo ou descartar a etapa. */
 export const INTEGRATION_PROBLEM_STATES = Object.freeze(['conflict', 'blocked', 'error']);
 export const KIND_LABEL = Object.freeze({ project: 'projeto', automation: 'automação' });
-export const PROVIDER_LABEL = Object.freeze({ claude: 'Claude Code', codex: 'Codex CLI' });
-export const PROVIDERS = Object.freeze(['claude', 'codex']);
+export const PROVIDER_LABEL = Object.freeze({ claude: 'Claude Code', codex: 'Codex CLI', gemini: 'Gemini CLI' });
+export const PROVIDERS = Object.freeze(['claude', 'codex']); // o planejador (briefing): o Gemini ainda não abre o planejador
+/** Agentes de uma ETAPA: os que conversam com o Maestro (o Gemini no nível 2, a confirmar pela conexão real; OpenCode e Cursor ainda não). O servidor confere de novo. */
+export const STEP_PROVIDERS = Object.freeze(['claude', 'codex', 'gemini']);
 /** Reserva para quando /api/terminals ainda não respondeu: os papéis do servidor (terminals.js). O que vale é a lista real recebida em `roles`. */
 export const FALLBACK_ROLES = Object.freeze([
   { id: 'builder', label: 'Construtor' }, { id: 'reviewer', label: 'Revisor' }, { id: 'scout', label: 'Batedor' }, { id: 'maestro', label: 'Maestro' },

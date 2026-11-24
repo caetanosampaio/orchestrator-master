@@ -6,7 +6,7 @@ import { useStore } from '../store.jsx';
 import ProviderLogo from './ProviderLogo.jsx';
 import {
   addStep, ancestorKeys, blocksImplicitSubmit, draftToBody, draftToScheduleBody, emptyDraft, flowToDraft, stepRoles, MAX_EVERY_HOURS, MAX_STEPS, MAX_TEXT, MAX_TITLE, patchStep, proposalNoticeLines, proposalToDraft,
-  PROVIDER_LABEL, PROVIDERS, removeStep, toggleDependency, toggleScheduleDay, validateDraft, validateScheduleDraft, WEEKDAY_SHORT,
+  PROVIDER_LABEL, STEP_PROVIDERS, removeStep, toggleDependency, toggleScheduleDay, validateDraft, validateScheduleDraft, WEEKDAY_SHORT,
   MAX_VERIFY_TEXT, VERIFY_SHELL_HINT, VERIFY_TIMEOUT_MAX, VERIFY_TIMEOUT_MIN, verifyShellOps, accountRows, setDraftAccount,
 } from '../flows-view.js';
 
@@ -221,7 +221,7 @@ function StepEditor({ draft, step, index, roles, opts, errors, onChange, onRemov
       <div className="fl-grid4">
         <label>Agente
           <select value={step.provider} onChange={(e) => { const p = e.target.value, o = opts[p] ?? { models: [], efforts: [] }; onChange({ provider: p, model: o.models.some((m) => m.id === step.model) ? step.model : '', effort: o.efforts.some((x) => x.id === step.effort) ? step.effort : '' }); }}>
-            {PROVIDERS.map((p) => <option key={p} value={p}>{PROVIDER_LABEL[p]}</option>)}
+            {STEP_PROVIDERS.map((p) => <option key={p} value={p}>{PROVIDER_LABEL[p]}</option>)}
           </select>
         </label>
         <label>Papel
