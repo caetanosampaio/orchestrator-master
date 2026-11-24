@@ -304,11 +304,12 @@ export default function AccountsPanel() {
             <div className="acc-pick-grid">
               {providers.map((p) => {
                 const ok = providerSelectable(p), on = prov === p.id;
-                const sub = p.available === false ? 'Não instalado neste computador' : p.canLogin === false ? 'Login no próprio CLI: use a conta deste computador' : 'Login pelo navegador, guardado no FORGE';
+                const sub = p.available === false ? 'Não instalado' : p.canLogin === false ? 'Login no próprio CLI' : 'Login pelo navegador';
+                const why = p.available === false ? 'Esta IA não está instalada neste computador.' : p.canLogin === false ? (p.note || 'O login desta IA é feito no próprio CLI: use a conta deste computador.') : 'O FORGE abre o navegador para o login, e ele fica guardado só no FORGE.';
                 return (
-                  <label key={p.id} className={`acc-tile${on ? ' on' : ''}${ok ? '' : ' off'}`} title={!ok ? (p.note || sub) : undefined}>
+                  <label key={p.id} className={`acc-tile${on ? ' on' : ''}${ok ? '' : ' off'}`} title={why}>
                     <input className="sr" type="radio" name="acc-prov" value={p.id} checked={on} disabled={!ok} onChange={() => setProv(p.id)} />
-                    <ProviderLogo id={p.id} size={28} />
+                    <ProviderLogo id={p.id} size={18} />
                     <span className="acc-tile-t"><b>{p.label}</b><span>{sub}</span></span>
                     <i className="acc-tile-dot" aria-hidden="true" />
                   </label>
