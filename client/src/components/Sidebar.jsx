@@ -11,6 +11,7 @@ import { withoutFlowTerminals } from '../flow-terminals.js';
 import { logoSvg } from '../forge-logo.mjs';
 import GolemSprite from './GolemSprite.jsx';
 import { useGolem } from '../use-golem.js';
+import { fmtTokens } from '../golem.js';
 import '../golem.css';
 
 const BRAND = logoSvg({ variant: 'mark', ink: 'currentColor', stroke: 3 }); // SVG fixo gerado do código (nenhum dado externo entra nele)
@@ -115,14 +116,39 @@ export const HomeIcon = () => <svg width={15} height={15} viewBox="0 0 24 24" fi
  * Embaixo, as Configurações e "Arquivos" (abrir, trocar ou adicionar workspace). Em telas estreitas vira uma gaveta modal. Tudo vem de /api/state e /api/terminals.
  */
 /** O golem na barra lateral, acima do rodapé: só ele (a forma escolhida), animado conforme o que acontece no Cockpit — martela enquanto há tokens sendo gastos,
- * comemora quando um trabalho termina, respira parado e cochila depois de um tempo sem trabalho. Sem textos. Abre Configurações > Golem. */
+ * comemora quando um trabalho termina, respira parado e cochila depois de um tempo sem trabalho. O clique abre um painel com o nível (a fase atual, não a forma
+ * exibida), o total de tokens e a barra até o próximo nível; "Ver detalhes" leva a Configurações > Golem. Esc ou clique fora fecha. */
 function SideGolem({ onOpen }) {
   const g = useGolem();
+  const [open, setOpen] = useState(false);
+  const wrap = useRef(null), btn = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const down = (e) => { if (!wrap.current?.contains(e.target)) setOpen(false); };
+    const key = (e) => { if (e.key === 'Escape') { e.stopPropagation(); setOpen(false); btn.current?.focus(); } };
+    document.addEventListener('mousedown', down); document.addEventListener('keydown', key, true);
+    return () => { document.removeEventListener('mousedown', down); document.removeEventListener('keydown', key, true); };
+  }, [open]);
   if (!g.loaded) return null;
+  const level = g.index + 1, pctNow = Math.round(g.progress * 100);
   return (
-    <button type="button" className="fx-golem" onClick={onOpen} aria-label={`Abrir o golem (${g.stages[g.shown].label})`}>
-      <GolemSprite stage={g.shown} colors={g.alloy.colors} mood={g.mood} scale={3} />
-    </button>
+    <div className="fx-golem-wrap" ref={wrap}>
+      {open && (
+        <div id="fx-golem-info" className="fx-golem-pop" role="dialog" aria-label="Nível do golem">
+          <div className="gm-row"><span>Nível {level} de {g.stages.length}</span><b>{g.stage.label}</b></div>
+          <div className="gm-row"><span>Tokens gastos</span><b>{fmtTokens(g.total)}</b></div>
+          {g.next ? <>
+            <div className="gm-bar" role="progressbar" aria-label={`Progresso até o nível ${level + 1} (${g.next.label})`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pctNow}><u style={{ width: `${pctNow}%` }} /></div>
+            <p className="gm-note">{pctNow}% · faltam <b>{fmtTokens(g.toNext)}</b> para o nível {level + 1} ({g.next.label}).</p>
+          </> : <p className="gm-note">Nível máximo.</p>}
+          <button type="button" className="gm-link" onClick={() => { setOpen(false); onOpen?.(); }}>Ver detalhes</button>
+        </div>
+      )}
+      <button ref={btn} type="button" className="fx-golem" onClick={() => setOpen((v) => !v)} aria-expanded={open} aria-controls={open ? 'fx-golem-info' : undefined}
+        aria-label={`Golem: nível ${level}, ${g.stage.label}. Mostrar progresso`}>
+        <GolemSprite stage={g.shown} colors={g.alloy.colors} mood={g.mood} scale={3} />
+      </button>
+    </div>
   );
 }
 

@@ -84,7 +84,12 @@
 .px-f.steam, .gl-m-working .px-f.steam { animation: px-rise 1.8s steps(3, end) infinite; }
 
 /* barra lateral do Cockpit (Sidebar.jsx > SideGolem): só o golem, animado conforme o trabalho; sem textos */
-.fx-golem { display: grid; place-items: end start; flex: none; margin: 4px 0 2px; padding: 6px 8px; border: 0; border-radius: 10px; background: transparent; cursor: pointer; line-height: 0; transition: background-color .15s; }
+/* centralizado na largura da barra; o painel do clique abre acima dele, por cima da lista de workspaces */
+.fx-golem-wrap { position: relative; display: flex; justify-content: center; flex: none; }
+.fx-golem-pop { position: absolute; bottom: calc(100% + 6px); left: 0; right: 0; z-index: 30; display: grid; gap: 8px; padding: 12px 14px; border: 1px solid var(--line-strong, rgba(255, 255, 255, .12)); border-radius: 12px; background: var(--card, #222); box-shadow: 0 10px 30px rgba(0, 0, 0, .45); animation: gm-in .15s ease-out both; }
+.fx-golem-pop .gm-row b { font-size: 13.5px; }
+.fx-golem-pop .gm-link { justify-self: start; }
+.fx-golem { display: grid; place-items: end center; flex: none; margin: 4px 0 2px; padding: 6px 8px; border: 0; border-radius: 10px; background: transparent; cursor: pointer; line-height: 0; transition: background-color .15s; }
 .fx-golem:hover { background: rgba(255, 255, 255, .04); }
 .fx-golem:focus-visible { outline: 2px solid var(--focus, rgba(255, 255, 255, .55)); outline-offset: 1px; }
 
@@ -103,5 +108,5 @@
 @keyframes gm-evolve { 0% { opacity: 0; transform: scale(.6); filter: brightness(3); } 60% { opacity: 1; transform: scale(1.08); filter: brightness(1.6); } 100% { transform: scale(1); filter: brightness(1); } }
 @keyframes gm-flash { 0% { opacity: 0; } 25% { opacity: 1; } 100% { opacity: 0; } }
 @keyframes gm-zzz { 0% { opacity: 0; transform: translate(0, 6px); } 40% { opacity: 1; } 100% { opacity: 0; transform: translate(8px, -16px); } }
-@media (prefers-reduced-motion: reduce) { .gm *, .gm *::before, .gm *::after, .fx-golem * { animation: none !important; transition: none !important; } }
-html[data-motion="reduced"] .gm *, html[data-motion="reduced"] .gm *::before, html[data-motion="reduced"] .gm *::after, html[data-motion="reduced"] .fx-golem * { animation: none !important; transition: none !important; }
+@media (prefers-reduced-motion: reduce) { .gm *, .gm *::before, .gm *::after, .fx-golem *, .fx-golem-pop { animation: none !important; transition: none !important; } }
+html[data-motion="reduced"] .gm *, html[data-motion="reduced"] .gm *::before, html[data-motion="reduced"] .gm *::after, html[data-motion="reduced"] .fx-golem *, html[data-motion="reduced"] .fx-golem-pop { animation: none !important; transition: none !important; }
