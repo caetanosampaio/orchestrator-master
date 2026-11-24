@@ -131,6 +131,7 @@ test('Cockpit sem terminais: só os times de Configurações (instalados e seus)
 
 test('AiIcon: ícone oficial das IAs integradas; as demais levam um selo provisório com a inicial na cor do catálogo', () => {
   const logo = src('components/ProviderLogo.jsx'), ai = logo.slice(logo.indexOf('export function AiIcon'), logo.indexOf('export default function ProviderLogo'));
-  assert.match(ai, /if \(id === 'claude' \|\| id === 'codex'\) return <ProviderLogo id=\{id\}/, 'Claude e Codex usam a logo oficial');
+  assert.match(ai, /if \(OFFICIAL\.has\(id\)\) return <ProviderLogo id=\{id\}/, 'as integradas usam o ícone oficial');
+  assert.match(logo, /const OFFICIAL = new Set\(\['claude', 'codex', 'gemini', 'cursor', 'opencode'\]\)/, 'Claude, Codex, Gemini, Cursor e OpenCode com o ícone oficial');
   assert.match(ai, /className=\{`ai-mono/); assert.match(ai, /'--ai': c\?\.color/); assert.ok(!/dangerouslySetInnerHTML/.test(ai));
 });

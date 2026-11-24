@@ -12,10 +12,9 @@ import { Btn } from '../ui.jsx';
 import { Row, Card, Block } from './SettingsUi.jsx';
 
 /**
- * Configurações > Suas IAs, enxuta: cada IA com o ÍCONE oficial (pequeno) e só o nome dela ("Claude", "Codex"). "Ligadas agora" = os agentes instalados de verdade
- * (de GET /api/terminals), com um ponto de estado (o texto do estado fica no título e nos detalhes); clicar num cartão mostra os detalhes logo abaixo.
- * "Para instalar" = as que o servidor já integra mas não achou no PATH (Gemini, OpenCode, Cursor…), com o comando de instalação. As integradas no nível 1 (sem o Maestro:
- * capabilities.mcp === false) abrem só como terminal livre pelo "+" do Cockpit, e o detalhe diz isso.
+ * Configurações > Suas IAs, enxuta: TODAS as IAs que o FORGE integra (de GET /api/terminals), instaladas ou não, juntas numa grade, cada uma só com o ícone oficial e o nome
+ * ("Claude", "Codex", "Gemini"…), sem indicador de estado no cartão (o estado fica no detalhe, e no texto para leitor de tela). Clicar num cartão mostra os detalhes logo abaixo:
+ * instalação (com o comando quando falta), coordenação com o Maestro e contas. As de nível 1 (capabilities.mcp === false) abrem só como terminal livre pelo "+" do Cockpit.
  * "Para ligar" = as outras IAs, que o FORGE ainda NÃO integra (em breve): aparecem só para acompanhar o que pode vir, sem botão que finja ligar.
  */
 function Detail({ row, go, accounts }) {
@@ -51,7 +50,10 @@ function Detail({ row, go, accounts }) {
       </>}
       {row.id === 'codex' && <Row title="Instalação" hint="Instale com npm i -g @openai/codex e entre com codex login no terminal. O FORGE usa a conta do Codex deste computador; retomada de sessão ainda não existe para o Codex." />}
       {extra && <>
-        <Row title="Instalação" hint="Encontrada no PATH. O login é feito na própria CLI, ao abrir o terminal."><span className="oc-state ok"><i aria-hidden="true" />Detectada</span></Row>
+        {row.available === false
+          ? <Row title="Instalação" hint="Não encontrada no PATH. Instale a CLI num terminal e clique em Verificar; o login é feito na própria CLI, ao abrir o terminal.">{row.install && <code className="ai-cmd mono" title="Comando de instalação (rode num terminal)">{row.install}</code>}</Row>
+          : <Row title="Instalação" hint="Encontrada no PATH. O login é feito na própria CLI, ao abrir o terminal."><span className="oc-state ok"><i aria-hidden="true" />Detectada</span></Row>}
+        {row.available === false && <Row title="Verificar de novo" hint="Depois de instalar, a detecção leva alguns segundos."><Btn onClick={recheck} disabled={checking}>{checking ? 'Verificando…' : 'Verificar'}</Btn></Row>}
         {free && <Row title="Coordenação" hint="Abre como terminal livre pelo + do Cockpit. Missões, times e o Maestro ficam para quando a coordenação for verificada com a CLI real." />}
         {unverified && tasksOnly && <Row title="Coordenação" hint={`Entra em times, nas vagas que recebem tarefas (não como Maestro nem em etapas de missão: o FORGE não consegue passar o papel a ele nem saber quando está livre). O Maestro só manda tarefa depois que o terminal se conecta de fato.${row.id === 'cursor' ? ' Ao abrir o primeiro terminal, o FORGE grava a entrada forge-maestro no ~/.cursor/mcp.json (sem porta nem token, com cópia de segurança); na primeira vez, o Cursor pode pedir para aprovar esse servidor no próprio terminal.' : ''}`} />}
         {unverified && !tasksOnly && <Row title="Coordenação" hint="Entra em times, missões e no Maestro, mas a ligação com o Maestro ainda não foi verificada com a CLI real: o Maestro só manda tarefa a um terminal depois que ele se conecta de fato. O papel do terminal chega no primeiro pedido de cada sessão. Não abre o planejador de missão." />}
@@ -72,38 +74,22 @@ export function AisSection({ go }) {
   const [accounts, setAccounts] = useState(null);
   useEffect(() => { let off = false; api.get('/api/accounts').then((d) => { if (!off) setAccounts(Array.isArray(d?.accounts) ? d.accounts : []); }).catch(() => { if (!off) setAccounts([]); }); return () => { off = true; }; }, []);
   const rows = Array.isArray(terminals?.providers) ? providerSummary(terminals.sessions ?? [], workingIds, withAccountsLogin(terminals.providers, accounts)) : null;
-  const installed = (rows ?? []).filter((r) => r.available !== false), current = installed.find((r) => r.id === sel) ?? installed[0] ?? null;
-  const toInstall = (rows ?? []).filter((r) => r.available === false && typeof r.install === 'string'); // integradas pelo servidor, ainda não instaladas
+  const all = rows ?? [], current = all.find((r) => r.id === sel) ?? all.find((r) => r.available !== false) ?? all[0] ?? null;
   return (
     <>
-      <Block title="Ligadas agora" hint="Clique para ver os detalhes." id="ais-on">
-        {!rows ? <p className="dim small">Consultando os agentes instalados…</p> : installed.length === 0
-          ? <p className="oc-note err" role="status">Nenhum agente instalado. Instale o Claude Code ou o Codex CLI e verifique de novo.</p>
-          : <div className="ai-cards" role="group" aria-label="Agentes instalados">
-            {installed.map((r) => {
-              const st = providerStatus(r);
-              return (
-                <button key={r.id} type="button" className={`ai-card${current?.id === r.id ? ' on' : ''}`} aria-pressed={current?.id === r.id} onClick={() => setSel(r.id)} title={st.text}>
-                  <AiIcon id={r.id} size={20} />
-                  <b className="ai-card-n">{aiShortName(r.id, r.label)}</b>
-                  <i className={`ai-dot ${st.kind}`} aria-hidden="true" /><span className="sr">{st.text}</span>
-                </button>
-              );
-            })}
+      <Block title="Integradas" hint="Clique numa IA para ver os detalhes." id="ais-on">
+        {!rows ? <p className="dim small">Consultando as IAs…</p>
+          : <div className="ai-cards" role="group" aria-label="IAs integradas ao FORGE">
+            {all.map((r) => (
+              <button key={r.id} type="button" className={`ai-card${current?.id === r.id ? ' on' : ''}`} aria-pressed={current?.id === r.id} onClick={() => setSel(r.id)}>
+                <AiIcon id={r.id} size={22} />
+                <b className="ai-card-n">{aiShortName(r.id, r.label)}</b>
+                <span className="sr">{providerStatus(r).text}</span>
+              </button>
+            ))}
           </div>}
       </Block>
       {current && <Detail row={current} go={go} accounts={accounts} />}
-      {toInstall.length > 0 && <Block title="Para instalar" hint="O FORGE já abre estas IAs num terminal: instale a CLI e verifique de novo." id="ais-install">
-        <ul className="ai-install" aria-label="IAs integradas que ainda não estão instaladas">
-          {toInstall.map((r) => (
-            <li key={r.id}>
-              <AiIcon id={r.id} size={16} />
-              <span className="ai-card-n">{aiShortName(r.id, r.label)}</span>
-              <code className="mono" title="Comando de instalação (rode num terminal)">{r.install}</code>
-            </li>
-          ))}
-        </ul>
-      </Block>}
       <Block title="Para ligar" hint="IAs que o FORGE ainda não integra. Aparecem aqui para você acompanhar o que pode vir." id="ais-next">
         <ul className="ai-next" aria-label="IAs ainda não integradas">
           {plannedAis((rows ?? []).map((r) => r.id)).map((a) => (

@@ -41,19 +41,17 @@
 .set-card > .oc-note { margin: 0 18px 14px; }
 
 /* ---------- Suas IAs (mascotes no estilo dos Times prontos: o boneco em cima, o nome embaixo) ---------- */
-/* Suas IAs, enxuta: cartões em linha (ícone pequeno, nome, ponto de estado); as que ainda não integram são etiquetas discretas */
-.ai-cards { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
-.ai-card { display: inline-flex; align-items: center; gap: 10px; min-width: 132px; padding: 9px 12px; border: 1px solid var(--line); border-radius: var(--r-3); background: var(--card); color: inherit; font: inherit; cursor: pointer; transition: border-color 140ms ease, background-color 140ms ease; }
-.ai-card:hover { border-color: var(--line-strong); }
-.ai-card:focus-visible { outline: 2px solid var(--focus, var(--line-strong)); outline-offset: 1px; }
-.ai-card.on { border-color: var(--line-strong); background: color-mix(in srgb, var(--card) 85%, #ffffff 4%); }
-.ai-dot { flex: none; width: 7px; height: 7px; margin-left: auto; border-radius: 50%; background: var(--faint); }
-.ai-dot.ok { background: var(--ok, #4cc38a); } .ai-dot.bad { background: var(--err, #e5484d); }
+/* Suas IAs: todas as integradas juntas numa grade uniforme (ícone oficial + nome), sem indicador de estado; as que ainda não integram são etiquetas discretas */
+.ai-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 8px; }
+.ai-card { display: flex; align-items: center; gap: 11px; min-width: 0; padding: 13px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--text); font: inherit; text-align: left; cursor: pointer; transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease; }
+.ai-card .prov-mark.cursor, .ai-card .prov-mark.opencode { color: var(--strong); }
+.ai-card:hover { border-color: var(--line-strong); background: color-mix(in srgb, var(--card) 92%, #ffffff 3%); }
+.ai-card:focus-visible { outline: 2px solid var(--focus, var(--line-strong)); outline-offset: 2px; }
+.ai-card.on { border-color: color-mix(in srgb, var(--strong) 38%, transparent); background: color-mix(in srgb, var(--card) 88%, #ffffff 5%); box-shadow: 0 0 0 3px color-mix(in srgb, var(--strong) 7%, transparent); }
+.ai-card-n { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.ai-cmd { display: inline-block; max-width: 100%; overflow: hidden; padding: 3px 8px; border: 1px solid var(--line); border-radius: 6px; color: var(--dim); font-size: 11.5px; white-space: nowrap; text-overflow: ellipsis; vertical-align: middle; user-select: all; }
 .ai-detail .ai-detail-h { display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--line); }
 .ai-detail-h > div { flex: 1; display: flex; flex-direction: column; min-width: 0; } .ai-detail-h b { color: var(--strong); font-size: 15px; font-weight: 600; }
-.ai-install { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
-.ai-install li { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--r-3); }
-.ai-install code { margin-left: auto; overflow: hidden; color: var(--dim); font-size: 11.5px; white-space: nowrap; text-overflow: ellipsis; user-select: all; }
 .ai-next { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
 .ai-next-i { display: inline-flex; align-items: center; gap: 7px; padding: 5px 10px 5px 7px; border: 1px solid var(--line); border-radius: 999px; opacity: .7; }
 
