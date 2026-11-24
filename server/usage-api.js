@@ -6,6 +6,8 @@
 //   - NÃO renova token (renovar giraria o refresh_token e poderia deslogar o CLI): token vencido = 'token-expirado'; o CLI renova sozinho no próximo uso.
 //   - Arquivo de credencial: só arquivo regular (lstat, sem link), com limite de tamanho. Só os campos do token são usados.
 //   - Endpoints NÃO documentados pelos provedores: qualquer formato inesperado vira `ok:false` (o chamador cai nas fontes locais), nunca lança.
+// Por conta (modelo v2): a pasta de login vem da conta. A do computador (`home: 'machine'`) usa a pasta padrão do ambiente (CLAUDE_CONFIG_DIR ou ~/.claude; CODEX_HOME ou ~/.codex);
+// qualquer outra conta usa SÓ a pasta dela: se a pasta não puder ser obtida, a resposta é 'sem-credencial' e NUNCA se cai no login do computador.
 // Resultado: { ok: true, planType, session, week } com janelas { usedPct 0..100, resetsAt ISO, windowMinutes } ou null; { ok: false, reason } com reason de um conjunto fixo.
 import fs from 'node:fs';
 import os from 'node:os';
@@ -77,17 +79,24 @@ export function parseCodexUsage(b, nowMs) {
 const cleanPlan = (v) => (typeof v === 'string' && /^[A-Za-z0-9 _-]{1,30}$/.test(v) ? v : null);
 
 /**
- * `credsDirOf(accountId)` -> pasta de configuração do Claude da conta (null = padrão: CLAUDE_CONFIG_DIR ou ~/.claude). `fetchFn` e `now` injetáveis nos testes.
- * No macOS o Claude Code guarda o token no Keychain (sem arquivo): vira 'sem-credencial' e as fontes locais continuam valendo.
+ * `isMachine(accountId, provider)` -> true SÓ para a conta do computador daquele provider (usa a pasta padrão do ambiente). Padrão: false (nenhuma conta usa o login do computador sem dizer).
+ * `credsDirOf(accountId, provider)` -> pasta de configuração da conta isolada; null/vazio/exceção = 'sem-credencial' (sem fallback). `codexHome` = CODEX_HOME da conta do computador (padrão: o do ambiente).
+ * `fetchFn`, `now` e `env` injetáveis nos testes. No macOS o Claude Code guarda o token no Keychain (sem arquivo): vira 'sem-credencial' e as fontes locais continuam valendo.
  */
-export function createUsageApi({ credsDirOf = () => null, codexHome = null, fetchFn = globalThis.fetch, now = Date.now, env = () => process.env } = {}) {
-  const home = () => codexHome ?? (env().CODEX_HOME || path.join(os.homedir(), '.codex'));
+export function createUsageApi({ credsDirOf = () => null, isMachine = () => false, codexHome = null, fetchFn = globalThis.fetch, now = Date.now, env = () => process.env } = {}) {
+  const envOf = () => env() ?? {};
+  const machineDir = { claude: () => envOf().CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), codex: () => codexHome ?? (envOf().CODEX_HOME || path.join(os.homedir(), '.codex')) };
+  /** Pasta de login da conta, ou null. A pasta padrão do ambiente vale só quando `isMachine` confirma; falha ao obter a pasta de uma conta isolada nunca cai no login do computador. */
+  function dirOf(provider, accountId) {
+    let machine = false; try { machine = isMachine(accountId, provider) === true; } catch { machine = false; }
+    if (machine) return machineDir[provider]() || null;
+    try { const d = credsDirOf(accountId, provider); return typeof d === 'string' && d ? d : null; } catch { return null; }
+  }
   return {
     async claude(accountId) {
       if (typeof fetchFn !== 'function') return { ok: false, reason: 'indisponivel' };
-      let dir = null;
-      try { dir = credsDirOf(accountId) ?? null; } catch { if (accountId !== 'system') return { ok: false, reason: 'sem-credencial' }; } // falha numa conta gerenciada NUNCA cai no login do Sistema
-      dir = dir || env().CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
+      const dir = dirOf('claude', accountId);
+      if (!dir) return { ok: false, reason: 'sem-credencial' };
       const o = readJson(path.join(dir, '.credentials.json'))?.claudeAiOauth;
       const token = isObj(o) && typeof o.accessToken === 'string' && o.accessToken ? o.accessToken : null;
       if (!token) return { ok: false, reason: 'sem-credencial' };
@@ -97,9 +106,11 @@ export function createUsageApi({ credsDirOf = () => null, codexHome = null, fetc
       const w = parseClaudeUsage(r.body, now());
       return w ? { ok: true, planType: cleanPlan(o.subscriptionType), ...w } : { ok: false, reason: 'formato' };
     },
-    async codex() {
+    async codex(accountId) {
       if (typeof fetchFn !== 'function') return { ok: false, reason: 'indisponivel' };
-      const t = readJson(path.join(home(), 'auth.json'))?.tokens;
+      const dir = dirOf('codex', accountId);
+      if (!dir) return { ok: false, reason: 'sem-credencial' };
+      const t = readJson(path.join(dir, 'auth.json'))?.tokens;
       const token = isObj(t) && typeof t.access_token === 'string' && t.access_token ? t.access_token : null;
       if (!token) return { ok: false, reason: 'sem-credencial' };
       const headers = { Authorization: `Bearer ${token}`, Accept: 'application/json', 'User-Agent': 'forge-usage/1' };

@@ -24,46 +24,72 @@ const SCRIPT = path.join(here, '..', 'claude-statusline-hook.mjs');
 const T0 = Date.parse('2026-11-09T12:00:00.000Z'), SEC0 = Math.floor(T0 / 1000), iso = (ms) => new Date(ms).toISOString(), p2 = (n) => String(n).padStart(2, '0');
 const uuid = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 let dirN = 0; const mk = (name = 'd') => { const d = path.join(root, `${name}${++dirN}`); fs.mkdirSync(d, { recursive: true }); return d; };
-const ACC = 'acc_aaaaaaaa', ACC2 = 'acc_bbbbbbbb';
+// Modelo v2: toda conta é linha { id: 'acc_…', provider, label, home }. M = Claude do computador, ACC = Claude isolada (FORGE), CX = Codex do computador.
+const M = 'acc_11111111', ACC = 'acc_aaaaaaaa', ACC2 = 'acc_bbbbbbbb', CX = 'acc_33333333';
+const M_ROW = { id: M, provider: 'claude', label: 'Claude Code', home: 'machine' }, ACC_ROW = { id: ACC, provider: 'claude', label: 'Trabalho', home: 'forge' }, CX_ROW = { id: CX, provider: 'codex', label: 'Codex CLI', home: 'machine' };
 const win = (pct, resetSec) => ({ usedPct: pct, resetsAt: resetSec });
 function hookFile(dir, sid, { at = T0, five = win(20, SEC0 + 3600), seven = win(50, SEC0 + 86400) } = {}) {
   const file = path.join(dir, `${sid}.json`); fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(file, `${JSON.stringify({ at: iso(at), fiveHour: five, sevenDay: seven })}\n`);
   const bump = new Date(Date.now() + 1000 * ++mtimeN); fs.utimesSync(file, bump, bump); // mtime sempre novo: o cache por tamanho+mtime não confunde reescritas do mesmo tamanho no mesmo instante
 }
 let mtimeN = 0;
-const rec = (n, over = {}) => ({ id: `ses_${String(n).padStart(8, '0')}`, terminalId: `term_${String(n).padStart(8, '0')}`, provider: 'claude', accountId: 'system', claudeSessionId: uuid(n), role: 'builder', title: `t${n}`, workspaceId: 'ws_a', cwd: '/proj', state: 'exited', ...over });
+const rec = (n, over = {}) => ({ id: `ses_${String(n).padStart(8, '0')}`, terminalId: `term_${String(n).padStart(8, '0')}`, provider: 'claude', accountId: M, claudeSessionId: uuid(n), role: 'builder', title: `t${n}`, workspaceId: 'ws_a', cwd: '/proj', state: 'exited', ...over });
 
-/** Mundo do leitor: pastas temporárias e um módulo de contas falso. */
-function world({ records = [], env = {}, accountList = [{ id: ACC, provider: 'claude', label: 'Trabalho' }], available = true, status = async () => ({ checked: true, loggedIn: true, subscriptionType: 'max' }), codexReader, codexAuth, now = () => T0, extra = {} } = {}) {
+/** Fake do módulo de contas (o que rate-limits.js e o gerente de terminais consultam): lista de linhas + pasta por id (null = conta do computador). */
+function fakeAccounts(list, cfgOf = {}, status = async () => ({ checked: true, loggedIn: true, plan: 'max' })) {
+  const rowOf = (id) => (list ?? []).find((a) => a?.id === id) ?? null;
+  return {
+    list: () => list, statusOf: status, find: rowOf, usable: (id) => !!rowOf(id), remember() {},
+    configDirOf: (id) => (rowOf(id)?.home === 'machine' ? null : cfgOf[id] ?? null),
+    resolveFor(provider, accountId) { // a pedida (do provider) ou a única do provider; senão 409 como o módulo real
+      const mine = (list ?? []).filter((a) => a.provider === provider);
+      const pick = accountId === undefined || accountId === null ? (mine.length === 1 ? mine[0] : null) : mine.find((a) => a.id === accountId) ?? null;
+      return pick ? { ok: true, account: pick } : { ok: false, status: 409, code: mine.length ? 'account_required' : 'no_account', error: 'Conta indisponível.' };
+    },
+  };
+}
+
+/** Mundo do leitor: pastas temporárias e um módulo de contas falso. `model: null` = banco sem db.accountsModel (a conta do computador só é achada pela linha home:'machine'). */
+function world({ records = [], env = {}, accountList = [M_ROW, ACC_ROW, CX_ROW], status = async () => ({ checked: true, loggedIn: true, plan: 'max' }), codexReader, now = () => T0, extra = {}, model = { v: 2, machineIds: { claude: M, codex: CX } } } = {}) {
   const dir = mk('hooks'), sysCfg = mk('syscfg'), accCfg = mk('acccfg'), accCfg2 = mk('acccfg'), codexHome = mk('codex');
-  const cfgOf = { [ACC]: accCfg, [ACC2]: accCfg2 };
-  const accounts = { list: () => accountList, configDirOf: (id) => (id === 'system' ? null : cfgOf[id] ?? null), available: () => available, statusOf: status };
-  const db = { terminalSessions: records };
+  const accounts = fakeAccounts(accountList, { [ACC]: accCfg, [ACC2]: accCfg2 }, status);
+  accounts.available = () => { w.availableCalls++; return false; }; // o modelo v2 não consulta mais: as contas existem com ou sem a CLI instalada
+  const db = { terminalSessions: records, accounts: accountList, ...(model ? { accountsModel: model } : {}) };
   const e = { CLAUDE_CONFIG_DIR: sysCfg, ...env };
-  const rl = RL.createRateLimits({ db, accounts, dir, script: SCRIPT, codexHome, codexReader, codexAuth, env: () => e, now, memoMs: 0, connectedTtlMs: 0, ...extra });
-  return { rl, db, dir, sysCfg, accCfg, accCfg2, codexHome, accounts };
+  const rl = RL.createRateLimits({ db, accounts, dir, script: SCRIPT, codexHome, codexReader, env: () => e, now, memoMs: 0, connectedTtlMs: 0, ...extra });
+  const w = { rl, db, dir, sysCfg, accCfg, accCfg2, codexHome, accounts, availableCalls: 0 };
+  return w;
 }
 const accOf = (view, provider, id) => view.providers.find((p) => p.provider === provider).accounts.find((a) => a.id === id);
 const tick = () => new Promise((r) => setTimeout(r, 20));
 
 // ---------- Claude: arquivos do hook ----------
-test('Claude: sem nenhuma sessão a conta é sem-dados; a lista tem Sistema + contas do FORGE e o Codex, no contrato', () => {
+test('Claude: sem nenhuma sessão a conta é sem-dados; a lista tem as contas do Claude (a do computador primeiro) e a do Codex, no contrato v2', () => {
   const w = world(); const v = w.rl.view();
   assert.match(v.updatedAt, /^\d{4}-\d{2}-\d{2}T/);
   assert.deepEqual(v.providers.map((p) => [p.provider, p.label]), [['claude', 'Claude Code'], ['codex', 'Codex CLI']]);
-  assert.deepEqual(v.providers[0].accounts.map((a) => [a.id, a.label]), [['system', 'Sistema'], [ACC, 'Trabalho']]);
-  assert.deepEqual(v.providers[1].accounts.map((a) => [a.id, a.label]), [['codex', 'Codex']]);
-  for (const a of [...v.providers[0].accounts, ...v.providers[1].accounts]) assert.deepEqual(Object.keys(a), ['id', 'label', 'connected', 'plan', 'source', 'session', 'week', 'updatedAt']);
-  assert.deepEqual(accOf(v, 'claude', 'system'), { id: 'system', label: 'Sistema', connected: null, plan: null, source: 'sem-dados', session: null, week: null, updatedAt: null });
+  assert.deepEqual(v.providers[0].accounts.map((a) => [a.id, a.label]), [[M, 'Claude Code'], [ACC, 'Trabalho']]);
+  assert.deepEqual(v.providers[1].accounts.map((a) => [a.id, a.label]), [[CX, 'Codex CLI']]);
+  for (const a of [...v.providers[0].accounts, ...v.providers[1].accounts]) assert.deepEqual(Object.keys(a), ['id', 'provider', 'label', 'home', 'connected', 'plan', 'source', 'session', 'week', 'updatedAt']);
+  assert.deepEqual(accOf(v, 'claude', M), { id: M, provider: 'claude', label: 'Claude Code', home: 'machine', connected: null, plan: null, source: 'sem-dados', session: null, week: null, updatedAt: null });
+  assert.deepEqual([accOf(v, 'claude', ACC).home, accOf(v, 'claude', ACC).provider, accOf(v, 'codex', CX).home], ['forge', 'claude', 'machine']);
+  assert.ok(!JSON.stringify(v).includes('system'), 'não existe conta Sistema');
 });
 
-test('Claude: duas sessões da mesma conta -> vale a janela mais nova (aqui coincide com o `at` mais novo); registro sem accountId é Sistema; contas não se misturam', () => {
+test('ordem das contas: a do computador vem primeiro mesmo quando o banco a lista depois; as outras seguem a ordem do banco; rótulo vazio vira o id', () => {
+  const w = world({ accountList: [ACC_ROW, { id: ACC2, provider: 'claude', label: '', home: 'forge' }, M_ROW] });
+  assert.deepEqual(w.rl.view().providers[0].accounts.map((a) => [a.id, a.label]), [[M, 'Claude Code'], [ACC, 'Trabalho'], [ACC2, ACC2]]);
+  const bad = world({ accountList: [M_ROW, { id: 'system', provider: 'claude', label: 'S' }, { id: 'acc_zz', provider: 'claude', label: 'Z' }, { id: 'acc_dddddddd', provider: 'nada', label: 'N' }, null, 'x'] });
+  assert.deepEqual(bad.rl.view().providers.map((p) => p.accounts.map((a) => a.id)), [[M], []], 'id inválido, provider sem bloco `account` e lixo na lista são ignorados');
+});
+
+test('Claude: duas sessões da mesma conta -> vale a janela mais nova (aqui coincide com o `at` mais novo); registro legado (sem accountId) vai para a conta do computador pela leitura tolerante; contas não se misturam', () => {
   const w = world({ records: [rec(1, { accountId: undefined }), rec(2), rec(3, { accountId: ACC }), rec(4, { provider: 'codex' })] });
   hookFile(w.dir, uuid(1), { at: T0 - 60_000, five: win(10, SEC0 + 3000), seven: win(30, SEC0 + 80000) });
   hookFile(w.dir, uuid(2), { at: T0 - 5_000, five: win(25, SEC0 + 3500), seven: win(55, SEC0 + 85000) }); // mais nova
   hookFile(w.dir, uuid(3), { at: T0 - 1_000, five: win(99, SEC0 + 100), seven: win(98, SEC0 + 200) });
   hookFile(w.dir, uuid(4), { at: T0, five: win(77, SEC0 + 100), seven: win(77, SEC0 + 200) }); // sessão do Codex: não conta
-  const v = w.rl.view(), sys = accOf(v, 'claude', 'system'), acc = accOf(v, 'claude', ACC);
+  const v = w.rl.view(), sys = accOf(v, 'claude', M), acc = accOf(v, 'claude', ACC); // sys = a conta do computador
   assert.equal(sys.source, 'statusline'); assert.deepEqual(sys.session, { usedPct: 25, resetsAt: iso((SEC0 + 3500) * 1000), windowMinutes: 300 }); assert.deepEqual(sys.week, { usedPct: 55, resetsAt: iso((SEC0 + 85000) * 1000), windowMinutes: 10080 });
   assert.equal(sys.updatedAt, iso(T0 - 5_000));
   assert.equal(acc.session.usedPct, 99); assert.equal(acc.week.usedPct, 98);
@@ -72,16 +98,16 @@ test('Claude: duas sessões da mesma conta -> vale a janela mais nova (aqui coin
 test('Claude: janela vencida (resetsAt passou) some; uma janela viva e outra vencida mostra só a viva; tudo vencido = sem-dados', () => {
   const w = world({ records: [rec(1)] });
   hookFile(w.dir, uuid(1), { five: win(40, SEC0 - 1), seven: win(60, SEC0 + 1000) });
-  let a = accOf(w.rl.view(), 'claude', 'system'); assert.equal(a.session, null); assert.equal(a.week.usedPct, 60); assert.equal(a.source, 'statusline');
+  let a = accOf(w.rl.view(), 'claude', M); assert.equal(a.session, null); assert.equal(a.week.usedPct, 60); assert.equal(a.source, 'statusline');
   hookFile(w.dir, uuid(1), { five: win(40, SEC0), seven: win(60, SEC0 - 500) }); // exatamente agora também conta como vencida
-  a = accOf(w.rl.view(), 'claude', 'system'); assert.deepEqual([a.source, a.session, a.week, a.updatedAt], ['sem-dados', null, null, null]);
+  a = accOf(w.rl.view(), 'claude', M); assert.deepEqual([a.source, a.session, a.week, a.updatedAt], ['sem-dados', null, null, null]);
 });
 
 test('Claude: por janela, vale o arquivo mais novo que a tem (a janela vencida de uma sessão nova não esconde a viva de outra)', () => {
   const w = world({ records: [rec(1), rec(2)] });
   hookFile(w.dir, uuid(1), { at: T0 - 30_000, five: win(10, SEC0 + 1000), seven: win(20, SEC0 + 5000) });
   hookFile(w.dir, uuid(2), { at: T0 - 1_000, five: null, seven: win(25, SEC0 + 6000) });
-  const a = accOf(w.rl.view(), 'claude', 'system'); assert.equal(a.session.usedPct, 10); assert.equal(a.week.usedPct, 25);
+  const a = accOf(w.rl.view(), 'claude', M); assert.equal(a.session.usedPct, 10); assert.equal(a.week.usedPct, 25);
 });
 
 test('Claude: arquivo corrompido, enorme, com percentual absurdo, com `at` inválido ou no futuro é ignorado; usedPct sempre 0..100', () => {
@@ -90,39 +116,44 @@ test('Claude: arquivo corrompido, enorme, com percentual absurdo, com `at` invá
   fs.writeFileSync(path.join(w.dir, `${uuid(2)}.json`), JSON.stringify({ at: iso(T0), fiveHour: win(10, SEC0 + 100), pad: 'x'.repeat(10_000) })); // > 4 KB
   fs.writeFileSync(path.join(w.dir, `${uuid(3)}.json`), JSON.stringify({ at: 'ontem', fiveHour: win(10, SEC0 + 100) }));
   fs.writeFileSync(path.join(w.dir, `${uuid(4)}.json`), JSON.stringify({ at: iso(T0 + 3 * 3600_000), fiveHour: win(10, SEC0 + 100) }));
-  assert.equal(accOf(w.rl.view(), 'claude', 'system').source, 'sem-dados');
+  assert.equal(accOf(w.rl.view(), 'claude', M).source, 'sem-dados');
   hookFile(w.dir, uuid(5), { five: win(1e9, SEC0 + 100), seven: win(-40, SEC0 + 100) });
-  let a = accOf(w.rl.view(), 'claude', 'system'); assert.deepEqual([a.session.usedPct, a.week.usedPct], [100, 0]);
+  let a = accOf(w.rl.view(), 'claude', M); assert.deepEqual([a.session.usedPct, a.week.usedPct], [100, 0]);
   hookFile(w.dir, uuid(5), { five: { usedPct: 'x', resetsAt: SEC0 + 100 }, seven: { usedPct: NaN, resetsAt: SEC0 + 100 } });
-  a = accOf(w.rl.view(), 'claude', 'system'); assert.equal(a.source, 'sem-dados');
+  a = accOf(w.rl.view(), 'claude', M); assert.equal(a.source, 'sem-dados');
 });
 
 test('Claude: symlink no lugar do arquivo do hook não é seguido', (t) => {
   const w = world({ records: [rec(1)] });
   const target = path.join(mk('alvo'), 'x.json'); fs.writeFileSync(target, JSON.stringify({ at: iso(T0), fiveHour: win(5, SEC0 + 100), sevenDay: null }));
   try { fs.symlinkSync(target, path.join(w.dir, `${uuid(1)}.json`)); } catch { t.skip('sem permissão para criar link simbólico'); return; }
-  assert.equal(accOf(w.rl.view(), 'claude', 'system').source, 'sem-dados');
+  assert.equal(accOf(w.rl.view(), 'claude', M).source, 'sem-dados');
 });
 
 test('Claude: só os últimos N registros da conta entram (mais os que estão rodando)', () => {
   const recs = [rec(1, { state: 'running' }), rec(2), rec(3), rec(4)];
   const w = world({ records: recs, extra: { maxRecordsPerAccount: 2 } });
   hookFile(w.dir, uuid(1), { at: T0 - 100, five: win(11, SEC0 + 100) }); hookFile(w.dir, uuid(2), { at: T0 - 50, five: win(22, SEC0 + 100) });
-  assert.equal(accOf(w.rl.view(), 'claude', 'system').session.usedPct, 11, 'o registro rodando sempre conta, mesmo fora dos 2 últimos');
+  assert.equal(accOf(w.rl.view(), 'claude', M).session.usedPct, 11, 'o registro rodando sempre conta, mesmo fora dos 2 últimos');
   const w2 = world({ records: [rec(1), rec(2), rec(3), rec(4)], extra: { maxRecordsPerAccount: 2 } });
   hookFile(w2.dir, uuid(1), { five: win(11, SEC0 + 100) });
-  assert.equal(accOf(w2.rl.view(), 'claude', 'system').source, 'sem-dados', 'o 1º já saiu da janela de 2 e não roda');
+  assert.equal(accOf(w2.rl.view(), 'claude', M).source, 'sem-dados', 'o 1º já saiu da janela de 2 e não roda');
 });
 
 test('Claude: registros inválidos no banco não derrubam (sem UUID, null, lixo)', () => {
   const w = world({ records: [null, 'x', { claudeSessionId: '../x' }, { claudeSessionId: 5 }, rec(1)] });
-  hookFile(w.dir, uuid(1)); assert.equal(accOf(w.rl.view(), 'claude', 'system').source, 'statusline');
+  hookFile(w.dir, uuid(1)); assert.equal(accOf(w.rl.view(), 'claude', M).source, 'statusline');
   assert.doesNotThrow(() => world({ records: undefined }).rl.view());
 });
 
-test('Claude: sem Claude Code instalado (accounts.available false) a lista do Claude fica vazia', () => {
-  const w = world({ available: false }); assert.deepEqual(w.rl.view().providers[0].accounts, []);
-  assert.equal(RL.createRateLimits({ db: {}, dir: mk(), script: SCRIPT, codexReader: { read: () => null }, now: () => T0 }).view().providers[0].accounts.length, 1, 'sem módulo de contas só o Sistema');
+test('contas aparecem com ou sem a CLI instalada: `accounts.available()` não é mais consultado; sem módulo de contas (ou lista vazia) claude e codex vêm com accounts: []', () => {
+  const w = world(); const v = w.rl.view();
+  assert.equal(w.availableCalls, 0, 'available() não é consultado'); assert.deepEqual(v.providers[0].accounts.map((a) => a.id), [M, ACC]); assert.deepEqual(v.providers[1].accounts.map((a) => a.id), [CX]);
+  const sem = RL.createRateLimits({ db: {}, dir: mk(), script: SCRIPT, codexReader: { read: () => null }, now: () => T0 }).view();
+  assert.deepEqual(sem.providers.map((p) => [p.provider, p.label, p.accounts]), [['claude', 'Claude Code', []], ['codex', 'Codex CLI', []]], 'sem módulo de contas: um provider por spec, sem contas (não há conta Sistema)');
+  const vazio = world({ accountList: [] }).rl.view(); assert.deepEqual(vazio.providers.map((p) => [p.provider, p.accounts]), [['claude', []], ['codex', []]], 'sem nenhuma conta: os providers existem mesmo assim');
+  const lanca = RL.createRateLimits({ db: {}, accounts: { list() { throw new Error('x'); } }, dir: mk(), script: SCRIPT, codexReader: { read: () => null }, now: () => T0 });
+  assert.deepEqual(lanca.view().providers.map((p) => p.accounts), [[], []], 'lista que lança: nada quebra');
 });
 
 // ---------- status line própria / desligado ----------
@@ -130,10 +161,10 @@ test('status line própria no settings.json de usuário: source statusline-propr
   const w = world({ records: [rec(1), rec(3, { accountId: ACC })] });
   hookFile(w.dir, uuid(1)); hookFile(w.dir, uuid(3));
   fs.writeFileSync(path.join(w.sysCfg, 'settings.json'), JSON.stringify({ statusLine: { type: 'command', command: 'meu-script' }, outra: 1 }));
-  const v = w.rl.view(), s = accOf(v, 'claude', 'system');
+  const v = w.rl.view(), s = accOf(v, 'claude', M);
   assert.deepEqual([s.source, s.session, s.week, s.updatedAt], ['statusline-propria', null, null, null]);
   assert.equal(accOf(v, 'claude', ACC).source, 'statusline', 'a outra conta tem a própria pasta de configuração');
-  assert.equal(w.rl.settingsFileFor('system'), null); assert.ok(w.rl.settingsFileFor(ACC));
+  assert.equal(w.rl.settingsFileFor(M), null); assert.ok(w.rl.settingsFileFor(ACC));
   fs.writeFileSync(path.join(w.accCfg, 'settings.json'), JSON.stringify({ statusLine: { type: 'command', command: 'x' } }));
   assert.equal(accOf(w.rl.view(), 'claude', ACC).source, 'statusline-propria'); assert.equal(w.rl.settingsFileFor(ACC), null);
   assert.ok(!JSON.stringify(v).includes('meu-script'), 'nada do conteúdo do settings do usuário vaza');
@@ -141,34 +172,45 @@ test('status line própria no settings.json de usuário: source statusline-propr
 
 test('settings.json do usuário sem statusLine, inválido, ausente, ou com statusLine null: a status line do FORGE é injetada; arquivo gigante: por precaução não', () => {
   const w = world();
-  assert.ok(w.rl.settingsFileFor('system'), 'sem settings.json');
-  fs.writeFileSync(path.join(w.sysCfg, 'settings.json'), JSON.stringify({ model: 'x', hooks: {} })); assert.ok(w.rl.settingsFileFor('system'));
-  fs.writeFileSync(path.join(w.sysCfg, 'settings.json'), '{ quebrado'); assert.ok(w.rl.settingsFileFor('system'));
-  fs.writeFileSync(path.join(w.sysCfg, 'settings.json'), JSON.stringify({ statusLine: null })); assert.ok(w.rl.settingsFileFor('system'));
-  fs.writeFileSync(path.join(w.sysCfg, 'settings.json'), JSON.stringify({ x: 'y'.repeat(600_000) })); assert.equal(w.rl.settingsFileFor('system'), null);
-  fs.writeFileSync(path.join(w.sysCfg, 'settings.json'), '[1]'); assert.ok(w.rl.settingsFileFor('system'));
+  assert.ok(w.rl.settingsFileFor(M), 'sem settings.json');
+  fs.writeFileSync(path.join(w.sysCfg, 'settings.json'), JSON.stringify({ model: 'x', hooks: {} })); assert.ok(w.rl.settingsFileFor(M));
+  fs.writeFileSync(path.join(w.sysCfg, 'settings.json'), '{ quebrado'); assert.ok(w.rl.settingsFileFor(M));
+  fs.writeFileSync(path.join(w.sysCfg, 'settings.json'), JSON.stringify({ statusLine: null })); assert.ok(w.rl.settingsFileFor(M));
+  fs.writeFileSync(path.join(w.sysCfg, 'settings.json'), JSON.stringify({ x: 'y'.repeat(600_000) })); assert.equal(w.rl.settingsFileFor(M), null);
+  fs.writeFileSync(path.join(w.sysCfg, 'settings.json'), '[1]'); assert.ok(w.rl.settingsFileFor(M));
+});
+
+test('settingsFileFor só vale para o id REAL de uma conta Claude listada: undefined/null/"system"/desconhecido/inválido/do Codex = null; sem módulo de contas = sempre null', () => {
+  const w = world();
+  assert.ok(w.rl.settingsFileFor(M), 'conta do computador'); assert.ok(w.rl.settingsFileFor(ACC), 'conta isolada');
+  for (const bad of [undefined, null, 'system', 'acc_dddddddd', 'acc_ZZZZZZZZ', 'acc_1', '', 42, {}, ['x'], CX]) assert.equal(w.rl.settingsFileFor(bad), null, `id ${JSON.stringify(bad)}`);
+  const sem = RL.createRateLimits({ db: {}, dir: mk(), script: SCRIPT, codexReader: { read: () => null }, env: () => ({ CLAUDE_CONFIG_DIR: mk() }) });
+  for (const id of [M, ACC, undefined, 'system']) assert.equal(sem.settingsFileFor(id), null, 'sem `accounts` não se sabe de qual conta é o pane');
+  const lanca = RL.createRateLimits({ db: {}, accounts: { list() { throw new Error('x'); } }, dir: mk(), script: SCRIPT, codexReader: { read: () => null }, env: () => ({ CLAUDE_CONFIG_DIR: mk() }) });
+  assert.equal(lanca.settingsFileFor(M), null, 'lista que lança: sem flag, sem exceção');
+  const list = [M_ROW, ACC_ROW]; const w2 = world({ accountList: list }); assert.ok(w2.rl.settingsFileFor(ACC)); list.pop(); assert.equal(w2.rl.settingsFileFor(ACC), null, 'conta removida: sem flag');
 });
 
 test('ORCH_CLAUDE_STATUSLINE=off: source desligado, sem janelas e sem flag; qualquer outro valor liga', () => {
   const w = world({ records: [rec(1)], env: { ORCH_CLAUDE_STATUSLINE: 'off' } }); hookFile(w.dir, uuid(1));
-  const a = accOf(w.rl.view(), 'claude', 'system'); assert.deepEqual([a.source, a.session, a.week], ['desligado', null, null]);
-  assert.equal(w.rl.settingsFileFor('system'), null); assert.equal(w.rl.settingsFileFor(ACC), null);
-  for (const v of ['OFF', ' off ']) assert.equal(world({ env: { ORCH_CLAUDE_STATUSLINE: v } }).rl.settingsFileFor('system'), null, v);
-  for (const v of ['on', '1', '', 'false', 'no']) assert.ok(world({ env: { ORCH_CLAUDE_STATUSLINE: v } }).rl.settingsFileFor('system'), v);
+  const a = accOf(w.rl.view(), 'claude', M); assert.deepEqual([a.source, a.session, a.week], ['desligado', null, null]);
+  assert.equal(w.rl.settingsFileFor(M), null); assert.equal(w.rl.settingsFileFor(ACC), null);
+  for (const v of ['OFF', ' off ']) assert.equal(world({ env: { ORCH_CLAUDE_STATUSLINE: v } }).rl.settingsFileFor(M), null, v);
+  for (const v of ['on', '1', '', 'false', 'no']) assert.ok(world({ env: { ORCH_CLAUDE_STATUSLINE: v } }).rl.settingsFileFor(M), v);
   assert.equal(RL.statusLineEnabled({}), true); assert.equal(RL.statusLineEnabled({ ORCH_CLAUDE_STATUSLINE: 'off' }), false);
 });
 
 // ---------- arquivo de --settings e argumentos do pane ----------
 test('arquivo de settings: JSON válido com statusLine.command entre aspas (barras normais, caminho com espaço), gravado de forma atômica e idempotente', () => {
   const dir = path.join(mk('com espaco'), 'sub dir');
-  const rl = RL.createRateLimits({ db: {}, dir, script: SCRIPT, node: 'C:\\Program Files\\nodejs\\node.exe', codexReader: { read: () => null }, env: () => ({ CLAUDE_CONFIG_DIR: mk() }) });
-  const f = rl.settingsFileFor('system'); assert.equal(f, path.join(dir, 'claude-settings.json'));
+  const rl = RL.createRateLimits({ db: {}, accounts: fakeAccounts([M_ROW]), dir, script: SCRIPT, node: 'C:\\Program Files\\nodejs\\node.exe', codexReader: { read: () => null }, env: () => ({ CLAUDE_CONFIG_DIR: mk() }) });
+  const f = rl.settingsFileFor(M); assert.equal(f, path.join(dir, 'claude-settings.json'));
   const j = JSON.parse(fs.readFileSync(f, 'utf8'));
   assert.deepEqual(Object.keys(j), ['statusLine']); assert.equal(j.statusLine.type, 'command');
   assert.equal(j.statusLine.command, `"C:/Program Files/nodejs/node.exe" "${SCRIPT.replace(/\\/g, '/')}" "${dir.replace(/\\/g, '/')}"`);
   assert.ok(!j.statusLine.command.includes('\\'), 'sem barra invertida (o shell a consumiria)');
-  const m = fs.statSync(f).mtimeMs; rl.settingsFileFor('system'); assert.equal(fs.statSync(f).mtimeMs, m, 'conteúdo igual: não regrava');
-  fs.rmSync(f); assert.ok(rl.settingsFileFor('system') && fs.existsSync(f), 'apagado: recria');
+  const m = fs.statSync(f).mtimeMs; rl.settingsFileFor(M); assert.equal(fs.statSync(f).mtimeMs, m, 'conteúdo igual: não regrava');
+  fs.rmSync(f); assert.ok(rl.settingsFileFor(M) && fs.existsSync(f), 'apagado: recria');
   assert.deepEqual(fs.readdirSync(dir), ['claude-settings.json']);
 });
 
@@ -178,9 +220,9 @@ test('caminhos com caracteres que quebrariam o shell (aspas, $, %, !, crase): a 
     assert.equal(RL.statusLineSettings({ node: '/n', script: '/s', dir: bad }), null, JSON.stringify(bad));
     assert.equal(RL.statusLineSettings({ node: bad, script: '/s', dir: '/d' }), null);
   }
-  const rl = RL.createRateLimits({ db: {}, dir: path.join(mk(), 'a$b'), script: SCRIPT, codexReader: { read: () => null }, env: () => ({ CLAUDE_CONFIG_DIR: mk() }) });
-  assert.equal(rl.settingsFileFor('system'), null);
-  assert.equal(RL.createRateLimits({ db: {}, dir: mk(), codexReader: { read: () => null } }).settingsFileFor('system'), null, 'sem script não há flag');
+  const rl = RL.createRateLimits({ db: {}, accounts: fakeAccounts([M_ROW]), dir: path.join(mk(), 'a$b'), script: SCRIPT, codexReader: { read: () => null }, env: () => ({ CLAUDE_CONFIG_DIR: mk() }) });
+  assert.equal(rl.settingsFileFor(M), null);
+  assert.equal(RL.createRateLimits({ db: {}, accounts: fakeAccounts([M_ROW]), dir: mk(), codexReader: { read: () => null }, env: () => ({ CLAUDE_CONFIG_DIR: mk() }) }).settingsFileFor(M), null, 'sem script não há flag');
 });
 
 test('claude.paneArgs: --settings <arquivo> nos três modos, antes do MCP; sem arquivo, argumentos idênticos aos de antes', () => {
@@ -207,32 +249,36 @@ function termWorld(statusLine, accounts = null) {
 }
 const settingsArg = (args) => { const i = args.indexOf('--settings'); return i < 0 ? null : args[i + 1]; };
 
-test('terminal: novo, retomada e fork do Claude abrem com --settings quando a status line está ligada', async () => {
-  const w0 = world(), tw = termWorld(w0.rl);
-  const r = await tw.mgr.create({ role: 'builder' }); assert.equal(r.ok, true, r.error);
+// Contrato novo do terminal (etapa 4): resolve a conta por accounts.resolveFor(provider, pedida) e passa o id REAL ao módulo de limites; sem conta o pane nunca recebe a flag.
+test('terminal: novo, retomada e fork do Claude abrem com --settings quando a status line está ligada (conta pelo id real)', async () => {
+  const w0 = world(), tw = termWorld(w0.rl, w0.accounts);
+  const r = await tw.mgr.create({ role: 'builder', accountId: M }); assert.equal(r.ok, true, r.error);
   const f = settingsArg(tw.spawned[0].args); assert.equal(f, path.join(w0.dir, 'claude-settings.json'));
   assert.equal(JSON.parse(fs.readFileSync(f, 'utf8')).statusLine.type, 'command');
-  tw.spawned[0].exit(0); const recd = tw.wdb.terminalSessions[0];
+  tw.spawned[0].exit(0); const recd = tw.wdb.terminalSessions[0]; assert.equal(recd.accountId, M, 'o registro guarda o id real');
   assert.equal((await tw.mgr.resume({ recordId: recd.id })).ok, true); assert.equal(settingsArg(tw.spawned[1].args), f); assert.equal(tw.spawned[1].args[0], '--resume');
   tw.spawned[1].exit(0);
   assert.equal((await tw.mgr.resume({ recordId: recd.id, fork: true })).ok, true); assert.equal(settingsArg(tw.spawned[2].args), f); assert.ok(tw.spawned[2].args.includes('--fork-session'));
+  const unico = world({ accountList: [M_ROW] }), tu = termWorld(unico.rl, unico.accounts); // sem accountId: vale a ÚNICA conta utilizável do provider (resolveFor) e o id real chega ao módulo
+  assert.equal((await tu.mgr.create({ role: 'builder' })).ok, true); assert.equal(settingsArg(tu.spawned[0].args), path.join(unico.dir, 'claude-settings.json'));
 });
 
 test('terminal: desligado por ORCH_CLAUDE_STATUSLINE=off, status line própria ou falha no módulo = abre igual, sem --settings; sem módulo nada muda', async () => {
-  for (const [label, statusLine] of [['off', world({ env: { ORCH_CLAUDE_STATUSLINE: 'off' } }).rl], ['sem módulo', null], ['módulo que lança', { settingsFileFor() { throw new Error('boom'); } }]]) {
-    const tw = termWorld(statusLine); const r = await tw.mgr.create({ role: 'builder' }); assert.equal(r.ok, true, `${label}: ${r.error}`); assert.equal(settingsArg(tw.spawned[0].args), null, label);
+  for (const [label, mk0] of [['off', () => { const w = world({ env: { ORCH_CLAUDE_STATUSLINE: 'off' } }); return [w.rl, w.accounts]; }], ['sem módulo', () => [null, world().accounts]], ['módulo que lança', () => [{ settingsFileFor() { throw new Error('boom'); } }, world().accounts]]]) {
+    const [statusLine, accounts] = mk0(); const tw = termWorld(statusLine, accounts); const r = await tw.mgr.create({ role: 'builder', accountId: M }); assert.equal(r.ok, true, `${label}: ${r.error}`); assert.equal(settingsArg(tw.spawned[0].args), null, label);
   }
   const own = world(); fs.writeFileSync(path.join(own.sysCfg, 'settings.json'), JSON.stringify({ statusLine: { type: 'command', command: 'x' } }));
-  const tw = termWorld(own.rl); await tw.mgr.create({ role: 'builder' }); assert.equal(settingsArg(tw.spawned[0].args), null);
+  const tw = termWorld(own.rl, own.accounts); await tw.mgr.create({ role: 'builder', accountId: M }); assert.equal(settingsArg(tw.spawned[0].args), null);
+  const ctl = world(), tc0 = termWorld(ctl.rl, ctl.accounts); await tc0.mgr.create({ role: 'builder', accountId: M }); assert.ok(settingsArg(tc0.spawned[0].args), 'controle: com tudo ligado a flag entra');
 });
 
-test('terminal: a conta do pane decide (conta com statusLine própria não recebe; a outra recebe)', async () => {
-  const w = world({ accountList: [{ id: ACC, provider: 'claude', label: 'A' }] });
+test('terminal: a conta do pane decide (conta com statusLine própria não recebe; a outra recebe); o módulo de limites recebe o id REAL de cada conta', async () => {
+  const w = world({ accountList: [M_ROW, { ...ACC_ROW, label: 'A' }] });
   fs.writeFileSync(path.join(w.accCfg, 'settings.json'), JSON.stringify({ statusLine: 'x' }));
   const calls = []; const spy = { settingsFileFor: (id) => { calls.push(id); return w.rl.settingsFileFor(id); } };
-  const tw = termWorld(spy, { ...w.accounts, usable: () => true, exists: () => true, defaultId: () => 'system', envOf: () => ({}), isInUse: () => false });
-  await tw.mgr.create({ role: 'builder', accountId: ACC }); await tw.mgr.create({ role: 'builder', accountId: 'system' });
-  assert.equal(settingsArg(tw.spawned[0].args), null); assert.ok(settingsArg(tw.spawned[1].args)); assert.deepEqual(calls, [ACC, 'system']);
+  const tw = termWorld(spy, w.accounts);
+  await tw.mgr.create({ role: 'builder', accountId: ACC }); await tw.mgr.create({ role: 'builder', accountId: M });
+  assert.equal(settingsArg(tw.spawned[0].args), null); assert.ok(settingsArg(tw.spawned[1].args)); assert.deepEqual(calls, [ACC, M]);
 });
 
 // ---------- Codex ----------
@@ -280,7 +326,7 @@ test('Codex: janela vencida por resets_at some (cada uma por si); plano continua
   rollout(h, { lines: [meta, tc(T0, rlim({ primary: { used_percent: 12, window_minutes: 300, resets_at: SEC0 - 1 } }))] });
   const r = reader(h).read(); assert.equal(r.session, null); assert.equal(r.week.usedPct, 40); assert.equal(r.planType, 'plus');
   const w = world({ codexReader: { read: () => ({ planType: 'plus', session: null, week: null, at: iso(T0) }) } });
-  assert.deepEqual(accOf(w.rl.view(), 'codex', 'codex'), { id: 'codex', label: 'Codex', connected: null, plan: 'plus', source: 'sem-dados', session: null, week: null, updatedAt: null });
+  assert.deepEqual(accOf(w.rl.view(), 'codex', CX), { id: CX, provider: 'codex', label: 'Codex CLI', home: 'machine', connected: null, plan: 'plus', source: 'sem-dados', session: null, week: null, updatedAt: null });
 });
 
 test('Codex: vale o evento mais recente entre rollouts (por data do evento), e rollout novo sem rate_limits não esconde o anterior', () => {
@@ -327,49 +373,60 @@ test('Codex: nome de arquivo inválido, symlink de arquivo e de pasta são ignor
   assert.equal(reader(h3).read(), null, 'sessions que é link não é percorrida');
 });
 
-test('Codex: pelo módulo, vira source rollout com plano e updatedAt do evento; connected vem da sonda (cache), plano do Claude do status em cache', async () => {
-  const h = mk('codex');
-  const w = world({ codexReader: reader(h), codexAuth: async () => ({ known: true, loggedIn: true, detail: 'x' }) });
-  rollout(w.codexHome, { lines: [meta, tc(T0 - 60_000, rlim())] });
-  const w2 = world({ codexReader: reader(w.codexHome), codexAuth: async () => ({ known: true, loggedIn: true, detail: 'texto com e-mail a@b.c' }) });
-  let v = w2.rl.view(); let c = accOf(v, 'codex', 'codex');
-  assert.deepEqual([c.source, c.plan, c.session.usedPct, c.week.usedPct, c.updatedAt, c.connected], ['rollout', 'plus', 12, 40, iso(T0 - 60_000), null], 'na 1ª chamada o login ainda não foi verificado: null');
-  assert.equal(accOf(v, 'claude', 'system').connected, null);
+test('Codex: pelo módulo, vira source rollout com plano e updatedAt do evento; connected e plano vêm de accounts.statusOf (cache em segundo plano, igual para todos os providers)', async () => {
+  const h = mk('codex'); rollout(h, { lines: [meta, tc(T0 - 60_000, rlim())] });
+  const st = async (id) => ({ checked: true, loggedIn: true, plan: id === CX ? 'pro' : 'max', email: 'a@b.c', orgName: 'Org Secreta' });
+  const w2 = world({ codexReader: reader(h), status: st });
+  let v = w2.rl.view(); let c = accOf(v, 'codex', CX);
+  assert.deepEqual([c.source, c.plan, c.session.usedPct, c.week.usedPct, c.updatedAt, c.connected], ['rollout', 'plus', 12, 40, iso(T0 - 60_000), null], 'na 1ª chamada o login ainda não foi verificado: connected null e o plano vem do rollout');
+  assert.equal(accOf(v, 'claude', M).connected, null);
   await tick(); v = w2.rl.view();
-  assert.equal(accOf(v, 'codex', 'codex').connected, true); assert.equal(accOf(v, 'claude', 'system').connected, true); assert.equal(accOf(v, 'claude', 'system').plan, 'max');
-  assert.ok(!JSON.stringify(v).includes('a@b.c'));
-  const w3 = world({ codexAuth: async () => ({ known: false, loggedIn: null }), status: async () => ({ checked: false, loggedIn: null }), codexReader: { read: () => null } });
+  assert.equal(accOf(v, 'codex', CX).connected, true); assert.equal(accOf(v, 'claude', M).connected, true); assert.equal(accOf(v, 'claude', M).plan, 'max');
+  assert.equal(accOf(v, 'codex', CX).plan, 'pro', 'o plano do login (statusOf) vence o do rollout'); assert.equal(accOf(v, 'codex', CX).source, 'rollout');
+  assert.ok(!JSON.stringify(v).includes('a@b.c') && !JSON.stringify(v).includes('Secreta'), 'e-mail e organização do status não vazam');
+  const w3 = world({ status: async () => ({ checked: false, loggedIn: null }), codexReader: { read: () => null } });
   w3.rl.view(); await tick(); const v3 = w3.rl.view();
-  assert.equal(accOf(v3, 'codex', 'codex').connected, null); assert.equal(accOf(v3, 'claude', 'system').connected, null);
-  const w4 = world({ codexAuth: async () => { throw new Error('x'); }, status: async () => { throw new Error('y'); }, codexReader: { read: () => { throw new Error('z'); } } });
-  w4.rl.view(); await tick(); assert.doesNotThrow(() => w4.rl.view()); assert.equal(accOf(w4.rl.view(), 'codex', 'codex').source, 'sem-dados');
-  let boom = 0; const w5 = world({ status: async () => { boom++; return { checked: true, loggedIn: false, subscriptionType: 'enterprise team' }; }, extra: { connectedTtlMs: 60_000 }, now: () => T0 });
-  w5.rl.view(); await tick(); w5.rl.view(); w5.rl.view(); await tick(); assert.equal(boom, 2, 'a sonda de login roda no máximo 1 vez por TTL por conta (Sistema + 1 conta)');
-  assert.equal(accOf(w5.rl.view(), 'claude', 'system').plan, null, 'plano com formato estranho vira null'); assert.equal(accOf(w5.rl.view(), 'claude', 'system').connected, false);
+  assert.equal(accOf(v3, 'codex', CX).connected, null); assert.equal(accOf(v3, 'claude', M).connected, null);
+  const w3b = world({ status: async () => ({ checked: true, loggedIn: 'sim' }), codexReader: { read: () => null } }); w3b.rl.view(); await tick(); assert.equal(accOf(w3b.rl.view(), 'claude', M).connected, null, 'loggedIn que não é booleano = desconhecido');
+  const w4 = world({ status: async () => { throw new Error('y'); }, codexReader: { read: () => { throw new Error('z'); } } });
+  w4.rl.view(); await tick(); assert.doesNotThrow(() => w4.rl.view()); assert.equal(accOf(w4.rl.view(), 'codex', CX).source, 'sem-dados');
+  let boom = 0; const w5 = world({ status: async () => { boom++; return { checked: true, loggedIn: false, plan: 'enterprise team' }; }, extra: { connectedTtlMs: 60_000 }, now: () => T0 });
+  w5.rl.view(); await tick(); w5.rl.view(); w5.rl.view(); await tick(); assert.equal(boom, 3, 'a sonda de login roda no máximo 1 vez por TTL por conta (3 contas listadas: Claude do computador, Claude isolada e Codex)');
+  assert.equal(accOf(w5.rl.view(), 'claude', M).plan, null, 'plano com formato estranho vira null'); assert.equal(accOf(w5.rl.view(), 'claude', M).connected, false);
 });
 
 test('Claude: vale o dado mais novo pela PRÓPRIA janela (resetsAt maior; empate: usedPct maior), não o `at` do hook; `at` só desempata', () => {
   const w = world({ records: [rec(1), rec(2)] });
   hookFile(w.dir, uuid(1), { at: T0 - 1_000, five: win(90, SEC0 + 1000), seven: win(80, SEC0 + 5000) }); // `at` mais novo, mas repete uma janela anterior (resetsAt menor)
   hookFile(w.dir, uuid(2), { at: T0 - 60_000, five: win(5, SEC0 + 2000), seven: win(10, SEC0 + 6000) });
-  let a = accOf(w.rl.view(), 'claude', 'system'); assert.deepEqual([a.session.usedPct, a.week.usedPct], [5, 10]);
+  let a = accOf(w.rl.view(), 'claude', M); assert.deepEqual([a.session.usedPct, a.week.usedPct], [5, 10]);
   assert.equal(a.session.resetsAt, iso((SEC0 + 2000) * 1000));
   const w2 = world({ records: [rec(1), rec(2)] }); // mesma janela (mesmo resetsAt): o uso só cresce, vale o maior mesmo com `at` mais velho
   hookFile(w2.dir, uuid(1), { at: T0 - 1_000, five: win(20, SEC0 + 3000), seven: win(30, SEC0 + 9000) });
   hookFile(w2.dir, uuid(2), { at: T0 - 90_000, five: win(35, SEC0 + 3000), seven: win(30, SEC0 + 9000) });
-  a = accOf(w2.rl.view(), 'claude', 'system'); assert.deepEqual([a.session.usedPct, a.week.usedPct], [35, 30]);
+  a = accOf(w2.rl.view(), 'claude', M); assert.deepEqual([a.session.usedPct, a.week.usedPct], [35, 30]);
   assert.equal(a.updatedAt, iso(T0 - 1_000), 'updatedAt = o mais novo dos dois dados usados (semana empata e o `at` desempata)');
 });
 
-test('Claude: registro SEM accountId (ou null) é Sistema; registro de conta removida (fora da lista) não aparece nem contamina o Sistema', () => {
-  const w = world({ records: [rec(1, { accountId: undefined }), rec(2, { accountId: null }), rec(3, { accountId: 'acc_cccccccc' })] });
+test('Claude: registro legado (sem accountId, null ou "system") vai para a conta do computador pela leitura tolerante; registro de conta removida não aparece nem contamina a do computador', () => {
+  const w = world({ records: [rec(1, { accountId: undefined }), rec(2, { accountId: null }), rec(3, { accountId: 'acc_cccccccc' }), rec(4, { accountId: 'system' })] });
   hookFile(w.dir, uuid(3), { at: T0, five: win(88, SEC0 + 100), seven: win(77, SEC0 + 100) }); // conta removida
-  let v = w.rl.view(); assert.equal(accOf(v, 'claude', 'system').source, 'sem-dados'); assert.equal(accOf(v, 'claude', 'acc_cccccccc'), undefined);
-  assert.deepEqual(v.providers[0].accounts.map((a) => a.id), ['system', ACC]);
+  let v = w.rl.view(); assert.equal(accOf(v, 'claude', M).source, 'sem-dados'); assert.equal(accOf(v, 'claude', 'acc_cccccccc'), undefined);
+  assert.deepEqual(v.providers[0].accounts.map((a) => a.id), [M, ACC]);
   hookFile(w.dir, uuid(2), { at: T0 - 1000, five: win(12, SEC0 + 300), seven: win(34, SEC0 + 400) });
-  v = w.rl.view(); assert.deepEqual([accOf(v, 'claude', 'system').source, accOf(v, 'claude', 'system').session.usedPct], ['statusline', 12], 'accountId null = Sistema');
+  v = w.rl.view(); assert.deepEqual([accOf(v, 'claude', M).source, accOf(v, 'claude', M).session.usedPct], ['statusline', 12], 'accountId null = conta do computador do Claude');
+  hookFile(w.dir, uuid(4), { at: T0 - 500, five: win(15, SEC0 + 300), seven: null });
+  assert.equal(accOf(w.rl.view(), 'claude', M).session.usedPct, 15, 'o id legado "system" também');
   const w2 = world({ records: [rec(1, { accountId: undefined })] }); hookFile(w2.dir, uuid(1), { five: win(7, SEC0 + 300), seven: null });
-  assert.equal(accOf(w2.rl.view(), 'claude', 'system').session.usedPct, 7, 'accountId ausente = Sistema');
+  assert.equal(accOf(w2.rl.view(), 'claude', M).session.usedPct, 7, 'accountId ausente = conta do computador');
+  assert.equal(accOf(w2.rl.view(), 'claude', ACC).source, 'sem-dados', 'a conta isolada não recebe o registro legado');
+  // sem conta do computador do Claude no banco (nem accountsModel): o registro legado não é de ninguém, e nunca vira de outra conta
+  const w3 = world({ records: [rec(1, { accountId: undefined }), rec(2, { accountId: 'system' })], accountList: [ACC_ROW, CX_ROW], model: null });
+  hookFile(w3.dir, uuid(1), { five: win(9, SEC0 + 300), seven: null }); hookFile(w3.dir, uuid(2), { five: win(9, SEC0 + 300), seven: null });
+  assert.equal(accOf(w3.rl.view(), 'claude', ACC).source, 'sem-dados'); assert.deepEqual(w3.rl.view().providers[0].accounts.map((a) => a.id), [ACC], 'e não inventa uma conta do computador');
+  // registro do Codex nunca vai para a conta do Claude (nem o legado): o pelo-provider do registro é que vale
+  const w4 = world({ records: [rec(1, { accountId: undefined, provider: 'codex' })] }); hookFile(w4.dir, uuid(1), { five: win(60, SEC0 + 300), seven: null });
+  assert.equal(accOf(w4.rl.view(), 'claude', M).source, 'sem-dados');
 });
 
 test('writeSettingsFile: .tmp previsível plantado como symlink não é seguido (nome aleatório + wx); sem .tmp sobrando', (t) => {
@@ -383,8 +440,8 @@ test('writeSettingsFile: .tmp previsível plantado como symlink não é seguido 
 
 test('dir/script relativos viram absolutos: o arquivo de settings e o comando da status line usam caminhos absolutos', () => {
   const rel = path.relative(process.cwd(), mk('rel')), relScript = path.relative(process.cwd(), SCRIPT);
-  const rl = RL.createRateLimits({ db: {}, dir: rel, script: relScript, codexReader: { read: () => null }, env: () => ({ CLAUDE_CONFIG_DIR: mk() }) });
-  const f = rl.settingsFileFor('system'); assert.ok(f && path.isAbsolute(f), f);
+  const rl = RL.createRateLimits({ db: {}, accounts: fakeAccounts([M_ROW]), dir: rel, script: relScript, codexReader: { read: () => null }, env: () => ({ CLAUDE_CONFIG_DIR: mk() }) });
+  const f = rl.settingsFileFor(M); assert.ok(f && path.isAbsolute(f), f);
   const parts = [...JSON.parse(fs.readFileSync(f, 'utf8')).statusLine.command.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
   assert.equal(parts.length, 3); for (const p of parts) assert.ok(path.isAbsolute(p), p);
   assert.equal(parts[2], path.resolve(rel).replace(/\\/g, '/'));
@@ -392,22 +449,23 @@ test('dir/script relativos viram absolutos: o arquivo de settings e o comando da
 
 test('login em segundo plano: consulta que nunca resolve não prende o estado (timeout de 10 s) e o resultado tardio é ignorado; rejeição limpa o plano', async () => {
   let t = T0; const calls = [];
-  const w = world({ accountList: [], now: () => t, codexReader: { read: () => null }, status: () => new Promise((res, rej) => calls.push({ res, rej })) });
+  const w = world({ accountList: [M_ROW], now: () => t, codexReader: { read: () => null }, status: () => new Promise((res, rej) => calls.push({ res, rej })) });
   w.rl.view(); await tick(); assert.equal(calls.length, 1);
   t = T0 + 5000; w.rl.view(); await tick(); assert.equal(calls.length, 1, 'ainda pendente (< 10 s): não dispara outra');
   t = T0 + 11_000; w.rl.view(); await tick(); assert.equal(calls.length, 2, 'passou de 10 s: a consulta presa é descartada e uma nova começa');
-  calls[0].res({ checked: true, loggedIn: true, subscriptionType: 'max' }); await tick();
-  assert.equal(accOf(w.rl.view(), 'claude', 'system').connected, null, 'o resultado da consulta descartada é ignorado');
-  calls[1].res({ checked: true, loggedIn: true, subscriptionType: 'max' }); await tick();
-  let a = accOf(w.rl.view(), 'claude', 'system'); assert.deepEqual([a.connected, a.plan], [true, 'max']);
+  calls[0].res({ checked: true, loggedIn: true, plan: 'max' }); await tick();
+  assert.equal(accOf(w.rl.view(), 'claude', M).connected, null, 'o resultado da consulta descartada é ignorado');
+  calls[1].res({ checked: true, loggedIn: true, plan: 'max' }); await tick();
+  let a = accOf(w.rl.view(), 'claude', M); assert.deepEqual([a.connected, a.plan], [true, 'max']);
   await tick(); const last = calls.length - 1; assert.equal(last, 2, 'a leitura acima iniciou a consulta seguinte (TTL 0)'); calls[last].rej(new Error('falhou')); await tick();
-  a = accOf(w.rl.view(), 'claude', 'system'); assert.deepEqual([a.connected, a.plan], [null, null], 'rejeição limpa também o plano');
+  a = accOf(w.rl.view(), 'claude', M); assert.deepEqual([a.connected, a.plan], [null, null], 'rejeição limpa também o plano');
 });
 
 test('login em segundo plano: estado de conta removida é esquecido (memória limitada)', () => {
-  const list = [{ id: ACC, provider: 'claude', label: 'T' }];
-  const w = world({ accountList: list }); w.rl.view(); assert.equal(w.rl.stats().connEntries, 2);
-  list.length = 0; w.rl.view(); assert.equal(w.rl.stats().connEntries, 1);
+  const list = [M_ROW, ACC_ROW];
+  const w = world({ accountList: list }); w.rl.view(); assert.equal(w.rl.stats().connEntries, 2, 'uma entrada por conta listada');
+  list.pop(); w.rl.view(); assert.equal(w.rl.stats().connEntries, 1);
+  list.length = 0; w.rl.view(); assert.equal(w.rl.stats().connEntries, 0);
 });
 
 test('Codex: `rate_limits: {}` (sem janelas válidas) não esconde o evento anterior que tinha janelas', () => {
@@ -479,28 +537,48 @@ async function bootReal(env) {
   return { port, origin, stop: async () => { child.kill(); await exited; await sleep(300); } };
 }
 
-test('servidor real: GET /api/limits devolve o contrato completo, protegido por Host/Origin, sem caminhos/UUIDs', async () => {
+/** Banco semeado no modelo ANTIGO (registro com accountId 'system'): o boot migra para o v2 (conta do computador com id gerado). `codexRow` semeia a conta do Codex (o boot de teste tem detect.codex=false e não a cria). */
+function seedReal({ codexRow }) {
   const data = mk('data'), cfg = mk('claude'), codexHome = mk('codex'), proj = mk('proj'), now = Date.now(), sec = Math.floor(now / 1000);
-  fs.writeFileSync(path.join(cfg, 'fake-login.json'), '{}'); // a CLI falsa responde "conectado" (plano pro) para a conta Sistema
-  const A = rec(1, { cwd: proj, workspaceId: 'ws_a' }), B = rec(2, { accountId: ACC, cwd: proj, workspaceId: 'ws_a' });
-  fs.writeFileSync(path.join(data, 'db.json'), JSON.stringify({ version: 1, settings: { activeWorkspaceId: null, requireApproval: true, showDemoData: false }, workspaces: [{ id: 'ws_a', name: 'a', path: proj }], missions: [], activity: [], accounts: [{ id: ACC, provider: 'claude', label: 'Trabalho', createdAt: iso(now) }], terminalSessions: [A, B] }));
+  fs.writeFileSync(path.join(cfg, 'fake-login.json'), '{}'); // a CLI falsa responde "conectado" (plano pro) para a conta do computador
+  const A = rec(1, { accountId: 'system', cwd: proj, workspaceId: 'ws_a' }), B = rec(2, { accountId: ACC, cwd: proj, workspaceId: 'ws_a' });
+  const accounts = [{ id: ACC, provider: 'claude', label: 'Trabalho', createdAt: iso(now) }, ...(codexRow ? [{ id: 'acc_cccccccc', provider: 'codex', label: 'Codex CLI', home: 'machine', createdAt: iso(now) }] : [])];
+  fs.writeFileSync(path.join(data, 'db.json'), JSON.stringify({ version: 1, settings: { activeWorkspaceId: null, requireApproval: true, showDemoData: false }, workspaces: [{ id: 'ws_a', name: 'a', path: proj }], missions: [], activity: [], accounts, terminalSessions: [A, B] }));
   hookFile(path.join(data, 'rate-limits'), uuid(1), { at: now - 1000, five: win(23.4, sec + 3600), seven: win(41, sec + 86400) });
   rollout(codexHome, { ts: now - 3600_000, lines: [meta, tc(now - 2000, rlim({ primary: { used_percent: 9, window_minutes: 300, resets_at: sec + 1200 }, secondary: { used_percent: 31, window_minutes: 10080, resets_at: sec + 90000 } }))] });
-  const s = await bootReal({ ORCH_DATA_DIR: data, CLAUDE_CONFIG_DIR: cfg, CODEX_HOME: codexHome });
+  return { data, cfg, codexHome, proj, now, sec, env: { ORCH_DATA_DIR: data, CLAUDE_CONFIG_DIR: cfg, CODEX_HOME: codexHome } };
+}
+
+test('servidor real: GET /api/limits devolve o contrato completo, protegido por Host/Origin, sem caminhos/UUIDs (conta do computador criada pela migração; Codex semeado no banco)', async () => {
+  const { data, cfg, codexHome, proj, now, sec, env } = seedReal({ codexRow: true });
+  const s = await bootReal(env);
   try {
     const ok = await rawGet(s.port, '/api/limits', { origin: s.origin }); assert.equal(ok.status, 200); assert.match(ok.headers['content-type'], /json/); assert.equal(ok.headers['cache-control'], 'no-store');
     const j = JSON.parse(ok.body); assert.deepEqual(Object.keys(j), ['updatedAt', 'providers']); assert.deepEqual(j.providers.map((p) => p.provider), ['claude', 'codex']);
-    const sys = accOf(j, 'claude', 'system'), acc = accOf(j, 'claude', ACC), cx = accOf(j, 'codex', 'codex');
-    assert.deepEqual([sys.label, sys.source, sys.session.usedPct, sys.week.usedPct, sys.session.windowMinutes, sys.week.windowMinutes], ['Sistema', 'statusline', 23.4, 41, 300, 10080]);
+    const rows = JSON.parse(fs.readFileSync(path.join(data, 'db.json'), 'utf8')).accounts, machine = rows.find((a) => a.home === 'machine' && a.provider === 'claude'); // id gerado pela migração do boot
+    assert.ok(machine && /^acc_[0-9a-f]{8}$/.test(machine.id), 'a migração criou a conta do computador do Claude');
+    assert.deepEqual(j.providers[0].accounts.map((a) => a.id), [machine.id, ACC], 'a do computador primeiro');
+    const sys = accOf(j, 'claude', machine.id), acc = accOf(j, 'claude', ACC), cx = accOf(j, 'codex', 'acc_cccccccc');
+    assert.deepEqual([sys.provider, sys.home, sys.label, sys.source, sys.session.usedPct, sys.week.usedPct, sys.session.windowMinutes, sys.week.windowMinutes], ['claude', 'machine', 'Claude Code', 'statusline', 23.4, 41, 300, 10080]);
     assert.equal(sys.session.resetsAt, iso((sec + 3600) * 1000)); assert.equal(sys.updatedAt, iso(now - 1000));
-    assert.deepEqual([acc.label, acc.source, acc.session, acc.week], ['Trabalho', 'sem-dados', null, null]);
-    assert.deepEqual([cx.source, cx.plan, cx.session.usedPct, cx.week.usedPct], ['rollout', 'plus', 9, 31]);
-    for (const bad of [data, cfg, codexHome, proj, uuid(1), uuid(2), 'ses_', 'term_', '.jsonl', 'claude-settings']) assert.ok(!ok.body.includes(bad), `vazou ${bad}`);
+    assert.deepEqual([acc.label, acc.home, acc.source, acc.session, acc.week], ['Trabalho', 'forge', 'sem-dados', null, null]);
+    assert.deepEqual([cx.provider, cx.home, cx.label, cx.source, cx.plan, cx.session.usedPct, cx.week.usedPct, cx.connected], ['codex', 'machine', 'Codex CLI', 'rollout', 'plus', 9, 31, null]);
+    for (const bad of [data, cfg, codexHome, proj, uuid(1), uuid(2), 'ses_', 'term_', '.jsonl', 'claude-settings', '"system"']) assert.ok(!ok.body.includes(bad), `vazou ${bad}`);
     assert.equal((await rawGet(s.port, '/api/limits', {})).status, 200, 'GET sem Origin é aceito, como nas demais leituras');
     assert.equal((await rawGet(s.port, '/api/limits', { origin: 'http://evil.example' })).status, 403, 'Origin de fora: recusado pelo apiGuard');
     assert.equal((await rawGet(s.port, '/api/limits', { host: 'evil.example' })).status, 403, 'Host de fora: recusado pelo apiGuard');
     await sleep(2300); // passa o memo de 2 s: o login (verificado em segundo plano na 1ª chamada) já aparece
     const again = JSON.parse((await rawGet(s.port, '/api/limits', { origin: s.origin })).body);
-    assert.equal(accOf(again, 'claude', 'system').connected, true); assert.equal(accOf(again, 'claude', 'system').plan, 'pro');
+    assert.equal(accOf(again, 'claude', machine.id).connected, true); assert.equal(accOf(again, 'claude', machine.id).plan, 'pro');
+  } finally { await s.stop(); }
+});
+
+test('servidor real: sem conta do Codex no banco (CLI ausente no boot) o Codex vem com accounts: [] e o contrato continua válido', async () => {
+  const { env } = seedReal({ codexRow: false });
+  const s = await bootReal(env);
+  try {
+    const j = JSON.parse((await rawGet(s.port, '/api/limits', { origin: s.origin })).body);
+    assert.deepEqual(j.providers.map((p) => [p.provider, p.label]), [['claude', 'Claude Code'], ['codex', 'Codex CLI']]); assert.deepEqual(j.providers[1].accounts, []);
+    assert.equal(j.providers[0].accounts.length, 2); assert.deepEqual(j.providers[0].accounts.map((a) => a.home), ['machine', 'forge']);
   } finally { await s.stop(); }
 });

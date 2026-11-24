@@ -30,7 +30,6 @@ import { createUsageReader, claudeConfigDir } from './terminal-usage.js';
 import { createProviderActivity, parseDaysParam } from './provider-activity.js';
 import { createRateLimits } from './rate-limits.js';
 import { createUsageApi } from './usage-api.js';
-import { codexProvider } from './providers/codex.js';
 import { createMaestro, setupMaestro, stableServerName } from './maestro.js';
 import { migrateLegacyDir } from './legacy-dirs.js';
 import { acquireInstanceLock, pidAlive } from './instance-lock.js';
@@ -92,8 +91,13 @@ logins = createLoginManager({ accounts, ...(accountsCli.unavailable ? { unavaila
 // Limite real de uso das contas (janela de 5 h e semanal): a status line do Claude Code grava aqui (claude-statusline-hook.mjs) e o Codex vem dos rollouts; e, quando o login permite, o uso REAL da conta vem do provedor (usage-api.js: lê o token só em memória e consulta o endpoint de uso; desliga com ORCH_LIMITS_API=off) (rate-limits.js). Pasta fora do workspace.
 const limitsDir = process.env.ORCH_DATA_DIR ? path.join(store.dataDir, 'rate-limits') : path.join(devHome, 'rate-limits');
 // Uso real da conta no provedor (inclui o gasto fora do FORGE): só no servidor de verdade; testes com ORCH_DATA_DIR não leem credenciais nem usam a rede, salvo ORCH_LIMITS_API=on.
-const usageApi = (!process.env.ORCH_DATA_DIR && !process.env.NODE_TEST_CONTEXT) || String(process.env.ORCH_LIMITS_API ?? '').toLowerCase() === 'on' ? createUsageApi({ credsDirOf: (id) => accounts.configDirOf(id) }) : null;
-const rateLimits = createRateLimits({ db, accounts, dir: limitsDir, script: fileURLToPath(new URL('./claude-statusline-hook.mjs', import.meta.url)), codexAuth: () => codexProvider.authProbe(), usageApi });
+// Por conta: a pasta padrão do ambiente só para a conta do computador DAQUELE provider; conta isolada usa só a pasta dela, e conta desconhecida não tem pasta (nunca cai no login do computador).
+const usageApi = (!process.env.ORCH_DATA_DIR && !process.env.NODE_TEST_CONTEXT) || String(process.env.ORCH_LIMITS_API ?? '').toLowerCase() === 'on' ? createUsageApi({
+  isMachine: (id, provider) => { const a = accounts.find(id); return !!a && a.home === 'machine' && a.provider === provider; },
+  credsDirOf: (id, provider) => { const a = accounts.find(id); return a && a.provider === provider && a.home !== 'machine' ? accounts.configDirOf(id) : null; },
+}) : null;
+// Contas = accounts.list() (todos os providers); login/plano de accounts.statusOf; o Codex lê os rollouts da pasta de cada conta (CODEX_HOME do ambiente para a do computador).
+const rateLimits = createRateLimits({ db, accounts, dir: limitsDir, script: fileURLToPath(new URL('./claude-statusline-hook.mjs', import.meta.url)), usageApi });
 if (usageApi) rateLimits.view(); // aquece a 1ª leitura do uso real
 rateLimits.sweep();
 const conversations = createConversationStore({ dir: historyDir, db, configDirOf: (id) => accounts.configDirOf(id) }); // histórico de conversas próprio, por workspace (texto das trocas; ver conversations.js); cada sessão é lida na pasta da conta dela

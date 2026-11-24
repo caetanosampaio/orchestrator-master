@@ -1,4 +1,6 @@
 // Limite REAL de uso de cada conta (janela curta de 5 h e janela semanal), para a interface: GET /api/limits.
+// Contas (modelo v2): as de `accounts.list()` (todos os providers com bloco `account`), pelo id real (`acc_…`), com provider, rótulo e `home` ('machine' | 'forge'). Não existe conta sintética:
+// o login do computador é uma conta comum (`home: 'machine'`). Estado por conta sempre na chave `limitKey(provider, id)` = '<provider>:acc_…' (account-compat.js).
 //
 // Fonte principal (quando o login permite): o USO REAL da conta consultado no provedor (usage-api.js: lê o token de login só em memória e chama o endpoint de uso). Cobre tudo que a conta gastou,
 // dentro ou fora do FORGE (terminal externo, navegador). Desliga com ORCH_LIMITS_API=off. Sem credencial, token vencido ou falha: caem as fontes locais abaixo (`source` 'api' vs. 'statusline'/'rollout').
@@ -7,7 +9,8 @@
 //     `claude-statusline-hook.mjs`; o script grava `<pasta>/<session_id>.json` ({ at, fiveHour, sevenDay }). Aqui só se LÊ essa pasta: para cada conta, por janela, vale o dado mais NOVO pela própria janela
 //     (maior `resetsAt`; em empate, MAIOR `usedPct`, pois o uso só cresce dentro da janela; só então o `at`, que é quando o hook rodou e não quando o dado foi medido) entre as sessões dela
 //     (os últimos N registros daquela conta). Não existe outra fonte local.
-//   - Codex CLI: o último `token_count` com `rate_limits` dos rollouts recentes (codex-usage.js, createCodexRateLimitsReader). É nível de conta.
+//   - Codex CLI: o último `token_count` com `rate_limits` dos rollouts recentes (codex-usage.js, createCodexRateLimitsReader), lidos na pasta DA CONTA (CODEX_HOME padrão para a do computador,
+//     a pasta isolada para as outras). É nível de conta. Nenhuma credencial é lida aqui.
 //
 // Regras de honestidade: janela cujo `resetsAt` já passou é omitida (null), nunca se mostra porcentagem velha como atual; `usedPct` sempre em 0..100; entrada inválida vira null; falha de leitura de um item
 // vira `sem-dados` daquele item. A resposta não tem caminhos, ids de sessão/registro nem e-mails.
@@ -21,9 +24,10 @@ import { randomBytes } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { createCodexRateLimitsReader, codexHomeDir, cleanPlan } from './codex-usage.js';
+import { accountSpecOf, accountProviderIds } from './providers/index.js';
+import { ACCOUNT_ID_RE, LIMIT_KEY_RE, LEGACY_LIMIT_KEY_RE, LEGACY_LIMIT_KEYS, accountHome, limitKey, translateLimitKeys, resolveLegacyAccountId } from './account-compat.js';
 
 const SESSION_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const SYSTEM_ID = 'system';
 const MAX_FILE = 4096; // arquivo gravado pelo hook: poucas dezenas de bytes
 const MAX_SETTINGS = 512 * 1024; // settings.json do usuário (só se procura a chave `statusLine`)
 const MEMO_MS = 2000;
@@ -34,7 +38,8 @@ const API_TTL_MS = 30_000; // consulta ao provedor no máximo a cada ~30 s por c
 const API_STALE_MS = 5 * 60_000; // leitura da API mais velha que isto não vale mais como "atual"
 const API_TIMEOUT_MS = 15_000, API_MAX_BACKOFF_MS = 10 * 60_000, API_RATE_LIMITED_MS = 5 * 60_000;
 const MAX_FILE_CACHE = 500;
-const LAST_KNOWN_FILE = 'last-known.json', MAX_LAST_FILE = 64 * 1024, LAST_WRITE_MS = 60_000, LAST_KEY_RE = /^(?:codex|claude:(?:system|acc_[0-9a-f]{8}))$/;
+const LAST_KNOWN_FILE = 'last-known.json', LAST_KNOWN_VERSION = 2, MAX_LAST_FILE = 64 * 1024, LAST_WRITE_MS = 60_000; // v2: chaves '<provider>:acc_…' (as legadas são traduzidas ao carregar)
+const MAX_CODEX_READERS = 20; // um leitor de rollouts por pasta de conta (cada um com cache próprio)
 const SAME_WINDOW_MS = 120_000; // resetsAt a menos disto = a mesma janela (a API e a status line arredondam diferente)
 const FUTURE_SKEW_MS = 10 * 60_000; // `at` além disto no futuro é lixo
 const STALE_FILE_MS = 30 * 86_400_000;
@@ -79,25 +84,44 @@ const storedWindow = (w) => { if (!isObj(w)) return null; const usedPct = pctOf(
 const publicWindow = (w, minutes, nowMs) => (w && w.resetsAt * 1000 > nowMs ? { usedPct: w.usedPct, resetsAt: new Date(w.resetsAt * 1000).toISOString(), windowMinutes: minutes } : null);
 
 /**
- * `db` = banco (só lê `terminalSessions`); `accounts` = módulo de contas (list, configDirOf, available, statusOf); `dir` = pasta onde o hook grava (fora do workspace);
- * `script` = caminho do claude-statusline-hook.mjs; `codexAuth` = sonda de login do Codex (cacheada). `env`, `now` (ms) e `codexReader` são injetáveis nos testes.
+ * `db` = banco (lê `terminalSessions` e `accountsModel.machineIds`); `accounts` = módulo de contas (list, configDirOf, statusOf); `dir` = pasta onde o hook grava (fora do workspace);
+ * `script` = caminho do claude-statusline-hook.mjs; `codexHome` = CODEX_HOME da conta do computador (padrão: o do ambiente). `env`, `now` (ms), `codexReader` (leitor da conta do computador)
+ * e `codexReaderFor(pasta)` (fábrica de leitores por pasta de conta) são injetáveis nos testes.
  */
-export function createRateLimits({ db, accounts = null, dir: dirIn, script: scriptIn, node = process.execPath, settingsFile: settingsIn = null, codexHome = codexHomeDir(), codexReader = null, codexAuth = null, env = () => process.env, now = Date.now, memoMs = MEMO_MS, connectedTtlMs = CONNECTED_TTL_MS, maxRecordsPerAccount = MAX_RECORDS_PER_ACCOUNT, usageApi = null, apiTtlMs = API_TTL_MS, apiStaleMs = API_STALE_MS } = {}) {
+export function createRateLimits({ db, accounts = null, dir: dirIn, script: scriptIn, node = process.execPath, settingsFile: settingsIn = null, codexHome = null, codexReader = null, codexReaderFor = null, env = () => process.env, now = Date.now, memoMs = MEMO_MS, connectedTtlMs = CONNECTED_TTL_MS, maxRecordsPerAccount = MAX_RECORDS_PER_ACCOUNT, usageApi = null, apiTtlMs = API_TTL_MS, apiStaleMs = API_STALE_MS } = {}) {
   if (!dirIn) throw new Error('createRateLimits: dir é obrigatório');
   const dir = path.resolve(dirIn), script = scriptIn ? path.resolve(scriptIn) : null; // absolutos: a status line roda com outro cwd
   const settingsFile = settingsIn ? path.resolve(settingsIn) : path.join(dir, 'claude-settings.json');
   const hookSettings = script ? statusLineSettings({ node, script, dir }) : null;
-  const codex = codexReader ?? createCodexRateLimitsReader({ codexHome, now });
+
+  // ---- contas (só as de accounts.list(): id real válido e provider com bloco `account`) ----
+  const providerOf = (a) => (a.provider === undefined || a.provider === null ? 'claude' : a.provider);
+  /** Linhas válidas da lista de contas, normalizadas. `ok:false` = a lista não pôde ser lida (nada é podado por causa disso). */
+  function rowsOf() {
+    if (!accounts || typeof accounts.list !== 'function') return { ok: false, rows: [] };
+    let raw; try { raw = accounts.list(); } catch { return { ok: false, rows: [] }; }
+    const rows = [];
+    for (const a of Array.isArray(raw) ? raw : []) {
+      if (!isObj(a) || typeof a.id !== 'string' || !ACCOUNT_ID_RE.test(a.id)) continue;
+      const provider = providerOf(a); if (!accountSpecOf(provider)) continue;
+      rows.push({ id: a.id, provider, label: typeof a.label === 'string' && a.label ? a.label : a.id, home: accountHome(a) });
+    }
+    return { ok: true, rows };
+  }
+  /** Conta do Claude pelo id real; null para id ausente, inválido, desconhecido ou de outro provider. */
+  const claudeAccountOf = (id) => (typeof id === 'string' && ACCOUNT_ID_RE.test(id) ? rowsOf().rows.find((a) => a.id === id && a.provider === 'claude') ?? null : null);
 
   // ---- o settings.json de USUÁRIO da conta já define `statusLine`? (só a existência da chave é usada; nada mais do conteúdo) ----
   const ownCache = new Map(); // arquivo -> { size, mtimeMs, own }
-  function userSettingsPath(accountId) {
-    let cfg = null; try { cfg = accounts?.configDirOf?.(accountId) ?? null; } catch { cfg = null; }
-    if (!cfg) { const e = env(); cfg = typeof e?.CLAUDE_CONFIG_DIR === 'string' && e.CLAUDE_CONFIG_DIR ? e.CLAUDE_CONFIG_DIR : path.join(os.homedir(), '.claude'); }
-    return path.join(cfg, 'settings.json');
+  /** settings.json de usuário da conta: o do ambiente (CLAUDE_CONFIG_DIR ou ~/.claude) só para a conta do computador; conta isolada usa a própria pasta e nunca cai na do computador. */
+  function userSettingsPath(acc) {
+    if (acc.home === 'machine') { const e = env(); return path.join(typeof e?.CLAUDE_CONFIG_DIR === 'string' && e.CLAUDE_CONFIG_DIR ? e.CLAUDE_CONFIG_DIR : path.join(os.homedir(), '.claude'), 'settings.json'); }
+    let cfg = null; try { cfg = accounts?.configDirOf?.(acc.id) ?? null; } catch { cfg = null; }
+    return typeof cfg === 'string' && cfg ? path.join(cfg, 'settings.json') : null;
   }
-  function hasOwnStatusLine(accountId) {
-    const file = userSettingsPath(accountId);
+  function hasOwnStatusLine(acc) {
+    const file = userSettingsPath(acc);
+    if (!file) return false; // pasta da conta isolada não resolvida: não há settings de usuário para respeitar
     try {
       const st = fs.statSync(file);
       if (!st.isFile()) return false;
@@ -112,13 +136,17 @@ export function createRateLimits({ db, accounts = null, dir: dirIn, script: scri
     } catch { return false; } // sem arquivo ou ilegível: o usuário não definiu nada
   }
 
-  /** 'off' (desligado por ambiente), 'own' (status line do usuário) ou 'on'. */
-  const modeOf = (accountId) => (!statusLineEnabled(env()) ? 'off' : hasOwnStatusLine(accountId) ? 'own' : 'on');
+  /** 'off' (desligado por ambiente), 'own' (status line do usuário) ou 'on'. `acc` = linha normalizada da conta ({ id, home }). */
+  const modeOf = (acc) => (!statusLineEnabled(env()) ? 'off' : hasOwnStatusLine(acc) ? 'own' : 'on');
 
-  /** Arquivo para `--settings` do pane da conta, ou null (desligado, status line do usuário, caminho inseguro ou falha ao gravar: o pane abre igual, sem a flag). Nunca lança. */
-  function settingsFileFor(accountId = SYSTEM_ID) {
+  /**
+   * Arquivo para `--settings` do pane da conta (id REAL, 'acc_…'), ou null (desligado, status line do usuário, caminho inseguro ou falha ao gravar: o pane abre igual, sem a flag). Nunca lança.
+   * Id ausente, inválido, de conta que não existe (mais) ou de outro provider = null: sem saber de qual conta é o pane, não se sobrepõe a uma `statusLine` que o usuário possa ter definido.
+   */
+  function settingsFileFor(accountId) {
     try {
-      if (!hookSettings || !settingsFile || modeOf(accountId ?? SYSTEM_ID) !== 'on') return null;
+      const acc = claudeAccountOf(accountId);
+      if (!acc || !hookSettings || !settingsFile || modeOf(acc) !== 'on') return null;
       writeSettingsFile(settingsFile, hookSettings);
       return settingsFile;
     } catch { return null; }
@@ -142,15 +170,39 @@ export function createRateLimits({ db, accounts = null, dir: dirIn, script: scri
   }
 
   /**
-   * Sessões Claude da conta: as que estão rodando mais as últimas N do histórico (registro sem `accountId` = Sistema; registro de conta removida não entra em nenhuma lista).
+   * Sessões Claude por conta (id real): as que estão rodando mais as últimas N do histórico de cada uma. Registro antigo (referência legada ou sem `accountId`, de antes da migração v2)
+   * é lido pela leitura tolerante (`resolveLegacyAccountId`: vira a conta do computador do provider do registro); registro de conta removida não entra na lista de nenhuma conta mostrada.
    * Premissa NÃO verificada com um Claude real: ao retomar (`--resume`) a sessão mantém o MESMO session_id do registro (`claudeSessionId`), então o arquivo do hook continua casando.
    * Se o Claude Code passar a trocar o id na retomada, o dado dessa sessão só aparece de novo quando houver um registro com o id novo.
    */
-  function sessionsOf(accountId) {
+  function sessionsIndex() {
     const list = Array.isArray(db?.terminalSessions) ? db.terminalSessions : [];
-    const mine = list.filter((r) => isObj(r) && (r.provider ?? 'claude') === 'claude' && typeof r.claudeSessionId === 'string' && SESSION_ID_RE.test(r.claudeSessionId) && (r.accountId ?? SYSTEM_ID) === accountId);
-    const ids = new Set([...mine.slice(-maxRecordsPerAccount).map((r) => r.claudeSessionId), ...mine.filter((r) => r.state === 'running').map((r) => r.claudeSessionId)]);
-    return [...ids];
+    const by = new Map(); // id -> registros, na ordem do banco
+    for (const r of list) {
+      if (!isObj(r) || (r.provider ?? 'claude') !== 'claude' || typeof r.claudeSessionId !== 'string' || !SESSION_ID_RE.test(r.claudeSessionId)) continue;
+      let id = null; try { id = resolveLegacyAccountId(db, r.accountId, r.provider ?? 'claude'); } catch { id = null; }
+      if (!id) continue;
+      const mine = by.get(id); if (mine) mine.push(r); else by.set(id, [r]);
+    }
+    const out = new Map();
+    for (const [id, mine] of by) out.set(id, [...new Set([...mine.slice(-maxRecordsPerAccount).map((r) => r.claudeSessionId), ...mine.filter((r) => r.state === 'running').map((r) => r.claudeSessionId)])]);
+    return out;
+  }
+  const sessionsOf = (accountId, index = sessionsIndex()) => index.get(accountId) ?? [];
+
+  // ---- Codex: um leitor de rollouts por pasta de conta (cache próprio por arquivo). Conta isolada sem pasta resolvida não cai nos rollouts do computador ----
+  const codexReaders = new Map(); // pasta -> leitor
+  const makeCodexReader = (home) => (typeof codexReaderFor === 'function' ? codexReaderFor(home) : createCodexRateLimitsReader({ codexHome: home, now }));
+  function codexReaderOf(acc) {
+    let home = null;
+    if (acc.home === 'machine') {
+      if (codexReader) return codexReader;
+      home = codexHome ?? codexHomeDir(env() ?? process.env);
+    } else { try { home = accounts?.configDirOf?.(acc.id) ?? null; } catch { home = null; } }
+    if (typeof home !== 'string' || !home) return null;
+    let r = codexReaders.get(home);
+    if (!r) { if (codexReaders.size >= MAX_CODEX_READERS) codexReaders.clear(); r = makeCodexReader(home); codexReaders.set(home, r); }
+    return r;
   }
 
   // ---- login/plano em segundo plano (cache existente das sondas; nunca bloqueia nem dispara a cada chamada) ----
@@ -173,6 +225,12 @@ export function createRateLimits({ db, accounts = null, dir: dirIn, script: scri
   // ---- última leitura boa da API, em disco: o app fechado e reaberto NÃO zera as barras (nem o login vencido, o 429 ou a falta de rede). Só valores de uso e plano; nenhum token, caminho ou e-mail ----
   const lastFile = path.join(dir, LAST_KNOWN_FILE);
   const pubWin = (w) => { if (!isObj(w)) return null; const usedPct = pctOf(w.usedPct), at = Date.parse(w.resetsAt); return usedPct === null || !Number.isFinite(at) ? null : { usedPct, resetsAt: new Date(at).toISOString(), windowMinutes: Number.isFinite(w.windowMinutes) ? w.windowMinutes : null }; };
+  let pendingRewrite = false; // o arquivo tinha chaves legadas ou lixo: é regravado já traduzido na 1ª montagem da resposta
+  let legacyKeep = {}; // chaves legadas SEM conta do computador correspondente (migração ainda não gravada): preservadas como estão em toda regravação, até poderem ser traduzidas
+  /**
+   * Lê o arquivo e TRADUZ as chaves legadas (`translateLimitKeys`, pelas contas do computador gravadas em db.accountsModel.machineIds) ANTES de qualquer poda: senão a poda apagaria
+   * a leitura da conta do computador antes de ela ganhar a chave nova. Chave nova tem precedência sobre a legada; legada sem conta correspondente e lixo saem.
+   */
   function loadLastKnown() {
     const out = new Map();
     if (!usageApi) return out; // sem consulta à API (testes, ORCH_LIMITS_API fora do ar no boot) não há o que reaproveitar
@@ -180,8 +238,15 @@ export function createRateLimits({ db, accounts = null, dir: dirIn, script: scri
       const st = fs.lstatSync(lastFile); if (!st.isFile() || st.size > MAX_LAST_FILE) return out;
       const j = JSON.parse(fs.readFileSync(lastFile, 'utf8')), t = now();
       if (!isObj(j) || !isObj(j.entries)) return out;
-      for (const [k, e] of Object.entries(j.entries)) {
-        if (!LAST_KEY_RE.test(k) || !isObj(e)) continue;
+      const machineIds = isObj(db?.accountsModel) && isObj(db.accountsModel.machineIds) ? db.accountsModel.machineIds : {};
+      const entries = translateLimitKeys(j.entries, machineIds);
+      const rawKeys = Object.keys(j.entries);
+      // Legada que ainda não tem para onde ir (sem a conta do computador do provider): NÃO se perde a última leitura boa; fica no arquivo como está.
+      legacyKeep = {};
+      for (const k of rawKeys) if (LEGACY_LIMIT_KEY_RE.test(k) && !limitKey(k === LEGACY_LIMIT_KEYS.codex ? 'codex' : 'claude', machineIds[k === LEGACY_LIMIT_KEYS.codex ? 'codex' : 'claude'])) legacyKeep[k] = j.entries[k];
+      pendingRewrite = rawKeys.some((k) => !Object.hasOwn(entries, k) && !Object.hasOwn(legacyKeep, k));
+      for (const [k, e] of Object.entries(entries)) {
+        if (!LIMIT_KEY_RE.test(k) || !isObj(e)) continue;
         const okAt = Number(e.okAt), session = pubWin(e.session), week = pubWin(e.week);
         if (!Number.isFinite(okAt) || okAt > t + FUTURE_SKEW_MS || (!session && !week)) continue;
         out.set(k, { okAt: Math.min(okAt, t), planType: cleanPlan(e.planType) ?? null, session, week }); // nunca no futuro
@@ -198,10 +263,10 @@ export function createRateLimits({ db, accounts = null, dir: dirIn, script: scri
       if (!apiOn()) return; // API desligada: o arquivo fica como está
       const entries = {};
       for (const [k, e] of lastKnown) entries[k] = { okAt: e.okAt, planType: e.planType, session: e.session, week: e.week };
-      for (const [k, m] of apiStates) if (m.data && m.okAt && LAST_KEY_RE.test(k)) entries[k] = { okAt: m.okAt, planType: cleanPlan(m.data.planType) ?? null, session: m.data.session ?? null, week: m.data.week ?? null };
+      for (const [k, m] of apiStates) if (m.data && m.okAt && LIMIT_KEY_RE.test(k)) entries[k] = { okAt: m.okAt, planType: cleanPlan(m.data.planType) ?? null, session: m.data.session ?? null, week: m.data.week ?? null };
       const sig = JSON.stringify(Object.entries(entries).map(([k, e]) => [k, e.planType, e.session, e.week])), t = now();
       if (sig === lastSig && t - lastWriteAt < LAST_WRITE_MS) return;
-      writeSettingsFile(lastFile, { v: 1, entries }); lastSig = sig; lastWriteAt = t;
+      writeSettingsFile(lastFile, { v: LAST_KNOWN_VERSION, entries: { ...legacyKeep, ...entries } }); lastSig = sig; lastWriteAt = t; pendingRewrite = false;
     } catch { /* disco indisponível: vale só nesta execução */ }
   }
 
@@ -266,10 +331,10 @@ export function createRateLimits({ db, accounts = null, dir: dirIn, script: scri
   /** O dado `w` (lido de um arquivo com `at`) é mais novo que o melhor até agora? Pela janela: maior resetsAt; empate: maior usedPct (só cresce na janela); último desempate: `at`. */
   const newer = (w, atMs, best) => !best || w.resetsAt > best.w.resetsAt || (w.resetsAt === best.w.resetsAt && (w.usedPct > best.w.usedPct || (w.usedPct === best.w.usedPct && atMs > best.atMs)));
 
-  /** Candidata local do Claude: o dado mais novo dos arquivos da status line, por janela. null sem dado. */
-  function statusLineCand(id, nowMs) {
+  /** Candidata local do Claude: o dado mais novo dos arquivos da status line da conta, por janela. null sem dado. */
+  function statusLineCand(id, nowMs, index) {
     let bestS = null, bestW = null;
-    for (const sid of sessionsOf(id)) {
+    for (const sid of sessionsOf(id, index)) {
       const d = readSessionFile(sid);
       if (!d || d.atMs > nowMs + FUTURE_SKEW_MS) continue;
       if (d.fiveHour && d.fiveHour.resetsAt * 1000 > nowMs && newer(d.fiveHour, d.atMs, bestS)) bestS = { atMs: d.atMs, w: d.fiveHour };
@@ -279,67 +344,79 @@ export function createRateLimits({ db, accounts = null, dir: dirIn, script: scri
     return session || week ? { kind: 'statusline', atMs: Math.max(session ? bestS.atMs : 0, week ? bestW.atMs : 0), session, week } : null;
   }
 
-  function claudeAccount(id, label, nowMs) {
-    const acc = { id, label, connected: null, plan: null, source: 'sem-dados', session: null, week: null, updatedAt: null };
-    try {
-      if (accounts?.statusOf) { const m = connectedOf(`claude:${id}`, async () => { const s = await accounts.statusOf(id); return { connected: s?.checked ? s.loggedIn : null, plan: s?.subscriptionType }; }); acc.connected = m.connected; acc.plan = m.plan; }
-    } catch { /* informativo */ }
+  /** Login e plano da conta, do estado de login do módulo de contas (`statusOf(id).plan`; igual para todos os providers), em segundo plano e com cache. */
+  function loginOf(acc, key) {
+    if (typeof accounts?.statusOf !== 'function') return { connected: null, plan: null };
+    const m = connectedOf(key, async () => { const s = await accounts.statusOf(acc.id); return { connected: s?.checked === true && typeof s.loggedIn === 'boolean' ? s.loggedIn : null, plan: s?.plan }; });
+    return { connected: m.connected, plan: m.plan };
+  }
+
+  /** Fontes do Claude: uso real (API) + arquivos da status line das sessões da conta. */
+  function claudeLimits(acc, key, nowMs, index) {
     let mode = 'on';
     try {
-      mode = modeOf(id);
+      mode = modeOf(acc);
       const cands = [];
-      try { const a = apiCand(apiOf(`claude:${id}`, () => usageApi.claude(id)), nowMs); if (a) cands.push(a); } catch { /* sem API: valem as fontes locais */ } // uso real da conta (todos os clientes), se o login permitir
-      if (mode === 'on') { try { const l = statusLineCand(id, nowMs); if (l) cands.push(l); } catch { /* informativo */ } }
+      try { const a = apiCand(apiOf(key, () => usageApi.claude(acc.id)), nowMs); if (a) cands.push(a); } catch { /* sem API: valem as fontes locais */ } // uso real da conta (todos os clientes), se o login permitir
+      if (mode === 'on') { try { const l = statusLineCand(acc.id, nowMs, index); if (l) cands.push(l); } catch { /* informativo */ } }
       const m = merge(cands, nowMs);
       if (m.session || m.week) {
         acc.source = m.kind; acc.session = m.session; acc.week = m.week; acc.updatedAt = m.atMs > 0 ? new Date(m.atMs).toISOString() : null;
         const a = cands.find((c) => c.kind !== 'statusline'); if (!acc.plan && a?.planType) acc.plan = a.planType;
-        return acc;
+        return;
       }
     } catch { acc.session = null; acc.week = null; acc.updatedAt = null; }
     acc.source = mode === 'off' ? 'desligado' : mode === 'own' ? 'statusline-propria' : 'sem-dados';
-    return acc;
   }
 
-  function codexAccount(nowMs) {
-    const acc = { id: 'codex', label: 'Codex', connected: null, plan: null, source: 'sem-dados', session: null, week: null, updatedAt: null };
-    try {
-      if (typeof codexAuth === 'function') { const m = connectedOf('codex', async () => { const a = await codexAuth(); return { connected: a?.known === true && typeof a.loggedIn === 'boolean' ? a.loggedIn : null }; }); acc.connected = m.connected; }
-    } catch { /* informativo */ }
+  /** Fontes do Codex: uso real (API) + rollouts da pasta da conta. */
+  function codexLimits(acc, key, nowMs) {
     try {
       const cands = []; let rolloutPlan = null;
-      try { const a = apiCand(apiOf('codex', () => usageApi.codex()), nowMs); if (a) cands.push(a); } catch { /* cai nos rollouts */ }
+      try { const a = apiCand(apiOf(key, () => usageApi.codex(acc.id)), nowMs); if (a) cands.push(a); } catch { /* cai nos rollouts */ }
       try {
-        const r = codex.read();
+        const r = codexReaderOf(acc)?.read() ?? null;
         if (r) { rolloutPlan = cleanPlan(r.planType) ?? null; const at = Date.parse(r.at); if (r.session || r.week) cands.push({ kind: 'rollout', atMs: Number.isFinite(at) ? at : 0, session: r.session ?? null, week: r.week ?? null }); }
       } catch { /* informativo */ }
       const a = cands.find((c) => c.kind !== 'rollout');
-      acc.plan = cleanPlan(a?.planType) ?? rolloutPlan;
+      acc.plan = acc.plan ?? cleanPlan(a?.planType) ?? rolloutPlan; // o plano do login (se o provider informar) vence; senão o da API; senão o do rollout
       const m = merge(cands, nowMs);
       if (m.session || m.week) { acc.source = m.kind; acc.session = m.session; acc.week = m.week; acc.updatedAt = m.atMs > 0 ? new Date(m.atMs).toISOString() : null; }
     } catch { acc.source = 'sem-dados'; acc.session = null; acc.week = null; acc.updatedAt = null; }
+  }
+
+  /** Uma conta da resposta. Provider sem fonte de limites conhecida aqui: só login/plano, `sem-dados`. */
+  function accountView(row, nowMs, index) {
+    const key = limitKey(row.provider, row.id);
+    const acc = { id: row.id, provider: row.provider, label: row.label, home: row.home, connected: null, plan: null, source: 'sem-dados', session: null, week: null, updatedAt: null };
+    try { const l = loginOf(row, key); acc.connected = l.connected; acc.plan = l.plan; } catch { /* informativo */ }
+    if (row.provider === 'claude') claudeLimits(acc, key, nowMs, index);
+    else if (row.provider === 'codex') codexLimits(acc, key, nowMs);
     return acc;
   }
 
   let memo = null;
   function build() {
     const nowMs = now();
-    const claude = [];
-    let list = [], listOk = true; try { list = accounts?.list?.() ?? []; } catch { list = []; listOk = false; }
-    let available = true; try { available = accounts?.available ? accounts.available() !== false : true; } catch { available = true; } // sem Claude Code instalado, não há conta a mostrar
-    if (available) {
-      claude.push(claudeAccount(SYSTEM_ID, 'Sistema', nowMs));
-      for (const a of list) if (isObj(a) && typeof a.id === 'string' && /^acc_[0-9a-f]{8}$/.test(a.id) && (a.provider ?? 'claude') === 'claude') claude.push(claudeAccount(a.id, typeof a.label === 'string' && a.label ? a.label : a.id, nowMs));
+    const { ok: listOk, rows } = rowsOf();
+    const index = sessionsIndex();
+    const providers = [];
+    // Todas as contas existentes aparecem, com ou sem a CLI instalada (como em GET /api/accounts): a linha só existe se a conta foi vinculada; sem a CLI, o login fica `connected: null`.
+    for (const pid of accountProviderIds()) {
+      const mine = rows.filter((a) => a.provider === pid);
+      mine.sort((a, b) => (a.home === 'machine' ? 0 : 1) - (b.home === 'machine' ? 0 : 1)); // a do computador primeiro (estável: as outras seguem a ordem do banco)
+      providers.push({ provider: pid, label: accountSpecOf(pid)?.label ?? pid, accounts: mine.map((r) => accountView(r, nowMs, index)) });
     }
-    const live = new Set(['codex', ...claude.map((a) => `claude:${a.id}`)]);
-    for (const k of [...conn.keys()]) if (!live.has(k)) conn.delete(k); // conta removida: esquece o estado de login dela
-    if (listOk && available) { // só com a lista de contas lida de verdade: uma falha passageira não apaga as leituras gravadas
+    if (listOk) { // só com a lista de contas lida de verdade: uma falha passageira não apaga as leituras gravadas. A poda remove só chaves de contas que não existem mais.
+      const live = new Set(rows.map((a) => limitKey(a.provider, a.id)));
+      for (const k of [...conn.keys()]) if (!live.has(k)) conn.delete(k); // conta removida: esquece o estado de login dela
       let dropped = false;
       for (const k of [...apiStates.keys()]) if (!live.has(k)) { apiStates.delete(k); dropped = true; }
       for (const k of [...lastKnown.keys()]) if (!live.has(k)) { lastKnown.delete(k); dropped = true; } // conta removida: some também a leitura gravada
       if (dropped) saveLastKnown();
     }
-    return { updatedAt: new Date(nowMs).toISOString(), providers: [{ provider: 'claude', label: 'Claude Code', accounts: claude }, { provider: 'codex', label: 'Codex CLI', accounts: [codexAccount(nowMs)] }] };
+    if (pendingRewrite) saveLastKnown(); // arquivo com chaves legadas: grava já traduzido (uma vez; saveLastKnown zera o pendente quando grava)
+    return { updatedAt: new Date(nowMs).toISOString(), providers };
   }
 
   return {
