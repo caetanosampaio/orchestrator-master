@@ -552,10 +552,8 @@ button.fx-sb-i:hover { background: rgba(255, 255, 255, .07); color: var(--strong
 .fx-app .acc-add-foot { justify-content: flex-end; padding-top: 14px; border-top: 1px solid var(--line); }
 /* Suas IAs: cada IA com o ÍCONE oficial (não o mascote); as ainda sem ícone no FORGE levam um selo com a inicial na cor dela (AiIcon, provisório) */
 .ai-mono { display: inline-grid; place-items: center; flex: none; border-radius: 22%; background: color-mix(in srgb, var(--ai) 22%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ai) 55%, transparent); color: color-mix(in srgb, var(--ai) 70%, #ffffff); font-family: var(--sans); font-weight: 700; line-height: 1; }
-.fx-app .ai-card { gap: 8px; min-width: 150px; padding: 16px 18px 12px; }
 .fx-app .ai-card-n { font: 600 13px var(--sans); color: var(--strong); }
-.fx-app .ai-next-i { gap: 6px; min-width: 104px; padding: 12px 12px 10px; }
-.fx-app .ai-next-i .ai-card-n { font-size: 12px; color: var(--text); }
+.fx-app .ai-next-i .ai-card-n { font: 500 12px var(--sans); color: var(--text); }
 .fx-setup-tips { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; color: var(--dim); font-size: 13px; }
 .fx-setup-tips li { display: flex; align-items: center; gap: 10px; }
 .fx-setup-skip { position: absolute; right: 24px; bottom: 20px; border: 0; background: none; color: var(--faint); font: 450 12px var(--sans); cursor: pointer; transition: color var(--dur-1) ease; }

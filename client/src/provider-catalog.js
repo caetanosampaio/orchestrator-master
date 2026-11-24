@@ -18,3 +18,5 @@ export const integratedIds = () => CATALOG.filter((x) => x.integrated).map((x) =
 export const plannedAis = () => CATALOG.filter((x) => !x.integrated);
 /** Nome completo para exibir: o do catálogo ("Claude Code"), senão o que o servidor informou, senão o próprio id. */
 export const aiName = (id, serverLabel = null) => catalogById(id)?.full || serverLabel || catalogById(id)?.label || String(id);
+/** Só o nome da IA, sem o produto ("Claude", "Codex"): o de Configurações > Suas IAs. IA fora do catálogo: o nome do servidor sem " CLI" no fim, senão o id. */
+export const aiShortName = (id, serverLabel = null) => catalogById(id)?.label || (typeof serverLabel === 'string' && serverLabel.trim() ? serverLabel.trim().replace(/\s+CLI$/i, '') : String(id));

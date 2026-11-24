@@ -4,7 +4,7 @@ import { useStore } from '../../store.jsx';
 import { providerSummary } from '../../env-view.js';
 import { providerStatus, withAccountsLogin } from '../../provider-view.js';
 import { accountsOf } from '../../accounts-view.js';
-import { plannedAis, aiName } from '../../provider-catalog.js';
+import { plannedAis, aiShortName } from '../../provider-catalog.js';
 import { slotOptions } from '../../squads.js';
 import { useSquads } from '../../use-squads.js';
 import { AiIcon } from '../ProviderLogo.jsx';
@@ -12,8 +12,9 @@ import { Btn } from '../ui.jsx';
 import { Row, Card, Block } from './SettingsUi.jsx';
 
 /**
- * Configurações > Suas IAs (no formato da tela "Suas IAs" de referência, em preto; cada IA aparece com o ÍCONE oficial dela, não com o mascote): "Ligadas agora" = os agentes instalados de verdade (Claude Code e Codex CLI, de GET /api/terminals), com o estado real;
- * clicar num cartão mostra os detalhes logo abaixo. "Para ligar" = as outras IAs, que o FORGE ainda NÃO integra: aparecem só para acompanhar o que pode vir, sem botão que finja ligar.
+ * Configurações > Suas IAs, enxuta: cada IA com o ÍCONE oficial (pequeno) e só o nome dela ("Claude", "Codex"). "Ligadas agora" = os agentes instalados de verdade
+ * (de GET /api/terminals), com um ponto de estado (o texto do estado fica no título e nos detalhes); clicar num cartão mostra os detalhes logo abaixo.
+ * "Para ligar" = as outras IAs, que o FORGE ainda NÃO integra (em breve): aparecem só para acompanhar o que pode vir, sem botão que finja ligar.
  */
 function Detail({ row, go, accounts }) {
   const { state, refresh } = useStore();
@@ -26,14 +27,14 @@ function Detail({ row, go, accounts }) {
   return (
     <Card className="ai-detail">
       <div className="ai-detail-h">
-        <AiIcon id={row.id} size={40} />
-        <div><b>{aiName(row.id, row.label)}</b><span className="dim small">{row.id === 'claude' ? 'Agente padrão dos terminais.' : 'Ao lado do Claude Code, no mesmo Maestro.'}</span></div>
+        <AiIcon id={row.id} size={26} />
+        <div><b>{aiShortName(row.id, row.label)}</b><span className="dim small">{row.id === 'claude' ? 'Agente padrão dos terminais.' : 'Ao lado do Claude Code, no mesmo Maestro.'}</span></div>
         <span className={`oc-pill${st.kind === 'ok' ? ' ok' : st.kind === 'bad' ? ' bad' : ''}`}>{st.text}</span>
       </div>
       <Row title="Terminais" hint="Quantos terminais deste agente estão abertos agora.">{row.active > 0 ? `${row.active} ${row.active === 1 ? 'aberto' : 'abertos'}` : 'nenhum aberto'}</Row>
       <Row title="Modelos e esforço" hint="O que dá para escolher por vaga em Times prontos.">{o ? `${o.models.length} ${o.models.length === 1 ? 'modelo' : 'modelos'} · ${o.efforts.length} ${o.efforts.length === 1 ? 'nível' : 'níveis'}` : 'padrão da CLI'}</Row>
       {row.id === 'claude' && <>
-        <Row title="Claude Code CLI" hint="Os terminais executam o comando claude encontrado no PATH, com o seu login e as suas permissões.">
+        <Row title="Instalação" hint="Os terminais executam o comando claude encontrado no PATH, com o seu login e as suas permissões.">
           {!state ? <span className="dim">verificando…</span> : ex?.available
             ? <span className="oc-state ok"><i aria-hidden="true" />Detectado{ex.version ? ` · ${ex.version}` : ''}</span>
             : <span className="oc-state bad"><i aria-hidden="true" />Não encontrado no PATH</span>}
@@ -42,7 +43,7 @@ function Detail({ row, go, accounts }) {
         <Row title="Verificar de novo" hint="A detecção é guardada por alguns segundos."><Btn onClick={recheck} disabled={checking}>{checking ? 'Verificando…' : 'Verificar'}</Btn></Row>
         <Row title="Permissões" hint="O terminal interativo pede permissões no próprio terminal. Quando o projeto tem configuração do Claude Code que executa comandos e não está revisada no Git, o FORGE pede a sua confirmação antes de abrir." />
       </>}
-      {row.id === 'codex' && <Row title="Codex CLI" hint="Instale com npm i -g @openai/codex e entre com codex login no terminal. O FORGE usa a conta do Codex deste computador; retomada de sessão ainda não existe para o Codex." />}
+      {row.id === 'codex' && <Row title="Instalação" hint="Instale com npm i -g @openai/codex e entre com codex login no terminal. O FORGE usa a conta do Codex deste computador; retomada de sessão ainda não existe para o Codex." />}
       <Row title="Contas" hint={row.id === 'claude' ? 'Entre com mais de uma conta e escolha qual cada terminal usa.' : 'As contas desta IA que o FORGE usa.'}>
         <span className="dim small">{!accounts ? 'verificando…' : mine.length ? `${mine.length} ${mine.length === 1 ? 'conta' : 'contas'} · ${on} ${on === 1 ? 'conectada' : 'conectadas'}` : 'nenhuma conta'}</span>{' '}
         <Btn onClick={() => go('accounts')}>Gerenciar contas</Btn>
@@ -68,10 +69,10 @@ export function AisSection({ go }) {
             {installed.map((r) => {
               const st = providerStatus(r);
               return (
-                <button key={r.id} type="button" className={`ai-card${current?.id === r.id ? ' on' : ''}`} aria-pressed={current?.id === r.id} onClick={() => setSel(r.id)}>
-                  <AiIcon id={r.id} size={32} />
-                  <b className="ai-card-n">{aiName(r.id, r.label)}</b>
-                  <span className="dim small">{st.text}{r.active > 0 ? ` · ${r.active} ${r.active === 1 ? 'terminal' : 'terminais'}` : ''}</span>
+                <button key={r.id} type="button" className={`ai-card${current?.id === r.id ? ' on' : ''}`} aria-pressed={current?.id === r.id} onClick={() => setSel(r.id)} title={st.text}>
+                  <AiIcon id={r.id} size={20} />
+                  <b className="ai-card-n">{aiShortName(r.id, r.label)}</b>
+                  <i className={`ai-dot ${st.kind}`} aria-hidden="true" /><span className="sr">{st.text}</span>
                 </button>
               );
             })}
@@ -81,10 +82,9 @@ export function AisSection({ go }) {
       <Block title="Para ligar" hint="IAs que o FORGE ainda não integra. Aparecem aqui para você acompanhar o que pode vir." id="ais-next">
         <ul className="ai-next" aria-label="IAs ainda não integradas">
           {plannedAis().map((a) => (
-            <li key={a.id} className="ai-next-i" style={{ '--pm': a.color }}>
-              <AiIcon id={a.id} size={26} />
-              <b className="ai-card-n">{a.label}</b>
-              <span className="dim small">em breve</span>
+            <li key={a.id} className="ai-next-i" title={`${a.label}: em breve`}>
+              <AiIcon id={a.id} size={16} />
+              <span className="ai-card-n">{a.label}</span>
             </li>
           ))}
         </ul>

@@ -115,8 +115,8 @@ test('Times prontos: seções Para instalar (do servidor) e Seus, ver por dentro
   assert.match(cards, /<ProviderMascot id=\{s\.provider\} size=\{size\} hat=\{s\.role === 'maestro'\} \/>/, 'cada vaga é um mascote na cor da IA, e o Maestro usa o chapéu'); assert.match(cards, /tc-m-l/, 'com o papel embaixo');
   assert.ok(!/<ProviderMascot/.test(src('components/TerminalGrid.jsx')));
   const grid = src('components/TerminalGrid.jsx'); assert.ok(!/curatedSquads/.test(grid), 'as equipes por objetivo são opcionais: só entram no Cockpit depois de instaladas');
-  const ais = src('components/settings/AisSection.jsx'); assert.match(ais, /<AiIcon id=\{r\.id\} size=\{32\} \/>/, 'Suas IAs mostra o ícone oficial de cada IA (não o mascote)');
-  assert.match(ais, /<AiIcon id=\{a\.id\} size=\{26\} \/>/); assert.ok(!/ProviderMascot/.test(ais), 'sem mascote em Suas IAs');
+  const ais = src('components/settings/AisSection.jsx'); assert.match(ais, /<AiIcon id=\{r\.id\} size=\{\d+\} \/>/, 'Suas IAs mostra o ícone oficial de cada IA (não o mascote)');
+  assert.match(ais, /<AiIcon id=\{a\.id\} size=\{\d+\} \/>/); assert.ok(!/ProviderMascot/.test(ais), 'sem mascote em Suas IAs');
 });
 
 test('Cockpit sem terminais: só os times de Configurações (instalados e seus), sem equipes fixas; vazio orienta e leva a Times prontos; o agente padrão dos times básicos saiu das Configurações', () => {

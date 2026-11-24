@@ -41,14 +41,18 @@
 .set-card > .oc-note { margin: 0 18px 14px; }
 
 /* ---------- Suas IAs (mascotes no estilo dos Times prontos: o boneco em cima, o nome embaixo) ---------- */
-.ai-cards { display: flex; flex-wrap: wrap; gap: var(--sp-3); }
-.ai-card { display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 150px; padding: 14px 18px 12px; border: 1px solid var(--line); border-radius: var(--r-3); background: var(--card); color: inherit; font: inherit; cursor: pointer; transition: border-color 140ms ease; }
-.ai-card:hover, .ai-card:focus-visible { border-color: var(--line-strong); outline: none; }
-.ai-card.on { border-color: var(--pm, var(--brand)); box-shadow: inset 0 0 0 1px var(--brand); }
-.ai-detail .ai-detail-h { display: flex; align-items: center; gap: 14px; padding: 16px 18px; border-bottom: 1px solid var(--line); }
-.ai-detail-h > div { flex: 1; display: flex; flex-direction: column; min-width: 0; } .ai-detail-h b { color: var(--strong); font-size: 16px; font-weight: 600; }
-.ai-next { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--sp-2); }
-.ai-next-i { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 112px; padding: 12px 12px 10px; border: 1px dashed var(--line-strong); border-radius: var(--r-3); opacity: .85; }
+/* Suas IAs, enxuta: cartões em linha (ícone pequeno, nome, ponto de estado); as que ainda não integram são etiquetas discretas */
+.ai-cards { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.ai-card { display: inline-flex; align-items: center; gap: 10px; min-width: 132px; padding: 9px 12px; border: 1px solid var(--line); border-radius: var(--r-3); background: var(--card); color: inherit; font: inherit; cursor: pointer; transition: border-color 140ms ease, background-color 140ms ease; }
+.ai-card:hover { border-color: var(--line-strong); }
+.ai-card:focus-visible { outline: 2px solid var(--focus, var(--line-strong)); outline-offset: 1px; }
+.ai-card.on { border-color: var(--line-strong); background: color-mix(in srgb, var(--card) 85%, #ffffff 4%); }
+.ai-dot { flex: none; width: 7px; height: 7px; margin-left: auto; border-radius: 50%; background: var(--faint); }
+.ai-dot.ok { background: var(--ok, #4cc38a); } .ai-dot.bad { background: var(--err, #e5484d); }
+.ai-detail .ai-detail-h { display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+.ai-detail-h > div { flex: 1; display: flex; flex-direction: column; min-width: 0; } .ai-detail-h b { color: var(--strong); font-size: 15px; font-weight: 600; }
+.ai-next { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.ai-next-i { display: inline-flex; align-items: center; gap: 7px; padding: 5px 10px 5px 7px; border: 1px solid var(--line); border-radius: 999px; opacity: .7; }
 
 /* ---------- Mascotes ---------- */
 .mc-wrap { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: var(--sp-4); align-items: start; }

@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { NAV, ALIASES, DEFAULT_TAB, flatItems, itemById, resolveTab, filterNav } from '../../client/src/settings-nav.js';
-import { CATALOG, FORGE_MASCOT, catalogById, catalogColor, integratedIds, plannedAis, aiName } from '../../client/src/provider-catalog.js';
+import { CATALOG, FORGE_MASCOT, catalogById, catalogColor, integratedIds, plannedAis, aiName, aiShortName } from '../../client/src/provider-catalog.js';
 import { providerColor } from '../../client/src/provider-view.js';
 
 const src = (f) => fs.readFileSync(new URL(`../../client/src/${f}`, import.meta.url), 'utf8');
@@ -40,6 +40,9 @@ test('catálogo: só Claude Code e Codex CLI são integrados; as outras IAs apar
   assert.equal(catalogById('forge'), FORGE_MASCOT); assert.equal(FORGE_MASCOT.brand, true); assert.equal(catalogById('nao-existe'), null); assert.equal(catalogColor('nao-existe'), null);
   assert.equal(providerColor('gemini'), catalogColor('gemini')); assert.equal(providerColor('nao-existe'), '#9aa3b2');
   assert.equal(aiName('claude'), 'Claude Code'); assert.equal(aiName('claude', 'Claude Code CLI'), 'Claude Code'); assert.equal(aiName('estranha', 'Outro nome'), 'Outro nome'); assert.equal(aiName('gemini'), 'Gemini'); assert.equal(aiName('xyz'), 'xyz');
+  // Suas IAs: só o nome da IA, sem o produto
+  assert.equal(aiShortName('claude', 'Claude Code CLI'), 'Claude'); assert.equal(aiShortName('codex', 'Codex CLI'), 'Codex'); assert.equal(aiShortName('opencode'), 'OpenCode');
+  assert.equal(aiShortName('nova', 'Nova CLI'), 'Nova', 'fora do catálogo: o nome do servidor sem " CLI"'); assert.equal(aiShortName('xyz'), 'xyz'); assert.equal(aiShortName('xyz', '   '), 'xyz');
 });
 
 test('página: cada seção da navegação tem um componente, a busca e o cartão de perfil existem e "Para ligar" não finge ligar nada', () => {
@@ -47,7 +50,7 @@ test('página: cada seção da navegação tem um componente, a busca e o cartã
   for (const i of flatItems()) assert.match(page, new RegExp(`\\b${i.id}: <`), `a seção ${i.id} não tem componente`);
   assert.match(page, /Buscar nas Configurações/); assert.match(page, /filterNav\(query\)/); assert.match(page, /className="set-me"/); assert.match(page, /role="tablist"/);
   const ais = src('components/settings/AisSection.jsx'), next = ais.slice(ais.indexOf('<Block title="Para ligar"'));
-  assert.match(next, /plannedAis\(\)/); assert.match(next, /em breve/); assert.ok(!/<button/.test(next), 'IA ainda não integrada não tem botão de ligar');
+  assert.match(next, /plannedAis\(\)/); assert.match(next, /em breve/); assert.ok(!/aiName\(/.test(ais), 'Suas IAs mostra só o nome da IA (aiShortName), sem "Code"/"CLI"'); assert.ok(!/<button/.test(next), 'IA ainda não integrada não tem botão de ligar');
   assert.match(src('components/settings/GolemSection.jsx'), /Tokens forjados/); assert.ok(!itemById('mascotes') && !itemById('bichinho'), 'Mascotes e Bichinho deram lugar ao Golem');
 });
 
