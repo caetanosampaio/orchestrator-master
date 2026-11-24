@@ -41,14 +41,16 @@
 .set-card > .oc-note { margin: 0 18px 14px; }
 
 /* ---------- Suas IAs (mascotes no estilo dos Times prontos: o boneco em cima, o nome embaixo) ---------- */
-/* Suas IAs: todas as integradas juntas numa grade uniforme (ícone oficial + nome), sem indicador de estado; as que ainda não integram são etiquetas discretas */
-.ai-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 8px; }
-.ai-card { display: flex; align-items: center; gap: 11px; min-width: 0; padding: 13px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--text); font: inherit; text-align: left; cursor: pointer; transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease; }
+/* Suas IAs: todas as integradas juntas numa grade uniforme, o ícone oficial em destaque e o nome pequeno embaixo; sem indicador de estado. As que ainda não integram são etiquetas discretas */
+.ai-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 8px; }
+.ai-card { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px; min-width: 0; padding: 18px 10px 13px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--text); font: inherit; text-align: left; cursor: pointer; transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease; }
 .ai-card .prov-mark.cursor, .ai-card .prov-mark.opencode { color: var(--strong); }
 .ai-card:hover { border-color: var(--line-strong); background: color-mix(in srgb, var(--card) 92%, #ffffff 3%); }
 .ai-card:focus-visible { outline: 2px solid var(--focus, var(--line-strong)); outline-offset: 2px; }
 .ai-card.on { border-color: color-mix(in srgb, var(--strong) 38%, transparent); background: color-mix(in srgb, var(--card) 88%, #ffffff 5%); box-shadow: 0 0 0 3px color-mix(in srgb, var(--strong) 7%, transparent); }
-.ai-card-n { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.ai-card-n { max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.fx-app .ai-cards .ai-card-n { color: var(--dim); font: 500 11.5px var(--sans); letter-spacing: .01em; }
+.fx-app .ai-card.on .ai-card-n, .fx-app .ai-card:hover .ai-card-n { color: var(--strong); }
 .ai-cmd { display: inline-block; max-width: 100%; overflow: hidden; padding: 3px 8px; border: 1px solid var(--line); border-radius: 6px; color: var(--dim); font-size: 11.5px; white-space: nowrap; text-overflow: ellipsis; vertical-align: middle; user-select: all; }
 .ai-detail .ai-detail-h { display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--line); }
 .ai-detail-h > div { flex: 1; display: flex; flex-direction: column; min-width: 0; } .ai-detail-h b { color: var(--strong); font-size: 15px; font-weight: 600; }

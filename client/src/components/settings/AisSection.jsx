@@ -82,7 +82,7 @@ export function AisSection({ go }) {
           : <div className="ai-cards" role="group" aria-label="IAs integradas ao FORGE">
             {all.map((r) => (
               <button key={r.id} type="button" className={`ai-card${current?.id === r.id ? ' on' : ''}`} aria-pressed={current?.id === r.id} onClick={() => setSel(r.id)}>
-                <AiIcon id={r.id} size={22} />
+                <AiIcon id={r.id} size={30} />
                 <b className="ai-card-n">{aiShortName(r.id, r.label)}</b>
                 <span className="sr">{providerStatus(r).text}</span>
               </button>
