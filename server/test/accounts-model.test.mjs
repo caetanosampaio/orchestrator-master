@@ -145,7 +145,9 @@ test('listView: campos do contrato v2 (sem system/isDefault/defaultId), provider
   const st = { calls: [], loggedIn: false }; const w = world(fakeCodex(st));
   const m = mkMachine(w); const a = mk(w, 'Trabalho'); markLoggedIn(path.join(w.accDir(a.id), 'claude')); const c = w.accounts.create({ provider: 'codex', home: 'machine' }).account;
   const v = await w.accounts.listView();
-  assert.deepEqual(Object.keys(v).sort(), ['accounts', 'providers']);
+  assert.deepEqual(Object.keys(v).sort(), ['accounts', 'lastUsed', 'providers']);
+  assert.deepEqual(v.lastUsed, { claude: null, codex: null }, 'nenhuma usada ainda');
+  w.accounts.remember('claude', a.id); assert.deepEqual((await w.accounts.listView({ status: false })).lastUsed, { claude: a.id, codex: null }, 'a última usada de cada provider');
   assert.deepEqual(v.accounts.map((x) => [x.id, x.provider, x.providerLabel, x.home, x.canLogin]), [[m.id, 'claude', 'Claude Code', 'machine', true], [a.id, 'claude', 'Claude Code', 'forge', true], [c.id, 'codex', 'Codex CLI', 'machine', false]]);
   assert.deepEqual(Object.keys(v.accounts[1]).sort(), ['canLogin', 'createdAt', 'home', 'id', 'label', 'provider', 'providerLabel', 'status']);
   assert.deepEqual(v.providers.map((p) => [p.id, p.label, p.canLogin, p.isolated, p.available]), [['claude', 'Claude Code', true, true, true], ['codex', 'Codex CLI', false, true, true]]);

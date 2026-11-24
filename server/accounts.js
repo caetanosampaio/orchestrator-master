@@ -134,10 +134,14 @@ export function createAccounts({ db, dataDir, persist, now = () => new Date().to
     const spec = specOf(a.provider);
     return { id: a.id, provider: a.provider, providerLabel: spec.label, label: a.label, home: a.home, canLogin: spec.canLogin, createdAt: a.createdAt ?? null, status: withStatus ? await statusOf(a.id) : emptyStatus(null, false) };
   };
-  /** `status:false` = sem consultar as CLIs (status vazio); `fresh` = descarta o cache de todas as contas antes. */
+  /**
+   * `status:false` = sem consultar as CLIs (status vazio); `fresh` = descarta o cache de todas as contas antes.
+   * `lastUsed` = { [provider]: id | null }: a última conta usada de cada provider, para a interface pré-selecionar no seletor (só ids que ainda existem).
+   */
   async function listView({ status = true, fresh = false } = {}) {
     if (fresh) for (const a of list()) invalidate(a.id);
-    return { accounts: await Promise.all(list().map((a) => viewOf(a, status))), providers: accountProviderIds().map(providerView) };
+    const ids = accountProviderIds();
+    return { accounts: await Promise.all(list().map((a) => viewOf(a, status))), providers: ids.map(providerView), lastUsed: Object.fromEntries(ids.map((p) => [p, lastUsed(p)])) };
   }
 
   const fail = (st, error, extra = {}) => ({ ok: false, status: st, error, ...extra });
