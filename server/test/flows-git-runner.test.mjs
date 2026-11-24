@@ -88,6 +88,8 @@ function world(opts = {}) {
     },
     recordInfo: opts.noRecordInfo ? undefined : (id) => { const r = records.get(id); return r ? { id, workspaceId: ws.id, worktreeId: r.worktreeId ?? null } : null; },
     peek: (id) => terms.get(id) ?? null,
+    // describe como o real: `usage` (consumo lido da transcrição) e `accountId`; como no real, o terminal fechado sai da lista e o consumo some junto
+    get: (id) => { const t = terms.get(id); return t && t.status === 'running' ? { id: t.id, role: t.role, workspaceId: ws.id, status: t.status, usage: t.usage ?? null, accountId: t.accountId ?? null } : null; },
     close: (id) => { const t = terms.get(id); if (t) exit(t); return { ok: true }; },
     count: () => [...terms.values()].filter((t) => t.status === 'running').length,
     providers: () => [{ id: 'claude', label: 'Claude Code', available: true }, { id: 'codex', label: 'Codex CLI', available: true }],
@@ -184,6 +186,24 @@ test('paralelo: dois Construtores em worktrees próprios (sem serializar), integ
   assert.deepEqual(w.raw().git.leftovers, []); assert.equal(w.raw().git.branchDeleted, true); assert.equal(refOf(w.repo, run.git.branch), null);
   assert.equal((await w.flows.integrateRun(w.flow.id, run.id, {})).code, 'not_ready');
   w.noFolderTerminals();
+});
+
+test('Contas v2: o consumo do terminal ocioso fica na etapa ANTES de o runner fechá-lo depois da integração final (o número não some); quem trabalha fica aberto e sem snapshot novo', async () => {
+  const w = world(); w.snapUser();
+  await w.start([B('s1'), R('s2')], { maxParallel: 2 });
+  const t1 = w.rs('s1').terminalId, t2 = w.rs('s2').terminalId;
+  w.terms.get(t1).usage = { input: 100, output: 50, cacheWrite: 10, cacheRead: 1000, total: 1160, io: 150, turns: 3, model: 'claude-opus-4-5', costUsd: 0.5 }; w.terms.get(t1).accountId = 'acc_0000aaaa';
+  w.write('s1', 'u.txt', 'U\n'); w.done('s1'); await w.tick();
+  const firstAt = w.rs('s1').usage?.at; assert.ok(firstAt, 'a conclusão da etapa já grava o consumo do momento');
+  w.terms.get(t1).usage = { ...w.terms.get(t1).usage, input: 120, io: 170, total: 1180 }; // gastou mais depois do report_done (continua aberto até o fim do run)
+  w.done('s2'); w.terms.get(t2).agent = { state: 'running', at: 'x' }; w.terms.get(t2).usage = { input: 7, output: 3, cacheWrite: 0, cacheRead: 0, total: 10, io: 10, turns: 1, model: null, costUsd: null };
+  await w.tick();
+  assert.equal(w.raw().status, 'completed', w.raw().error);
+  assert.equal(w.terms.get(t1).status, 'exited', 'o ocioso fechou');
+  assert.deepEqual(w.rs('s1').usage, { input: 120, output: 50, cacheWrite: 10, cacheRead: 1000, total: 1180, io: 170, turns: 3, model: 'claude-opus-4-5', costUsd: 0.5, accountId: 'acc_0000aaaa', terminalId: t1, at: w.rs('s1').usage.at }, 'snapshot do fechamento (o último número do terminal)');
+  assert.equal(w.terms.get(t2).status, 'running', 'quem trabalha fica');
+  assert.equal(w.rs('s2').usage.io, 10, 'a conclusão de s2 gravou o consumo dele (o terminal continua vivo e o cliente prefere o ao vivo)');
+  assert.equal(w.view().steps.find((s) => s.stepId === 's1').usage.io, 170, 'o snapshot sai na visão do run');
 });
 
 test('fim com autoIntegrate: Batedor sem alterações = empty; pasta do usuário recebe os arquivos, run completed com by auto + digest; terminal ocioso fecha e o que trabalha fica; cópias limpas', async () => {

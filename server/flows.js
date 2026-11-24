@@ -43,11 +43,15 @@
 // Missões por briefing (docs/missions-v2-briefing.md): POST /api/flows/briefing abre um terminal `planner`; o agente consulta mission_options e envia propose_mission (maestro.js, pela porta
 // plannerPort()). A proposta (só em memória, 24 h) é validada como POST /api/flows, com o workspace do pane e fullAccess false, e só vira missão quando o usuário cria pelo formulário (proposalId).
 //
+// Contas (Contas v2, docs/missions-v2-fatia3.md D2): `flow.accounts` = { provider: 'acc_…' } (seletor por provider, só o USUÁRIO define); o startRun resolve a conta de cada provider pelo
+// accounts.resolveFor ANTES de qualquer efeito e a fixa em `run.accounts` (terminais das etapas e retomadas usam essa). `step.usage` guarda o último consumo do terminal da etapa (some do terminal ao fechar).
+//
 // Persistência: saveOrThrow + rollback do estado parcial. Transições que dependem só do estado observado ou ANTES de um efeito colateral são desfeitas se o banco não gravar (o próximo tick refaz). Depois de um efeito
 // que não se desfaz (terminal criado, tarefa entregue) o estado em memória segue a realidade e a gravação é tentada de novo na próxima mutação (store.save grava o banco inteiro).
 import * as store from './store.js';
 import { ROLES, MAX_SESSIONS } from './terminals.js';
-import { isProvider, validateChoice, providerIds, providerOptions, getProvider, DEFAULT_PROVIDER } from './providers/index.js';
+import { isProvider, validateChoice, providerIds, providerOptions, getProvider, accountSpecOf, DEFAULT_PROVIDER } from './providers/index.js';
+import { ACCOUNT_ID_RE } from './account-compat.js';
 import { cleanLine, compactOutput, MAX_TASK_TEXT, MAX_SUMMARY } from './maestro.js';
 import { asyncRoute } from './async-route.js';
 import { validateSchedule, freshScheduleState, readScheduleState, createFlowScheduler, SCHEDULE_KINDS, MAX_EVERY_HOURS } from './flow-schedule.js';
@@ -68,8 +72,9 @@ export const STEP_ROLES = Object.freeze(Object.keys(ROLES).filter((r) => r !== '
 // Missões por briefing (docs/missions-v2-briefing.md): propostas do planejador, SÓ em memória (somem no reinício).
 export const MAX_PROPOSALS = 20, PROPOSAL_TTL_MS = 24 * 60 * 60 * 1000, PLANNER_TITLE = 'Planejador de missão';
 const PROPOSAL_ID_RE = /^prop_[0-9a-f]{8}$/;
-const PLANNER_DENIED_KEYS = ['workspaceId', 'fullAccess', 'proposalId', 'verifyCommand', 'autoPush']; // do agente nunca: o workspace é o do pane, o acesso total e o comando de verificação só o usuário define e o id da proposta é do servidor
-const BRIEFING_KEYS = ['workspaceId', 'provider', 'model', 'effort', 'acknowledgeProjectConfig']; // acknowledgeProjectConfig: o usuário confirmou a configuração de projeto não revisada (mesmo 409 project_config_unreviewed do Cockpit)
+const PLANNER_DENIED_KEYS = ['workspaceId', 'fullAccess', 'proposalId', 'verifyCommand', 'autoPush', 'accounts']; // do agente nunca: o workspace é o do pane, o acesso total, o comando de verificação e as contas só o usuário define e o id da proposta é do servidor
+// acknowledgeProjectConfig: o usuário confirmou a configuração de projeto não revisada (mesmo 409 project_config_unreviewed do Cockpit); accountId: a conta que o USUÁRIO escolheu para o terminal do planejador
+const BRIEFING_KEYS = ['workspaceId', 'provider', 'model', 'effort', 'acknowledgeProjectConfig', 'accountId'];
 // o que cada papel de etapa faz (mission_options): curto, para o planejador escolher; papel novo sem texto aqui cai no rótulo
 const ROLE_WHAT = Object.freeze({ builder: 'Edita arquivos: implementa a etapa e roda os testes.', reviewer: 'Só lê: revisa as alterações e aponta defeitos, regressões e testes ausentes.', scout: 'Só lê: investiga o código e mapeia arquivos, dependências e riscos.' });
 const FLOW_ID_RE = /^flow_[0-9a-f]{8}$/, RUN_ID_RE = /^run_[0-9a-f]{8}$/, STEP_ID_RE = /^s[1-9][0-9]?$/;
@@ -116,9 +121,10 @@ const okv = (status, body) => ({ ok: true, status, body });
 const PERSIST_ERROR = 'o banco não pôde ser gravado; nada foi alterado.';
 
 // ---------- validação ----------
-const FLOW_CREATE_KEYS = ['workspaceId', 'title', 'goal', 'kind', 'fullAccess', 'maxParallel', 'schedule', 'autoIntegrate', 'autoPush', 'verifyCommand', 'steps', 'proposalId']; // proposalId: só baixa a proposta do planejador (não vai para a missão)
-const FLOW_PATCH_KEYS = ['title', 'goal', 'kind', 'fullAccess', 'maxParallel', 'archived', 'schedule', 'autoIntegrate', 'autoPush', 'verifyCommand', 'steps'];
-export const RUN_SAFE_PATCH_KEYS = Object.freeze(['schedule', 'autoIntegrate', 'autoPush']); // únicos campos editáveis com run ativo (não mudam o que o run está executando)
+const FLOW_CREATE_KEYS = ['workspaceId', 'title', 'goal', 'kind', 'fullAccess', 'maxParallel', 'schedule', 'autoIntegrate', 'autoPush', 'verifyCommand', 'accounts', 'steps', 'proposalId']; // proposalId: só baixa a proposta do planejador (não vai para a missão)
+const FLOW_PATCH_KEYS = ['title', 'goal', 'kind', 'fullAccess', 'maxParallel', 'archived', 'schedule', 'autoIntegrate', 'autoPush', 'verifyCommand', 'accounts', 'steps'];
+// únicos campos editáveis com run ativo (não mudam o que o run está executando). `accounts` fica FORA: a conta de um run em andamento não muda (o run grava a dele em run.accounts)
+export const RUN_SAFE_PATCH_KEYS = Object.freeze(['schedule', 'autoIntegrate', 'autoPush']);
 export const SCHEDULE_SKIPS_LISTED = 5;
 /** PATCH só com campos de RUN_SAFE_PATCH_KEYS (ao menos um)? */
 export const runSafePatch = (body) => isObj(body) && Object.keys(body).length > 0 && Object.keys(body).every((k) => RUN_SAFE_PATCH_KEYS.includes(k));
@@ -128,6 +134,30 @@ const effectiveSchedule = (f) => (f?.kind === 'automation' ? validateSchedule(f.
 const effectiveVerify = (f) => validateVerifyCommand(f?.verifyCommand).value ?? null;
 const STEP_KEYS = ['id', 'title', 'prompt', 'provider', 'role', 'model', 'effort', 'dependsOn', 'continueFrom'];
 const unknownKeys = (o, allowed) => Object.keys(o).filter((k) => !allowed.includes(k));
+
+/**
+ * Contas da missão (Contas v2): `null` (cada provider usa a regra do accounts.resolveFor na hora de iniciar: a ÚNICA conta utilizável dele) ou { <provider>: 'acc_xxxxxxxx' }, um seletor por
+ * PROVIDER (não por etapa). Formato fechado: chave = provider conhecido, valor = id de conta no formato do servidor (nunca vira caminho; a existência e o provider da conta são conferidos
+ * no create/update, que têm o módulo de contas). Objeto vazio vira null. Devolve { value } ou { error }.
+ */
+export function validateFlowAccounts(raw) {
+  if (raw === undefined || raw === null) return { value: null };
+  if (!isObj(raw)) return { error: 'accounts deve ser um objeto { provider: id da conta } ou nulo.' };
+  const keys = Object.keys(raw);
+  if (keys.length > providerIds().length) return { error: 'accounts tem provedores demais.' };
+  const out = {};
+  for (const k of keys) {
+    if (!isProvider(k)) return { error: `accounts: provedor desconhecido (${String(k).slice(0, 20)}).` };
+    const id = raw[k];
+    if (id === null || id === undefined) continue; // null = sem escolha para este provider (regra do resolveFor)
+    if (typeof id !== 'string' || !ACCOUNT_ID_RE.test(id)) return { error: `accounts.${k} deve ser o identificador de uma conta (acc_…).` };
+    out[k] = id;
+  }
+  return { value: Object.keys(out).length ? out : null };
+}
+/** Contas que valem de fato (o banco pode ter sido editado à mão): formato inválido = null (regra do resolveFor). */
+const effectiveAccounts = (f) => validateFlowAccounts(f?.accounts).value ?? null;
+const stepProviders = (steps) => new Set((Array.isArray(steps) ? steps : []).map((s) => s?.provider).filter((p) => typeof p === 'string'));
 
 /** Texto de uma linha (título) ou de várias (objetivo, prompt): trim, tamanho e sem caracteres de controle. Devolve { value } ou { error }. */
 function text(v, label, { max, required, multiline = false }) {
@@ -234,6 +264,17 @@ export function validateFlowInput(body, { create, current = null }) {
   if (pushOn && !verifyOn) return { error: v.autoPush === true ? 'autoPush exige um comando de verificação (verifyCommand): o envio automático só acontece depois de a verificação passar.' : 'Esta missão envia ao remoto automaticamente: para remover o comando de verificação, desligue também o envio automático (autoPush: false).' };
   if (!create && body.archived !== undefined) { if (typeof body.archived !== 'boolean') return { error: 'archived deve ser verdadeiro ou falso.' }; v.archived = body.archived; }
   if (create || body.steps !== undefined) { const s = validateSteps(body.steps); if (s.error) return s; v.steps = s.steps; }
+  // contas: só de providers que as etapas (resultado mesclado) usam. Etapas novas que deixam de usar um provider podam a escolha dele em silêncio (a conta pedida no corpo não é podada: 400)
+  const used = stepProviders(v.steps ?? current?.steps);
+  if (create || body.accounts !== undefined) {
+    const a = validateFlowAccounts(body.accounts); if (a.error) return a;
+    const extraP = Object.keys(a.value ?? {}).filter((p) => !used.has(p));
+    if (extraP.length) return { error: `accounts: nenhuma etapa usa ${extraP.join(', ')}; escolha conta só para os provedores das etapas.` };
+    v.accounts = a.value;
+  } else if (v.steps !== undefined) {
+    const cur = effectiveAccounts(current);
+    if (cur && Object.keys(cur).some((p) => !used.has(p))) { const kept = Object.fromEntries(Object.entries(cur).filter(([p]) => used.has(p))); v.accounts = Object.keys(kept).length ? kept : null; }
+  }
   if (!create && !Object.keys(v).length) return { error: 'Nada para alterar: informe ao menos um campo.' };
   return { value: v };
 }
@@ -293,8 +334,10 @@ function depsContext(deps, room) {
  * `terminals`: o gerente de terminais (create, get/peek, close, count, providers); `maestro`: dispatch e taskState (maestro.js). `persist` lança se o banco não gravar (padrão store.saveOrThrow).
  * `setTimer`/`clearTimer`/`now`/`uid`/`pollMs`/`dispatchWaitMs`/`maxSessions` são injetáveis para os testes (sem processos nem relógio reais).
  * `flowGit` (createFlowGit de flow-git.js): liga o MODO GIT dos runs novos; null = comportamento da fatia 1 (tudo na pasta do workspace). `runGit`: só a leitura da ref da missão na retomada.
+ * `accounts` (createAccounts de accounts.js; usa só find e resolveFor): confere `flow.accounts` e resolve a conta de cada provider no início do run (`run.accounts`). Sem ele (testes antigos),
+ * nada é resolvido aqui e o terminals.create aplica a própria regra.
  */
-export function createFlows({ db, terminals, maestro, flowGit = null, flowVerify = null, flowPush = null, runGit = realGit, persist = store.saveOrThrow, now = store.now, uid = store.uid, setTimer = setInterval, clearTimer = clearInterval, pollMs = POLL_MS, dispatchWaitMs = DISPATCH_WAIT_MS, maxSessions = MAX_SESSIONS, onError = (e) => console.error('[flows]', e?.code || e?.message || e) } = {}) {
+export function createFlows({ db, terminals, maestro, accounts = null, flowGit = null, flowVerify = null, flowPush = null, runGit = realGit, persist = store.saveOrThrow, now = store.now, uid = store.uid, setTimer = setInterval, clearTimer = clearInterval, pollMs = POLL_MS, dispatchWaitMs = DISPATCH_WAIT_MS, maxSessions = MAX_SESSIONS, onError = (e) => console.error('[flows]', e?.code || e?.message || e) } = {}) {
   // bancos antigos não têm as coleções; leitura tolerante: só ficam objetos com id no formato do servidor
   const clean = (list, re) => (Array.isArray(list) ? list.filter((x) => isObj(x) && typeof x.id === 'string' && re.test(x.id)) : []);
   db.flows = clean(db.flows, FLOW_ID_RE); db.flowRuns = clean(db.flowRuns, RUN_ID_RE);
@@ -347,7 +390,7 @@ export function createFlows({ db, terminals, maestro, flowGit = null, flowVerify
     const mine = runs().filter((r) => r.flowId === f.id), last = mine.at(-1) ?? null, active = mine.find((r) => ACTIVE_RUN.has(r.status)) ?? null, ws = wsOf(f.workspaceId);
     const { scheduleState, ...pub } = structuredClone(f), st = readScheduleState(scheduleState), sch = effectiveSchedule(f);
     return {
-      ...pub, autoIntegrate: f.autoIntegrate !== false, autoPush: f.autoPush === true, verifyCommand: effectiveVerify(f), nextRunAt: sch?.enabled ? st.nextRunAt : null, scheduleSkips: st.skips.slice(-SCHEDULE_SKIPS_LISTED).reverse().map(skipView),
+      ...pub, autoIntegrate: f.autoIntegrate !== false, autoPush: f.autoPush === true, verifyCommand: effectiveVerify(f), accounts: effectiveAccounts(f), nextRunAt: sch?.enabled ? st.nextRunAt : null, scheduleSkips: st.skips.slice(-SCHEDULE_SKIPS_LISTED).reverse().map(skipView),
       workspaceName: ws ? (ws.displayName || ws.name || null) : null, lastRun: last ? runView(last) : null, activeRun: active ? runView(active) : null,
     };
   };
@@ -363,13 +406,86 @@ export function createFlows({ db, terminals, maestro, flowGit = null, flowVerify
     }
   }
 
+  // ---------- contas (Contas v2) ----------
+  const providerLabel = (p) => { try { return getProvider(p).label ?? p; } catch { return p; } };
+  /** create/update: cada conta pedida em `flow.accounts` existe e é do provider da chave. Devolve null ou a recusa 400 (com code). Sem módulo de contas, só o formato vale. */
+  function checkFlowAccounts(value) {
+    if (!accounts || !isObj(value)) return null;
+    for (const [p, id] of Object.entries(value)) {
+      let a = null; try { a = accounts.find(id) ?? null; } catch { a = null; }
+      if (!a) return fail(400, `accounts.${p}: conta não encontrada.`, 'account_not_found', { provider: p });
+      if (a.provider !== p) return fail(400, `accounts.${p}: esta conta não é do ${providerLabel(p)}.`, 'account_provider_mismatch', { provider: p });
+    }
+    return null;
+  }
+  // dica de cada recusa do resolveFor no início/retomada de um run (o texto do resolveFor vem antes)
+  const ACCOUNT_HINT = {
+    account_required: 'Escolha a conta deste provedor na missão (Editar missão) e inicie de novo.',
+    account_not_found: 'A conta escolhida na missão não existe mais: escolha outra em Editar missão.',
+    account_provider_mismatch: 'A conta escolhida na missão é de outro provedor: escolha outra em Editar missão.',
+  };
+  // Na retomada/continuação a missão NÃO pode ser editada (run ativo: `accounts` fica fora de RUN_SAFE_PATCH_KEYS) e a conta fixada no run vence a da missão: a saída é cancelar e iniciar de novo.
+  const RESUME_HINT = 'A execução não pode trocar de conta: cancele-a e inicie de novo (escolha a conta na missão antes, se preciso).';
+  const RESUME_HINT_CODES = new Set(['account_required', 'account_not_found', 'account_provider_mismatch', 'account_missing', 'no_account']);
+  /**
+   * Conta de cada provider em `provs` para um run, ANTES de qualquer efeito: a fixada (`pinned`, a gravada no run), senão a escolhida na missão (`flow.accounts`), senão a regra do
+   * resolveFor (a única utilizável). { ok, value: { provider: id } | null } ou a recusa com status/code do resolveFor (conta inexistente ou de outro provider aqui é 409: o pedido
+   * da rota é válido, o que mudou foi o estado) e `provider` na resposta. Provider sem bloco `account` não usa conta (como no terminals.js).
+   */
+  function resolveRunAccounts(flow, provs, pinned = null, { resuming = false } = {}) {
+    if (!accounts) return { ok: true, value: null };
+    const want = effectiveAccounts(flow) ?? {}, out = {};
+    for (const p of provs) {
+      if (!accountSpecOf(p)) continue;
+      const req = isObj(pinned) && typeof pinned[p] === 'string' ? pinned[p] : want[p];
+      let r; try { r = accounts.resolveFor(p, req ?? undefined); } catch { r = { ok: false, status: 500, error: 'Não foi possível consultar as contas.', code: 'account_error' }; }
+      if (r?.ok && typeof r.account?.id === 'string') { out[p] = r.account.id; continue; }
+      const code = typeof r?.code === 'string' ? r.code : 'no_account', st = r?.status === 500 ? 500 : 409;
+      const label = providerLabel(p), err = typeof r?.error === 'string' && r.error ? r.error : 'conta indisponível.';
+      const hint = resuming ? (RESUME_HINT_CODES.has(code) ? RESUME_HINT : '') : (ACCOUNT_HINT[code] ?? '');
+      const msg = `${err.includes(label) ? err : `${label}: ${err}`}${hint ? ` ${hint}` : ''}`; // a mensagem do resolveFor muitas vezes já cita o provedor: sem repetir
+      return fail(st, clip(msg, 400), code, { provider: p });
+    }
+    return { ok: true, value: out };
+  }
+  /** Conta gravada no run para o provider da etapa (vai para o terminals.create); null = sem conta fixada (run antigo ou sem módulo de contas: regra do terminals.js). */
+  const runAccountOf = (run, provider) => (isObj(run?.accounts) && typeof run.accounts[provider] === 'string' && ACCOUNT_ID_RE.test(run.accounts[provider]) ? run.accounts[provider] : null);
+
+  // ---------- consumo da etapa (fica no run quando o terminal fecha) ----------
+  // Snapshot PEQUENO e validado do consumo do terminal da etapa (terminals.get(id).usage, lido da transcrição pelo terminal-usage.js) e da conta debitada: só números, o nome do modelo e o
+  // id da conta; nada de caminho nem do id da sessão. Gravado nas transições em que a etapa termina e ANTES de o runner fechar terminais (o leitor de consumo esquece a sessão ao fechar).
+  const USAGE_INT = ['input', 'output', 'cacheWrite', 'cacheRead'];
+  const MODEL_RE = /^[A-Za-z0-9._:@/[\]-]{1,100}$/;
+  const nonNeg = (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0;
+  function usageSnapshot(tid) {
+    if (typeof tid !== 'string' || !tid) return null;
+    const t = getT(tid), u = t?.usage;
+    if (!isObj(u) || !nonNeg(u.input) || !nonNeg(u.output)) return null; // sem consumo (ainda) ou provider sem transcrição: nada a gravar
+    const n = Object.fromEntries(USAGE_INT.map((k) => [k, nonNeg(u[k]) ? Math.round(u[k]) : 0]));
+    return {
+      ...n, total: n.input + n.output + n.cacheWrite + n.cacheRead, io: n.input + n.output, turns: Number.isInteger(u.turns) && u.turns >= 0 ? u.turns : 0,
+      model: typeof u.model === 'string' && MODEL_RE.test(u.model) ? u.model : null, costUsd: nonNeg(u.costUsd) ? Math.round(u.costUsd * 1e6) / 1e6 : null,
+      accountId: typeof t.accountId === 'string' && ACCOUNT_ID_RE.test(t.accountId) ? t.accountId : null, terminalId: tid, at: now(),
+    };
+  }
+  /** Dentro de um apply: grava o consumo atual do terminal da etapa (sem leitura, o último snapshot fica: nunca troca um número por nada). */
+  /**
+   * O snapshot novo substitui o gravado? Nunca troca número por nada (leitura nula), nem por uma leitura SEM turnos (transcrição ainda vazia), nem — quando a etapa foi reaberta
+   * com OUTRO terminal (sessão nova) — por um total menor: o consumo do terminal anterior não pode sumir. (Sessão retomada no mesmo terminal é cumulativa: sempre vale.)
+   */
+  const betterUsage = (prev, u) => !!u && (!isObj(prev) || (u.turns > 0 && (prev.terminalId === u.terminalId || u.total >= (Number(prev.total) || 0))));
+  const keepUsage = (rs) => { const u = usageSnapshot(rs?.terminalId); if (betterUsage(rs?.usage, u)) rs.usage = u; };
+  /** Snapshot de todas as etapas cujo terminal está em `ids` (ou de todas com terminal). Leitura antes, gravação no apply de quem chama. */
+  const usageFor = (run, ids = null) => run.steps.filter((rs) => typeof rs.terminalId === 'string' && (!ids || ids.includes(rs.terminalId))).map((rs) => [rs, usageSnapshot(rs.terminalId)]).filter(([, u]) => u);
+
   // ---------- CRUD ----------
   const list = () => flows().map(flowView);
   function create(body) {
     const v = validateFlowInput(body, { create: true }); if (v.error) return fail(400, v.error);
     if (!wsOf(v.value.workspaceId)) return fail(400, 'Espaço de trabalho não encontrado.');
+    const ac = checkFlowAccounts(v.value.accounts); if (ac) return ac;
     if (flows().length >= MAX_FLOWS) return fail(409, `Limite de ${MAX_FLOWS} missões atingido; remova alguma antes de criar outra.`);
-    const t = now(), f = { id: uid('flow'), workspaceId: v.value.workspaceId, title: v.value.title, goal: v.value.goal, kind: v.value.kind, fullAccess: v.value.fullAccess, maxParallel: v.value.maxParallel, schedule: v.value.schedule, autoIntegrate: v.value.autoIntegrate, autoPush: v.value.autoPush, verifyCommand: v.value.verifyCommand, steps: v.value.steps, createdAt: t, updatedAt: t, archived: false };
+    const t = now(), f = { id: uid('flow'), workspaceId: v.value.workspaceId, title: v.value.title, goal: v.value.goal, kind: v.value.kind, fullAccess: v.value.fullAccess, maxParallel: v.value.maxParallel, schedule: v.value.schedule, autoIntegrate: v.value.autoIntegrate, autoPush: v.value.autoPush, verifyCommand: v.value.verifyCommand, accounts: v.value.accounts, steps: v.value.steps, createdAt: t, updatedAt: t, archived: false };
     if (f.schedule) f.scheduleState = freshScheduleState(f.schedule, ms(), null); // próximo horário a partir de agora (agenda desligada: nextRunAt null)
     flows().push(f);
     try { persist(); } catch { flows().pop(); return fail(500, `Não foi possível criar a missão: ${PERSIST_ERROR}`); }
@@ -430,7 +546,7 @@ export function createFlows({ db, terminals, maestro, flowGit = null, flowVerify
       kinds: [...KINDS],
       schedule: { kinds: [...SCHEDULE_KINDS], everyHours: [1, MAX_EVERY_HOURS], time: 'HH:MM', days: '0=dom..6=sáb' },
       notes: [
-        'O espaço de trabalho é o deste terminal: não envie workspaceId. Não envie fullAccess: o acesso total só o usuário liga no formulário.',
+        'O espaço de trabalho é o deste terminal: não envie workspaceId. Não envie fullAccess: o acesso total só o usuário liga no formulário. Não envie accounts: a conta de cada provedor o usuário escolhe.',
         'Etapa: { id? (s1 a s99), title, prompt, provider, role, model?, effort?, dependsOn?: [ids], continueFrom?: id }. model e effort só dos ids listados em providers (omitidos = padrão do agente); prefira agentes com available true.',
         'continueFrom reaproveita o terminal de uma etapa anterior da mesma cadeia de dependências, com o mesmo agente (provider, role, model, effort).',
         `Cada etapa chega ao agente numa linha só, com o título e o objetivo da missão, em até ${MAX_TASK_TEXT} caracteres no total: prompts concisos.`,
@@ -445,7 +561,7 @@ export function createFlows({ db, terminals, maestro, flowGit = null, flowVerify
     const ctx = plannerContext(caller); if (ctx.error) return { ok: false, error: ctx.error };
     if (!isObj(args)) return { ok: false, error: 'Os argumentos devem ser um objeto com a missão.' };
     const denied = PLANNER_DENIED_KEYS.filter((k) => Object.hasOwn(args, k));
-    if (denied.length) return { ok: false, error: `Propriedades não permitidas: ${denied.join(', ')}. O espaço de trabalho é o deste terminal; o acesso total e o comando de verificação só o usuário define.` };
+    if (denied.length) return { ok: false, error: `Propriedades não permitidas: ${denied.join(', ')}. O espaço de trabalho é o deste terminal; o acesso total, o comando de verificação e as contas só o usuário define.` };
     const v = validateFlowInput({ ...args, workspaceId: ctx.ws.id, fullAccess: false }, { create: true });
     if (v.error) return { ok: false, error: v.error };
     sweepProposals();
@@ -473,6 +589,8 @@ export function createFlows({ db, terminals, maestro, flowGit = null, flowVerify
     const extra = unknownKeys(body, BRIEFING_KEYS); if (extra.length) return fail(400, `Propriedades não permitidas: ${extra.join(', ').slice(0, 80)}.`);
     if (typeof body.workspaceId !== 'string' || !body.workspaceId || body.workspaceId.length > 80) return fail(400, 'workspaceId deve ser o identificador de um espaço de trabalho.');
     if (body.acknowledgeProjectConfig !== undefined && typeof body.acknowledgeProjectConfig !== 'boolean') return fail(400, 'acknowledgeProjectConfig deve ser verdadeiro ou falso.');
+    // conta do planejador: a que o usuário escolheu no briefing (formato fechado; existência, provider e conexão conferidos pelo terminals.create via resolveFor); ausente = a ÚNICA do provider
+    if (body.accountId !== undefined && body.accountId !== null && (typeof body.accountId !== 'string' || !ACCOUNT_ID_RE.test(body.accountId))) return fail(400, 'accountId deve ser o identificador de uma conta (acc_…).', 'account_not_found');
     const ws = wsOf(body.workspaceId); if (!ws) return fail(404, 'Espaço de trabalho não encontrado.');
     const provider = body.provider === undefined || body.provider === null ? DEFAULT_PROVIDER : body.provider;
     if (!isProvider(provider)) return fail(400, 'provider inválido.');
@@ -481,9 +599,15 @@ export function createFlows({ db, terminals, maestro, flowGit = null, flowVerify
     const p = Array.isArray(provs) ? provs.find((x) => x?.id === provider) : null;
     if (p && p.available === false) return fail(409, `${p.label ?? provider} não está disponível neste computador (não foi encontrado no PATH).`);
     let r;
-    try { r = await terminals.create({ workspaceId: ws.id, role: 'planner', provider, model: choice.value.model ?? null, effort: choice.value.effort ?? null, title: PLANNER_TITLE, acknowledgeProjectConfig: body.acknowledgeProjectConfig === true }); }
+    const accountId = typeof body.accountId === 'string' ? body.accountId : null;
+    try { r = await terminals.create({ workspaceId: ws.id, role: 'planner', provider, model: choice.value.model ?? null, effort: choice.value.effort ?? null, title: PLANNER_TITLE, acknowledgeProjectConfig: body.acknowledgeProjectConfig === true, ...(accountId ? { accountId } : {}) }); }
     catch (e) { onError(e); return fail(500, 'Não foi possível abrir o terminal do planejador.'); }
-    if (!r?.ok) return fail(r?.status ?? 500, r?.error ?? 'Não foi possível abrir o terminal do planejador.', r?.code ?? null, Array.isArray(r?.files) ? { files: r.files } : null);
+    if (!r?.ok) {
+      // recusa de conta (account_required com 2+ contas do provider, no_account, desconectada...): o texto do resolveFor diz o que fazer; `provider` diz para qual seletor olhar
+      const accountErr = typeof r?.code === 'string' && /^(account_|no_account$)/.test(r.code);
+      const extra = { ...(Array.isArray(r?.files) ? { files: r.files } : {}), ...(accountErr ? { provider } : {}) };
+      return fail(r?.status ?? 500, r?.error ?? 'Não foi possível abrir o terminal do planejador.', r?.code ?? null, Object.keys(extra).length ? extra : null);
+    }
     return okv(201, { terminalId: r.session?.id ?? null, session: r.session ?? null });
   }
   /**
@@ -494,6 +618,7 @@ export function createFlows({ db, terminals, maestro, flowGit = null, flowVerify
     const f = flowById(id); if (!f) return fail(404, 'Missão não encontrada.');
     const act = activeRunOf(f.id); if (act && !runSafePatch(body)) return fail(409, activeMsg(act, 'editar') ?? 'Há uma execução em andamento nesta missão: cancele-a ou espere terminar (com ela ativa só a agenda e a integração automática podem mudar).');
     const v = validateFlowInput(body, { create: false, current: f }); if (v.error) return fail(400, v.error);
+    if (isObj(body) && body.accounts !== undefined) { const ac = checkFlowAccounts(v.value.accounts); if (ac) return ac; } // só as pedidas agora (as podadas já existiam)
     const i = flows().indexOf(f), next = { ...f, ...v.value, updatedAt: now() };
     const sch = effectiveSchedule(next);
     if (JSON.stringify(effectiveSchedule(f)) !== JSON.stringify(sch)) next.scheduleState = freshScheduleState(sch, ms(), f.scheduleState); // agenda nula/desligada = nextRunAt null; pulos mantidos
@@ -526,10 +651,13 @@ export function createFlows({ db, terminals, maestro, flowGit = null, flowVerify
     for (const s of f.steps) { const c = composeStepText(f, s); if (!c.ok) return fail(400, c.error); }
     let provs = []; try { provs = terminals.providers?.() ?? []; } catch { provs = []; }
     for (const id of new Set(f.steps.map((s) => s.provider))) { const p = provs.find((x) => x.id === id); if (p && p.available === false) return fail(409, `${p.label ?? id} não está disponível neste computador (não foi encontrado no PATH).`); }
+    // conta de cada provider usado pelas etapas, resolvida ANTES de qualquer efeito (a CLI ausente vem antes, como no terminals.js): falhou = o run não nasce e a recusa diz qual provider
+    const acc = resolveRunAccounts(f, stepProviders(f.steps)); if (!acc.ok) return acc;
     let count = 0; try { count = terminals.count(); } catch { count = 0; }
     if (count >= maxSessions) return fail(409, `Sem terminais disponíveis: o limite de ${maxSessions} terminais simultâneos foi atingido. Feche algum e tente de novo.`);
     // modo Git: o run nasce `pending` e o runner sonda o workspace no primeiro passo (o startRun continua síncrono)
-    const run = { id: uid('run'), flowId: f.id, status: 'running', startedAt: now(), finishedAt: null, trigger, scheduledFor: scheduledFor === null ? null : new Date(Date.parse(scheduledFor)).toISOString(), interruptedAt: null, resumedAt: null, resumes: 0, error: null, git: flowGit ? { mode: 'pending' } : null, ownedTerminalIds: [], steps: f.steps.map((s) => ({ stepId: s.id, title: s.title, status: 'pending', terminalId: null, taskId: null, startedAt: null, finishedAt: null, summary: null, error: null })) };
+    // `accounts`: a conta de cada provider fica FIXADA no run (as etapas, as retomadas e o continueFrom usam esta; mudar a missão depois não muda um run em andamento)
+    const run = { id: uid('run'), flowId: f.id, status: 'running', startedAt: now(), finishedAt: null, trigger, scheduledFor: scheduledFor === null ? null : new Date(Date.parse(scheduledFor)).toISOString(), interruptedAt: null, resumedAt: null, resumes: 0, error: null, git: flowGit ? { mode: 'pending' } : null, accounts: acc.value, ownedTerminalIds: [], steps: f.steps.map((s) => ({ stepId: s.id, title: s.title, status: 'pending', terminalId: null, taskId: null, startedAt: null, finishedAt: null, summary: null, error: null })) };
     const prev = db.flowRuns;
     let next = [...prev, run];
     // os mais antigos JÁ finalizados saem; run com branch da missão ainda existente ou cópias que sobraram (leftovers) fica, salvo se não houver outro candidato (registrado no log)
@@ -565,7 +693,9 @@ export function createFlows({ db, terminals, maestro, flowGit = null, flowVerify
     if ((op && op !== 'advance') || run.git?.op) return fail(409, 'Há uma operação em andamento nesta execução; tente de novo em um instante.', 'busy');
     // modo Git: como no modo pasta; a branch da missão e as cópias ficam para Descartar
     const owned = [...(run.ownedTerminalIds ?? [])];
+    const used = usageFor(run, owned); // consumo lido ANTES de fechar (o terminal fechado leva o número junto); gravado na mesma mutação do cancelamento
     const ok = apply(run, () => {
+      for (const [rs, u] of used) if (betterUsage(rs.usage, u)) rs.usage = u;
       const t = now(); run.status = 'cancelled'; run.finishedAt = t; run.error = 'Cancelada pelo usuário.';
       if (isObj(run.git) && run.git.verifying) { const { verifying, ...g } = run.git; run.git = g; } // verificação em curso: o processo é encerrado logo abaixo e o resultado é ignorado
       for (const rs of run.steps) {
@@ -596,6 +726,9 @@ export function createFlows({ db, terminals, maestro, flowGit = null, flowVerify
       const reopen = run.steps.filter((rs) => rs.status === 'interrupted');
       let provs = []; try { provs = terminals.providers?.() ?? []; } catch { provs = []; }
       for (const id of new Set(reopen.map((rs) => stepDef(f, rs.stepId)?.provider).filter(Boolean))) { const p = provs.find((x) => x.id === id); if (p && p.available === false) return fail(409, `${p.label ?? id} não está disponível neste computador (não foi encontrado no PATH).`, 'provider_unavailable'); }
+      // contas: a FIXADA no run (conferida de novo: removida ou desconectada = 409 com o code) para os providers das etapas que ainda vão rodar; run antigo sem `accounts` resolve agora e fixa
+      const ahead = run.steps.filter((rs) => rs.status === 'interrupted' || rs.status === 'pending').map((rs) => stepDef(f, rs.stepId)).filter(Boolean);
+      const acc = resolveRunAccounts(f, stepProviders(ahead), isObj(run.accounts) ? run.accounts : null, { resuming: true }); if (!acc.ok) return acc;
       let count = 0; try { count = terminals.count(); } catch { count = 0; }
       if (count + reopen.length > maxSessions) return fail(409, `Sem terminais disponíveis: retomar precisa de ${reopen.length} terminal(is) e o limite de ${maxSessions} terminais simultâneos seria passado. Feche algum e tente de novo.`, 'no_slots');
       // modo Git: concilia os diários pelo Git real e confere a branch da missão antes de marcar o run (409 se sumiu, mudou por fora ou o Git não responde)
@@ -604,6 +737,7 @@ export function createFlows({ db, terminals, maestro, flowGit = null, flowVerify
       if (run.status !== 'interrupted') return okv(200, runView(run)); // a conciliação concluiu a integração final interrompida (completed) ou a deixou esperando Integrar
       const ok = apply(run, () => {
         const t = now(); run.status = 'running'; run.resumedAt = t; run.resumes = (Number.isInteger(run.resumes) ? run.resumes : 0) + 1; run.error = null;
+        if (acc.value) run.accounts = { ...(isObj(run.accounts) ? run.accounts : {}), ...acc.value };
         for (const rs of reopen) { rs.status = 'running'; rs.resumePending = true; rs.dispatchFrom = t; rs.taskId = null; }
       });
       if (!ok) return fail(500, `Não foi possível retomar a execução: ${PERSIST_ERROR}`);
@@ -631,7 +765,7 @@ export function createFlows({ db, terminals, maestro, flowGit = null, flowVerify
     if (body.decision === 'continue') return continueStep(f, run, rs);
     const accept = body.decision === 'accept';
     const ok = apply(run, () => {
-      const t = now(); rs.unconfirmed = false; rs.agentBusy = false; rs.decidedBy = 'user'; rs.decidedAt = t; rs.finishedAt = t; rs.stopReason = null; rs.limitResets = null;
+      const t = now(); rs.unconfirmed = false; rs.agentBusy = false; rs.decidedBy = 'user'; rs.decidedAt = t; rs.finishedAt = t; rs.stopReason = null; rs.limitResets = null; keepUsage(rs);
       if (accept) { rs.status = 'completed'; rs.completedBy = 'user'; rs.error = null; if (gitOn(run)) rs.integration = pendingIntegration(); } // modo Git: a aceitação humana também leva o trabalho para a branch da missão
       else { rs.status = 'failed'; rs.error = 'Conclusão recusada pelo usuário: o agente parou sem confirmar que terminou.'; }
     });
@@ -669,18 +803,19 @@ export function createFlows({ db, terminals, maestro, flowGit = null, flowVerify
     let provs = []; try { provs = terminals.providers?.() ?? []; } catch { provs = []; }
     const prov = provs.find((x) => x?.id === step.provider);
     if (prov && prov.available === false) return fail(409, `${prov.label ?? step.provider} não está disponível neste computador (não foi encontrado no PATH).`, 'provider_unavailable');
+    const acc = resolveRunAccounts(flow, [step.provider], isObj(run.accounts) ? run.accounts : null, { resuming: true }); if (!acc.ok) return acc; // a conta fixada no run ainda serve (removida/desconectada = 409 e a etapa segue esperando)
     let count = 0; try { count = terminals.count(); } catch { count = 0; }
     if (count + 1 > maxSessions) return fail(409, `Sem terminais disponíveis: continuar precisa reabrir o terminal desta etapa e o limite de ${maxSessions} terminais simultâneos seria passado. Feche algum e tente de novo.`, 'no_slots');
     // `delivered`: a conversa gravada já recebeu a tarefa desta etapa, então a retomada tenta primeiro continuar a MESMA conversa. O motivo e o fim do terminal ficam até
     // a reabertura dar certo (se falhar, a etapa volta a esperar a decisão com eles).
-    const ok = apply(run, () => { const t = now(); count1(t); rs.status = 'running'; rs.resumePending = true; rs.dispatchFrom = t; rs.taskId = null; rs.delivered = true; rs.continueResume = true; });
+    const ok = apply(run, () => { const t = now(); if (acc.value && !runAccountOf(run, step.provider) && acc.value[step.provider]) run.accounts = { ...(isObj(run.accounts) ? run.accounts : {}), ...acc.value }; count1(t); rs.status = 'running'; rs.resumePending = true; rs.dispatchFrom = t; rs.taskId = null; rs.delivered = true; rs.continueResume = true; });
     if (!ok) return fail(500, `Não foi possível registrar a decisão: ${PERSIST_ERROR}`);
     ensureTimer(); void tick();
     return okv(200, runView(run));
   }
 
   // ---------- runner ----------
-  const failStep = (run, rs, error) => apply(run, () => { rs.status = 'failed'; rs.finishedAt = now(); rs.error = clip(error, 500) || 'A etapa falhou.'; });
+  const failStep = (run, rs, error) => apply(run, () => { rs.status = 'failed'; rs.finishedAt = now(); rs.error = clip(error, 500) || 'A etapa falhou.'; keepUsage(rs); });
   /** Run em modo Git DE FATO (branch da missão criada) neste servidor. */
   const gitOn = (run) => !!flowGit && isObj(run?.git) && run.git.mode === 'git';
   const pendingIntegration = () => ({ state: 'pending', from: null, to: null, conflicts: [], files: [], error: null, at: now() });
@@ -752,12 +887,12 @@ export function createFlows({ db, terminals, maestro, flowGit = null, flowVerify
       const ts = maestro.taskState(rs.taskId);
       // aguardando a decisão do usuário: a tarefa pode já ter saído da lista do Maestro (só guarda as últimas) e o terminal pode ter sido fechado; nada disso decide por ele
       if (!ts) return rs.unconfirmed === true ? trackUnconfirmed(run, rs) : failStep(run, rs, 'A tarefa desta etapa não foi encontrada no Maestro.');
-      if (ts.status === 'done' && ts.auto !== true) return apply(run, () => { rs.status = 'completed'; rs.finishedAt = now(); rs.summary = clip(ts.summary || NO_SUMMARY, 2000); rs.error = null; rs.unconfirmed = false; rs.agentBusy = false; rs.completedBy = 'agent'; if (gitOn(run)) rs.integration = pendingIntegration(); });
+      if (ts.status === 'done' && ts.auto !== true) return apply(run, () => { rs.status = 'completed'; rs.finishedAt = now(); rs.summary = clip(ts.summary || NO_SUMMARY, 2000); rs.error = null; rs.unconfirmed = false; rs.agentBusy = false; rs.completedBy = 'agent'; if (gitOn(run)) rs.integration = pendingIntegration(); keepUsage(rs); });
       if (ts.status === 'done' && rs.unconfirmed !== true) { // relatório automático: o agente parou sem report_done (terminou OU espera uma resposta). Não avança sozinho.
         // fim do terminal com a mensagem de limite de uso da conta: só muda a explicação (e o que a tela sugere), nunca o gate. O resumo do Maestro é curto e pode ter
         // perdido a mensagem para os redesenhos da TUI: sem ela no resumo, a tela do terminal também é conferida
         const lim = detectLimitStop(ts.summary) ?? limitInTerminal(rs.terminalId);
-        return apply(run, () => { rs.status = 'waiting'; rs.unconfirmed = true; rs.agentBusy = false; rs.summary = clip(ts.summary || NO_AUTO_SUMMARY, 2000); rs.stopReason = lim ? 'limit' : null; rs.limitResets = lim?.resets ?? null; });
+        return apply(run, () => { rs.status = 'waiting'; rs.unconfirmed = true; rs.agentBusy = false; rs.summary = clip(ts.summary || NO_AUTO_SUMMARY, 2000); rs.stopReason = lim ? 'limit' : null; rs.limitResets = lim?.resets ?? null; keepUsage(rs); });
       }
       if (FAILED_TASK.has(ts.status)) return failStep(run, rs, ts.note || 'A tarefa do agente falhou.');
     }
@@ -771,10 +906,11 @@ export function createFlows({ db, terminals, maestro, flowGit = null, flowVerify
   }
 
   // modo pasta: o terminal abre na pasta do workspace; modo Git: SEMPRE dentro do worktree da etapa (2º parâmetro interno do terminals.create, nunca vindo do cliente)
-  const createArgs = (flow, step) => ({ workspaceId: flow.workspaceId, role: step.role, provider: step.provider, model: step.model, effort: step.effort, title: step.title, fullAccess: flow.fullAccess === true });
+  // conta: a FIXADA no run para o provider da etapa (run.accounts, resolvida no startRun); sem ela (run antigo, sem módulo de contas) o terminals.create aplica a regra dele
+  const createArgs = (flow, step, run) => { const accountId = runAccountOf(run, step.provider); return { workspaceId: flow.workspaceId, role: step.role, provider: step.provider, model: step.model, effort: step.effort, title: step.title, fullAccess: flow.fullAccess === true, ...(accountId ? { accountId } : {}) }; };
   const recordOf = (r) => (typeof r?.session?.recordId === 'string' && r.session.recordId ? r.session.recordId : null);
-  async function createTerminal(flow, step, flowWorktreeId = null) {
-    try { return await (flowWorktreeId ? terminals.create(createArgs(flow, step), { flowWorktreeId }) : terminals.create(createArgs(flow, step))); } catch (e) { return { ok: false, error: String(e?.message ?? e).slice(0, 160) }; }
+  async function createTerminal(run, flow, step, flowWorktreeId = null) {
+    try { return await (flowWorktreeId ? terminals.create(createArgs(flow, step, run), { flowWorktreeId }) : terminals.create(createArgs(flow, step, run))); } catch (e) { return { ok: false, error: String(e?.message ?? e).slice(0, 160) }; }
   }
   /** N2: worktree gravado no registro de sessão (terminals.recordInfo, leitura interna); undefined = registro ausente ou interface sem a leitura (quem chama trata como "não pertence"). */
   const recordWorktree = (recordId) => {
@@ -827,7 +963,7 @@ export function createFlows({ db, terminals, maestro, flowGit = null, flowVerify
         if (run.status !== 'running') return;
         if (a) { failStep(run, rs, `Não foi possível abrir o terminal: ${a.error}`); return; }
       }
-      const r = await createTerminal(flow, step, git ? rs.worktreeId : null);
+      const r = await createTerminal(run, flow, step, git ? rs.worktreeId : null);
       if (run.status !== 'running') { if (r?.ok) closeTerminal(r.session.id); return; } // cancelado durante a criação: o terminal nasceu tarde, é deste run e fecha
       if (!r?.ok) { failStep(run, rs, `Não foi possível abrir o terminal: ${r?.error ?? 'erro desconhecido'}`); return; }
       tid = r.session.id; const rec = recordOf(r);
@@ -840,6 +976,7 @@ export function createFlows({ db, terminals, maestro, flowGit = null, flowVerify
   function failRun(run, rs, error) {
     return apply(run, () => {
       const t = now(); run.status = 'failed'; run.finishedAt = t; run.error = clip(error, 500);
+      for (const x of run.steps) keepUsage(x);
       for (const x of run.steps) {
         if (FINAL_STEP.has(x.status)) continue;
         if (x === rs) { x.status = 'failed'; x.error = clip(error, 500); } else x.status = 'cancelled';
@@ -878,7 +1015,7 @@ export function createFlows({ db, terminals, maestro, flowGit = null, flowVerify
     for (const mode of plan) {
       let r;
       if (mode === 'create' && git) { r = await createGitResume(run, rs, flow, step); if (r?.stop) { if (run.status === 'running') stopStep(r.error); return; } }
-      else if (mode === 'create') r = await createTerminal(flow, step);
+      else if (mode === 'create') r = await createTerminal(run, flow, step);
       else {
         if (git) { // I1: o registro reabre NA cópia da etapa; confere antes (cópia que não serve = segue para o create, que cria outra e confere de novo)
           const a = await auditCopy(run, rs.worktreeId);
@@ -920,7 +1057,7 @@ export function createFlows({ db, terminals, maestro, flowGit = null, flowVerify
       if (run.status !== 'running') return { ok: false, error: 'cancelada' };
       if (a && !COPY_GONE.has(a.code)) return { stop: true, error: `Não foi possível retomar a etapa: ${a.error}` };
       if (!a) {
-        const r = await createTerminal(flow, step, rec.id);
+        const r = await createTerminal(run, flow, step, rec.id);
         if (r?.ok || !['worktree_in_use', 'worktree_invalid', 'worktree_missing'].includes(r?.code)) return r;
       }
     }
@@ -931,7 +1068,7 @@ export function createFlows({ db, terminals, maestro, flowGit = null, flowVerify
     const a2 = await auditCopy(run, rs.worktreeId); // cópia nova da ponta: normalmente vazia, mas a regra vale para toda abertura
     if (run.status !== 'running') return { ok: false, error: 'cancelada' };
     if (a2) return { stop: true, error: `Não foi possível retomar a etapa: ${a2.error}` };
-    return createTerminal(flow, step, rs.worktreeId);
+    return createTerminal(run, flow, step, rs.worktreeId);
   }
 
   async function advance(run) {
@@ -976,7 +1113,7 @@ export function createFlows({ db, terminals, maestro, flowGit = null, flowVerify
         if (run.steps.every((rs) => INT_OK.has(intState(rs)))) await finishGit(run, flow);
         return;
       }
-      apply(run, () => { run.status = allOk ? 'completed' : 'failed'; run.finishedAt = now(); run.error = allOk ? null : clip(bad ? `A etapa "${bad.title}" falhou: ${bad.error}` : 'Uma ou mais etapas não foram concluídas.', 500); });
+      apply(run, () => { for (const rs of run.steps) keepUsage(rs); run.status = allOk ? 'completed' : 'failed'; run.finishedAt = now(); run.error = allOk ? null : clip(bad ? `A etapa "${bad.title}" falhou: ${bad.error}` : 'Uma ou mais etapas não foram concluídas.', 500); });
     }
   }
 
@@ -1043,10 +1180,12 @@ export function createFlows({ db, terminals, maestro, flowGit = null, flowVerify
 
   /** Terminais do run cujo agente está OCIOSO (estado conhecido e não running/waiting) fecham; os que trabalham ou pedem permissão ficam. */
   function closeIdleTerminals(run) {
-    for (const id of run.ownedTerminalIds ?? []) {
-      const t = peekT(id), st = t?.status === 'running' ? t.agent?.state : null;
-      if (typeof st === 'string' && st && st !== 'running' && st !== 'waiting') closeTerminal(id);
-    }
+    const idle = (run.ownedTerminalIds ?? []).filter((id) => { const t = peekT(id), st = t?.status === 'running' ? t.agent?.state : null; return typeof st === 'string' && st && st !== 'running' && st !== 'waiting'; });
+    if (!idle.length) return;
+    // o consumo dos terminais que vão fechar fica nas etapas (depois de fechar, o número some); sem gravar, a memória leva e a próxima gravação grava (o fechamento não espera o banco)
+    const used = usageFor(run, idle);
+    if (used.length) apply(run, () => { for (const [rs, u] of used) if (betterUsage(rs.usage, u)) rs.usage = u; }, { rollback: false });
+    for (const id of idle) closeTerminal(id);
   }
   /** Depois da integração final bem-sucedida: o run conclui, os terminais ociosos fecham e as cópias saem pelas regras seguras (o que não sair fica em `leftovers`). */
   function markIntegrated(run) { apply(run, () => { run.status = 'completed'; run.finishedAt = now(); run.error = null; }, { rollback: false }); } // a pasta já mudou: a memória segue a realidade
@@ -1469,7 +1608,8 @@ export function createFlows({ db, terminals, maestro, flowGit = null, flowVerify
       countActiveScheduled: () => runs().filter((r) => r.trigger === 'schedule' && ACTIVE_RUN.has(r.status)).length,
       startScheduled(flowId, slotIso) {
         const r = startRun(flowId, { trigger: 'schedule', scheduledFor: slotIso });
-        return r.ok ? { ok: true, runId: r.body.id } : { ok: false, error: r.error };
+        // recusa (inclusive de conta: account_required, no_account, account_disconnected...) = o agendador registra o pulo `start_failed` com esta mensagem (que já cita o provider)
+        return r.ok ? { ok: true, runId: r.body.id } : { ok: false, error: r.error, ...(r.code ? { code: r.code } : {}) };
       },
       saveScheduleState(flowId, next) {
         const f = flowById(flowId); if (!f) throw new Error('Missão não encontrada.');
