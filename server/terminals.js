@@ -28,6 +28,7 @@ const plannerBlock = (prov) => (prov.capabilities?.readOnly === false ? `${prov.
 import { resolveLegacyAccountId } from './account-compat.js';
 import { cleanLine } from './harness.js';
 import { restrictDir } from './maestro.js';
+import { shellPtyArgs } from './win-cmdline.js';
 
 const ID_RE = /^term_[0-9a-f]{8}$/, REC_RE = /^ses_[0-9a-f]{8}$/, WT_ID_RE = /^wt_[0-9a-f]{8}$/, UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const SWEEP_MS = 2000; // varredura dos processos retidos (lingering): UM temporizador central, só existe enquanto há retidos
@@ -443,7 +444,11 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
     const coordinated = !!mcpCfg && (typeof prov.paneFiles !== 'function' || (pfArgs.length ? extraArgs.length === pfArgs.length : Object.keys(pf.env ?? {}).length > 0));
     const args = [...prov.paneArgs({ mode, prompt, label, sessionId: claudeSessionId, resumeSessionId: rec?.claudeSessionId, mcp: mcpArg, pluginDir, settingsFile, model, effort, fullAccess: full, readOnly, quote: !cmd.viaShell, trustDir: typeof trustFolders === 'function' ? cwd : null, env }), ...extraArgs]; // env: o Codex lê dele o CODEX_HOME da conta
     let p;
-    try { p = pty.spawn(cmd.file, [...cmd.args, ...args], { name: 'xterm-256color', cols: c, rows: r, cwd, env, useConpty: true }); }
+    try {
+      // wrapper .cmd com ESPAÇO no caminho (perfil "Joe Smith"): o cmd.exe /s cortaria o caminho; a linha vai inteira entre aspas externas (win-cmdline.js). null = caractere que o cmd.exe interpretaria
+      const spawnArgs = shellPtyArgs(cmd, args); if (spawnArgs === null) throw new Error('o caminho da CLI ou o texto de um argumento tem % ou aspas, que o cmd.exe interpretaria (e o caminho também não pode ter ! & | < > ^); remova-os do texto ou instale a CLI em outro caminho');
+      p = pty.spawn(cmd.file, spawnArgs, { name: 'xterm-256color', cols: c, rows: r, cwd, env, useConpty: true });
+    }
     catch (e) { revokeMcp(id); removePaneFiles(id); return fail(500, `Não foi possível iniciar o terminal: ${String(e?.message ?? e).slice(0, 160)}`); }
     const s = { id, role, provider: prov.id, accountId, model, effort, fullAccess: full, usesMcp: coordinated, squadKey, claudeSessionId, recordId: null, skills, templateId: team?.templateId ?? null, slotIndex: team?.slotIndex ?? null, holdInput: resumed, title: label, workspaceId: ws.id, topicId, cwd, worktreeId: wt?.id ?? null, status: 'running', pid: p.pid, cols: c, rows: r, startedAt: now(), endedAt: null, exitCode: null, lastOutputAt: null, bytes: 0, chunks: [], chunkBytes: 0, subs: new Set(), tracked: null, p };
     if (full) { // trilha de auditoria: quando e por que um terminal abriu com acesso total (sem texto de usuário nem segredos)
