@@ -254,7 +254,9 @@ test('Gemini: arquivos do pane = padrões do sistema com o MCP do FORGE (token s
 test('hook do papel do Gemini: entrega o papel UMA vez por sessão como additionalContext; sem arquivo ou com erro, sai com {} e código 0', async () => {
   const { execFileSync } = await import('node:child_process');
   const G = await import('../providers/gemini.js');
-  const d = fs.mkdtempSync(path.join(tmp, 'hook-')), role = path.join(d, 'papel.txt'); fs.writeFileSync(role, 'Voce e o REVISOR');
+  // a pasta do papel fica 2 níveis abaixo de uma pasta nova deste teste: o `../../x` abaixo cai nela, não no %TEMP% (que pode ter sobras de outras execuções)
+  const base = fs.mkdtempSync(path.join(tmp, 'hook-')), d = path.join(base, 'a', 'b'); fs.mkdirSync(d, { recursive: true });
+  const role = path.join(d, 'papel.txt'); fs.writeFileSync(role, 'Voce e o REVISOR');
   const run = (sid, file = role) => JSON.parse(execFileSync(process.execPath, [G.HOOK_SCRIPT, file], { input: '{}', env: { ...process.env, GEMINI_SESSION_ID: sid } }).toString());
   const first = run('sess-1');
   assert.deepEqual(first, { hookSpecificOutput: { hookEventName: 'BeforeAgent', additionalContext: '[Instrução do FORGE para este terminal] Voce e o REVISOR' } });
