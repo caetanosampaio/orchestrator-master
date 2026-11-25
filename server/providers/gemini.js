@@ -20,7 +20,8 @@ export const MCP_TOKEN_ENV = 'FORGE_MCP_TOKEN'; // o mesmo nome do Codex: o term
 export const HOOK_SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'gemini-role-hook.mjs');
 const SERVER_KEY_RE = /^[A-Za-z0-9_-]{1,64}$/;
 // Caminhos que entram na linha de comando do hook (shell do Gemini): com aspas, crase, $, % ou controle o hook não é registrado (o pane abre igual, só sem o papel).
-const UNSAFE_PATH = /["'`$%!\r\n\t]/;
+// Inclui as aspas tipográficas (U+2018–U+201F): o PowerShell trata “ ” „ como " e ‘ ’ ‚ ‛ como ', e elas fechariam a string do caminho.
+const UNSAFE_PATH = /["'`$%!\u0000-\u001f\u007f‘-‟]/; // eslint-disable-line no-control-regex
 
 /**
  * Linha de comando do hook do papel. POSIX (sh): caminhos entre aspas duplas. Windows: HIPÓTESE (não verificada) de que o shell do hook é o PowerShell (o hookRunner acrescenta o

@@ -25,7 +25,9 @@ export function resolveCursor(opts = {}) {
   if (!generic) return null;
   const file = generic.viaShell ? generic.args.at(-1) : generic.file;
   let real = file; try { real = fs.realpathSync(file); } catch { /* fica o caminho do PATH */ }
-  return /cursor/i.test(real) ? generic : null;
+  // Um trecho do caminho real tem de SER do Cursor (pasta `cursor`, `.cursor`, `cursor-agent`, `cursor_agent`, `cursor-cli`, `Cursor.app` ou o executável `cursor-agent`), não só conter a
+  // palavra: `…\cursor-projects\bin\agent` não vale. É heurística contra outro `agent` qualquer no PATH, não fronteira de confiança (o PATH já é do usuário).
+  return real.split(/[\\/]+/).some((seg) => /^\.?cursor([-_]?(agent|cli))?(\.(cmd|bat|exe|ps1|js|mjs|app))?$/i.test(seg)) ? generic : null;
 }
 
 export const CURSOR_OPTIONS = Object.freeze({ models: frozenList([['auto', 'Automático']]), efforts: frozenList([]) });

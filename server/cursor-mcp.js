@@ -31,9 +31,13 @@ export function ensureCursorMcpEntry({ homeDir }) {
     const next = { ...cfg, mcpServers: { ...(cfg.mcpServers ?? {}), [CURSOR_MCP_NAME]: CURSOR_MCP_ENTRY } };
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
     if (exists) { const bak = `${file}.forge-backup`; if (!fs.existsSync(bak)) fs.copyFileSync(file, bak, fs.constants.COPYFILE_EXCL); }
+    // `wx`: o temporário nunca é um arquivo (ou link) que já existia; se a gravação ou o rename falhar (ex.: EPERM no Windows com o arquivo aberto), ele é apagado.
     const tmpFile = `${file}.forge-${process.pid}.tmp`;
-    fs.writeFileSync(tmpFile, `${JSON.stringify(next, null, 2)}\n`, { mode });
-    fs.renameSync(tmpFile, file);
+    try { fs.rmSync(tmpFile, { force: true }); } catch { /* sobra de uma execução anterior com o mesmo pid: o wx abaixo recusa se não sair */ }
+    try {
+      fs.writeFileSync(tmpFile, `${JSON.stringify(next, null, 2)}\n`, { mode, flag: 'wx' });
+      fs.renameSync(tmpFile, file);
+    } catch (e) { try { fs.rmSync(tmpFile, { force: true }); } catch { /* melhor esforço */ } throw e; }
     return { ok: true, changed: true };
   } catch (e) { return { ok: false, why: `não foi possível gravar o ~/.cursor/mcp.json (${String(e?.code || e?.message || e).slice(0, 60)})` }; }
 }

@@ -44,6 +44,13 @@ test('resolveCursor: `cursor-agent` primeiro; `agent` (nome genérico) só vale 
   fs.symlinkSync(path.join(real, 'cursor-agent'), path.join(link, 'agent'));
   assert.equal(resolveCursor({ env: { PATH: link }, platform: 'linux' }).file, path.join(link, 'agent'), 'o link do instalador (~/.local/bin/agent -> …/cursor-agent/…) vale');
   assert.equal(resolveCursor({ env: { PATH: path.join(tmp, 'vazio') }, platform: 'linux' }), null);
+  // a palavra "cursor" solta no caminho não basta: o trecho tem de ser a pasta/executável do Cursor
+  for (const dir of [path.join('cursor-projects', 'bin'), path.join('meu-cursorzinho', 'bin'), 'precursor']) {
+    const b = bin(dir, ['agent']); assert.equal(resolveCursor({ env: { PATH: b }, platform: 'linux' }), null, dir);
+  }
+  for (const dir of [path.join('.cursor', 'bin'), path.join('Caskroom', 'cursor-cli', '1.2'), path.join('cursor_agent', 'bin'), path.join('Cursor.app', 'Contents', 'bin')]) {
+    const b = bin(dir, ['agent']); assert.equal(resolveCursor({ env: { PATH: b }, platform: 'linux' }).file, path.join(b, 'agent'), `${dir} vale`);
+  }
 });
 
 test('paneArgs: Gemini (aprovação e modelo), OpenCode (--standalone; somente leitura recusado) e Cursor (ask, --force, --model); nenhum aceita retomada', () => {
@@ -235,6 +242,9 @@ test('Gemini: arquivos do pane = padrões do sistema com o MCP do FORGE (token s
   assert.equal(st.hooks.BeforeAgent[0].hooks[0].command, `"/usr/bin/node" "${G.HOOK_SCRIPT.replace(/\\/g, '/')}" "${path.join('/tmp/forge/term_x', 'papel.txt').replace(/\\/g, '/')}"`);
   assert.match(G.roleHookCommand({ node: 'C:\\node\\node.exe', roleFile: 'C:\\d\\papel.txt', platform: 'win32' }), /^& "C:\/node\/node.exe" ".*" "C:\/d\/papel.txt"$/, 'Windows: chamada do PowerShell e barras normais');
   for (const bad of ['/a"b', '/a$b', "/a'b", '/a`b', '/a%b', '/a\nb']) assert.equal(G.roleHookCommand({ node: bad, roleFile: '/x' }), null, bad);
+  // aspas tipográficas: o PowerShell as trata como aspas comuns e elas fechariam a string do caminho
+  for (const c of ['\u0000', '\u001b', '\u000b', '\u007f']) assert.equal(G.roleHookCommand({ node: `/a${c}b`, roleFile: '/x' }), null, `controle U+${c.charCodeAt(0).toString(16)}`);
+  for (const q of ['\u2018', '\u2019', '\u201A', '\u201B', '\u201C', '\u201D', '\u201E', '\u201F']) assert.equal(G.roleHookCommand({ node: 'C:\\node\\node.exe', roleFile: `C:\\d${q}; calc\\papel.txt`, platform: 'win32' }), null, `U+${q.charCodeAt(0).toString(16)}`);
   const noHook = G.geminiPaneFiles({ dir: '/tmp/a$b', prompt: 'x', mcp, node: '/usr/bin/node' });
   assert.equal(JSON.parse(noHook.files['settings.json']).hooks, undefined, 'pasta insegura: sem hook, o MCP segue'); assert.equal(noHook.files['papel.txt'], undefined);
   for (const bad of [{ url: 'http://evil.example/mcp', serverName: 'forge_ab12cd' }, { url: mcp.url, serverName: 'a.b"c' }]) assert.equal(JSON.parse(G.geminiPaneFiles({ dir: '/d', prompt: 'x', mcp: bad, node: '/n' }).files['settings.json']).mcpServers, undefined, JSON.stringify(bad));
@@ -326,6 +336,27 @@ test('Cursor: a entrada forge-maestro no ~/.cursor/mcp.json — criada sem porta
   assert.match(fs.readFileSync(`${file}.forge-backup`, 'utf8'), /"velho"/, 'cópia de segurança do arquivo antes da mudança');
   if (process.platform !== 'win32') assert.equal(fs.statSync(file).mode & 0o777, 0o644, 'mantém a permissão do arquivo do usuário');
   assert.ok(!fs.readdirSync(path.dirname(file)).some((f) => f.endsWith('.tmp')), 'sem temporário largado');
+  // sobra de um temporário com o mesmo nome (execução anterior que caiu): é descartada, a gravação segue e nada fica para trás
+  fs.writeFileSync(`${file}.forge-${process.pid}.tmp`, 'sobra'); fs.writeFileSync(file, '{}');
+  assert.deepEqual(C.ensureCursorMcpEntry({ homeDir: home }), { ok: true, changed: true });
+  assert.ok(!fs.readdirSync(path.dirname(file)).some((f) => f.endsWith('.tmp')), 'temporário antigo removido');
+  // temporário plantado como LINK para um arquivo de fora: o link é descartado (não seguido) e o alvo fica intacto
+  {
+    const outside = path.join(fs.mkdtempSync(path.join(tmp, 'alvo-')), 'alvo.txt'); fs.writeFileSync(outside, 'NAO MEXER');
+    let linked = true; try { fs.symlinkSync(outside, `${file}.forge-${process.pid}.tmp`); } catch { linked = false; } // no Windows sem privilégio de link: pula
+    if (linked) {
+      fs.writeFileSync(file, '{}'); assert.deepEqual(C.ensureCursorMcpEntry({ homeDir: home }), { ok: true, changed: true });
+      assert.equal(fs.readFileSync(outside, 'utf8'), 'NAO MEXER', 'o alvo do link não foi escrito');
+      assert.ok(!fs.lstatSync(file).isSymbolicLink(), 'o mcp.json é um arquivo comum'); assert.match(fs.readFileSync(file, 'utf8'), /forge-maestro/);
+    }
+  }
+  // falha no rename (como o EPERM do Windows com o arquivo aberto, simulado aqui): o temporário é apagado e o resultado é ok:false, sem lançar
+  {
+    const h3 = fs.mkdtempSync(path.join(tmp, 'home-')), f3 = path.join(h3, '.cursor', 'mcp.json'); fs.mkdirSync(path.dirname(f3)); fs.writeFileSync(f3, '{}');
+    const orig = fs.renameSync; fs.renameSync = () => { throw Object.assign(new Error('x'), { code: 'EPERM' }); };
+    try { const r = C.ensureCursorMcpEntry({ homeDir: h3 }); assert.equal(r.ok, false); assert.match(r.why, /EPERM/); } finally { fs.renameSync = orig; }
+    assert.ok(!fs.readdirSync(path.dirname(f3)).some((f) => f.endsWith('.tmp')), 'rename falhou: temporário apagado'); assert.equal(fs.readFileSync(f3, 'utf8'), '{}', 'arquivo do usuário intocado');
+  }
   for (const bad of ['{ // comentário', '[1]', '{"mcpServers": []}']) {
     fs.writeFileSync(file, bad); const r = C.ensureCursorMcpEntry({ homeDir: home });
     assert.equal(r.ok, false, bad); assert.match(r.why, /não mexe nele/); assert.equal(fs.readFileSync(file, 'utf8'), bad, 'intocado');
