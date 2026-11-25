@@ -3,7 +3,9 @@ import { api } from '../../api.js';
 import { useStore } from '../../store.jsx';
 import { providerSummary } from '../../env-view.js';
 import { providerStatus, withAccountsLogin } from '../../provider-view.js';
-import { accountsOf } from '../../accounts-view.js';
+import { accountsOf, pickAccount } from '../../accounts-view.js';
+import { canTestIntegration } from '../../integration-check.js';
+import { createIntegrationRunner } from '../../integration-runner.js';
 import { plannedAis, aiShortName } from '../../provider-catalog.js';
 import { slotOptions } from '../../squads.js';
 import { useSquads } from '../../use-squads.js';
@@ -17,6 +19,33 @@ import { Row, Card, Block } from './SettingsUi.jsx';
  * instalação (com o comando quando falta), coordenação com o Maestro e contas. As de nível 1 (capabilities.mcp === false) abrem só como terminal livre pelo "+" do Cockpit.
  * Na MESMA grade, depois delas, as IAs que o FORGE ainda NÃO integra (plannedAis, em breve): o detalhe só diz isso, sem botão que finja ligar ou instalar.
  */
+// Um acompanhamento só para o app inteiro (integration-runner.js): continua ao sair das Configurações e ao trocar de IA no detalhe.
+const integration = createIntegrationRunner({
+  post: api.post, get: api.get,
+  confirm: (e) => window.confirm(`${e.message}\n\nAbrir o terminal de teste mesmo assim?`), // configuração do projeto não revisada: sempre uma pergunta
+});
+
+/**
+ * "Testar integração": abre um terminal de teste desta IA no workspace ativo e mostra se ele se conecta ao Maestro (campo `maestro` da listagem de terminais).
+ * Conectou: o terminal de teste é fechado. Não conectou no prazo: ele fica no Cockpit para você responder ao que a IA pedir, e o teste segue de olho nele.
+ */
+function IntegrationTest({ row }) {
+  const { accounts, lastAccount } = useStore();
+  const [, bump] = useState(0);
+  useEffect(() => integration.subscribe(() => bump((n) => n + 1)), []); // a grade do Cockpit se atualiza sozinha (a lista do app é recarregada a cada 1,5 s)
+  const st = integration.state(row.id), v = st?.verdict;
+  const start = () => integration.start({ provider: row.id, name: aiShortName(row.id, row.label), accountId: pickAccount({ accounts, provider: row.id, lastUsed: lastAccount }) });
+  return (
+    <>
+      <Row title="Testar integração" hint="Abre um terminal de teste desta IA no workspace ativo (ele aparece no Cockpit) e confere se ele se conecta ao Maestro. Se a IA pedir alguma coisa (atualizar a CLI, aprovar o servidor do FORGE, confiar na pasta), responda no próprio terminal: o teste continua mesmo fora desta tela, e o terminal de teste é fechado quando conectar.">
+        <Btn onClick={start} disabled={!!st?.busy}>{st?.busy ? 'Testando…' : v ? 'Testar de novo' : 'Testar'}</Btn>
+        {st?.open && v?.kind !== 'waiting' && <>{' '}<Btn onClick={() => integration.close(row.id)}>Fechar terminal de teste</Btn></>}
+      </Row>
+      {v && <p className={`oc-note${v.kind === 'ok' ? ' ok' : v.kind === 'waiting' ? '' : ' err'}`} role="status" aria-live="polite">{v.text}</p>}
+    </>
+  );
+}
+
 function Detail({ row, go, accounts }) {
   const { state, refresh } = useStore();
   const mine = accountsOf(accounts, row.id), on = mine.filter((a) => a.status?.loggedIn === true).length;
@@ -59,6 +88,7 @@ function Detail({ row, go, accounts }) {
         {unverified && !tasksOnly && <Row title="Coordenação" hint="Entra em times, missões e no Maestro, mas a ligação com o Maestro ainda não foi verificada com a CLI real: o Maestro só manda tarefa a um terminal depois que ele se conecta de fato. O papel do terminal chega no primeiro pedido de cada sessão. Não abre o planejador de missão." />}
         {row.note && <Row title="Permissões" hint={row.note} />}
       </>}
+      {canTestIntegration(row) && <IntegrationTest key={row.id} row={row} />}
       {(!extra || mine.length > 0) && <Row title="Contas" hint={row.id === 'claude' ? 'Entre com mais de uma conta e escolha qual cada terminal usa.' : 'As contas desta IA que o FORGE usa.'}>
         <span className="dim small">{!accounts ? 'verificando…' : mine.length ? `${mine.length} ${mine.length === 1 ? 'conta' : 'contas'} · ${on} ${on === 1 ? 'conectada' : 'conectadas'}` : 'nenhuma conta'}</span>{' '}
         <Btn onClick={() => go('accounts')}>Gerenciar contas</Btn>

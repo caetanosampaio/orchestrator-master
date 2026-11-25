@@ -73,9 +73,12 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
   const sessions = new Map();
   const allSubs = new Set(); // UMA conexão SSE leva a saída de TODOS os terminais: o navegador só abre ~6 conexões por origem; com uma por pane, 7+ terminais travavam a tela e até o botão de fechar
   const live = () => [...sessions.values()].filter((s) => s.status === 'running');
+  // Ligação do pane com o Maestro, para o "Testar integração" e a grade: 'connected' = o terminal já autenticou no MCP de fato (maestro.connected, a mesma prova que libera
+  // tarefas às IAs não verificadas); 'waiting' = recebeu a credencial e ainda não falou com o Maestro; null = sem coordenação (IA de terminal livre) ou o terminal já acabou.
+  const maestroLink = (s) => { if (s.status !== 'running' || s.usesMcp !== true) return null; try { return mcp?.connected?.(s.id) === true ? 'connected' : 'waiting'; } catch { return 'waiting'; } };
   const describe = (s) => ({ id: s.id, role: s.role, provider: s.provider ?? provider.id, providerLabel: provOf(s.provider).label, roleLabel: ROLES[s.role]?.label ?? s.role, color: ROLES[s.role]?.color ?? null, title: s.title, workspaceId: s.workspaceId, topicId: s.topicId ?? null, cwd: s.cwd, worktreeId: s.worktreeId, branch: branchOf(s.worktreeId), recordId: s.recordId ?? null, accountId: s.accountId ?? null, model: s.model ?? null, effort: s.effort ?? null, fullAccess: s.fullAccess === true,
     usage: safeUsage(s), status: s.status, pid: s.pid, cols: s.cols, rows: s.rows, startedAt: s.startedAt, endedAt: s.endedAt, exitCode: s.exitCode, lastOutputAt: s.lastOutputAt, bytes: s.bytes, agent: s.status === 'running' ? safeAgent(s) : null, squadId: s.squadKey ?? null,
-    skills: [...(s.skills ?? [])], templateId: s.templateId ?? null, slotIndex: s.slotIndex ?? null }); // skills EFETIVAS do pane (o que o plugin dele recebeu; [] no Codex) e o time/vaga de onde ele veio
+    skills: [...(s.skills ?? [])], templateId: s.templateId ?? null, slotIndex: s.slotIndex ?? null, maestro: maestroLink(s) }); // skills EFETIVAS do pane (o que o plugin dele recebeu; [] no Codex) e o time/vaga de onde ele veio
   /**
    * Time e vaga de um pane (POST /api/terminals com templateId + slotIndex). Tudo conferido aqui, contra o estado do SERVIDOR (times salvos ou prontos): o cliente só aponta.
    * Devolve { team: null } (sem time), { team: { templateId, slotIndex, skills, instruction } } ou uma falha 400 (template_invalid | template_not_found | template_mismatch).
@@ -434,11 +437,15 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
     const pf = writePaneFiles(prov, id, { prompt, mcp: mcpArg && mcpCfg?.token ? { ...mcpArg, token: mcpCfg.token } : mcpArg }); // o token só vai para quem grava o próprio arquivo (Copilot)
     Object.assign(env, pf.env ?? {});
     const extraArgs = (pf.args ?? []).filter((a) => !cmd.viaShell || !/[&|<>^%"!()]/.test(a)); // wrapper .cmd: argumento com metacaractere ficaria fora (o pane abre sem a coordenação)
-    const args = [...prov.paneArgs({ mode, prompt, label, sessionId: claudeSessionId, resumeSessionId: rec?.claudeSessionId, mcp: mcpArg, pluginDir, settingsFile, model, effort, fullAccess: full, readOnly, quote: !cmd.viaShell, trustDir: typeof trustFolders === 'function' ? cwd : null }), ...extraArgs];
+    // A coordenação CHEGOU à CLI? Credencial emitida e, para quem a recebe por arquivo do pane (Gemini, Cursor, Copilot), o ambiente ou os argumentos que apontam para ela.
+    // Sem isso o pane abre sem o Maestro: o campo `maestro` da listagem fica null (não 'waiting' para sempre, o que o "Testar integração" leria como "não conectou").
+    const pfArgs = pf.args ?? [];
+    const coordinated = !!mcpCfg && (typeof prov.paneFiles !== 'function' || (pfArgs.length ? extraArgs.length === pfArgs.length : Object.keys(pf.env ?? {}).length > 0));
+    const args = [...prov.paneArgs({ mode, prompt, label, sessionId: claudeSessionId, resumeSessionId: rec?.claudeSessionId, mcp: mcpArg, pluginDir, settingsFile, model, effort, fullAccess: full, readOnly, quote: !cmd.viaShell, trustDir: typeof trustFolders === 'function' ? cwd : null, env }), ...extraArgs]; // env: o Codex lê dele o CODEX_HOME da conta
     let p;
     try { p = pty.spawn(cmd.file, [...cmd.args, ...args], { name: 'xterm-256color', cols: c, rows: r, cwd, env, useConpty: true }); }
     catch (e) { revokeMcp(id); removePaneFiles(id); return fail(500, `Não foi possível iniciar o terminal: ${String(e?.message ?? e).slice(0, 160)}`); }
-    const s = { id, role, provider: prov.id, accountId, model, effort, fullAccess: full, squadKey, claudeSessionId, recordId: null, skills, templateId: team?.templateId ?? null, slotIndex: team?.slotIndex ?? null, holdInput: resumed, title: label, workspaceId: ws.id, topicId, cwd, worktreeId: wt?.id ?? null, status: 'running', pid: p.pid, cols: c, rows: r, startedAt: now(), endedAt: null, exitCode: null, lastOutputAt: null, bytes: 0, chunks: [], chunkBytes: 0, subs: new Set(), tracked: null, p };
+    const s = { id, role, provider: prov.id, accountId, model, effort, fullAccess: full, usesMcp: coordinated, squadKey, claudeSessionId, recordId: null, skills, templateId: team?.templateId ?? null, slotIndex: team?.slotIndex ?? null, holdInput: resumed, title: label, workspaceId: ws.id, topicId, cwd, worktreeId: wt?.id ?? null, status: 'running', pid: p.pid, cols: c, rows: r, startedAt: now(), endedAt: null, exitCode: null, lastOutputAt: null, bytes: 0, chunks: [], chunkBytes: 0, subs: new Set(), tracked: null, p };
     if (full) { // trilha de auditoria: quando e por que um terminal abriu com acesso total (sem texto de usuário nem segredos)
       const why = autoFull && fullAccess !== true ? 'Maestro autônomo ligado' : rec?.fullAccess === true ? 'herdado da sessão gravada' : 'opt-in da missão';
       try { store.log('terminal', `Terminal aberto com ACESSO TOTAL (${why}): ${prov.id}, modo ${mode}`, { terminalId: id, workspaceId: ws.id }); } catch { /* o log é informativo (banco não carregado em alguns testes) */ }
