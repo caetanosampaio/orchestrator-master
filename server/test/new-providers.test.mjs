@@ -72,7 +72,7 @@ test('estado do Gemini: o símbolo do título do terminal (◇ pronto, ✦ traba
 });
 
 test('registro: os cinco provedores; Gemini e Cursor com coordenação a confirmar (o Cursor sem liderar nem ser etapa), OpenCode sem; opções fechadas; ambiente sem variáveis do Claude; configuração de projeto de cada um', () => {
-  assert.deepEqual(P.providerIds(), ['claude', 'codex', ...NEW]);
+  assert.deepEqual(P.providerIds().slice(0, 5), ['claude', 'codex', ...NEW], 'as cinco seguintes em more-providers.test.mjs');
   for (const id of NEW) {
     const p = P.getProvider(id);
     assert.ok(Object.isFrozen(p) && Object.isFrozen(p.capabilities), id);
@@ -156,7 +156,7 @@ test('terminais: sem coordenação, recusa Maestro, vaga de time, squad e etapa 
 test('terminais: providers() traz disponibilidade, capacidades (retomada, skills, coordenação, somente leitura), o comando de instalação e o aviso de permissões', () => {
   const w = world({ resolveCommands: { codex: () => null, gemini: () => ({ file: '/fake/gemini', args: [], viaShell: false }), opencode: () => null, cursor: () => null } });
   const list = w.mgr.providers();
-  assert.deepEqual(list.map((p) => [p.id, p.available]), [['claude', true], ['codex', false], ['gemini', true], ['opencode', false], ['cursor', false]]);
+  assert.deepEqual(list.slice(0, 5).map((p) => [p.id, p.available]), [['claude', true], ['codex', false], ['gemini', true], ['opencode', false], ['cursor', false]]);
   assert.deepEqual(list[0].capabilities, { resume: true, plugins: true, mcp: true, readOnly: true });
   assert.deepEqual(list[2].capabilities, { resume: false, plugins: false, mcp: true, readOnly: true, mcpVerified: false, planner: false });
   assert.deepEqual(list[4].capabilities, { resume: false, plugins: false, mcp: true, readOnly: true, mcpVerified: false, planner: false, state: false, rolePrompt: false });

@@ -29,7 +29,7 @@ const after_ = (args, flag) => args[args.indexOf(flag) + 1];
 
 test('opções: listas fechadas por provedor, congeladas, e providerOptions() devolve cópia { models, efforts } com { id, label }', () => {
   const o = P.providerOptions();
-  assert.deepEqual(Object.keys(o).sort(), ['claude', 'codex', 'cursor', 'gemini', 'opencode']); // os três novos no nível 1 (new-providers.test.mjs)
+  assert.deepEqual(Object.keys(o).sort(), ['antigravity', 'claude', 'codex', 'copilot', 'cursor', 'gemini', 'grok', 'kimi', 'kiro', 'opencode']); // as novas em new-providers e more-providers.test.mjs
   for (const id of ['claude', 'codex']) {
     assert.ok(o[id].models.length >= 1 && o[id].efforts.length >= 1);
     for (const x of [...o[id].models, ...o[id].efforts]) assert.deepEqual(Object.keys(x).sort(), ['id', 'label']);

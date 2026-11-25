@@ -1,5 +1,5 @@
 // Registro de provedores de agentes (CLIs). Claude Code e Codex CLI (integrados por completo); Gemini CLI e Cursor CLI no nível 2 (com o Maestro, a confirmar por conexão real;
-// o Cursor só em vagas que recebem tarefas); OpenCode no nível 1 (só terminal, sem coordenação).
+// o Cursor e o Copilot CLI só em vagas que recebem tarefas); OpenCode, Antigravity, Kimi Code, Kiro CLI e Grok Build no nível 1 (só terminal).
 //
 // Interface de um provedor (tudo fixo no servidor; nada vem do cliente):
 //   id          : identificador estável, gravado nas sessões ('claude')
@@ -18,9 +18,14 @@ import { codexProvider } from './codex.js';
 import { geminiProvider } from './gemini.js';
 import { opencodeProvider } from './opencode.js';
 import { cursorProvider } from './cursor.js';
+import { antigravityProvider } from './antigravity.js';
+import { kimiProvider } from './kimi.js';
+import { kiroProvider } from './kiro.js';
+import { copilotProvider } from './copilot.js';
+import { grokProvider } from './grok.js';
 
 export const DEFAULT_PROVIDER = 'claude';
-const PROVIDERS = Object.freeze(Object.fromEntries([claudeProvider, codexProvider, geminiProvider, opencodeProvider, cursorProvider].map((p) => [p.id, p])));
+const PROVIDERS = Object.freeze(Object.fromEntries([claudeProvider, codexProvider, geminiProvider, opencodeProvider, cursorProvider, antigravityProvider, kimiProvider, kiroProvider, copilotProvider, grokProvider].map((p) => [p.id, p])));
 
 export const providerIds = () => Object.keys(PROVIDERS);
 /** O id é um provedor cadastrado? (Object.hasOwn: `__proto__`, `constructor` e afins nunca passam.) */
@@ -172,4 +177,4 @@ export const accountSpecOf = (id) => ACCOUNTS.specOf(id);
 export const accountProviderIds = () => ACCOUNTS.ids();
 export const accountProviders = () => ACCOUNTS.list();
 
-export { claudeProvider, codexProvider, geminiProvider, opencodeProvider, cursorProvider };
+export { claudeProvider, codexProvider, geminiProvider, opencodeProvider, cursorProvider, antigravityProvider, kimiProvider, kiroProvider, copilotProvider, grokProvider };

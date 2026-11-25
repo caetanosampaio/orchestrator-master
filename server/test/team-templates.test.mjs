@@ -145,7 +145,7 @@ test('leitura tolerante: entradas inválidas, duplicadas ou de papel/provedor de
 // ---- model/effort por vaga + options (contrato novo) ----
 test('GET devolve options fechadas por provedor ({ models:[{id,label}], efforts:[{id,label}] })', async () => {
   const { j } = await jr(await call('/api/team-templates'));
-  assert.deepEqual(Object.keys(j.options).sort(), ['claude', 'codex', 'cursor', 'gemini'], 'times: só IAs com o Maestro (o Cursor nas vagas que recebem tarefas)');
+  assert.deepEqual(Object.keys(j.options).sort(), ['claude', 'codex', 'copilot', 'cursor', 'gemini'], 'times: só IAs com o Maestro (Cursor e Copilot nas vagas que recebem tarefas)');
   for (const p of ['claude', 'codex']) {
     assert.deepEqual(Object.keys(j.options[p]).sort(), ['efforts', 'models']);
     for (const x of [...j.options[p].models, ...j.options[p].efforts]) { assert.equal(typeof x.id, 'string'); assert.equal(typeof x.label, 'string'); assert.deepEqual(Object.keys(x).sort(), ['id', 'label']); }

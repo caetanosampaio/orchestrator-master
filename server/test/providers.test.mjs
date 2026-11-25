@@ -17,7 +17,7 @@ const SID = '00000000-0000-4000-8000-000000000001', OLD = '00000000-0000-4000-80
 const mcp = { configPath: '/tmp/x/mcp.json', serverName: 'orchestrator_abc123' };
 
 test('registro: o padrão é o Claude Code; id desconhecido ou perigoso lança; sem id vale o padrão (sessões antigas)', () => {
-  assert.equal(P.DEFAULT_PROVIDER, 'claude'); assert.deepEqual(P.providerIds(), ['claude', 'codex', 'gemini', 'opencode', 'cursor']); // Gemini, OpenCode e Cursor no nível 1 (new-providers.test.mjs)
+  assert.equal(P.DEFAULT_PROVIDER, 'claude'); assert.deepEqual(P.providerIds(), ['claude', 'codex', 'gemini', 'opencode', 'cursor', 'antigravity', 'kimi', 'kiro', 'copilot', 'grok']); // as novas em new-providers.test.mjs e more-providers.test.mjs (new-providers.test.mjs)
   assert.equal(P.getProvider(), claudeProvider); assert.equal(P.getProvider('claude'), claudeProvider); assert.equal(P.getProvider(undefined), claudeProvider);
   for (const bad of ['', 'CODEX', 'CLAUDE', '__proto__', 'constructor', 'toString', null, 7, {}]) { assert.equal(P.isProvider(bad), false, String(bad)); if (bad !== undefined) assert.throws(() => P.getProvider(bad), /Provedor desconhecido/); }
   assert.ok(Object.isFrozen(claudeProvider));

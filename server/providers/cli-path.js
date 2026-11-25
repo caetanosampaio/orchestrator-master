@@ -33,3 +33,29 @@ export function withoutClaudeEnv(base = process.env) {
 
 const frozenList = (items) => Object.freeze(items.map(([id, label]) => Object.freeze({ id, label })));
 export { frozenList };
+
+/**
+ * Fábrica dos provedores "de terminal" (nível 1 por padrão): só o que muda entre as CLIs vem em `spec`. Padrões: sem retomada, sem plugins, sem contas, sem consumo, sem
+ * coordenação (mcp: false), sem planejador; colagem entre colchetes (HIPÓTESE comum aos TUIs, como no Codex); ambiente sem as variáveis do Claude.
+ * `paneArgs(opts)` recebe { model, fullAccess, readOnly } e só é chamado com mode 'new' (retomada e bifurcação são recusadas aqui).
+ */
+export function cliProvider(spec) {
+  const capabilities = Object.freeze({ resume: false, fork: false, hooks: false, plugins: false, accounts: false, transcript: false, mcp: false, readOnly: false, planner: false, ...(spec.capabilities ?? {}) });
+  return Object.freeze({
+    id: spec.id, label: spec.label, install: spec.install,
+    resolve: (opts = {}) => resolveOnPath(spec.names, opts),
+    options: Object.freeze({ models: frozenList(spec.models ?? []), efforts: frozenList([]) }),
+    notFoundMessage: `O ${spec.label} não foi encontrado no PATH (instale com "${spec.install}" e entre na sua conta pela própria CLI).`,
+    capabilities,
+    submit: Object.freeze({ bracketed: true, delayMs: 300 }),
+    projectConfig: Object.freeze({ files: Object.freeze([...(spec.projectFiles ?? [])]), dirs: Object.freeze([...(spec.projectDirs ?? [])]), ...(spec.projectFiles?.length ? { keys: '*' } : {}) }),
+    envFor: withoutClaudeEnv,
+    ...(spec.extra ?? {}),
+    paneArgs(opts = {}) {
+      const { mode = 'new', readOnly = false } = opts;
+      if (mode !== 'new') throw new Error(`O ${spec.label} não oferece retomada nem bifurcação neste adaptador.`);
+      if (readOnly === true && capabilities.readOnly === false) throw new Error(`O ${spec.label} não garante somente leitura.`);
+      return spec.paneArgs({ model: opts.model ?? null, fullAccess: opts.fullAccess === true, readOnly: readOnly === true });
+    },
+  });
+}

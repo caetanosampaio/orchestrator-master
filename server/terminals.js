@@ -130,6 +130,7 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
   // Arquivos do pane (providers/*.js paneFiles, hoje o Gemini: padrões do sistema com o MCP do FORGE e o papel): uma pasta só do terminal, 0700/0600, apagada quando ele acaba.
   // Nunca guardam o token (ele vai no ambiente). Na partida não há terminal vivo: sobras de uma execução anterior que caiu são apagadas.
   const paneDirOf = (id) => (paneFilesDir && /^term_[A-Za-z0-9]{1,40}$/.test(String(id)) ? path.join(paneFilesDir, id) : null);
+  const envOf = (out) => (out?.env && typeof out.env === 'object' ? Object.fromEntries(Object.entries(out.env).filter(([k, v]) => /^[A-Z][A-Z0-9_]{0,63}$/.test(k) && typeof v === 'string')) : {});
   const removePaneFiles = (id) => { const d = paneDirOf(id); if (d) { try { fs.rmSync(d, { recursive: true, force: true }); } catch { /* informativo */ } } };
   if (paneFilesDir) { try { for (const e of fs.readdirSync(paneFilesDir)) if (/^term_/.test(e)) fs.rmSync(path.join(paneFilesDir, e), { recursive: true, force: true }); } catch { /* pasta ainda não existe */ } }
   /**
@@ -138,17 +139,17 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
    */
   function writePaneFiles(prov, id, { prompt, mcp: mcpArg }) {
     if (typeof prov.paneFiles !== 'function') return {};
+    const done = (out) => ({ env: envOf(out), args: Array.isArray(out?.args) ? out.args.filter((a) => typeof a === 'string' && a && !/[\u0000-\u001f]/.test(a)) : [] });
     const d = paneDirOf(id);
     try {
       if (typeof prov.prepare === 'function' && prov.prepare({ mcp: mcpArg, homeDir })?.ok !== true) return {};
       const out = prov.paneFiles({ dir: d, prompt, mcp: mcpArg, node: hookNode, platform: process.platform }) ?? {};
       const files = out.files && typeof out.files === 'object' ? out.files : {};
-      const envOut = () => (out.env && typeof out.env === 'object' ? Object.fromEntries(Object.entries(out.env).filter(([k, v]) => /^[A-Z][A-Z0-9_]{0,63}$/.test(k) && typeof v === 'string')) : {});
-      if (!Object.keys(files).length) return envOut();
+      if (!Object.keys(files).length) return done(out);
       if (!d) return {}; // há arquivos a gravar, mas sem pasta de arquivos do pane (servidor sem paneFilesDir): sem a coordenação
       fs.mkdirSync(d, { recursive: true, mode: 0o700 });
       for (const [name, content] of Object.entries(files)) { if (!/^[a-z0-9._-]{1,40}$/i.test(name) || typeof content !== 'string') throw new Error('arquivo inválido'); fs.writeFileSync(path.join(d, name), content, { mode: 0o600 }); }
-      return envOut();
+      return done(out);
     } catch { removePaneFiles(id); return {}; }
   }
 
@@ -421,8 +422,10 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
     if (typeof trustFolders === 'function') { try { trustFolders({ provider: prov.id, cwd, configDir: dirOf(accountId) ?? null }); } catch { /* melhor esforço: a pergunta aparece normalmente */ } }
     const rolePrompt = extraPrompt ? `${ROLES[role].prompt} Instrucao do agente escolhido pelo usuario para este papel: ${extraPrompt}` : ROLES[role].prompt;
     const prompt = team?.instruction ? `${rolePrompt} Instrucao do time escolhido pelo usuario: ${team.instruction}` : rolePrompt; // a do time vem por último: vale para todas as vagas dele
-    Object.assign(env, writePaneFiles(prov, id, { prompt, mcp: mcpArg }));
-    const args = prov.paneArgs({ mode, prompt, label, sessionId: claudeSessionId, resumeSessionId: rec?.claudeSessionId, mcp: mcpArg, pluginDir, settingsFile, model, effort, fullAccess: full, readOnly, quote: !cmd.viaShell, trustDir: typeof trustFolders === 'function' ? cwd : null });
+    const pf = writePaneFiles(prov, id, { prompt, mcp: mcpArg && mcpCfg?.token ? { ...mcpArg, token: mcpCfg.token } : mcpArg }); // o token só vai para quem grava o próprio arquivo (Copilot)
+    Object.assign(env, pf.env ?? {});
+    const extraArgs = (pf.args ?? []).filter((a) => !cmd.viaShell || !/[&|<>^%"!()]/.test(a)); // wrapper .cmd: argumento com metacaractere ficaria fora (o pane abre sem a coordenação)
+    const args = [...prov.paneArgs({ mode, prompt, label, sessionId: claudeSessionId, resumeSessionId: rec?.claudeSessionId, mcp: mcpArg, pluginDir, settingsFile, model, effort, fullAccess: full, readOnly, quote: !cmd.viaShell, trustDir: typeof trustFolders === 'function' ? cwd : null }), ...extraArgs];
     let p;
     try { p = pty.spawn(cmd.file, [...cmd.args, ...args], { name: 'xterm-256color', cols: c, rows: r, cwd, env, useConpty: true }); }
     catch (e) { revokeMcp(id); removePaneFiles(id); return fail(500, `Não foi possível iniciar o terminal: ${String(e?.message ?? e).slice(0, 160)}`); }

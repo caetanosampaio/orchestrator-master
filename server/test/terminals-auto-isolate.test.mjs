@@ -111,7 +111,7 @@ test('rotas: provider, isolate "auto" e expectEditors chegam ao gerenciador; GET
   try {
     const list = await (await fetch(`${base}/api/terminals`)).json();
     assert.deepEqual(list.providers.slice(0, 2).map((p) => [p.id, p.available]), [['claude', true], ['codex', true]]);
-    assert.deepEqual(list.providers.slice(2).map((p) => p.id), ['gemini', 'opencode', 'cursor'], 'as IAs novas vêm depois (a disponibilidade delas depende do PATH real)');
+    assert.deepEqual(list.providers.slice(2).map((p) => p.id), ['gemini', 'opencode', 'cursor', 'antigravity', 'kimi', 'kiro', 'copilot', 'grok'], 'as IAs novas vêm depois (a disponibilidade delas depende do PATH real)');
     let r = await post('/api/terminals', { role: 'builder', provider: 'codex' }); assert.equal(r.status, 201, JSON.stringify(r.body)); assert.equal(r.body.session.provider, 'codex'); assert.equal(w.spawned[0].file, '/fake/codex');
     r = await post('/api/terminals', { role: 'builder', provider: 'xpto' }); assert.deepEqual([r.status, r.body.code], [400, 'provider_invalid']);
     r = await post('/api/terminals', { role: 'builder', provider: { $ne: 1 } }); assert.equal(r.status, 400);
