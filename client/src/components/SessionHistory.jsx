@@ -58,7 +58,7 @@ export function SessionHistoryBody({ ws, topicId, where, order = [], autoRestore
           throw e;
         }
       }
-      notify(`${fork ? 'Fork aberto' : 'Sessão retomada'}: ${res?.session?.title ?? r.title} (${where}). O Claude Code leva alguns segundos para iniciar.`);
+      notify(`${fork ? 'Fork aberto' : 'Sessão retomada'}: ${res?.session?.title ?? r.title} (${where}). A IA leva alguns segundos para iniciar.`);
     } catch (e) { notify(e.message || 'Não foi possível retomar a sessão.', 'error'); } finally { lock.current = false; setBusy(null); await load(); loadTerminals(); }
   };
 
@@ -69,16 +69,19 @@ export function SessionHistoryBody({ ws, topicId, where, order = [], autoRestore
     const plan = restorePlan(orderSessions(rows.restore, order, (r) => r.id), (terminals?.maxSessions ?? 10) - live) // na ordem em que estavam na grade;
     if (!plan.open.length) { notify(plan.skipped.length ? 'Não há vaga para restaurar: feche algum terminal antes (limite de terminais).' : 'Nenhuma sessão para restaurar.', 'error'); return; }
     const extra = plan.skipped.length ? `\n\n${plan.skipped.length} não cabe(m) no limite de terminais e ficará(ão) de fora.` : '';
-    if (!window.confirm(`Restaurar ${plan.open.length} ${plan.open.length === 1 ? 'sessão' : 'sessões'} em ${ws.displayName || ws.name}? Cada uma reabre a mesma sessão do Claude Code (o histórico da conversa é restaurado).${extra}`)) return;
+    if (!window.confirm(`Restaurar ${plan.open.length} ${plan.open.length === 1 ? 'sessão' : 'sessões'} em ${ws.displayName || ws.name}? Cada uma reabre a sessão da IA dela (quando a IA permite retomar, o histórico da conversa é restaurado).${extra}`)) return;
     lock.current = true;
-    const results = []; let ack = false, declined = false, stopped = false;
+    // A confirmação vale POR IA: cada uma lê arquivos de configuração diferentes (.claude, .gemini, opencode.json…), e confirmar os do Claude não pode liberar os do Gemini sem mostrá-los.
+    const results = [], acked = new Set(), declined = new Set(); let stopped = false;
     try {
       for (const [i, r] of plan.open.entries()) {
         if (stopped) break;
         setProgress({ i: i + 1, n: plan.open.length }); setBusy(r.id);
+        const ai = r.provider ?? 'claude';
         for (;;) {
+          const ack = acked.has(ai);
           try { await api.post('/api/terminals/resume', resumeBody({ recordId: r.id, reopen: r.reopen, ack })); results.push({ row: r, ok: true }); break; } catch (e) {
-            if (!ack && !declined && needsConfigAck(e)) { if (window.confirm(`${e.message}\n\nRestaurar as sessões mesmo assim?`)) { ack = true; continue; } declined = true; }
+            if (!ack && !declined.has(ai) && needsConfigAck(e)) { if (window.confirm(`${e.message}\n\nRestaurar as sessões desta IA mesmo assim?`)) { acked.add(ai); continue; } declined.add(ai); }
             const limit = e?.status === 409 && /Limite de/.test(e.message || '');
             results.push({ row: r, ok: false, error: limit ? 'limite de terminais' : needsConfigAck(e) ? 'configuração do projeto não confirmada' : (e?.message || 'erro') });
             if (limit) stopped = true; // sem vaga: não adianta insistir nas demais
