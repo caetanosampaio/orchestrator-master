@@ -17,7 +17,7 @@ Central local para coordenar agentes de IA no desenvolvimento de software. O FOR
 
 Quando falta algo, o FORGE abre o popup **"Antes de começar"** (com o fundo escurecido) explicando o que fazer: nenhuma IA encontrada (bloqueia o uso até você instalar alguma das IAs suportadas), nenhuma conta conectada e Git não encontrado. O FORGE não depende de uma IA específica: basta **uma** conta conectada de **alguma** IA. Com pelo menos uma IA instalada nada bloqueia; o aviso de conta é só informativo.
 
-**Custos:** cada agente é uma sessão da CLI na **sua** conta, então o uso consome o **seu** plano ou os seus créditos. O FORGE mostra tokens e custo estimado por terminal **do Claude Code** (o custo usa a tabela de preços que você informa em `pricing.json`; não há preços embutidos). Para terminais do Codex ainda não há custo por terminal, e para as outras 8 IAs ainda não há tokens nem custo em lugar nenhum (Home, golem e limites só mostram Claude e Codex).
+**Custos:** cada agente é uma sessão da CLI na **sua** conta, então o uso consome o **seu** plano ou os seus créditos. O FORGE mostra tokens e custo estimado por terminal **do Claude Code** (o custo usa a tabela de preços que você informa em `pricing.json`; não há preços embutidos). Para terminais do Codex ainda não há custo por terminal. A Home e o golem somam os tokens do Claude, do Codex e do OpenCode (no OpenCode o consumo por dia é estimado: a CLI só guarda o total de cada sessão); as outras 7 IAs ainda não aparecem ali, e custo por terminal e limites de conta só existem para Claude e Codex.
 
 ## Instalação
 
@@ -99,7 +99,7 @@ No menu **Ajuda** (no Windows, pressione `Alt` para exibir o menu) use **Copiar 
 - Instaladores **sem assinatura de código** e **sem atualização automática**: novas versões precisam ser instaladas manualmente.
 - macOS: pacote apenas para processadores Intel (x64); Apple Silicon ainda não foi validado.
 - **Codex CLI**: não retoma nem bifurca conversas (um terminal Codex interrompido volta como terminal novo), não tem loadouts nem tokens e custo por terminal, usa só a conta deste computador (o login é feito no próprio Codex CLI) e o isolamento por `CODEX_HOME` não foi conferido contra a CLI real. A integração foi validada contra o Codex real com um modelo simulado; o uso com conta real ainda não foi exercitado em testes.
-- **As outras 8 IAs** (Gemini, Cursor, Copilot, OpenCode, Antigravity, Kimi, Kiro e Grok) foram integradas pela documentação oficial e testadas só com terminal simulado: nenhuma foi rodada de verdade. Não retomam conversas, não têm contas no FORGE, loadouts nem tokens e custo. No Windows, o hook do papel do Gemini assume que o shell do hook é o PowerShell (não verificado).
+- **As outras 8 IAs** (Gemini, Cursor, Copilot, OpenCode, Antigravity, Kimi, Kiro e Grok) foram integradas pela documentação oficial e testadas só com terminal simulado: nenhuma foi rodada de verdade. Não retomam conversas, não têm contas no FORGE nem loadouts, e (exceto o OpenCode, nos tokens) não têm tokens e custo. No Windows, o hook do papel do Gemini assume que o shell do hook é o PowerShell (a linha de comando foi verificada no PowerShell 5.1, o shell que o Gemini usa não).
 - O OpenCode, por padrão, **não pede confirmação** para nada (a política dele é permitir tudo).
 - O `claude auth login` real (pelo FORGE) só foi testado com uma CLI simulada.
 - Interface apenas em português e com um tema só (escuro).

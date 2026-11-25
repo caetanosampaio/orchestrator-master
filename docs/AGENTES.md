@@ -125,7 +125,21 @@ A integração foi validada contra o Codex real com um modelo simulado localment
 
 ## O que ainda não existe para as outras 8 IAs
 
-- **Nenhuma foi rodada de verdade:** tudo foi conferido na documentação oficial (nov/2026) e testado com terminal simulado.
+- **Nenhuma foi rodada de verdade** (nenhuma está instalada na máquina de desenvolvimento): tudo foi conferido na documentação oficial (nov/2026) e testado com terminal simulado. Só o Claude Code e o Codex CLI foram abertos de verdade (ver "Verificado no Windows" abaixo).
 - Retomar e bifurcar conversas (um terminal interrompido volta como terminal novo), loadouts e contas do FORGE (o login é feito na própria CLI).
-- Tokens e custo: só existem para Claude e Codex. As outras IAs não aparecem na Home, no golem nem nos limites.
-- No Windows: o hook do papel do Gemini assume que o shell do hook é o PowerShell (hipótese), e os wrappers `.cmd` do npm em caminhos com espaço não foram testados com as CLIs reais.
+- **Tokens:** além do Claude e do Codex, só o **OpenCode** aparece na Home e no golem (ver "Tokens do OpenCode" abaixo). Custo por terminal e limites de conta só existem para Claude e Codex. Gemini, Cursor, Copilot, Antigravity, Kimi, Kiro e Grok não aparecem: o formato em disco de cada uma só pode ser conferido com a CLI instalada e usada uma vez, e o FORGE não lê formato que não verificou (um leitor de memória poderia somar errado sem ninguém perceber).
+- No Windows: o hook do papel do Gemini assume que o shell do hook é o PowerShell (a linha de comando foi verificada no PowerShell 5.1, mas não qual shell o Gemini usa; PowerShell 7 não testado).
+
+## Tokens do OpenCode
+
+O OpenCode grava num banco SQLite (`<XDG_DATA_HOME ou ~/.local/share>/opencode/opencode.db`, confirmado no OpenCode 2.3.0 no Windows). O servidor o lê com `node:sqlite`, **somente leitura**, só colunas numéricas de `session_v2` e a data das respostas do assistente em `session_message`; nunca o conteúdo das conversas nem as tabelas de conta (`server/opencode-usage.js`). O banco guarda só o **total de cada sessão** (não por mensagem), então o consumo **por dia é estimado**: o total é repartido pelos dias das respostas, proporcional ao número de respostas de cada dia (a soma de todos os dias é exata, e uma sessão de um dia só é exata). A Home avisa. io = entrada + saída + raciocínio (HIPÓTESE: o OpenCode guarda o raciocínio separado da saída); cache = leitura + escrita. Sessões-filhas contam todas (se o pai já embutisse os filhos haveria contagem em dobro; não deu para conferir). Sem `node:sqlite` (Node anterior ao 22.5) ou sem o banco, o OpenCode simplesmente não aparece. A leitura abre o banco WAL de outro programa e pode criar o arquivo `-shm` ao lado dele, sem alterar o banco. Para acrescentar outra IA: um leitor em `extraSources` do `createProviderActivity`, escrito **depois de ver os arquivos reais da CLI** (o formato de cada CLI só se confirma com ela instalada e usada uma vez).
+
+## Verificado no Windows (25/11/2026)
+
+Com cmd.exe, node-pty, icacls e PowerShell reais (os testes automatizados repetem o que dá para repetir, só no Windows):
+
+- **ACL da pasta dos arquivos dos terminais** (`restrictDir`): depois dela só o usuário tem acesso, o `mcp.json` criado depois herda a restrição e o FORGE lê e apaga normalmente. Sem ela, a pasta temporária dava permissão de modificação a outros grupos (ex.: `CodexSandboxUsers`).
+- **Wrapper `.cmd` do npm:** os argumentos do FORGE (inclusive `{'a'='b'}`, vírgulas, parênteses e um caminho com espaço dentro de um argumento) chegam intactos. **Defeito encontrado e corrigido:** com espaço no caminho do `.cmd` (perfil `C:UsersJoe Smith`) o `cmd /s` cortava o caminho e a CLI nem abria; agora a linha vai entre aspas externas e com `/v:off` (`server/win-cmdline.js`), e `& | < > ^ ( ) !` chegam como texto. Recusa: `%`, aspas e controles (e, no caminho do wrapper, também `! & | < > ^`).
+- **Hook do Gemini:** a linha `& "node" "hook" "papel"` funciona no PowerShell 5.1 (com `node.exe` em `C:/Program Files/` e pasta com espaço) e falha com erro de sintaxe no `cmd.exe` (o hook simplesmente não roda e o terminal abre normalmente). Qual shell o Gemini CLI usa não foi verificado.
+- **Codex 0.172.0 real**, pelo código do FORGE: abre pelo wrapper do npm, aceita todos os argumentos sem aviso de configuração, não faz nenhuma pergunta (atualização, migração, confiança) e **conecta ao Maestro em cerca de 2 s**, sem enviar pedido ao modelo.
+- **Não verificado:** Gemini, Cursor, Copilot, Antigravity, Kimi, Kiro, Grok e OpenCode (CLIs não instaladas); PowerShell 7.
