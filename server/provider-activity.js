@@ -269,6 +269,10 @@ export function createProviderActivity({ claudeDirs = () => [claudeConfigDir()],
     const w = waiters; waiters = []; for (const r of w) r();
     return true;
   }
+  // Os passos da varredura usam timer `unref` (não seguram o processo), EXCETO enquanto alguém espera `idle()`: sem um timer ativo, o Node 22 encerra o loop com a promessa
+  // pendente (era o que derrubava todo o provider-activity.test.mjs no CI, que usa Node 22; no Node 26 passava).
+  let pumpTimer = null;
+  const schedule = (fn, ms) => { pumpTimer = setTimeout(fn, ms); if (!waiters.length) pumpTimer.unref?.(); };
   function pump() {
     if (pumping) return; pumping = true;
     const tick = () => {
@@ -281,9 +285,9 @@ export function createProviderActivity({ claudeDirs = () => [claudeConfigDir()],
         } while (Date.now() - t0 < tickMs && queue.size);
       } catch { /* uma falha não derruba a varredura */ }
       if (finishIfIdle()) return;
-      const h = setTimeout(tick, 1); h.unref?.();
+      schedule(tick, 1);
     };
-    const h = setTimeout(tick, 0); h.unref?.();
+    schedule(tick, 0);
   }
 
   /** Parâmetro `days` já validado: 0 = tudo; N = hoje e os N-1 dias anteriores. */
@@ -311,7 +315,7 @@ export function createProviderActivity({ claudeDirs = () => [claudeConfigDir()],
     return { generatedAt: new Date(t).toISOString(), sinceDay: first, scanning: !initialDone, ...(partial ? { partial: true } : {}), providers };
   }
 
-  return { view, scanning: () => !initialDone, idle: () => (pumping ? new Promise((r) => waiters.push(r)) : Promise.resolve()) };
+  return { view, scanning: () => !initialDone, idle: () => { if (!pumping) return Promise.resolve(); pumpTimer?.ref?.(); return new Promise((r) => waiters.push(r)); } };
 }
 
 /** `?days=` -> 30 (padrão), 0 (tudo) ou N inteiro positivo até 3660; qualquer outro valor = null (a rota responde 400). */
