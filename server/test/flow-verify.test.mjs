@@ -20,7 +20,7 @@ const pidFile = path.join(tmp, 'hang.pid');
 const repo = path.join(tmp, 'repo'); fs.mkdirSync(repo);
 const SCRIPTS = {
   'ok.js': "console.log('tudo certo'); console.log('cwd=' + process.cwd());",
-  'fail.js': "for (let i = 1; i <= 800; i++) console.log('linha ' + i); console.error('ERRO FINAL: quebrou aqui'); process.exit(3);",
+  'fail.js': "for (let i = 1; i <= 800; i++) console.log('linha ' + i); console.error('ERRO FINAL: quebrou aqui'); process.exitCode = 3;", // exitCode, não exit(): no Linux o exit() corta o stdout ainda pendente no pipe
   'hang.js': "require('fs').writeFileSync(process.argv[2], String(process.pid)); console.log('iniciou'); setInterval(() => {}, 1000);",
   'big.js': "const chunk = 'x'.repeat(1024) + '\\n'; setInterval(() => { for (let i = 0; i < 64; i++) process.stdout.write(chunk); }, 1); setTimeout(() => process.stdout.write('NUNCA-CHEGA'), 60000);",
   'env.js': "console.log('seg=' + process.env.FORGE_TEST_TOKEN + ' ci=' + process.env.CI); console.log('token=abcdef123456 http://u:p4ss@host/x');",
