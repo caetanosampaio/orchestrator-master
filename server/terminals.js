@@ -27,6 +27,7 @@ import os from 'node:os';
 const plannerBlock = (prov) => (prov.capabilities?.readOnly === false ? `${prov.label} não garante somente leitura: o planejador não pode usar esta IA.` : prov.capabilities?.planner === false ? `${prov.label} ainda não abre o planejador de missão: use o Claude Code ou o Codex CLI.` : null);
 import { resolveLegacyAccountId } from './account-compat.js';
 import { cleanLine } from './harness.js';
+import { restrictDir } from './maestro.js';
 
 const ID_RE = /^term_[0-9a-f]{8}$/, REC_RE = /^ses_[0-9a-f]{8}$/, WT_ID_RE = /^wt_[0-9a-f]{8}$/, UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const SWEEP_MS = 2000; // varredura dos processos retidos (lingering): UM temporizador central, só existe enquanto há retidos
@@ -63,7 +64,7 @@ export const MAX_TEAM_INSTRUCTION = 1500;
  * `ptyLib`, `resolveCommand(s)`, `track` e `worktrees` só são injetados nos testes/boot; o padrão é o node-pty real e a CLI do provedor no PATH. `provider` é o PADRÃO (panes e registros sem o campo).
  * `findTemplate(id)`: o time (salvo ou pronto) com esse id, ou null (o boot liga team-templates.js findTeam). Sem ele, nenhum `templateId` é aceito.
  */
-export function createTerminalManager({ db, ptyLib = null, provider = getProvider(), loadouts = null, agentStatus = null, resolveCommand = provider.resolve, resolveCommands = {}, trustFolders = null, autoFullAccess = null, track = null, worktrees = null, maxSessions = MAX_SESSIONS, now = store.now, uid = store.uid, killTree = killTreeSync, waitFor = waitGone, usage = null, defaults = null, newSessionId = randomUUID, mcp = null, inspectConfig = inspectProjectConfig, persist = null, isChildAlive = null, transcriptExists = null, pidIsAlive = pidAlive, maxRecords = MAX_RECORDS, sweepMs = SWEEP_MS, setTimer = setInterval, clearTimer = clearInterval, onEnd = null, accounts = null, statusLine = null, findTemplate = null, paneFilesDir = null, hookNode = process.execPath, homeDir = os.homedir() } = {}) {
+export function createTerminalManager({ db, ptyLib = null, provider = getProvider(), loadouts = null, agentStatus = null, resolveCommand = provider.resolve, resolveCommands = {}, trustFolders = null, autoFullAccess = null, track = null, worktrees = null, maxSessions = MAX_SESSIONS, now = store.now, uid = store.uid, killTree = killTreeSync, waitFor = waitGone, usage = null, defaults = null, newSessionId = randomUUID, mcp = null, inspectConfig = inspectProjectConfig, persist = null, isChildAlive = null, transcriptExists = null, pidIsAlive = pidAlive, maxRecords = MAX_RECORDS, sweepMs = SWEEP_MS, setTimer = setInterval, clearTimer = clearInterval, onEnd = null, accounts = null, statusLine = null, findTemplate = null, paneFilesDir = null, lockDir = restrictDir, hookNode = process.execPath, homeDir = os.homedir() } = {}) {
   // Provedor de cada pane: o padrão do gerenciador ou o registrado no pane/registro (id desconhecido cai no padrão: nunca lança numa leitura).
   const provOf = (id) => (id === undefined || id === null || id === provider.id ? provider : isProvider(id) ? getProvider(id) : provider);
   const cmdOf = (p) => (p === provider ? resolveCommand() : (resolveCommands[p.id] ?? p.resolve)());
@@ -127,8 +128,9 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
     return spec.env(process.env, accounts && typeof accountId === 'string' ? accounts.configDirOf(accountId) ?? null : null);
   }
   const revokeMcp = (id) => { try { mcp?.revoke?.(id); } catch { /* informativo */ } };
-  // Arquivos do pane (providers/*.js paneFiles, hoje o Gemini: padrões do sistema com o MCP do FORGE e o papel): uma pasta só do terminal, 0700/0600, apagada quando ele acaba.
-  // Nunca guardam o token (ele vai no ambiente). Na partida não há terminal vivo: sobras de uma execução anterior que caiu são apagadas.
+  // Arquivos do pane (providers/*.js paneFiles: Gemini, Copilot): uma pasta só do terminal, 0700/0600, apagada quando ele acaba. O Gemini não grava o token (vai no ambiente);
+  // o Copilot SIM (mcp.json do --additional-mcp-config). No Windows o `mode` não vale: a pasta base recebe a ACL só do usuário (lockDir, a mesma da pasta mcp/ do Maestro)
+  // antes do primeiro arquivo. Na partida não há terminal vivo: sobras de uma execução anterior que caiu são apagadas.
   const paneDirOf = (id) => (paneFilesDir && /^term_[A-Za-z0-9]{1,40}$/.test(String(id)) ? path.join(paneFilesDir, id) : null);
   const envOf = (out) => (out?.env && typeof out.env === 'object' ? Object.fromEntries(Object.entries(out.env).filter(([k, v]) => /^[A-Z][A-Z0-9_]{0,63}$/.test(k) && typeof v === 'string')) : {});
   const removePaneFiles = (id) => { const d = paneDirOf(id); if (d) { try { fs.rmSync(d, { recursive: true, force: true }); } catch { /* informativo */ } } };
@@ -137,6 +139,7 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
    * Preparo do provedor (prepare: ex. a entrada global do Cursor) + arquivos do pane, e o ambiente extra. Qualquer falha = sem a coordenação (o pane abre igual e o Maestro o trata
    * como livre). Ambiente sem arquivos (ex.: o endereço do MCP do Cursor) não precisa da pasta do pane.
    */
+  let paneDirLocked = false;
   function writePaneFiles(prov, id, { prompt, mcp: mcpArg }) {
     if (typeof prov.paneFiles !== 'function') return {};
     const done = (out) => ({ env: envOf(out), args: Array.isArray(out?.args) ? out.args.filter((a) => typeof a === 'string' && a && !/[\u0000-\u001f]/.test(a)) : [] });
@@ -147,6 +150,12 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
       const files = out.files && typeof out.files === 'object' ? out.files : {};
       if (!Object.keys(files).length) return done(out);
       if (!d) return {}; // há arquivos a gravar, mas sem pasta de arquivos do pane (servidor sem paneFilesDir): sem a coordenação
+      // melhor esforço, como no Maestro; mas uma falha (ou a pasta apagada depois) faz tentar de novo no próximo pane, e fica registrada
+      if (!paneDirLocked || !fs.existsSync(paneFilesDir)) {
+        fs.mkdirSync(paneFilesDir, { recursive: true, mode: 0o700 });
+        paneDirLocked = lockDir(paneFilesDir) !== false;
+        if (!paneDirLocked) { try { store.log('terminal', 'Não foi possível restringir a pasta dos arquivos dos terminais ao usuário atual (ACL): os arquivos seguem com a permissão herdada.', { dir: paneFilesDir }); } catch { /* informativo */ } }
+      }
       fs.mkdirSync(d, { recursive: true, mode: 0o700 });
       for (const [name, content] of Object.entries(files)) { if (!/^[a-z0-9._-]{1,40}$/i.test(name) || typeof content !== 'string') throw new Error('arquivo inválido'); fs.writeFileSync(path.join(d, name), content, { mode: 0o600 }); }
       return done(out);
@@ -540,11 +549,12 @@ export function createTerminalManager({ db, ptyLib = null, provider = getProvide
     const { ws, wt } = first;
     // A1: na retomada a configuração executável do diretório EFETIVO é sempre inspecionada, com ou sem worktree. Só o worktree recém-criado (criação com `isolate`) é garantidamente
     // limpo; um worktree já usado pode ter arquivos NÃO versionados que o agente gravou (.claude/settings.json, .mcp.json…) e que o próximo `claude` executaria.
-    if (acknowledgeProjectConfig !== true) {
-      const pc = await inspectConfig(first.cwd);
-      if (pc.length) return fail(409, `Este espaço de trabalho tem configuração do Claude Code que executa comandos e não está revisada no Git: ${pc.map((f) => `${f.path} (${f.why})`).join('; ')}. Confirme só se foi você quem a escreveu.`, { code: 'project_config_unreviewed', files: pc });
-    }
+    // A inspeção usa os caminhos da IA DO REGISTRO (.gemini, opencode.json, .kiro…): com os padrões do Claude, reabrir um pane de outra IA carregava a configuração dela sem confirmação.
     const prov = provOf(rec.provider);
+    if (acknowledgeProjectConfig !== true) {
+      const pc = await inspectConfig(first.cwd, prov.projectConfig);
+      if (pc.length) return fail(409, `Este espaço de trabalho tem configuração do ${prov.label} que executa comandos e não está revisada no Git: ${pc.map((f) => `${f.path} (${f.why})`).join('; ')}. Confirme só se foi você quem a escreveu.`, { code: 'project_config_unreviewed', files: pc });
+    }
     const cmd = cmdOf(prov); if (!cmd) return fail(409, prov.notFoundMessage ?? `${prov.label} não foi encontrado no PATH.`);
     const pty = ptyLib ?? loadPty(); if (!pty) return fail(503, 'O módulo de terminal (node-pty) não está disponível neste ambiente.');
     // depois de qualquer await (a inspeção acima): confere TUDO de novo, de forma síncrona, imediatamente antes de abrir o processo

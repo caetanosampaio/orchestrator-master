@@ -108,10 +108,10 @@ function world(over = {}) {
   const db = { settings: { activeWorkspaceId: 'ws1' }, workspaces: [{ id: 'ws1', name: 'W', path: ws }], worktrees: [], topics: [] };
   const mcp = { serverName: 'forge_ab12cd', issue: (a) => { issued.push(a); return a.file === false ? { token: 'e'.repeat(48), url: 'http://127.0.0.1:4999/mcp' } : { configPath: `/tmp/${a.terminalId}.json` }; }, revoke() {} }; // como o maestro.issue real
   const fake = (id) => () => ({ file: `/fake/${id}`, args: [], viaShell: false });
-  const mgr = T.createTerminalManager({ db, ptyLib: lib, resolveCommand: fake('claude'), resolveCommands: Object.fromEntries(['codex', ...NEW].map((id) => [id, fake(id)])),
+  const mk = () => T.createTerminalManager({ db, ptyLib: lib, resolveCommand: fake('claude'), resolveCommands: Object.fromEntries(['codex', ...NEW].map((id) => [id, fake(id)])),
     killTree: () => {}, waitFor: () => true, newSessionId: () => `00000000-0000-4000-8000-${String(++n).padStart(12, '0')}`, mcp, track: () => ({ release() {} }),
     inspectConfig: async (dir, spec) => { inspected.push(spec); return []; }, sweepMs: 0, usage: { read: () => ({ total: 5 }), has: () => true, forget() {} }, persist: () => {}, ...over });
-  return { spawned, db, mgr, issued, inspected };
+  return { spawned, db, mgr: mk(), mk, issued, inspected }; // mk: outro gerente sobre o MESMO banco (simula o servidor reiniciado)
 }
 
 test('terminais: OpenCode e Cursor abrem como terminal livre, com os argumentos deles, SEM credencial do Maestro, sem papel e sem token no ambiente', async () => {
@@ -271,6 +271,45 @@ test('terminais: o pane do Gemini recebe a credencial só no ambiente e os arqui
   p.exit(0); assert.ok(!fs.existsSync(pd), 'pasta do pane apagada no fim');
   const c = await w.mgr.create({ role: 'builder', provider: 'claude' }); assert.equal(c.ok, true);
   assert.deepEqual(fs.readdirSync(dir), [], 'o Claude não ganha pasta de arquivos do pane');
+});
+
+test('reabrir um terminal de outra IA inspeciona a configuração de projeto DELA (não só a do Claude) e recusa sem confirmação; a mensagem cita a IA certa', async () => {
+  for (const id of ['gemini', 'opencode']) { // (o Cursor fica fora: o preparo dele grava no ~/.cursor; Kiro e Copilot são do more-providers)
+    let found = [];
+    const w = world({ inspectConfig: async (dir, spec) => { w.inspected.push(spec); return found; } });
+    const r = await w.mgr.create({ role: 'builder', provider: id }); assert.equal(r.ok, true, `${id}: ${r.error}`);
+    w.mgr.killAllSync(); w.mgr = w.mk(); // o servidor parou com o terminal aberto: o registro fica interrompido (reabrível)
+    w.inspected.length = 0; found = [{ path: '.x', why: 'tem arquivos não versionados' }];
+    const re = await w.mgr.resume({ recordId: r.session.recordId, reopen: true });
+    assert.equal(re.status, 409, `${id}: ${re.error}`); assert.equal(re.code, 'project_config_unreviewed');
+    assert.deepEqual(w.inspected, [P.getProvider(id).projectConfig], `${id}: inspeciona com os caminhos dele`);
+    assert.ok(re.error.includes(P.getProvider(id).label), `${id}: ${re.error}`); assert.equal(w.spawned.length, 1, `${id}: nada aberto`);
+    found = [];
+    const ok = await w.mgr.resume({ recordId: r.session.recordId, reopen: true }); assert.equal(ok.status, 201, `${id}: ${ok.error}`);
+  }
+});
+
+test('arquivos do pane: a pasta base recebe a ACL só do usuário UMA vez, antes do primeiro arquivo (o mcp.json do Copilot leva o token)', async () => {
+  const dir = path.join(fs.mkdtempSync(path.join(tmp, 'pane-lock-')), 'pane-files'), locked = [];
+  const w = world({ paneFilesDir: dir, hookNode: '/usr/bin/node', lockDir: (d) => { locked.push([d, fs.existsSync(d), fs.existsSync(d) ? fs.readdirSync(d).length : -1]); return true; } });
+  for (let i = 0; i < 2; i++) { const r = await w.mgr.create({ role: 'builder', provider: 'gemini' }); assert.equal(r.ok, true, r.error); }
+  assert.equal(fs.readdirSync(dir).length, 2, 'os dois panes gravaram arquivos');
+  assert.deepEqual(locked, [[dir, true, 0]], 'uma vez, com a pasta criada e ainda vazia');
+  // a pasta base apagada com o servidor rodando: recriada e restringida de novo
+  fs.rmSync(dir, { recursive: true, force: true });
+  const r3 = await w.mgr.create({ role: 'builder', provider: 'gemini' }); assert.equal(r3.ok, true, r3.error);
+  assert.equal(locked.length, 2, 'pasta recriada = nova restrição'); assert.equal(locked[1][2], 0);
+  // falha da restrição não impede o terminal (melhor esforço, como a pasta mcp/ do Maestro), os arquivos são gravados e o próximo pane tenta de novo
+  const d2 = path.join(fs.mkdtempSync(path.join(tmp, 'pane-lock-')), 'p'); let tries = 0;
+  const w2 = world({ paneFilesDir: d2, hookNode: '/usr/bin/node', lockDir: () => { tries++; return false; } });
+  const r2 = await w2.mgr.create({ role: 'builder', provider: 'gemini' }); assert.equal(r2.ok, true, r2.error);
+  assert.ok(fs.existsSync(path.join(d2, r2.session.id, 'settings.json')), 'arquivos do pane gravados mesmo sem a ACL');
+  assert.equal((await w2.mgr.create({ role: 'builder', provider: 'gemini' })).ok, true); assert.equal(tries, 2, 'falhou = tenta de novo no próximo pane');
+  // restrição que LANÇA: o pane abre sem a coordenação (sem arquivos), nunca com os arquivos fora da pasta protegida
+  const d4 = path.join(fs.mkdtempSync(path.join(tmp, 'pane-lock-')), 'p');
+  const w4 = world({ paneFilesDir: d4, hookNode: '/usr/bin/node', lockDir: () => { throw new Error('icacls'); } });
+  const r4 = await w4.mgr.create({ role: 'builder', provider: 'gemini' }); assert.equal(r4.ok, true, r4.error);
+  assert.ok(!fs.existsSync(path.join(d4, r4.session.id)), 'sem pasta do pane'); assert.equal(w4.spawned[0].opts.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH, undefined, 'sem a coordenação');
 });
 
 test('Cursor: a entrada forge-maestro no ~/.cursor/mcp.json — criada sem porta nem token, o resto preservado, cópia de segurança, nada gravado sem mudança; JSON inválido ou link não são tocados', async () => {

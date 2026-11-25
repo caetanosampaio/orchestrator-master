@@ -79,7 +79,7 @@ if (!process.env.ORCH_DATA_DIR) for (const name of ['history', 'loadouts']) { co
 const loadoutsDir = process.env.ORCH_DATA_DIR ? path.join(store.dataDir, 'loadouts') : path.join(devHome, 'loadouts');
 // Estado real do agente (running/waiting/completed/error): hooks do Claude Code gravam eventos aqui, fora do workspace (agent-status.js). Sem caminho seguro, os hooks não são registrados e a tela usa a leitura pela saída.
 const statusDir = process.env.ORCH_DATA_DIR ? path.join(store.dataDir, 'agent-status') : path.join(devHome, 'agent-status');
-const paneFilesDir = process.env.ORCH_DATA_DIR ? path.join(store.dataDir, 'pane-files') : path.join(devHome, 'pane-files'); // arquivos por terminal (padrões do Gemini com o MCP e o papel): sem token, apagados no fim
+const paneFilesDir = process.env.ORCH_DATA_DIR ? path.join(store.dataDir, 'pane-files') : path.join(devHome, 'pane-files'); // arquivos por terminal (Gemini: padrões com o MCP e o papel, sem token; Copilot: mcp.json COM o token do pane): pasta com ACL só do usuário, apagados no fim
 const agentStatus = createAgentStatus({ dir: statusDir });
 const loadouts = createLoadouts({ db, dir: loadoutsDir, hooks: hooksJson({ node: process.execPath, script: fileURLToPath(new URL('./agent-status-hook.mjs', import.meta.url)), dir: statusDir }) });
 // Contas (accounts.js, modelo v2): toda conta é um login de algum provider (a do computador ou uma pasta isolada). Testes que injetam a sonda e não injetam `accountsCli` rodam SEM CLI (nunca chamam a real).
