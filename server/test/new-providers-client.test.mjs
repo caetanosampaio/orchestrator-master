@@ -8,7 +8,7 @@ import os from 'node:os';
 
 process.env.ORCH_DATA_DIR ??= fs.mkdtempSync(path.join(os.tmpdir(), 'orch-npc-'));
 const { providerSummary, coordinating, providerOptionLabel } = await import('../../client/src/env-view.js');
-const { plannedAis, aiShortName } = await import('../../client/src/provider-catalog.js');
+const { plannedAis, aiShortName, catalogById } = await import('../../client/src/provider-catalog.js');
 const { takesSkills } = await import('../../client/src/squads.js');
 const { prereqIssues } = await import('../../client/src/prereqs.js');
 const { systemStatus } = await import('../../client/src/system-status.js');
@@ -51,6 +51,7 @@ test('"Para ligar" não repete IA que o servidor já integra', () => {
   const after = plannedAis(['claude', 'codex', 'gemini', 'opencode', 'cursor']).map((a) => a.id);
   assert.ok(!after.includes('gemini') && !after.includes('opencode') && !after.includes('cursor')); assert.ok(after.includes('kimi'));
   assert.deepEqual(plannedAis('lixo').map((a) => a.id), ids);
+  assert.equal(catalogById('muse'), null, 'a Muse (Meta) não tem CLI: saiu do FORGE');
 });
 
 test('pré-requisitos: só Gemini (ou outra IA nova) instalada já é uma IA, e o aviso de login (das contas do FORGE) não vale para ela', () => {

@@ -29,7 +29,6 @@ export const METALS = Object.freeze({
   opencode: Object.freeze({ name: 'Bronze', base: '#5c4119', mid: '#a8813e', hi: '#e8c98a' }),
   kiro: Object.freeze({ name: 'Ouro rosé', base: '#7a4a45', mid: '#d48f86', hi: '#ffd6cf' }),
   antigravity: Object.freeze({ name: 'Alumínio', base: '#5b6670', mid: '#b3bec8', hi: '#f4f8fb' }),
-  muse: Object.freeze({ name: 'Índio', base: '#2d2f6b', mid: '#5f62c4', hi: '#b9bbff' }),
 });
 export const IRON = Object.freeze({ name: 'Ferro', base: '#3a3d44', mid: '#7b818c', hi: '#c3c8d0' });
 export const metalOf = (id) => METALS[id] ?? IRON;

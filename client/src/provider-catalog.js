@@ -4,7 +4,7 @@ const ai = (id, label, color, extra = {}) => Object.freeze({ id, label, color, i
 export const CATALOG = Object.freeze([
   ai('claude', 'Claude', '#e8603a', { integrated: true, full: 'Claude Code' }),
   ai('codex', 'Codex', '#3fe0bd', { integrated: true, full: 'Codex CLI' }),
-  ai('antigravity', 'Antigravity', '#38aaea'), ai('gemini', 'Gemini', '#3b6fe6'), ai('muse', 'Muse', '#3535d8'),
+  ai('antigravity', 'Antigravity', '#38aaea'), ai('gemini', 'Gemini', '#3b6fe6'),
   ai('kimi', 'Kimi', '#6f48e0'), ai('kiro', 'Kiro', '#a448dc'), ai('cursor', 'Cursor', '#7490ad'),
   ai('copilot', 'Copilot', '#9580b0'), ai('grok', 'Grok', '#a98f7a'), ai('opencode', 'OpenCode', '#80b295'),
 ]);
