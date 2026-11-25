@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'orch-ratelim-')));
 process.env.ORCH_DATA_DIR = path.join(root, 'data');
+process.env.CODEX_HOME = path.join(root, 'codex-home'); // terminais do Codex simulados: nunca o ~/.codex real (o models_cache.json lido ao abrir o pane)
 const RL = await import('../rate-limits.js');
 const { createCodexRateLimitsReader, mapRateLimits } = await import('../codex-usage.js');
 const { claudeProvider } = await import('../providers/claude.js');

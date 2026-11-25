@@ -9,6 +9,7 @@ import path from 'node:path';
 
 const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'orch-flows-briefing-')));
 process.env.ORCH_DATA_DIR = path.join(root, 'data');
+process.env.CODEX_HOME = path.join(root, 'codex-home'); // terminais do Codex simulados: nunca o ~/.codex real (o models_cache.json lido ao abrir o pane)
 const { default: express } = await import('express');
 const store = await import('../store.js');
 const F = await import('../flows.js');

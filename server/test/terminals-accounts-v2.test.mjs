@@ -17,6 +17,8 @@ after(() => { fs.rmSync(tmp, { recursive: true, force: true }); });
 const wsDir = path.join(tmp, 'ws'); fs.mkdirSync(wsDir);
 const UUID = (i) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`;
 const withEnv = async (vars, fn) => { const old = {}; for (const [k, v] of Object.entries(vars)) { old[k] = process.env[k]; if (v === undefined) delete process.env[k]; else process.env[k] = v; } try { return await fn(); } finally { for (const [k, v] of Object.entries(old)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; } } };
+// conta do computador do Codex SEM CODEX_HOME: a pasta padrão sai da pasta pessoal, que aponta para um temporário (o models_cache.json lido ao abrir o pane nunca é o do ~/.codex real)
+const FAKE_HOME = { HOME: path.join(tmp, 'home'), USERPROFILE: path.join(tmp, 'home') };
 
 let n = 0, rowSeq = 0x200;
 /** Mundo de teste: contas reais (accounts.js) com as linhas inseridas direto no banco (com `unavailable: true` o create({ home: 'machine' }) exigiria a CLI). */
@@ -126,7 +128,7 @@ test('Codex exige conta do Codex: conta do Claude no pane Codex => account_provi
 });
 
 test('Codex: conta do computador não ganha CODEX_HOME; conta isolada recebe CODEX_HOME da pasta dela e perde OPENAI_API_KEY/CODEX_API_KEY/OPENAI_BASE_URL', async () => {
-  await withEnv({ CODEX_HOME: undefined, OPENAI_API_KEY: 'k-openai', CODEX_API_KEY: 'k-codex', OPENAI_BASE_URL: 'https://x.invalid' }, async () => {
+  await withEnv({ CODEX_HOME: undefined, ...FAKE_HOME, OPENAI_API_KEY: 'k-openai', CODEX_API_KEY: 'k-codex', OPENAI_BASE_URL: 'https://x.invalid' }, async () => {
     const w = world(); const m = w.row('codex', 'machine'); const iso = w.row('codex', 'forge', 'Isolada');
     let r = await w.mgr.create({ role: 'builder', provider: 'codex', accountId: m.id }); assert.equal(r.ok, true, r.error);
     let e = w.spawned[0].opts.env; assert.equal(e.CODEX_HOME, undefined, 'conta do computador: sem CODEX_HOME'); assert.equal(e.OPENAI_API_KEY, 'k-openai', 'a conta do computador mantém o ambiente de sempre');
@@ -154,7 +156,7 @@ test('sem módulo de contas: accountId é ignorado, sessão e registro com accou
 });
 
 test('registro antigo do CODEX (\'system\' ou sem campo) é reaberto na conta do computador do CODEX, nunca na do Claude; sem ela => account_missing', async () => {
-  await withEnv({ CODEX_HOME: undefined }, async () => {
+  await withEnv({ CODEX_HOME: undefined, ...FAKE_HOME }, async () => {
     const w = world(); const cl = w.row('claude', 'machine'); const cx = w.row('codex', 'machine');
     const base = { provider: 'codex', role: 'builder', workspaceId: 'ws', cwd: wsDir, state: 'interrupted', interruptedAt: '2026-01-01T00:00:00.000Z', endedAt: '2026-01-01T00:00:00.000Z', startedAt: '2026-01-01T00:00:00.000Z' };
     w.db.terminalSessions = [{ ...base, id: 'ses_aaaaaaaa', accountId: 'system', claudeSessionId: UUID(91) }, { ...base, id: 'ses_bbbbbbbb', claudeSessionId: UUID(92) }];

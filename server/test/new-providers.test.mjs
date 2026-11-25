@@ -8,6 +8,7 @@ import os from 'node:os';
 
 const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'orch-newprov-')));
 process.env.ORCH_DATA_DIR = path.join(tmp, 'data');
+process.env.CODEX_HOME = path.join(tmp, 'codex-home'); // terminais do Codex simulados: nunca o ~/.codex real (o models_cache.json lido ao abrir o pane)
 const P = await import('../providers/index.js');
 const { resolveOnPath, withoutClaudeEnv } = await import('../providers/cli-path.js');
 const { geminiProvider, geminiOscState } = await import('../providers/gemini.js');

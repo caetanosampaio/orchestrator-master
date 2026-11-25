@@ -9,6 +9,7 @@ import http from 'node:http';
 
 const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'orch-termtpl-')));
 process.env.ORCH_DATA_DIR = path.join(root, 'data');
+process.env.CODEX_HOME = path.join(root, 'codex-home'); // terminais do Codex simulados: nunca o ~/.codex real (o models_cache.json lido ao abrir o pane)
 after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
 
 const { default: express } = await import('express');

@@ -8,6 +8,7 @@ import os from 'node:os';
 
 const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'orch-reopen-')));
 process.env.ORCH_DATA_DIR = path.join(tmp, 'data');
+process.env.CODEX_HOME = path.join(tmp, 'codex-home'); // terminais do Codex simulados: nunca o ~/.codex real (o models_cache.json lido ao abrir o pane)
 const T = await import('../terminals.js');
 const H = await import('../../client/src/session-history.js');
 after(() => fs.rmSync(tmp, { recursive: true, force: true }));
