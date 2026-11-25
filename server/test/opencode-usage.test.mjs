@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
+import { fileURLToPath } from 'node:url';
 
 const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'orch-ocusage-')));
 process.env.ORCH_DATA_DIR = path.join(tmp, 'data');
@@ -172,5 +173,5 @@ test('provider-activity: o aviso "estimado" viaja do servidor ao cliente (provid
   const norm = H.normalizeActivity(JSON.parse(JSON.stringify(v)));
   assert.equal(norm.providers.find((p) => p.id === 'opencode').estimated, true); assert.equal('estimated' in norm.providers.find((p) => p.id === 'exato'), false);
   assert.deepEqual(H.estimatedLabels(norm, { start: day, end: day }), ['OpenCode']); assert.deepEqual(H.estimatedLabels(norm, { start: '2020-01-01', end: '2020-01-02' }), [], 'sem consumo na janela: sem aviso');
-  assert.match(fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname.replace(/^\//, '')), '..', '..', 'client', 'src', 'pages', 'Home.jsx'), 'utf8'), /estimatedLabels\(data, win\)/, 'a Home usa o aviso');
+  assert.match(fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'client', 'src', 'pages', 'Home.jsx'), 'utf8'), /estimatedLabels\(data, win\)/, 'a Home usa o aviso');
 });
