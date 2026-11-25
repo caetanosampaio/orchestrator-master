@@ -142,7 +142,7 @@ test('ambiente sem segredos, CI=1 e segredos ocultados na saída', async () => {
 });
 
 test('ambiente por LISTA PERMITIDA: variáveis fora da lista (URL com senha, NODE_OPTIONS, PAT) não chegam ao comando; PATH e a pasta temporária sim', async () => {
-  const set = { FORGE_TEST_CONN: 'postgres://u:senhaXYZ@h/db', FORGE_TEST_PAT: 'ghx_abc', NODE_OPTIONS: '--no-warnings', FORGE_TEST_WEBHOOK: 'https://hooks.exemplo/abc', JAVA_HOME: 'C:\\jdk-teste', ProgramW6432: 'C:\\Program Files' };
+  const set = { FORGE_TEST_CONN: 'postgres://u:senhaXYZ@h/db', FORGE_TEST_PAT: 'ghx_abc', NODE_OPTIONS: '--no-warnings', FORGE_TEST_WEBHOOK: 'https://hooks.exemplo/abc', JAVA_HOME: 'C:\\jdk-teste', ProgramW6432: 'C:\\Program Files', TMPDIR: os.tmpdir() }; // TMPDIR explícito: no Linux do CI nenhuma variável de pasta temporária vem definida
   const old = Object.fromEntries(Object.keys(set).map((k) => [k, process.env[k]]));
   Object.assign(process.env, set);
   try {

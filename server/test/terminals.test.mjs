@@ -141,7 +141,11 @@ test('rotas: criar (201), listar, SSE com reposição, entrada, redimensionar, e
 const freePort = () => new Promise((resolve) => { const s = net.createServer().listen(0, '127.0.0.1', () => { const { port } = s.address(); s.close(() => resolve(port)); }); });
 test('servidor real: criar terminal sem Origin é recusado (403); com Origin e sem workspace, 409 claro; a listagem funciona — nenhum processo é iniciado', async () => {
   const port = await freePort(), dir = fs.mkdtempSync(path.join(tmp, 'boot-')), INDEX = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'index.js');
-  const child = spawn(process.execPath, [INDEX], { env: { ...process.env, PORT: String(port), ORCH_DATA_DIR: dir }, stdio: 'ignore', windowsHide: true }); children.add(child);
+  // `claude` falso no início do PATH (nunca abre terminal aqui): a CLI ausente é conferida ANTES do espaço de trabalho, e no CI não há Claude Code instalado
+  const fakeBin = fs.mkdtempSync(path.join(tmp, 'fakebin-')), fakeClaude = path.join(fakeBin, process.platform === 'win32' ? 'claude.cmd' : 'claude');
+  fs.writeFileSync(fakeClaude, process.platform === 'win32' ? '@echo off\r\nexit /b 0\r\n' : '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  const pathKey = Object.keys(process.env).find((k) => k.toUpperCase() === 'PATH') ?? 'PATH';
+  const child = spawn(process.execPath, [INDEX], { env: { ...process.env, [pathKey]: `${fakeBin}${path.delimiter}${process.env[pathKey] ?? ''}`, PORT: String(port), ORCH_DATA_DIR: dir }, stdio: 'ignore', windowsHide: true }); children.add(child);
   const base = `http://127.0.0.1:${port}`; let up = false; for (let i = 0; i < 120 && !up; i++) { try { up = (await fetch(`${base}/api/terminals`)).status === 200; } catch { /* subindo */ } if (!up) await sleep(250); }
   assert.ok(up, 'o servidor subiu');
   const list = await (await fetch(`${base}/api/terminals`)).json(); assert.deepEqual([list.sessions, list.roles.map((r) => r.id)], [[], ['maestro', 'builder', 'reviewer', 'scout', 'planner']]); // planner: missões por briefing

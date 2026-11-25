@@ -8,10 +8,11 @@ import { execFileSync } from 'node:child_process';
 
 const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'orch-githard-')));
 process.env.ORCH_DATA_DIR = path.join(tmp, 'data');
-const { gitInfo, gitChanges } = await import('../git.js');
+// gitChanges saiu com o ciclo antigo de missões (00c2698): o git.js só expõe gitInfo, que continua rodando `git status` no workspace e precisa da mesma proteção.
+const { gitInfo } = await import('../git.js');
 after(() => { fs.rmSync(tmp, { recursive: true, force: true }); });
 
-test('gitInfo/gitChanges não executam core.fsmonitor do repositório (e o controle prova que o marcador seria criado sem a proteção)', async () => {
+test('gitInfo não executa core.fsmonitor do repositório (e o controle prova que o marcador seria criado sem a proteção)', async () => {
   const repo = path.join(tmp, 'repo'); fs.mkdirSync(repo);
   const marker = path.join(tmp, 'marcador-executado'), hook = path.join(tmp, 'hook.js');
   fs.writeFileSync(hook, `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'x'); process.stdout.write('');`);
@@ -21,8 +22,8 @@ test('gitInfo/gitChanges não executam core.fsmonitor do repositório (e o contr
   // controle: o git cru, sem a proteção, executa o comando (se a versão do Git não o fizer, o teste não prova nada e é marcado como tal)
   try { execFileSync('git', ['status', '--porcelain'], { cwd: repo, stdio: 'ignore' }); } catch { /* o comando pode falhar; o que importa é o marcador */ }
   const controlRan = fs.existsSync(marker); fs.rmSync(marker, { force: true });
-  const info = await gitInfo(repo); const ch = await gitChanges(repo);
+  const info = await gitInfo(repo);
   assert.equal(fs.existsSync(marker), false, 'o comando de core.fsmonitor NÃO pode ser executado pelo orquestrador');
-  assert.equal(info.isRepo, true); assert.equal(info.dirty, true); assert.deepEqual(ch.files.map((f) => f.path), ['a.txt']);
+  assert.equal(info.isRepo, true); assert.equal(info.dirty, true, 'o status continua funcionando: o arquivo novo deixa o repositório sujo');
   if (!controlRan) console.warn('[aviso] este Git não executou core.fsmonitor no controle: o teste só confirma o funcionamento normal.');
 });
