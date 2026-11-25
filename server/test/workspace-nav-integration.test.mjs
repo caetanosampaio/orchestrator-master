@@ -28,14 +28,14 @@ const mkWs = (name) => { const d = path.join(root, name); fs.mkdirSync(d); G(d, 
 const freePort = () => new Promise((resolve) => { const s = net.createServer().listen(0, '127.0.0.1', () => { const { port } = s.address(); s.close(() => resolve(port)); }); });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-let proc = null, origin = null, out = '', exited = null;
+let proc = null, origin = null, out = '', exited = null, exitInfo = null;
 async function boot() {
   const port = await freePort(); origin = `http://127.0.0.1:${port}`; out = '';
   const env = { ...process.env, PORT: String(port), ORCH_DATA_DIR: dataDir, CLAUDE_CONFIG_DIR: cfgDir, PATH: `${binDir}${path.delimiter}${process.env.PATH ?? process.env.Path ?? ''}` };
   delete env.CLAUDE_CODE_CHILD_SESSION;
   proc = spawn(process.execPath, [INDEX], { env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
   proc.stdout.on('data', (c) => { out += c; }); proc.stderr.on('data', (c) => { out += c; });
-  const p = proc; exited = new Promise((r) => p.on('exit', r));
+  exitInfo = null; const p = proc; p.on('exit', (code, sig) => { exitInfo = `código ${code}, sinal ${sig}`; }); exited = new Promise((r) => p.on('exit', r));
   for (let i = 0; i < 150 && !/FORGE API em/.test(out); i++) await Promise.race([sleep(100), exited]);
   assert.match(out, /FORGE API em/, out);
 }
@@ -46,7 +46,12 @@ async function stop() {
   await sleep(700); // deixa o disco ser gravado
   proc.kill(); await exited; proc = null; await sleep(400);
 }
-const api = (u, m = 'GET', b, headers = {}) => fetch(`${origin}${u}`, { method: m, headers: { 'content-type': 'application/json', origin, ...headers }, body: b === undefined ? undefined : JSON.stringify(b) });
+// Se o fetch falhar, a mensagem diz se o servidor filho caiu (código/sinal) e traz o fim da saída dele: sem isso só aparece "fetch failed" e a causa some.
+const api = async (u, m = 'GET', b, headers = {}) => {
+  try { return await fetch(`${origin}${u}`, { method: m, headers: { 'content-type': 'application/json', origin, ...headers }, body: b === undefined ? undefined : JSON.stringify(b) }); } catch (e) {
+    throw new Error(`${e.message} (${m} ${u}); servidor ${exitInfo ? `encerrou: ${exitInfo}` : 'ainda em execução'}; fim da saída: ${out.slice(-1500)}`, { cause: e });
+  }
+};
 const J = async (u, m, b) => { const r = await api(u, m, b); const text = await r.text(); let j = null; try { j = JSON.parse(text); } catch { /* sem corpo */ } return { status: r.status, j }; };
 const state = async () => (await api('/api/state')).json();
 const disk = () => JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
