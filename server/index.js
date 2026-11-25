@@ -41,6 +41,8 @@ import { apiGuard } from './origin-guard.js';
 import { trustClaudeFolder } from './trust.js';
 import { resolveAutonomous } from './maestro-default.js';
 import { strictProjectConfig } from './project-config.js';
+import { configureCodexCatalog } from './providers/codex.js';
+import { codexHomeDir } from './codex-usage.js';
 import { consumeApiTokenFromEnv, createTokenGuard } from './session-token.js';
 
 const apiToken = consumeApiTokenFromEnv(); // M2: lido e REMOVIDO de process.env antes de qualquer processo filho existir (ver session-token.js)
@@ -106,6 +108,8 @@ const conversations = createConversationStore({ dir: historyDir, db, configDirOf
 // Avisos ao abrir terminais: (1) "confiar nesta pasta?" do Claude Code e do Codex é respondido pelo FORGE (trust.js; o Codex recebe por argumento); (2) a confirmação "Abrir mesmo assim?" por configuração de projeto
 // não revisada no Git (project-config.js) é EXIGIDA por padrão (hooks, MCP e comandos do projeto não rodam sem o usuário confirmar). Para DESLIGAR a confirmação: ORCH_STRICT_PROJECT_CONFIG=0; para não gravar a confiança do Claude Code: ORCH_NO_TRUST=1. Testes ficam de fora.
 const inTest = Object.keys(testDeps).length > 0 || !!process.env.NODE_TEST_CONTEXT;
+// Modelos do Codex: a lista que o usuário escolhe vem do catálogo do próprio Codex (<CODEX_HOME>/models_cache.json). Só o servidor de verdade o lê; nos testes vale a lista de reserva.
+if (!inTest) configureCodexCatalog({ home: codexHomeDir() });
 const trustOptions = inTest ? {} : {
   ...(process.env.ORCH_NO_TRUST === '1' ? {} : { trustFolders: ({ provider, cwd, configDir }) => { if (provider === 'claude') trustClaudeFolder(cwd, { configDir }); } }),
   ...(strictProjectConfig() ? {} : { inspectConfig: async () => [] }),

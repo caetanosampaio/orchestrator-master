@@ -8,6 +8,7 @@ import os from 'node:os';
 
 const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'orch-codex-')));
 process.env.ORCH_DATA_DIR = path.join(tmp, 'data');
+process.env.CODEX_HOME = path.join(tmp, 'codex-home'); // terminais do Codex simulados: nunca o ~/.codex real (o models_cache.json lido ao abrir o pane)
 const P = await import('../providers/index.js');
 const { codexProvider, resolveCodex, MCP_TOKEN_ENV } = await import('../providers/codex.js');
 const T = await import('../terminals.js');
@@ -33,6 +34,7 @@ test('codex.paneArgs: sandbox e aprovação fixos, prompt em developer_instructi
     'developer_instructions="Voce e o CONSTRUTOR. Faca (rapido): ok."',
     `mcp_servers.${NAME}.url="${URL_}"`, `mcp_servers.${NAME}.bearer_token_env_var="${MCP_TOKEN_ENV}"`,
     `mcp_servers.${NAME}.default_tools_approval_mode="approve"`, `mcp_servers.${NAME}.startup_timeout_sec=20`,
+    'check_for_update_on_startup=false', 'notice.hide_rate_limit_model_nudge=true', // sem perguntas ao abrir (sem env: sem o mapa de migrações)
   ]);
   assert.ok(!a.some((x) => /--session-id|--mcp-config|--plugin-dir|--allowedTools|--append-system-prompt/.test(x)), 'nenhuma flag do Claude');
   // aspas dentro do prompt são escapadas como string TOML; wrapper .cmd (quote:false) vai sem aspas
@@ -212,4 +214,136 @@ test('estado do Codex: lido da sequência OSC 7501 do terminal (idle/working/blo
   assert.equal(state(), 'error', 'falha do turno (HTTP 4xx/5xx, resposta failed): o painel não fica em "executando"');
   feed('\x1b]7501;state=working:app=codex\x07');
   assert.equal(state(), 'running', 'um novo pedido depois do erro volta a executar');
+});
+
+// ---- Codex sem perguntas ao abrir (atualização, migração de modelo, troca perto do limite): terminais de time, missão e teste ninguém está olhando ----
+const { codexModelMigrations, codexQuietArgs } = await import('../providers/codex.js');
+const catalog = (dir, models) => { fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, 'models_cache.json'), JSON.stringify({ fetched_at: 'x', etag: 'e', client_version: '0.172.0', models })); return dir; };
+
+test('Codex sem perguntas: migrações lidas do models_cache.json da conta (o mesmo formato que a resposta manual grava); sem cache, só as chaves fixas', () => {
+  const home = catalog(path.join(tmp, 'codex-home-1'), [
+    { slug: 'gpt-5.6-sol', upgrade: { model: 'gpt-6.2-sol', migration_markdown: 'Meet…' } }, { slug: 'gpt-5.6-terra', upgrade: { model: 'gpt-6.1-terra' } },
+    { slug: 'gpt-6.2-sol', upgrade: null }, { slug: 'x"; calc', upgrade: { model: 'y' } }, { slug: 'a b', upgrade: { model: 'c' } }, { slug: 'ok-1', upgrade: { model: "z'1" } },
+    { slug: 'same', upgrade: { model: 'same' } }, { slug: 'gpt-5.6-sol', upgrade: { model: 'outro' } }, null, { upgrade: { model: 'sem-slug' } },
+  ]);
+  assert.deepEqual(codexModelMigrations(home), [['gpt-5.6-sol', 'gpt-6.2-sol'], ['gpt-5.6-terra', 'gpt-6.1-terra']], 'só pares válidos (sem aspas, espaço nem metacaractere), sem repetir o modelo de origem');
+  assert.deepEqual(codexQuietArgs({ codexHome: home }), ['-c', 'check_for_update_on_startup=false', '-c', 'notice.hide_rate_limit_model_nudge=true', '-c', "notice.model_migrations={'gpt-5.6-sol'='gpt-6.2-sol','gpt-5.6-terra'='gpt-6.1-terra'}"]);
+  assert.deepEqual(codexQuietArgs({ codexHome: path.join(tmp, 'nao-existe') }), ['-c', 'check_for_update_on_startup=false', '-c', 'notice.hide_rate_limit_model_nudge=true'], 'sem catálogo: sem o mapa (vale o que o usuário já respondeu)');
+  assert.deepEqual(codexQuietArgs({}), ['-c', 'check_for_update_on_startup=false', '-c', 'notice.hide_rate_limit_model_nudge=true']);
+  const bad = path.join(tmp, 'codex-home-bad'); fs.mkdirSync(bad); fs.writeFileSync(path.join(bad, 'models_cache.json'), '{ quebrado'); assert.deepEqual(codexModelMigrations(bad), [], 'ilegível: nunca lança');
+  const big = path.join(tmp, 'codex-home-big'); fs.mkdirSync(big); fs.writeFileSync(path.join(big, 'models_cache.json'), Buffer.alloc(8 * 1024 * 1024 + 1, 32)); assert.deepEqual(codexModelMigrations(big), [], 'grande demais: ignorado');
+  const many = catalog(path.join(tmp, 'codex-home-many'), Array.from({ length: 100 }, (_, i) => ({ slug: `m${i}`, upgrade: { model: `n${i}` } }))); assert.equal(codexModelMigrations(many).length, 32, 'teto de pares');
+});
+
+test('Codex sem perguntas: o catálogo é relido quando o Codex o atualiza; o pane recebe as chaves com o CODEX_HOME DELE; chamada direta sem env não lê o disco', () => {
+  const home = catalog(path.join(tmp, 'codex-home-2'), [{ slug: 'old-a', upgrade: { model: 'new-a' } }]);
+  assert.deepEqual(codexModelMigrations(home), [['old-a', 'new-a']]);
+  const f = path.join(home, 'models_cache.json'); fs.writeFileSync(f, JSON.stringify({ models: [{ slug: 'old-a', upgrade: { model: 'new-b' } }, { slug: 'old-c', upgrade: { model: 'new-c' } }] })); const t = new Date(Date.now() + 5000); fs.utimesSync(f, t, t);
+  assert.deepEqual(codexModelMigrations(home), [['old-a', 'new-b'], ['old-c', 'new-c']], 'cache atualizado: relido');
+  const a = codexProvider.paneArgs({ prompt: 'x', env: { CODEX_HOME: home } });
+  assert.deepEqual(a.slice(-6), ['-c', 'check_for_update_on_startup=false', '-c', 'notice.hide_rate_limit_model_nudge=true', '-c', "notice.model_migrations={'old-a'='new-b','old-c'='new-c'}"]);
+  assert.deepEqual(codexProvider.paneArgs({ prompt: 'x', quote: false, env: { CODEX_HOME: home } }).slice(-1), ["notice.model_migrations={'old-a'='new-b','old-c'='new-c'}"], 'no wrapper .cmd: só aspas simples, sem metacaractere do cmd.exe');
+  const direct = codexProvider.paneArgs({ prompt: 'x' }); assert.ok(direct.includes('check_for_update_on_startup=false')); assert.ok(!direct.some((x) => x.startsWith('notice.model_migrations')), 'sem env: nada lido do disco');
+  for (const v of [codexProvider.paneArgs({ prompt: 'x', fullAccess: true, env: { CODEX_HOME: home } }), codexProvider.paneArgs({ prompt: 'x', readOnly: true, env: { CODEX_HOME: home } })]) assert.ok(v.includes('check_for_update_on_startup=false'), 'vale com acesso total e somente leitura');
+});
+
+test('Codex sem perguntas: o mapa de migrações nunca estoura a linha do cmd.exe (teto de tamanho) e um link simbólico no lugar do catálogo não é seguido', () => {
+  const long = (p, i) => `${p}${String(i).padStart(2, '0')}-${'x'.repeat(58)}`; // 64 caracteres, o máximo aceito pela regex
+  const home = catalog(path.join(tmp, 'codex-home-long'), Array.from({ length: 64 }, (_, i) => ({ slug: long('a', i), upgrade: { model: long('b', i) } })));
+  const arg = codexQuietArgs({ codexHome: home }).at(-1);
+  assert.ok(arg.startsWith('notice.model_migrations={') && arg.length <= 1600, `argumento limitado (${arg.length} caracteres)`);
+  assert.ok(codexModelMigrations(home).length < 64, 'o que não cabe fica de fora');
+  const real = catalog(path.join(tmp, 'codex-home-real'), [{ slug: 'old-x', upgrade: { model: 'new-x' } }]), linkHome = path.join(tmp, 'codex-home-link'); fs.mkdirSync(linkHome);
+  let linked = true; try { fs.symlinkSync(path.join(real, 'models_cache.json'), path.join(linkHome, 'models_cache.json')); } catch { linked = false; } // Windows sem privilégio de link: pula
+  if (linked) assert.deepEqual(codexModelMigrations(linkHome), [], 'link simbólico: ignorado');
+});
+
+// ---- Lista de modelos e esforços do Codex = o catálogo do PRÓPRIO Codex (<CODEX_HOME>/models_cache.json); sem catálogo, a lista de reserva ----
+const { codexCatalogOptions, configureCodexCatalog, CODEX_OPTIONS } = await import('../providers/codex.js');
+const entry = (slug, extra = {}) => ({ slug, display_name: slug.toUpperCase(), visibility: 'list', priority: 5, supported_reasoning_levels: ['low', 'medium', 'high', 'xhigh', 'max'].map((effort) => ({ effort })), upgrade: null, ...extra });
+
+test('Codex: modelos e esforços vêm do catálogo do Codex (só os listados, na ordem dele, esforços que TODOS aceitam); sem catálogo, a lista de reserva', () => {
+  const home = catalog(path.join(tmp, 'codex-home-opt'), [
+    entry('gpt-6-luna', { priority: 8, supported_reasoning_levels: ['low', 'medium', 'high', 'xhigh', 'max'].map((effort) => ({ effort })) }),
+    entry('gpt-6.2-sol', { priority: 1, display_name: 'GPT-6.2-Sol', supported_reasoning_levels: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'].map((effort) => ({ effort })) }),
+    entry('gpt-reserve', { priority: 4, visibility: 'hide' }), entry('codex-auto-review', { priority: 12, visibility: 'hide' }),
+    entry('gpt-5.6-terra', { priority: 10, display_name: 'GPT-5.6 <b>"Terra"</b>', upgrade: { model: 'gpt-6.1-terra' } }),
+    entry('Mau Id'), entry('x"; calc', { priority: 0 }), null,
+  ]);
+  const o = codexCatalogOptions(home);
+  assert.deepEqual(o.models.map((m) => m.id), ['gpt-6.2-sol', 'gpt-6-luna', 'gpt-5.6-terra'], 'só os listados (sem hide), por prioridade, sem ids inválidos');
+  assert.deepEqual(o.models.map((m) => m.label), ['GPT-6.2-Sol', 'GPT-6-LUNA', 'GPT-5.6 b Terra b'], 'rótulo saneado (sem aspas nem tags; o que sobra vira espaço, sem juntar palavras)');
+  assert.deepEqual(o.efforts.map((e) => e.id), ['low', 'medium', 'high', 'xhigh', 'max'], '"ultra" não vale para todos os modelos: fica de fora, e nenhuma combinação é inválida');
+  assert.deepEqual(o.efforts.map((e) => e.label), ['Baixo', 'Médio', 'Alto', 'Muito alto', 'Máximo']);
+  assert.ok(Object.isFrozen(o.models) && Object.isFrozen(o.models[0]));
+  assert.equal(codexCatalogOptions(path.join(tmp, 'nao-existe')), null); assert.equal(codexCatalogOptions(null), null);
+  const onlyHidden = catalog(path.join(tmp, 'codex-home-hidden'), [entry('gpt-reserve', { visibility: 'hide' })]); assert.equal(codexCatalogOptions(onlyHidden), null, 'catálogo sem modelo listado: reserva');
+});
+
+test('Codex: o provedor serve o catálogo configurado pelo servidor e a reserva sem ele; validateChoice/providerOptions acompanham, e o catálogo atualizado vale sem reiniciar', () => {
+  assert.equal(codexProvider.options, CODEX_OPTIONS, 'sem configuração (testes, usos soltos): lista de reserva, nada lido do ~/.codex');
+  const home = catalog(path.join(tmp, 'codex-home-live'), [entry('gpt-6.2-sol', { priority: 1 }), entry('gpt-6-luna', { priority: 8 })]);
+  try {
+    configureCodexCatalog({ home });
+    assert.deepEqual(codexProvider.options.models.map((m) => m.id), ['gpt-6.2-sol', 'gpt-6-luna']);
+    assert.deepEqual(P.providerOptions().codex.models.map((m) => m.id), ['gpt-6.2-sol', 'gpt-6-luna'], 'a lista que vai para a interface');
+    assert.deepEqual(P.validateChoice('codex', { model: 'gpt-6-luna', effort: 'max' }), { value: { model: 'gpt-6-luna', effort: 'max' } });
+    assert.equal(P.validateChoice('codex', { model: 'gpt-5-codex' }).field, 'model', 'modelo que o Codex da conta já não oferece: recusado (nunca vai para a linha de comando)');
+    assert.deepEqual(P.tolerantChoice('codex', { model: 'gpt-5-codex', effort: 'high' }), { effort: 'high' }, 'registro antigo: o modelo que saiu é ignorado, o resto vale');
+    assert.equal(P.validateChoice('claude', { model: 'gpt-6-luna' }).field, 'model', 'o catálogo do Codex não vaza para as outras IAs');
+    const f = path.join(home, 'models_cache.json'); fs.writeFileSync(f, JSON.stringify({ models: [entry('gpt-7', { priority: 1 })] })); const t = new Date(Date.now() + 9000); fs.utimesSync(f, t, t);
+    assert.deepEqual(codexProvider.options.models.map((m) => m.id), ['gpt-7'], 'o Codex atualizou o catálogo: a lista muda sem reiniciar o FORGE');
+    fs.rmSync(f); assert.equal(codexProvider.options, CODEX_OPTIONS, 'catálogo sumiu: volta para a reserva');
+  } finally { configureCodexCatalog({}); }
+  assert.equal(codexProvider.options, CODEX_OPTIONS);
+});
+
+test('Codex: times prontos e tabela de tarefas não fixam modelo no Codex (ele muda por conta e por versão), e passam na validação com um catálogo e sem ele', async () => {
+  const { TEAM_PRESETS } = await import('../team-presets.js');
+  const { TASK_TYPES } = await import('../harness.js');
+  const codexSlots = TEAM_PRESETS.flatMap((p) => p.slots.filter((s) => s.provider === 'codex')); assert.ok(codexSlots.length >= 3);
+  assert.ok(codexSlots.every((s) => !('model' in s)), 'vaga Codex sem modelo fixo');
+  assert.ok(TASK_TYPES.filter((t) => t.provider === 'codex').every((t) => t.model === null));
+  const home = catalog(path.join(tmp, 'codex-home-presets'), [entry('gpt-6.2-sol', { priority: 1 }), entry('gpt-6-luna', { priority: 8 })]);
+  try {
+    configureCodexCatalog({ home });
+    for (const s of codexSlots) assert.equal(P.validateChoice('codex', s).error, undefined, `${s.role}: ${s.effort} vale no catálogo`);
+    for (const t of TASK_TYPES.filter((x) => x.provider === 'codex')) assert.equal(P.validateChoice('codex', { model: t.model, effort: t.effort }).error, undefined, t.id);
+  } finally { configureCodexCatalog({}); }
+});
+
+test('Codex: catálogo atípico não quebra a lista — modelo sem níveis fica fora da interseção, sem nenhum nível cai na reserva, rótulos e níveis estranhos são saneados', () => {
+  const lv = (...l) => l.map((effort) => ({ effort }));
+  const semNiveis = catalog(path.join(tmp, 'codex-home-nolevels'), [entry('gpt-a', { priority: 1, supported_reasoning_levels: undefined }), entry('gpt-b', { priority: 2, supported_reasoning_levels: lv('low', 'high') }), entry('gpt-c', { priority: 3, supported_reasoning_levels: lv('low', 'high', 'max') })]);
+  assert.deepEqual(codexCatalogOptions(semNiveis).efforts.map((e) => e.id), ['low', 'high'], 'o modelo sem níveis (mesmo o primeiro) não zera os esforços do Codex inteiro');
+  const nenhum = catalog(path.join(tmp, 'codex-home-nolevels2'), [entry('gpt-a', { supported_reasoning_levels: [] }), entry('gpt-b', { supported_reasoning_levels: 'low' })]);
+  assert.deepEqual(codexCatalogOptions(nenhum).efforts, CODEX_OPTIONS.efforts, 'nenhum modelo informa níveis: esforços da lista de reserva');
+  assert.equal(codexCatalogOptions(nenhum).models.length, 2);
+  const disjuntos = catalog(path.join(tmp, 'codex-home-disjoint'), [entry('gpt-a', { supported_reasoning_levels: lv('low') }), entry('gpt-b', { supported_reasoning_levels: lv('high') })]);
+  assert.deepEqual(codexCatalogOptions(disjuntos).efforts, CODEX_OPTIONS.efforts, 'interseção vazia: reserva (nunca uma lista que recuse todo esforço)');
+  const estranho = catalog(path.join(tmp, 'codex-home-weird'), [entry('gpt-a', { display_name: 'GPT-5.5 (Terra) + Pro', supported_reasoning_levels: lv('1', '-s', 'true1', 'low', 'high', 'Max', 'medium;rm') }), entry('gpt-b', { display_name: 'Codex – Auto/Review', supported_reasoning_levels: lv('1', '-s', 'true1', 'low', 'high') }), entry('gpt-c', { display_name: '!!!' })]);
+  const o = codexCatalogOptions(estranho);
+  assert.deepEqual(o.models.map((m) => m.label), ['GPT-5.5 Terra Pro', 'Codex Auto Review', 'gpt-c'], 'sem espaços duplos; sem nome útil, o próprio id');
+  assert.deepEqual(o.efforts.map((e) => e.id), ['low', 'high'], 'níveis só com letra inicial e sem metacaractere: "1", "-s", "Max" e "medium;rm" nunca chegam à lista (nem viram número, booleano ou flag no -c)');
+});
+
+test('Codex: catálogo ilegível é lembrado (não reparseado a cada consulta), e um link simbólico no lugar dele é ignorado', () => {
+  const home = path.join(tmp, 'codex-home-badjson'); fs.mkdirSync(home); const f = path.join(home, 'models_cache.json'); fs.writeFileSync(f, '{"models": [' + 'x'.repeat(2000));
+  let reads = 0; const spy = { ...fs, readFileSync: (...a) => { reads++; return fs.readFileSync(...a); } };
+  assert.equal(codexCatalogOptions(home, { fsImpl: spy }), null); assert.equal(codexCatalogOptions(home, { fsImpl: spy }), null); assert.equal(codexCatalogOptions(home, { fsImpl: spy }), null);
+  assert.equal(reads, 1, 'lido e rejeitado UMA vez (o arquivo ruim fica na memória pela data e pelo tamanho)');
+  fs.writeFileSync(f, JSON.stringify({ models: [entry('gpt-ok')] })); const t = new Date(Date.now() + 20000); fs.utimesSync(f, t, t);
+  assert.deepEqual(codexCatalogOptions(home, { fsImpl: spy }).models.map((m) => m.id), ['gpt-ok'], 'arquivo corrigido: lido de novo'); assert.equal(reads, 2);
+});
+
+test('Tabela de tarefas: um modelo que o Codex deixou de oferecer não leva junto o esforço salvo (cada campo volta ao padrão sozinho)', async () => {
+  const { effectiveRow, TASK_TYPES } = await import('../harness.js');
+  const type = TASK_TYPES.find((t) => t.provider === 'codex'), home = catalog(path.join(tmp, 'codex-home-stale'), [entry('gpt-6.2-sol', { priority: 1 }), entry('gpt-6-luna', { priority: 8 })]);
+  try {
+    configureCodexCatalog({ home });
+    const stale = effectiveRow(type, { rows: { [type.id]: { provider: 'codex', model: 'gpt-5-codex', effort: 'max' } } });
+    assert.deepEqual([stale.model, stale.effort], [null, 'max'], 'o modelo que saiu volta ao padrão da CLI; o esforço salvo continua');
+    const badEffort = effectiveRow(type, { rows: { [type.id]: { provider: 'codex', model: 'gpt-6-luna', effort: 'ultra' } } });
+    assert.deepEqual([badEffort.model, badEffort.effort], ['gpt-6-luna', type.effort], 'esforço inexistente: só ele volta ao padrão da linha');
+  } finally { configureCodexCatalog({}); }
 });

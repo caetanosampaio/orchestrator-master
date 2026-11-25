@@ -37,6 +37,8 @@ export function Intro() {
 /** As opções de IA como botões com o mascote na cor de cada uma. */
 export const aiOptions = (data, labelOf) => data.providers.map((id) => ({ id, label: labelOf(id), icon: <span className="hz-pill-mascot" style={{ '--pm': providerColor(id) }}><PixelMascot size={12} /></span> }));
 const listOf = (opt, kind) => (opt?.[kind] ?? []).map((m) => ({ id: m.id, label: m.label ?? m.id }));
+// Modelo 'Padrão da CLI' (id null): para as IAs cuja linha não fixa modelo (o Codex: os modelos mudam por conta), a opção que volta a usar o padrão da própria CLI.
+const withCliDefault = (list, show) => (show ? [{ id: null, label: 'Padrão da CLI' }, ...list] : list);
 
 /** Editor de UMA linha (aberto ao clicar nela): cada ajuste numa linha (IA, modelo, quanto pensa, agente, skills), salvo na hora, com "Restaurar padrão". */
 export function RowEditor({ row, data, labelOf, onPatch, onReset, busy }) {
@@ -46,7 +48,7 @@ export function RowEditor({ row, data, labelOf, onPatch, onReset, busy }) {
     <EditPanel title={`Ajustar: ${row.label}`} hint="Cada mudança vale na hora e fica salva." onReset={onReset} resetDisabled={busy || !changed.length}
       footer={<span>{changed.length ? `Mudou em relação ao padrão: ${changed.join(', ')}.` : 'Está no padrão de fábrica.'}</span>}>
       <EditRow label="IA" hint="Quem faz este tipo de tarefa."><Pills label={`IA de ${row.label}`} value={e.provider} options={aiOptions(data, labelOf)} disabled={busy} onChange={(v) => onPatch({ provider: v })} /></EditRow>
-      <EditRow label="Modelo" hint="O modelo que roda a tarefa."><Pills label={`Modelo de ${row.label}`} value={e.model} options={listOf(opt, 'models')} disabled={busy} onChange={(v) => onPatch({ model: v })} /></EditRow>
+      <EditRow label="Modelo" hint="O modelo que roda a tarefa."><Pills label={`Modelo de ${row.label}`} value={e.model} options={withCliDefault(listOf(opt, 'models'), row.defaults?.model === null || e.model === null)} disabled={busy} onChange={(v) => onPatch({ model: v })} /></EditRow>
       <EditRow label="Quanto pensa" hint="Quanto o modelo raciocina antes de responder."><Steps label={`Esforço de ${row.label}`} value={e.effort} options={listOf(opt, 'efforts')} disabled={busy} onChange={(v) => onPatch({ effort: v })} /></EditRow>
       <EditRow label="Agente" hint="A instrução com que ele trabalha."><SelectBox label={`Agente de ${row.label}`} value={e.agentId ?? ''} disabled={busy} onChange={(v) => onPatch({ agentId: v || null })}><option value="">Padrão do papel</option>{data.agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</SelectBox></EditRow>
       <EditRow label="Skills" hint={`O Maestro as cita na tarefa (até ${data.limits.maxRowSkills}).`}><CheckChips label={`Skills de ${row.label}`} items={data.skills.map((s) => ({ id: s.id, title: s.description }))} selected={e.skills} max={data.limits.maxRowSkills} disabled={busy} onToggle={toggle} /></EditRow>

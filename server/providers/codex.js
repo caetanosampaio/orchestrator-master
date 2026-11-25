@@ -94,6 +94,106 @@ export function loginStatusCommand(spec) {
 }
 
 export const MCP_TOKEN_ENV = 'FORGE_MCP_TOKEN';
+
+// ---- Codex sem perguntas ao abrir (terminais de time, de missão e o "Testar integração": ninguém está olhando a tela) ----
+// Verificado no binário do codex-cli 0.172.0 (nomes das chaves) e no ~/.codex do usuário (o que a resposta manual grava), 25/11/2026:
+//   - `check_for_update_on_startup=false`: sem a pergunta "atualizar agora?" ao abrir (o Codex desatualizado parava nela);
+//   - `notice.model_migrations`: o mapa "modelo antigo -> novo" das migrações JÁ respondidas. A pergunta "usar o modelo novo ou o atual?" aparece quando o modelo em uso tem
+//     `upgrade` no catálogo e o par ainda não está nesse mapa; responder "manter o atual" grava o par (ex.: "gpt-5.6-terra" = "gpt-6.1-terra"). O FORGE passa os pares do
+//     catálogo que o próprio Codex mantém em <CODEX_HOME>/models_cache.json (atualizado pela internet; o embutido no binário tem outros destinos): equivale a responder
+//     "manter o atual" sem perguntar, e o modelo NUNCA é trocado pelo FORGE. Tabela inline (mesclada ao config, como a de `projects`), chaves em aspas simples (valem no cmd.exe);
+//   - `notice.hide_rate_limit_model_nudge=true`: sem a sugestão de trocar de modelo perto do limite (outra pergunta que travaria um terminal de time).
+// Limite: uma migração publicada depois da última atualização do models_cache.json ainda pode perguntar uma vez.
+const MIGRATION_SLUG_RE = /^[a-z0-9][a-z0-9._-]{0,63}$/; // nunca aspas, espaço nem metacaractere do cmd.exe na linha de comando
+// Teto do argumento: o cmd.exe (wrapper .cmd do npm) aceita 8191 caracteres na linha INTEIRA, que ainda leva o papel e o MCP. O que não couber fica de fora (no pior caso,
+// aquela migração pergunta uma vez): nunca uma linha que impeça o terminal de abrir.
+const MODELS_CACHE_MAX_BYTES = 8 * 1024 * 1024, MAX_MIGRATIONS = 32, MAX_MIGRATIONS_CHARS = 1500;
+const CATALOG_MAX_MODELS = 200;
+const EFFORT_LABELS = Object.freeze({ minimal: 'Mínimo', low: 'Baixo', medium: 'Médio', high: 'Alto', xhigh: 'Muito alto', max: 'Máximo', ultra: 'Ultra' });
+const catalogMemo = new Map(); // arquivo -> { mtimeMs, size, models }: relido só quando o Codex atualiza o catálogo
+
+/** Leitura do arquivo sem seguir link simbólico (O_NOFOLLOW, onde existe) e com o tamanho conferido no próprio descritor: nada trocado entre o lstat e a leitura passa do teto. */
+function readCatalogText(file, fsImpl) {
+  if (fsImpl !== fs) return fsImpl.readFileSync(file, 'utf8');
+  const fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
+  try {
+    const st = fs.fstatSync(fd);
+    if (!st.isFile() || st.size > MODELS_CACHE_MAX_BYTES) throw new Error('catálogo inválido');
+    return fs.readFileSync(fd, 'utf8');
+  } finally { fs.closeSync(fd); }
+}
+
+/** Converte o JSON do catálogo na lista enxuta e validada que o FORGE usa (ids, rótulos e níveis de esforço passam por regras estritas). Lança se o JSON for inválido. */
+function parseCatalog(text) {
+  const j = JSON.parse(text), list = Array.isArray(j?.models) ? j.models : [], models = [];
+  for (const m of list) {
+    if (models.length >= CATALOG_MAX_MODELS) break;
+    const slug = m?.slug;
+    if (typeof slug !== 'string' || !MIGRATION_SLUG_RE.test(slug) || models.some((x) => x.slug === slug)) continue;
+    // o que não é letra, número, espaço, ponto, sublinhado ou hífen vira espaço (sem juntar palavras); espaços repetidos se fundem
+    const name = typeof m.display_name === 'string' ? m.display_name.replace(/[^\p{L}\p{N} ._-]/gu, ' ').replace(/ {2,}/g, ' ').trim().slice(0, 40) : '';
+    // letra inicial: um nível nunca é lido como número ou booleano TOML no `-c model_reasoning_effort=<nível>`
+    const efforts = Array.isArray(m.supported_reasoning_levels) ? m.supported_reasoning_levels.map((x) => x?.effort).filter((e) => typeof e === 'string' && /^[a-z][a-z0-9_-]{0,15}$/.test(e)) : [];
+    const up = m.upgrade && typeof m.upgrade === 'object' ? m.upgrade.model : null;
+    models.push({ slug, name: name || slug, listed: m.visibility === 'list', priority: Number.isFinite(m.priority) ? m.priority : 1e6, efforts, upgrade: typeof up === 'string' && MIGRATION_SLUG_RE.test(up) && up !== slug ? up : null });
+  }
+  return models;
+}
+
+/**
+ * Catálogo de modelos que o PRÓPRIO Codex mantém em <codexHome>/models_cache.json (baixado da conta, com as migrações e os níveis de esforço de cada modelo). Devolve só o que o FORGE
+ * usa, já validado: [{ slug, name, listed, priority, efforts[], upgrade }]. Arquivo ausente, link simbólico, grande demais ou ilegível = null (nunca lança). O resultado, inclusive o
+ * "ilegível", fica em memória enquanto a data e o tamanho do arquivo não mudam (um arquivo ruim não é relido a cada consulta).
+ */
+export function codexCatalog(codexHome, { fsImpl = fs } = {}) {
+  try {
+    if (typeof codexHome !== 'string' || !codexHome) return null;
+    const file = path.join(codexHome, 'models_cache.json'), st = fsImpl.lstatSync(file); // lstat: link simbólico no lugar do catálogo não é seguido
+    if (!st.isFile() || st.size > MODELS_CACHE_MAX_BYTES) return null;
+    const hit = catalogMemo.get(file); if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit.models;
+    let models = null;
+    try { models = parseCatalog(readCatalogText(file, fsImpl)); } catch { models = null; }
+    catalogMemo.set(file, { mtimeMs: st.mtimeMs, size: st.size, models });
+    return models;
+  } catch { return null; }
+}
+
+/** Pares [modelo, destino] das migrações do catálogo (ver acima), com o teto de tamanho do argumento. Sem catálogo = []. */
+export function codexModelMigrations(codexHome, { fsImpl = fs } = {}) {
+  const pairs = []; let chars = 0;
+  for (const m of codexCatalog(codexHome, { fsImpl }) ?? []) {
+    if (!m.upgrade) continue;
+    const cost = m.slug.length + m.upgrade.length + 6; // 'a'='b',
+    if (chars + cost > MAX_MIGRATIONS_CHARS || pairs.length >= MAX_MIGRATIONS) break;
+    pairs.push([m.slug, m.upgrade]); chars += cost;
+  }
+  return pairs;
+}
+
+/**
+ * Modelos e esforços que o usuário pode ESCOLHER numa vaga, a partir do catálogo do Codex: só os modelos listados (`visibility: list`), na ordem de prioridade dele, e os níveis de
+ * esforço que TODOS esses modelos aceitam (assim nenhuma combinação modelo + esforço é inválida). null = sem catálogo (ver CODEX_OPTIONS, a lista de reserva).
+ */
+export function codexCatalogOptions(codexHome, { fsImpl = fs } = {}) {
+  const all = codexCatalog(codexHome, { fsImpl }); if (!all) return null;
+  const shown = all.filter((m) => m.listed).sort((a, b) => a.priority - b.priority);
+  if (!shown.length) return null;
+  // Modelo sem níveis informados não entra na interseção (uma entrada atípica do catálogo não pode zerar o esforço de todo o Codex); interseção vazia = esforços da lista de reserva.
+  const withLevels = shown.filter((m) => m.efforts.length), common = withLevels.length ? withLevels[0].efforts.filter((e) => withLevels.every((m) => m.efforts.includes(e))) : [];
+  return { models: frozenList(shown.map((m) => [m.slug, m.name])), efforts: common.length ? frozenList(common.map((e) => [e, EFFORT_LABELS[e] ?? e])) : CODEX_OPTIONS.efforts };
+}
+
+// Pasta do Codex cujo catálogo vale para as listas acima. Só o servidor de verdade a define (index.js, `configureCodexCatalog`): sem isso (testes, usos soltos) vale a lista de reserva e
+// NADA é lido do ~/.codex do usuário.
+let catalogHome = null;
+export function configureCodexCatalog({ home = null } = {}) { catalogHome = typeof home === 'string' && home ? home : null; }
+/** Argumentos que tiram as perguntas interativas da abertura do Codex (ver acima). `codexHome` = a pasta do Codex da conta do terminal. */
+export function codexQuietArgs({ codexHome = null, fsImpl = fs } = {}) {
+  const args = ['-c', 'check_for_update_on_startup=false', '-c', 'notice.hide_rate_limit_model_nudge=true'];
+  const pairs = codexModelMigrations(codexHome, { fsImpl });
+  if (pairs.length) args.push('-c', `notice.model_migrations={${pairs.map(([a, b]) => `'${a}'='${b}'`).join(',')}}`);
+  return args;
+}
 const SERVER_KEY_RE = /^[A-Za-z0-9_-]{1,64}$/; // chave TOML simples: o nome do servidor (forge_<hex>) sempre cabe aqui; qualquer outra coisa não vira argumento
 // Variáveis do Claude Code que não fazem sentido no Codex (e a sessão pai do Claude que abriu o servidor).
 const DROP_ENV = /^(CLAUDE_|ANTHROPIC_)/i;
@@ -102,7 +202,9 @@ const DROP_ENV = /^(CLAUDE_|ANTHROPIC_)/i;
 const tomlStr = (v, quote) => (quote ? JSON.stringify(String(v)) : String(v));
 
 // Listas FECHADAS de modelo e esforço (nunca texto livre na linha de comando). Esforço = `-c model_reasoning_effort=<nível>` (valores minimal/low/medium/high/xhigh confirmados no binário do codex-cli 0.167.0).
-// ATENÇÃO: os ids de modelo abaixo não puderam ser conferidos contra o catálogo da conta (sem login nesta máquina); ajuste esta lista se o seu plano usa outros nomes.
+// A lista de verdade vem do CATÁLOGO do próprio Codex (<CODEX_HOME>/models_cache.json: modelos da conta e níveis de esforço), lida a cada consulta e relida quando o Codex o atualiza:
+// ver codexCatalogOptions e o getter `options` do provedor. CODEX_OPTIONS é só a lista de RESERVA, usada enquanto não há catálogo (o Codex ainda não rodou, ou fora do servidor, como nos testes).
+// Os ids dela não acompanham a conta (o Codex 0.172 já não oferece gpt-5-codex nem gpt-5-mini): por isso os times prontos e a tabela de tarefas NÃO fixam modelo no Codex.
 const frozenList = (items) => Object.freeze(items.map(([id, label]) => Object.freeze({ id, label })));
 export const CODEX_OPTIONS = Object.freeze({
   models: frozenList([['gpt-5-codex', 'GPT-5 Codex'], ['gpt-5', 'GPT-5'], ['gpt-5-mini', 'GPT-5 mini']]),
@@ -159,7 +261,7 @@ export const codexProvider = Object.freeze({
   id: 'codex',
   label: 'Codex CLI',
   resolve: resolveCodex,
-  options: CODEX_OPTIONS,
+  get options() { return codexCatalogOptions(catalogHome) ?? CODEX_OPTIONS; }, // dinâmico: o catálogo do Codex quando o servidor o configurou e ele existe; senão a lista de reserva
   account: codexAccount, // contrato de conta (providers/index.js > accountSpecOf)
   oscState: codexOscState, // estado do agente lido do terminal (terminals.js), no lugar de hooks
   authProbe: createCodexAuthProbe(), // login do Codex (o terminals.js expõe em /api/terminals > providers[].auth)
@@ -181,7 +283,7 @@ export const codexProvider = Object.freeze({
    * `quote: false` é para wrapper .cmd. As ferramentas do Maestro são pré-aprovadas só nesse servidor (default_tools_approval_mode), como o --allowedTools do Claude;
    * a aprovação humana das TAREFAS continua no próprio Maestro (send_task fica pendente até o usuário decidir).
    */
-  paneArgs({ mode = 'new', prompt, mcp = null, quote = true, trustDir = null, model = null, effort = null, fullAccess = false, readOnly = false }) {
+  paneArgs({ mode = 'new', prompt, mcp = null, quote = true, trustDir = null, model = null, effort = null, fullAccess = false, readOnly = false, env = null }) {
     if (mode !== 'new') throw new Error('O Codex CLI não oferece retomada nem bifurcação neste adaptador.');
     // `fullAccess` (acesso total da missão): SÓ o booleano true estrito troca o sandbox + aprovação padrão pelo modo sem confirmação e sem sandbox. A flag é exclusiva de -s/-a na CLI, por isso substitui os dois.
     // `readOnly` (papel somente leitura, hoje o planejador; decidido no terminals.js a partir do PAPEL): sandbox `read-only` no lugar de `workspace-write`, com a mesma aprovação `on-request`, e o acesso
@@ -202,6 +304,9 @@ export const codexProvider = Object.freeze({
       const k = `mcp_servers.${mcp.serverName}`;
       args.push('-c', `${k}.url=${tomlStr(mcp.url, quote)}`, '-c', `${k}.bearer_token_env_var=${tomlStr(MCP_TOKEN_ENV, quote)}`, '-c', `${k}.default_tools_approval_mode=${tomlStr('approve', quote)}`, '-c', `${k}.startup_timeout_sec=20`);
     }
+    // Sem perguntas ao abrir (atualização, migração de modelo, troca perto do limite). `env` = o ambiente do pane (o terminals.js sempre passa): dele sai o CODEX_HOME da conta,
+    // ou a pasta padrão do Codex. Sem `env` (chamada direta), nada é lido do disco: só as chaves fixas.
+    args.push(...codexQuietArgs({ codexHome: env && typeof env === 'object' ? codexHomeDir(env) : null }));
     return args;
   },
 });

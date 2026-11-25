@@ -25,15 +25,15 @@ const BUILD = ['implementar-em-passos-pequenos', 'relato-de-conclusao'], REVIEW 
 export const TASK_TYPES = Object.freeze([
   row('fix-bug', 'Consertar um defeito', 'Desenvolvimento', 'builder', 'claude', 'sonnet', 'medium', BUILD),
   row('new-feature', 'Fazer uma parte nova', 'Desenvolvimento', 'builder', 'claude', 'sonnet', 'medium', BUILD),
-  row('tools', 'Ferramentas e scripts', 'Desenvolvimento', 'builder', 'codex', 'gpt-5-codex', 'medium', ['implementar-em-passos-pequenos']),
+  row('tools', 'Ferramentas e scripts', 'Desenvolvimento', 'builder', 'codex', null, 'medium', ['implementar-em-passos-pequenos']),
   row('release', 'Publicar uma versão', 'Desenvolvimento', 'builder', 'claude', 'sonnet', 'high', ['relato-de-conclusao']),
   row('review-code', 'Revisar o trabalho de outro', 'Desenvolvimento', 'reviewer', 'claude', 'sonnet', 'medium', REVIEW),
   row('map-code', 'Entender um código', 'Investigação', 'scout', 'claude', 'haiku', 'medium', ['mapear-codigo']),
   row('find-cause', 'Achar a causa de um erro', 'Investigação', 'scout', 'claude', 'opus', 'high', MAP),
   row('map-risks', 'Mapear os riscos de uma mudança', 'Investigação', 'scout', 'claude', 'sonnet', 'medium', ['mapear-codigo']),
-  row('write-tests', 'Escrever testes', 'Testes e segurança', 'builder', 'codex', 'gpt-5-codex', 'medium', ['implementar-em-passos-pequenos']),
+  row('write-tests', 'Escrever testes', 'Testes e segurança', 'builder', 'codex', null, 'medium', ['implementar-em-passos-pequenos']),
   row('security', 'Revisar a segurança', 'Testes e segurança', 'reviewer', 'claude', 'opus', 'max', REVIEW),
-  row('make-page', 'Fazer uma página', 'Páginas e design', 'builder', 'codex', 'gpt-5-codex', 'medium', ['implementar-em-passos-pequenos']),
+  row('make-page', 'Fazer uma página', 'Páginas e design', 'builder', 'codex', null, 'medium', ['implementar-em-passos-pequenos']),
   row('copy-page', 'Copiar uma página que já existe', 'Páginas e design', 'builder', 'claude', 'sonnet', 'medium', ['implementar-em-passos-pequenos']),
   row('copy-style', 'Tirar o estilo de um site', 'Páginas e design', 'scout', 'claude', 'opus', 'high', ['mapear-codigo']),
   row('review-text', 'Revisar um texto', 'Texto', 'reviewer', 'claude', 'haiku', 'low', []),
@@ -83,14 +83,16 @@ export function readHarness(db) {
 }
 
 // ---------- efetivo (padrão + o que o usuário mudou), com a escolha conferida contra as listas atuais ----------
-const FALLBACK = Object.freeze({ claude: Object.freeze({ model: 'sonnet', effort: 'medium' }), codex: Object.freeze({ model: 'gpt-5-codex', effort: 'medium' }) }); // ao trocar de IA, o modelo e o esforço de uma opção média dela
+const FALLBACK = Object.freeze({ claude: Object.freeze({ model: 'sonnet', effort: 'medium' }), codex: Object.freeze({ model: null, effort: 'medium' }) }); // ao trocar de IA, o modelo e o esforço de uma opção média dela
 function settleChoice(base, over) {
   const provider = over.provider ?? base.provider, same = provider === base.provider;
   const dflt = same ? { model: base.model, effort: base.effort } : (FALLBACK[provider] ?? {});
   const c = validateChoice(provider, { model: over.model ?? dflt.model, effort: over.effort ?? dflt.effort });
   if (!c.error) return { provider, model: c.value.model ?? null, effort: c.value.effort ?? null };
-  const f = validateChoice(provider, dflt); // o que o usuário escolheu já não existe: volta ao padrão da IA
-  return { provider, model: f.error ? null : (f.value.model ?? null), effort: f.error ? null : (f.value.effort ?? null) };
+  // o que o usuário escolheu já não existe (ex.: um modelo que o Codex da conta deixou de oferecer): CADA campo volta ao padrão da IA sozinho, para o modelo que saiu não levar junto o esforço salvo
+  const m = validateChoice(provider, { model: over.model ?? dflt.model }), e = validateChoice(provider, { effort: over.effort ?? dflt.effort });
+  const fm = m.error ? validateChoice(provider, { model: dflt.model }) : m, fe = e.error ? validateChoice(provider, { effort: dflt.effort }) : e;
+  return { provider, model: fm.error ? null : (fm.value.model ?? null), effort: fe.error ? null : (fe.value.effort ?? null) };
 }
 export function effectivePilot(h) {
   const o = h.pilot ?? {}, choice = settleChoice(PILOT_DEFAULT, o);

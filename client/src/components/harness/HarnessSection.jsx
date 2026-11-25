@@ -8,6 +8,7 @@ import { filterRows, groupRows, changedFields, filterChoices, agentName, snippet
 import { providerColor } from '../../provider-view.js';
 
 const ids = (opt, kind) => (opt?.[kind] ?? []).map((m) => ({ id: m.id, label: m.label ?? m.id }));
+const withCliDefault = (list, show) => (show ? [{ id: null, label: 'Padrão da CLI' }, ...list] : list); // IA cujo modelo não é fixo (Codex): volta a usar o padrão da própria CLI
 const MAESTRO_TEXT = 'O papel do Maestro: não edita arquivos, divide o pedido em tarefas pequenas, escolhe o agente de cada uma e cobra os resultados. É a instrução com que ele nasce; um agente seu entra junto dela.';
 
 /**
@@ -50,7 +51,7 @@ export default function HarnessSection() {
             <EditPanel title="Ajustar o Maestro" hint="Vale para os Maestros que você abrir a partir de agora." onReset={() => act(() => h.resetPilot(), 'Maestro no padrão.')} resetDisabled={h.busy || !d.pilot.customized}
               footer={<span>A reserva é o modelo que o Maestro usa quando o limite do principal acaba.</span>}>
               <EditRow label="IA" hint="Quem coordena o trabalho."><Pills label="IA do Maestro" value={pilot.provider} options={aiOptions(d, labelOf)} disabled={h.busy} onChange={(v) => act(() => h.setPilot({ provider: v }))} /></EditRow>
-              <EditRow label="Modelo" hint="O modelo principal."><Pills label="Modelo do Maestro" value={pilot.model} options={ids(opt, 'models')} disabled={h.busy} onChange={(v) => act(() => h.setPilot({ model: v }))} /></EditRow>
+              <EditRow label="Modelo" hint="O modelo principal."><Pills label="Modelo do Maestro" value={pilot.model} options={withCliDefault(ids(opt, 'models'), pilot.model === null)} disabled={h.busy} onChange={(v) => act(() => h.setPilot({ model: v }))} /></EditRow>
               <EditRow label="Quanto pensa" hint="Quanto ele raciocina antes de decidir."><Steps label="Esforço do Maestro" value={pilot.effort} options={ids(opt, 'efforts')} disabled={h.busy} onChange={(v) => act(() => h.setPilot({ effort: v }))} /></EditRow>
               <EditRow label="Reserva" hint="Entra quando o limite do principal acaba."><Pills label="Modelo de reserva do Maestro" value={pilot.reserveModel} options={ids(opt, 'models')} disabled={h.busy} onChange={(v) => act(() => h.setPilot({ reserveModel: v }))} /></EditRow>
             </EditPanel>

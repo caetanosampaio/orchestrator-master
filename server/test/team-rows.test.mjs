@@ -30,7 +30,7 @@ test('times prontos do servidor: nome, o que fazem, quando usar, e CADA um, do j
     assert.ok(s.name && s.tagline && s.about && s.instruction, `${s.name}: precisa de nome, resumo, quando usar e instrução`);
     const v = validateTemplateBody(templateBody(draftForInstall(s, [])));
     assert.equal(v.error, undefined, `${s.name}: ${v.error}`);
-    assert.ok(s.slots.every((x) => x.model && x.effort), `${s.name}: toda vaga traz modelo e esforço`);
+    assert.ok(s.slots.every((x) => x.effort && (x.model || x.provider === 'codex')), `${s.name}: toda vaga traz esforço, e modelo (a do Codex não fixa: usa o padrão do Codex do usuário)`);
     assert.ok(s.slots.every((x) => Object.hasOwn(ROLES, x.role)), `${s.name}: papel válido`);
     assert.ok(s.slots.every((x) => takesSkills(x.provider) || !x.skills), `${s.name}: vaga Codex sem skills`);
     for (const x of s.slots) for (const id of x.skills ?? []) assert.ok(Object.hasOwn(SKILLS, id), `${s.name}: skill ${id} existe no catálogo`);
@@ -45,7 +45,7 @@ test('times prontos: os dois mistos portados continuam com as mesmas vagas; só 
   assert.notEqual(b[0].slots[0].model, 'x'); assert.notEqual(b[0].name, 'Mudou');
   const plan = launchPlan(byName['Construção de código']);
   assert.deepEqual(plan.roles, ['maestro', 'builder', 'builder', 'reviewer']); assert.deepEqual(plan.providers, ['claude', 'codex', 'codex', 'claude']); assert.equal(plan.teamId, 'squad');
-  assert.deepEqual(plan.models, ['opus', 'gpt-5-codex', 'gpt-5-codex', 'opus']); assert.deepEqual(plan.efforts, ['high', 'medium', 'medium', 'high']);
+  assert.deepEqual(plan.models, ['opus', null, null, 'opus']); assert.deepEqual(plan.efforts, ['high', 'medium', 'medium', 'high']);
   assert.equal(plan.templateId, 'preset:code-build'); assert.deepEqual(plan.slotIndexes, [0, 1, 2, 3]);
   const audit = byName['Revisão e segurança']; assert.deepEqual(audit.slots.map((v) => `${v.role}:${v.provider}`), ['maestro:claude', 'scout:codex', 'reviewer:claude', 'reviewer:codex']);
   assert.ok(!audit.slots.some((v) => v.role === 'builder'), 'a revisão não tem quem edite');
@@ -53,7 +53,7 @@ test('times prontos: os dois mistos portados continuam com as mesmas vagas; só 
 
 test('usar como base: o time do FORGE vira rascunho NOVO (sem id nem nome) com modelo, esforço, skills e a instrução', async () => {
   const t = (await ready()).find((s) => s.slots.some((x) => x.skills?.length)), d = draftFromSquad(t);
-  assert.equal(d.id, null); assert.equal(d.name, ''); assert.ok(d.slots.every((s) => s.model && s.effort)); assert.equal(d.instruction, t.instruction);
+  assert.equal(d.id, null); assert.equal(d.name, ''); assert.ok(d.slots.every((s) => s.effort && (s.model || s.provider === 'codex'))); assert.equal(d.instruction, t.instruction);
   assert.deepEqual(d.slots.map((s) => s.skills ?? []), t.slots.map((s) => s.skills ?? []));
 });
 
@@ -95,7 +95,7 @@ test('instalar: nome livre entre os seus times, vagas com modelo e esforço, tim
   assert.equal(uniqueName('Time novo', mine), 'Time novo'); assert.equal(uniqueName('Construção de código', mine), 'Construção de código (3)', 'sem diferenciar maiúsculas');
   assert.equal(uniqueName('x'.repeat(40), [{ name: 'x'.repeat(40) }]).length <= 40, true, 'respeita o limite de 40 caracteres'); assert.equal(uniqueName('', []), '');
   const list = await ready(), t = list.find((s) => s.name === 'Construção de código'), other = list.find((s) => s.name === 'Revisão e segurança'), d = draftForInstall(t, mine);
-  assert.equal(d.id, null); assert.equal(d.name, 'Construção de código (3)'); assert.deepEqual(templateBody(d).slots, templateBody(t).slots); assert.ok(d.slots.every((s) => s.model && s.effort)); assert.equal(d.instruction, t.instruction);
+  assert.equal(d.id, null); assert.equal(d.name, 'Construção de código (3)'); assert.deepEqual(templateBody(d).slots, templateBody(t).slots); assert.ok(d.slots.every((s) => s.effort && (s.model || s.provider === 'codex'))); assert.equal(d.instruction, t.instruction);
   const v = validateTemplateBody(templateBody(d)); assert.equal(v.error, undefined, 'o rascunho de instalação passa na validação estrita da API');
   assert.equal(isInstalled(t, mine), true); assert.equal(isInstalled(other, mine), false); assert.equal(isInstalled(null, null), false);
 });

@@ -59,7 +59,7 @@ export function Pills({ value, onChange, options, label, disabled = false }) {
   return (
     <div className="ep-pills" role="radiogroup" aria-label={label}>
       {options.map((o) => (
-        <button key={o.id} type="button" role="radio" aria-checked={value === o.id} className={value === o.id ? 'on' : ''} disabled={disabled} onClick={() => onChange(o.id)}>{o.icon}<span>{o.label}</span></button>
+        <button key={o.id ?? "padrao"} type="button" role="radio" aria-checked={value === o.id} className={value === o.id ? 'on' : ''} disabled={disabled} onClick={() => onChange(o.id)}>{o.icon}<span>{o.label}</span></button>
       ))}
     </div>
   );
@@ -69,7 +69,7 @@ export function Steps({ value, onChange, options, label, disabled = false }) {
   return (
     <div className="ep-steps" role="radiogroup" aria-label={label}>
       {options.map((o, i) => (
-        <button key={o.id} type="button" role="radio" aria-checked={value === o.id} className={value === o.id ? 'on' : ''} disabled={disabled} onClick={() => onChange(o.id)}>
+        <button key={o.id ?? "padrao"} type="button" role="radio" aria-checked={value === o.id} className={value === o.id ? 'on' : ''} disabled={disabled} onClick={() => onChange(o.id)}>
           <span className="ep-bars" aria-hidden="true">{options.map((_, k) => <i key={k} className={k <= i ? 'on' : ''} />)}</span><span>{o.label}</span>
         </button>
       ))}

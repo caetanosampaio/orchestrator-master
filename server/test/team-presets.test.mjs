@@ -30,7 +30,7 @@ before(async () => {
 });
 after(async () => { await new Promise((r) => server.close(r)); fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); });
 
-const roles = (p) => p.slots.map((s) => `${s.role}:${s.provider}:${s.model}:${s.effort}:${(s.skills ?? []).join('+')}`);
+const roles = (p) => p.slots.map((s) => `${s.role}:${s.provider}:${s.model ?? 'padrão'}:${s.effort}:${(s.skills ?? []).join('+')}`);
 
 // ---------- presets ----------
 test('presets: os 7 times prontos, ids preset:<slug>, congelados, e cada um passa INTACTO pela validação estrita da API', () => {
@@ -60,9 +60,9 @@ test('presets: vagas exatamente como o contrato (papel, agente, modelo, esforço
   assert.deepEqual(by['preset:fullstack'], ['maestro:claude:opus:high:', 'builder:claude:sonnet:high:frontend-design+qualidade-e-testes', 'builder:claude:sonnet:high:backend-api+seguranca-pratica+qualidade-e-testes', 'reviewer:claude:opus:high:seguranca-pratica+qualidade-e-testes']);
   assert.deepEqual(by['preset:bugs'], ['maestro:claude:opus:high:', 'scout:claude:opus:high:depuracao-metodica', 'builder:claude:sonnet:high:depuracao-metodica+qualidade-e-testes', 'reviewer:claude:opus:high:qualidade-e-testes+seguranca-pratica']);
   assert.deepEqual(by['preset:pesquisa-conteudo'], ['maestro:claude:opus:high:', 'scout:claude:sonnet:medium:pesquisa-web-segura', 'scout:claude:sonnet:medium:pesquisa-web-segura', 'builder:claude:sonnet:medium:conteudo-e-copy+pesquisa-web-segura']);
-  // porte dos times que viviam no cliente: mesmas vagas, modelos e textos
-  assert.deepEqual(by['preset:code-build'], ['maestro:claude:opus:high:', 'builder:codex:gpt-5-codex:medium:', 'builder:codex:gpt-5-codex:medium:', 'reviewer:claude:opus:high:']);
-  assert.deepEqual(by['preset:audit'], ['maestro:claude:opus:high:', 'scout:codex:gpt-5:medium:', 'reviewer:claude:opus:max:seguranca-pratica+qualidade-e-testes', 'reviewer:codex:gpt-5:high:']);
+  // porte dos times que viviam no cliente: mesmas vagas e textos; as vagas Codex não fixam modelo ("padrão" = o do Codex do próprio usuário: os modelos mudam por conta e por versão)
+  assert.deepEqual(by['preset:code-build'], ['maestro:claude:opus:high:', 'builder:codex:padrão:medium:', 'builder:codex:padrão:medium:', 'reviewer:claude:opus:high:']);
+  assert.deepEqual(by['preset:audit'], ['maestro:claude:opus:high:', 'scout:codex:padrão:medium:', 'reviewer:claude:opus:max:seguranca-pratica+qualidade-e-testes', 'reviewer:codex:padrão:high:']);
   const cb = presetById('preset:code-build'), au = presetById('preset:audit');
   assert.equal(cb.name, 'Construção de código'); assert.equal(cb.tagline, 'O Claude planeja e revisa; dois Codex escrevem o código em paralelo.');
   assert.equal(au.name, 'Revisão e segurança'); assert.match(au.about, /^Use para auditar uma branch ou um pull request\./);

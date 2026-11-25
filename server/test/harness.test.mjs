@@ -40,7 +40,7 @@ test('padrão de fábrica: tipos por grupo, cada um com IA, modelo, esforço e s
   assert.equal(new Set(H.TASK_IDS).size, H.TASK_IDS.length);
   for (const t of H.TASK_TYPES) {
     assert.ok(Object.hasOwn(ROLES, t.role), `${t.id}: papel`); assert.ok(opts[t.provider], `${t.id}: IA`);
-    assert.ok(opts[t.provider].models.some((m) => m.id === t.model), `${t.id}: modelo`); assert.ok(opts[t.provider].efforts.some((m) => m.id === t.effort), `${t.id}: esforço`);
+    assert.ok(t.model === null ? t.provider === 'codex' : opts[t.provider].models.some((m) => m.id === t.model), `${t.id}: modelo (null = o padrão do Codex do usuário, só no Codex: os modelos dele mudam por conta e por versão)`); assert.ok(opts[t.provider].efforts.some((m) => m.id === t.effort), `${t.id}: esforço`);
     assert.ok(t.skills.every((s) => Object.hasOwn(SKILLS, s)), `${t.id}: skills`);
   }
   assert.deepEqual([...new Set(H.TASK_TYPES.map((t) => t.provider))].sort(), ['claude', 'codex']);
@@ -59,7 +59,7 @@ test('piloto: muda IA/modelo/esforço/reserva; trocar de IA zera o que era da ou
   let r = await jr(await call('/api/harness/pilot', 'PUT', { model: 'sonnet', effort: 'medium' })); assert.equal(r.status, 200);
   assert.equal(r.j.pilot.effective.model, 'sonnet'); assert.equal(r.j.pilot.customized, true); assert.deepEqual(disk().harness.pilot, { model: 'sonnet', effort: 'medium' });
   r = await jr(await call('/api/harness/pilot', 'PUT', { provider: 'codex' })); assert.equal(r.status, 200);
-  assert.equal(r.j.pilot.effective.provider, 'codex'); assert.deepEqual([r.j.pilot.effective.model, r.j.pilot.effective.effort], ['gpt-5-codex', 'medium'], 'o modelo antigo do Claude saiu: entra uma opção média do Codex');
+  assert.equal(r.j.pilot.effective.provider, 'codex'); assert.deepEqual([r.j.pilot.effective.model, r.j.pilot.effective.effort], [null, 'medium'], 'o modelo antigo do Claude saiu: o Codex entra sem modelo fixo (o padrão do Codex do usuário) e com esforço médio');
   assert.equal(Object.hasOwn(disk().harness.pilot, 'model'), false);
   r = await jr(await call('/api/harness/pilot', 'PUT', { provider: null, model: null, effort: null })); assert.deepEqual(r.j.pilot.effective, { ...H.PILOT_DEFAULT });
   const bad = async (body, re) => { const x = await jr(await call('/api/harness/pilot', 'PUT', body)); assert.equal(x.status, 400, JSON.stringify(body)); assert.match(x.j.error, re); };
@@ -74,7 +74,7 @@ test('linhas: muda uma linha (IA, modelo, esforço, skills), só o que mudou é 
   assert.deepEqual(x.defaults, { provider: 'claude', model: 'sonnet', effort: 'medium', skills: [...H.TASK_TYPES[0].skills], agentId: null }); assert.ok(rowOf(r.j, 'new-feature').customized === false);
   assert.deepEqual(Object.keys(disk().harness.rows), ['fix-bug']);
   r = await jr(await call('/api/harness/rows/fix-bug', 'PUT', { effort: null })); assert.equal(rowOf(r.j, 'fix-bug').effective.effort, 'medium', 'null volta o campo ao padrão da fábrica');
-  r = await jr(await call('/api/harness/rows/fix-bug', 'PUT', { provider: 'claude' })); assert.equal(rowOf(r.j, 'fix-bug').effective.model, 'sonnet', 'trocar de IA zera o modelo da outra'); r = await jr(await call('/api/harness/rows/fix-bug', 'PUT', { provider: 'codex' })); assert.deepEqual([rowOf(r.j, 'fix-bug').effective.model, rowOf(r.j, 'fix-bug').effective.effort], ['gpt-5-codex', 'medium'], 'a IA nova entra com modelo e esforço médios, nunca sem nenhum marcado'); r = await jr(await call('/api/harness/rows/fix-bug', 'PUT', { provider: 'claude' }));
+  r = await jr(await call('/api/harness/rows/fix-bug', 'PUT', { provider: 'claude' })); assert.equal(rowOf(r.j, 'fix-bug').effective.model, 'sonnet', 'trocar de IA zera o modelo da outra'); r = await jr(await call('/api/harness/rows/fix-bug', 'PUT', { provider: 'codex' })); assert.deepEqual([rowOf(r.j, 'fix-bug').effective.model, rowOf(r.j, 'fix-bug').effective.effort], [null, 'medium'], 'a IA nova entra com esforço médio; o Codex, sem modelo fixo (o padrão do Codex do usuário)'); r = await jr(await call('/api/harness/rows/fix-bug', 'PUT', { provider: 'claude' }));
   const bad = async (id, body, re, st = 400) => { const y = await jr(await call(`/api/harness/rows/${id}`, 'PUT', body)); assert.equal(y.status, st, JSON.stringify(body)); assert.match(y.j.error, re); };
   await bad('fix-bug', { model: 'gpt-5' }, /model|effort/); await bad('fix-bug', { skills: ['nao-existe'] }, /skills/); await bad('fix-bug', { skills: ['protocolo-do-squad', 'protocolo-do-squad'] }, /skills/);
   await bad('fix-bug', { skills: Array.from({ length: 7 }, (_, i) => `x${i}`) }, /skills/); await bad('fix-bug', { skills: 'x' }, /skills/); await bad('__proto__', { effort: 'low' }, /não encontrado/, 404); await bad('nope', { effort: 'low' }, /não encontrado/, 404);
