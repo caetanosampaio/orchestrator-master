@@ -100,7 +100,7 @@ function makeLister(maxDirs) {
  * `now()` injetável para teste. `listTtlMs: 0` desliga o TTL (teste). `stats` (opcional, teste): contadores { drops, keyVisits }. API: `view({ days })` (days: 0 = tudo),
  * `idle()` (promessa: varredura em segundo plano terminou), `scanning()`.
  */
-export function createProviderActivity({ claudeDirs = () => [claudeConfigDir()], codexHome = () => codexHomeDir(), now = Date.now, listTtlMs = LIST_TTL_MS, chunkBytes = CHUNK_BYTES, tickMs = TICK_MS, syncBudgetBytes = SYNC_BUDGET_BYTES, maxDirs = MAX_DIRS, maxKeys = MAX_KEYS, stats = null } = {}) {
+export function createProviderActivity({ claudeDirs = () => [claudeConfigDir()], codexHome = () => codexHomeDir(), extraSources = [], now = Date.now, listTtlMs = LIST_TTL_MS, chunkBytes = CHUNK_BYTES, tickMs = TICK_MS, syncBudgetBytes = SYNC_BUDGET_BYTES, maxDirs = MAX_DIRS, maxKeys = MAX_KEYS, stats = null } = {}) {
   /** @type {Map<string, {file:string, kind:'claude'|'codex', owner:string, size:number, mtimeMs:number, offset:number, pending:Buffer, days:Map<string,[number, number]>, prevTotal:number|null, keys:Set<string>, dupes:boolean}>} */
   const files = new Map();
   const queue = new Set(); // arquivos com bytes ainda não lidos
@@ -311,6 +311,21 @@ export function createProviderActivity({ claudeDirs = () => [claudeConfigDir()],
       if (!any) continue;
       const owners = new Set(); for (const s of files.values()) if (s.kind === p.id && s.days.size) owners.add(s.owner); // contas lidas = pastas que realmente tinham consumo
       providers.push({ id: p.id, label: p.label, accounts: owners.size, days: out });
+    }
+    // Fontes extras (ex.: OpenCode, que grava num banco SQLite em vez de JSONL): { id, label, read() -> { days: Map(dia -> [io, cache]), accounts } | null }. Mesmo formato e mesmos cortes de
+    // janela; uma fonte que falha ou não tem dados simplesmente não aparece. Nunca substituem Claude nem Codex.
+    for (const src of extraSources) {
+      if (!src || typeof src.id !== 'string' || !src.id || totals[src.id] || providers.some((p) => p.id === src.id)) continue;
+      let r = null; try { r = src.read(); } catch { r = null; }
+      if (!(r?.days instanceof Map) || !r.days.size) continue;
+      const out = {}; let any = false;
+      for (const [day, v] of [...r.days.entries()].sort((x, y) => (x[0] < y[0] ? -1 : 1))) {
+        if (cutoff && day < cutoff) continue;
+        if (!Array.isArray(v) || !(v[0] + v[1] > 0)) continue;
+        out[day] = { io: clamp(v[0]), cache: clamp(v[1]) }; any = true;
+        if (first === null || day < first) first = day;
+      }
+      if (any) providers.push({ id: src.id, label: typeof src.label === 'string' && src.label ? src.label : src.id, accounts: Number.isInteger(r.accounts) && r.accounts > 0 ? r.accounts : 1, ...(src.estimated === true ? { estimated: true } : {}), days: out }); // estimated: o consumo POR DIA é estimativa (a tela avisa)
     }
     return { generatedAt: new Date(t).toISOString(), sinceDay: first, scanning: !initialDone, ...(partial ? { partial: true } : {}), providers };
   }

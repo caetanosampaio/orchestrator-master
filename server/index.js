@@ -29,6 +29,7 @@ import { createAccounts, setupAccounts, migrateAtBoot, createDbBackup } from './
 import { createLoginManager } from './account-login.js';
 import { createUsageReader, claudeConfigDir } from './terminal-usage.js';
 import { createProviderActivity, parseDaysParam } from './provider-activity.js';
+import { createOpenCodeUsage } from './opencode-usage.js';
 import { createRateLimits } from './rate-limits.js';
 import { createUsageApi } from './usage-api.js';
 import { createMaestro, setupMaestro, stableServerName } from './maestro.js';
@@ -239,7 +240,7 @@ maestro.setPlanner(flowsManager.plannerPort()); // missões por briefing: missio
 // Limite real de uso por conta (5 h e semana), somente leitura, sem caminhos/ids/e-mails; a interface consulta a cada ~15-30 s (memo de 2 s). Mesmo apiGuard (Host/Origin) das demais rotas de /api.
 app.get('/api/limits', (req, res) => { try { res.set('Cache-Control', 'no-store').json(rateLimits.view()); } catch { bad(res, 'Não foi possível ler os limites de uso.', 500); } });
 // Tokens por provider e por dia (Claude Code de TODAS as contas + Codex), lidos dos transcripts/rollouts em disco: só contagens, somente leitura, varredura incremental em segundo plano (provider-activity.js). ?days=30|90|0 (0 = desde o início).
-const providerActivity = createProviderActivity({ claudeDirs: () => [claudeConfigDir(), ...accounts.list().map((a) => accounts.configDirOf(a.id))].filter((d) => typeof d === 'string' && d) });
+const providerActivity = createProviderActivity({ claudeDirs: () => [claudeConfigDir(), ...accounts.list().map((a) => accounts.configDirOf(a.id))].filter((d) => typeof d === 'string' && d), extraSources: inTest ? [] : [createOpenCodeUsage()] }); // OpenCode (banco SQLite dele): só no servidor de verdade, nunca nos testes
 if (!inTest) { const warm = setTimeout(() => { try { providerActivity.view({ days: 0 }); } catch { /* aquecimento é opcional */ } }, 2000); warm.unref?.(); } // aquece a 1ª varredura; testes não leem ~/.claude nem ~/.codex
 app.get('/api/provider-activity', (req, res) => {
   const days = parseDaysParam(req.query.days);

@@ -86,10 +86,13 @@ export function normalizeActivity(raw) {
       const io = nn(v.io), cache = nn(v.cache);
       if (io || cache) days[k] = { io, cache };
     }
-    providers.push({ id: p.id, label: typeof p.label === 'string' && p.label.trim() ? p.label.trim().slice(0, 40) : null, accounts: nn(p.accounts), days });
+    providers.push({ id: p.id, label: typeof p.label === 'string' && p.label.trim() ? p.label.trim().slice(0, 40) : null, accounts: nn(p.accounts), ...(p.estimated === true ? { estimated: true } : {}), days });
   }
   return { generatedAt: typeof raw.generatedAt === 'string' ? raw.generatedAt : null, sinceDay: parseDay(raw.sinceDay) ? raw.sinceDay : null, scanning: raw.scanning === true || raw.partial === true, providers }; // `partial`: a listagem das pastas foi incompleta nesta volta (pode haver mais dados): a tela não afirma "sem dados"
 }
+
+/** Providers cujo consumo POR DIA é estimativa (ex.: OpenCode, que só guarda o total de cada sessão), com consumo na janela: os nomes para o aviso da Home. */
+export const estimatedLabels = (activity, win) => (activity?.providers ?? []).filter((p) => p.estimated === true && Object.keys(p.days).some((k) => k >= win.start && k <= win.end)).map((p) => providerLook(p).label);
 
 /** Nome e cor do provider: catálogo primeiro (a cor é a do FORGE), senão o que o servidor disse, senão o id. */
 export const providerLook = (p) => ({ id: p.id, label: catalogById(p.id)?.label ?? p.label ?? p.id, color: catalogById(p.id)?.color ?? FALLBACK_COLOR });

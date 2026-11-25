@@ -3,7 +3,7 @@ import { useStore } from '../store.jsx';
 import { environments, wsTone } from '../env-view.js';
 import { useProviderActivity } from '../use-provider-activity.js';
 import {
-  PERIODS, MODES, periodById, modeById, windowOf, providerTotals, peakDay, buildSeries, axisTicks, totalCaption, longDate,
+  PERIODS, MODES, periodById, modeById, windowOf, providerTotals, estimatedLabels, peakDay, buildSeries, axisTicks, totalCaption, longDate,
   fmtTokens, fmtExact, fmtPct, recentWorkspaces, continueTarget,
 } from '../home-view.js';
 import { WsIcon } from '../components/Sidebar.jsx';
@@ -117,6 +117,7 @@ function TokenActivity() {
 
       {status === 'error' && <p className="hm-note err" role="alert">{error}{data ? ' Mostrando a última leitura.' : ''}</p>}
       {scanning && status !== 'error' && <p className="hm-note" role="status">lendo o histórico das contas... os números sobem conforme a leitura avança.</p>}
+      {data && view && estimatedLabels(data, win).length > 0 && <p className="hm-note" role="note">{estimatedLabels(data, win).join(' e ')}: o consumo por dia é estimado (a CLI só guarda o total de cada sessão, repartido pelos dias em que ela respondeu). O total geral é exato.</p>}
 
       {!data && status === 'loading' && <p className="hm-empty" role="status" aria-busy="true">Lendo o consumo das contas conectadas...</p>}
       {!data && status === 'error' && <p className="hm-empty">Sem dados de consumo para mostrar.</p>}
