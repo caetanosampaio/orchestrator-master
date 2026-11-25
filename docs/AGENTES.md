@@ -21,6 +21,7 @@ Nenhuma IA é obrigatória: basta **uma** das 10 instalada (o popup "Antes de co
 
 - **Nível 1 (terminal livre):** abre o terminal da IA na pasta do projeto, e só. Não pode ser Maestro, vaga de time, membro de squad nem etapa de missão, e o papel (prompt) não chega ao agente: um "Revisor" numa IA de nível 1 **não** é somente leitura. O Maestro não manda tarefas a esses terminais.
 - **Nível 2:** o terminal fala com o Maestro e recebe tarefas. Gemini, Cursor e Copilot ainda não foram conferidos contra a CLI real (`mcpVerified: false`), então o Maestro **só manda tarefa depois que o terminal se conecta de fato ao MCP** (`maestro.connected(id)`); antes disso ele é tratado como livre. Em missão, um terminal recém-aberto tem 90 s (`CONNECT_GRACE_MS`) para se conectar antes de a etapa falhar. Assim, se o mecanismo documentado não funcionar na prática, nenhuma tarefa fica presa.
+- **Testar integração** (Configurações > Suas IAs, para as IAs instaladas que conversam com o Maestro): abre um terminal Batedor de teste no workspace ativo, visível no Cockpit, e acompanha o campo `maestro` do terminal em `GET /api/terminals` (`'connected'` = autenticou no MCP, a mesma prova acima; `'waiting'`; `null` = sem coordenação, inclusive quando a credencial foi emitida mas os arquivos do pane não chegaram à CLI). Conectou: o terminal de teste é fechado. Não conectou em 90 s: ele fica aberto para você responder ao que a IA pedir, e o teste segue de olho por até 10 min. O acompanhamento continua fora da tela (`client/src/integration-runner.js`), mas não sobrevive a recarregar o app. Um Maestro já rodando pode mandar tarefa ao terminal de teste enquanto ele existe.
 - **Sem estado do agente** (Cursor, Copilot e o nível 1): não viram Maestro nem etapa de missão. O Gemini lê o estado pelo título do terminal.
 
 **Acesso total.** Sem pedir confirmação, cada IA usa a flag dela: Gemini `--approval-mode yolo`, Cursor `--force`, Copilot `--allow-all`, Antigravity `--dangerously-skip-permissions`, Kimi `--yolo`, Kiro `--trust-all-tools`, Grok `--always-approve`. Ela só é ligada com o acesso total da missão (opt-in) ou com o **Maestro autônomo** ligado, e neste caso vale para **todas** as IAs, inclusive as de nível 1 (decisão do produto). O planejador nunca recebe acesso total. O **OpenCode** é a exceção: a política padrão dele já é permitir tudo, sem confirmação (a interface avisa).
@@ -85,6 +86,22 @@ Cada terminal tem um estado exibido na grade, na sidebar e no status global: `id
 - **Claude Code:** vem dos hooks (`UserPromptSubmit`, `Notification`, `Stop`, `StopFailure`...) registrados pelo plugin de sessão.
 - **Codex CLI:** o Codex anuncia o estado no próprio terminal (`ESC ] 7501 ; state=<estado>:app=codex`). O FORGE traduz `idle`, `working`, `blocked` (pedido de permissão), `done` e `error` (falha do turno: HTTP 4xx/5xx ou resposta `failed`). Estado desconhecido é ignorado; sem sinal algum, a tela cai na leitura pela saída. Verificado no `codex-cli` 0.167.0.
 - Um erro do agente com o processo ainda vivo aparece como "erro do agente"; a saída do processo com código diferente de zero aparece como "falhou (código)".
+
+## Codex sem perguntas ao abrir
+
+Terminais de time, de missão e do "Testar integração" não têm ninguém olhando a tela, então todo terminal do Codex abre com (`codexQuietArgs` em `server/providers/codex.js`; chaves conferidas no codex-cli 0.172.0):
+
+- `-c check_for_update_on_startup=false`: sem a pergunta "atualizar agora?". Atualize o Codex fora do FORGE (`npm i -g @openai/codex`).
+- `-c notice.model_migrations={'<modelo>'='<novo>',…}`: as migrações de modelo do catálogo que o próprio Codex mantém em `<CODEX_HOME>/models_cache.json` (da conta do terminal) são dadas como respondidas com "manter o modelo atual". O FORGE **nunca** troca o modelo; para usar o novo, escolha-o no terminal ou no `config.toml` do Codex. Pares validados (`[a-z0-9._-]`), no máximo 32 e 1500 caracteres (o `cmd.exe` limita a linha a 8191); link simbólico no lugar do catálogo é ignorado. Uma migração publicada depois da última atualização do catálogo ainda pode perguntar uma vez.
+- `-c notice.hide_rate_limit_model_nudge=true`: sem a sugestão de trocar de modelo perto do limite.
+
+## Modelos e esforço do Codex
+
+A lista que aparece nas vagas de time, na tabela de tarefas e nas missões vem do **catálogo do próprio Codex** (`<CODEX_HOME>/models_cache.json`, que o Codex baixa da sua conta), lido pelo servidor a cada consulta e relido sozinho quando o Codex o atualiza (`codexCatalogOptions`; só o servidor de verdade o configura, os testes usam a lista de reserva). Valem os modelos listados (`visibility: list`), na ordem de prioridade do Codex, e só os níveis de esforço que **todos** eles aceitam (hoje `low` a `max`; `ultra` fica de fora porque nem todo modelo o tem), então nenhuma combinação é inválida. Sem catálogo (o Codex ainda não rodou) vale a lista de reserva (`CODEX_OPTIONS`), que pode estar desatualizada. Os ids passam por uma regra estrita (`[a-z0-9._-]`) antes de irem para a linha de comando.
+
+Limites conhecidos: a lista vale para a conta **deste computador** (lida no boot do servidor de `CODEX_HOME`, ou `~/.codex`); um terminal com conta Codex isolada usa a lista da máquina. Modelo salvo que a conta deixou de oferecer (ex.: `gpt-5-codex` num time ou numa linha da tabela) volta sozinho ao padrão da CLI, sem aviso, e mantém o esforço salvo; já uma **missão** salva com esse modelo falha a etapa com "model inválido" até ser editada (o FORGE não troca em silêncio um modelo que você escolheu).
+
+Os **times prontos e a tabela de tarefas não fixam modelo no Codex**: a vaga usa o padrão do Codex do próprio usuário (o `model` do `config.toml`), só com o esforço definido. Os modelos mudam por conta e por versão (o `gpt-5-codex` que estava fixo deixou de existir no Codex 0.172) e um id que a conta não oferece faria o terminal falhar.
 
 ## Login do Codex
 

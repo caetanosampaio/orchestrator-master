@@ -42,7 +42,7 @@ Quando falta algo, o FORGE abre o popup **"Antes de começar"** (com o fundo esc
   - **recebem tarefas do Maestro:** Gemini CLI, Cursor CLI e Copilot CLI. O Maestro só entrega a tarefa depois que o terminal prova que se conectou a ele;
   - **terminal livre:** OpenCode, Antigravity CLI, Kimi Code, Kiro CLI e Grok Build. Abrem na pasta do projeto, mas não são Maestro, vaga de time nem etapa de missão, e o papel não chega a elas.
 
-  Veja [docs/AGENTES.md](docs/AGENTES.md).
+  Em **Configurações > Suas IAs**, o botão **Testar integração** abre um terminal de teste e mostra se a IA se conectou de fato ao Maestro nesta máquina. Veja [docs/AGENTES.md](docs/AGENTES.md).
 - **Papéis e equipes**: Maestro, Construtor, Revisor e Batedor, cada um com o seu prompt; equipes prontas (Dupla, Squad, Squad de 6 e Construtor).
 - **Maestro**: um terminal que divide o pedido e envia tarefas aos outros por um servidor MCP local. O **modo autônomo** vem ligado: as tarefas são entregues na hora (até 12 por minuto) e os terminais novos de **todas** as IAs abrem com acesso total, sem pedir confirmação. Desligado (por você, nas Configurações), cada tarefa fica **pendente até você aprovar** e os terminais pedem confirmação como de costume.
 - **Worktrees do git**: um por agente que edita, ou um compartilhado por equipe, com verificação de conflitos e integração controlada.
