@@ -4,21 +4,21 @@ const group = (id, label, items) => Object.freeze({ id, label, items: Object.fre
 
 export const NAV = Object.freeze([
   group('ias', 'IAs e contas', [
-    item('ias', 'Suas IAs', 'terminal', 'Os agentes que rodam nos terminais do FORGE e as outras IAs que podem vir.', ['claude', 'codex', 'provider', 'agentes', 'cli', 'instalado', 'login']),
-    item('accounts', 'Contas', 'user', 'As contas de cada IA (Claude Code, Codex CLI): conecte, renomeie e desvincule.', ['login', 'claude', 'codex', 'entrar', 'assinatura']),
-    item('golem', 'Golem', 'agents', 'O seu golem de liga: cresce com os tokens que as suas IAs consomem e é feito da mistura delas.', ['bichinho', 'pet', 'mascote', 'tokens', 'liga', 'evolução', 'forja']),
+    item('ias', 'Suas IAs', 'cpu', 'Os agentes que rodam nos terminais do FORGE e as outras IAs que podem vir.', ['claude', 'codex', 'provider', 'agentes', 'cli', 'instalado', 'login']),
+    item('accounts', 'Contas', 'key', 'As contas de cada IA (Claude Code, Codex CLI): conecte, renomeie e desvincule.', ['login', 'claude', 'codex', 'entrar', 'assinatura']),
+    item('golem', 'Golem', 'flame', 'O seu golem de liga: cresce com os tokens que as suas IAs consomem e é feito da mistura delas.', ['bichinho', 'pet', 'mascote', 'tokens', 'liga', 'evolução', 'forja']),
   ]),
   group('times', 'Missões e times', [
     item('equipes', 'Times prontos', 'layers', 'Os times que aparecem no Cockpit vêm daqui: instale os prontos, edite e monte os seus.', ['squad', 'squads', 'equipes', 'times', 'modelo', 'esforço', 'predefinições', 'instalar'], { tag: 'Squads', own: true }), // `own`: a seção desenha o próprio cabeçalho (título, ação e as páginas de ver e editar)
-    item('tarefas', 'Quem faz cada tarefa', 'sliders', 'Para cada tipo de tarefa, qual IA faz, com qual modelo, quanto ela pensa e com qual agente.', ['harness', 'roteamento', 'maestro', 'piloto', 'ajudantes', 'modelo', 'esforço', 'skills', 'agentes', 'tabela'], { tag: 'Harness', own: true }),
-    item('skills', 'Skills', 'task', 'As instruções que cada papel do squad carrega ao abrir um terminal.', ['skill', 'papéis', 'loadout', 'instruções', 'mcp', 'protocolo', 'mapear', 'revisar'], { tag: 'Squad', own: true }),
-    item('orquestracao', 'Orquestração', 'sliders', 'Como o Maestro envia tarefas aos outros terminais.', ['maestro', 'autônomo', 'aprovação']),
-    item('worktrees', 'Workspaces e Worktrees', 'workspace', 'As branches Git dos terminais isolados: estado, snapshot e limpeza.', ['git', 'branch', 'isolado']),
+    item('tarefas', 'Quem faz cada tarefa', 'route', 'Para cada tipo de tarefa, qual IA faz, com qual modelo, quanto ela pensa e com qual agente.', ['harness', 'roteamento', 'maestro', 'piloto', 'ajudantes', 'modelo', 'esforço', 'skills', 'agentes', 'tabela'], { tag: 'Harness', own: true }),
+    item('skills', 'Skills', 'book', 'As instruções que cada papel do squad carrega ao abrir um terminal.', ['skill', 'papéis', 'loadout', 'instruções', 'mcp', 'protocolo', 'mapear', 'revisar'], { tag: 'Squad', own: true }),
+    item('orquestracao', 'Orquestração', 'network', 'Como o Maestro envia tarefas aos outros terminais.', ['maestro', 'autônomo', 'aprovação']),
+    item('worktrees', 'Workspaces e Worktrees', 'branch', 'As branches Git dos terminais isolados: estado, snapshot e limpeza.', ['git', 'branch', 'isolado']),
   ]),
   group('app', 'App e computador', [
     item('perfil', 'Perfil', 'user', 'O nome que aparece na barra lateral. Fica salvo só neste computador.', ['nome', 'conta']),
     item('geral', 'Preferências gerais', 'sliders', 'Como os novos terminais são abertos.', ['isolar', 'worktree']),
-    item('visualizacao', 'Visualização', 'panel', 'Como os terminais do workspace aberto são organizados na tela.', ['grade', 'colunas', 'linhas', 'foco', 'layout']),
+    item('visualizacao', 'Visualização', 'grid', 'Como os terminais do workspace aberto são organizados na tela.', ['grade', 'colunas', 'linhas', 'foco', 'layout']),
     item('aparencia', 'Aparência', 'sun', 'Tema, animações e a fonte dos terminais.', ['tema', 'animações', 'fonte', 'movimento']),
     item('arquivos', 'Arquivos', 'folderOpen', 'Os workspaces: as pastas de projeto onde os agentes trabalham.', ['pasta', 'projeto', 'workspace']),
   ]),

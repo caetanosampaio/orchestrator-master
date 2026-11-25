@@ -41,7 +41,7 @@ export function LayoutSection() {
   const { state } = useStore();
   const openWs = state?.activeWorkspace ?? null, wsName = openWs ? (openWs.displayName || openWs.name) : '';
   const [mode, setMode] = useLayoutMode(openWs?.id);
-  if (!openWs) return <p className="dim small">Abra um workspace para escolher como os terminais dele são organizados na tela.</p>;
+  if (!openWs) return <div className="set-empty" role="status"><span className="set-empty-ico" aria-hidden="true"><Icon name="grid" size={16} /></span><span>Abra um workspace para escolher como os terminais dele são organizados na tela.</span></div>;
   return (
     <>
       <p className="dim small">Vale para o workspace aberto ({wsName}); cada workspace guarda a sua escolha neste navegador. Com um só terminal, todos os modos ocupam a tela inteira.</p>
@@ -60,11 +60,12 @@ export function AppearanceSection() {
   const [prefs, setPref] = usePrefs();
   return (
     <Card>
-      <Row title="Tema" hint="Escuro (grafite e preto). Ainda não há outro tema." />
+      <Row title="Tema" hint="Escuro (grafite e preto). Ainda não há outro tema."><span className="oc-pill">Escuro</span></Row>
       <Row title="Animações" hint="Automático segue a preferência do sistema por menos movimento, exceto os ícones de estado dos workspaces, que sempre animam; Reduzidas desliga todas as animações da interface, inclusive esses ícones.">
         <Segmented label="Animações" value={prefs.motion} onChange={(v) => setPref('motion', v)} options={[['auto', 'Automático'], ['reduced', 'Reduzidas']]} />
       </Row>
       <Row title="Fonte dos terminais" hint={`${prefs.fontSize}px (de ${FONT_RANGE.min} a ${FONT_RANGE.max}). Vale na hora para todos os terminais.`}>
+        <span className="set-val mono" aria-hidden="true">{prefs.fontSize}px</span>
         <input type="range" min={FONT_RANGE.min} max={FONT_RANGE.max} step="1" value={prefs.fontSize} onChange={(e) => setPref('fontSize', Number(e.target.value))} aria-label="Tamanho da fonte dos terminais" className="oc-range" />
       </Row>
     </Card>

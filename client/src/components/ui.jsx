@@ -26,6 +26,15 @@ export const PersistenceNote = ({ incident }) => (incident ? (
 
 // Ícones de traço único (24x24), usados em toda a interface. Decorativos (aria-hidden): o texto ao lado sempre diz o mesmo.
 const ICONS = {
+  // Configurações (traço 1.6, 24x24, no mesmo desenho dos demais): IAs, contas, golem, roteamento, skills, orquestração, worktrees e visualização
+  cpu: 'M7 4h10a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3zM9.5 9.5h5v5h-5zM9 1.5V4M15 1.5V4M9 20v2.5M15 20v2.5M1.5 9H4M1.5 15H4M20 9h2.5M20 15h2.5',
+  key: 'M15 15a6 6 0 1 0-5.66-4L3 17.34V21h3.5v-2.2h2.2v-2.2h2.2l1.3-1.3A6 6 0 0 0 15 15zM16.5 7.5h.01',
+  flame: 'M12 21.5c4 0 6.8-2.7 6.8-6.4 0-3.5-2.5-5.4-3.7-8-.4 1.7-1.4 2.7-2.7 3.2.3-3-.8-5.8-3.4-7.3.2 3.5-2 5.6-3.4 7.7A7.6 7.6 0 0 0 5.2 15c0 3.8 2.8 6.5 6.8 6.5zM12 21.5c-1.7 0-2.8-1.2-2.8-2.8 0-1.8 1.5-2.5 2.2-4 .9 1.2 3.4 2.1 3.4 4 0 1.6-1.1 2.8-2.8 2.8z',
+  route: 'M6 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM18 8a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM8.5 18.5H16a3.5 3.5 0 0 0 0-7H8a3.5 3.5 0 0 1 0-7h7.5',
+  book: 'M5 4.5A1.5 1.5 0 0 1 6.5 3H19v15H6.5A1.5 1.5 0 0 0 5 19.5zM5 19.5A1.5 1.5 0 0 0 6.5 21H19M9 7.5h6M9 11h4',
+  network: 'M12 8.5a2.75 2.75 0 1 0 0-5.5 2.75 2.75 0 0 0 0 5.5zM5 21a2.75 2.75 0 1 0 0-5.5 2.75 2.75 0 0 0 0 5.5zM19 21a2.75 2.75 0 1 0 0-5.5 2.75 2.75 0 0 0 0 5.5zM12 8.5v3.5M12 12l-5 4M12 12l5 4',
+  branch: 'M6 3v12M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9',
+  grid: 'M4 4h6.5v6.5H4zM13.5 4H20v6.5h-6.5zM4 13.5h6.5V20H4zM13.5 13.5H20V20h-6.5z',
   menu: 'M4 7h16M4 12h16M4 17h16', close: 'M6 6l12 12M18 6L6 18', plus: 'M12 5v14M5 12h14', send: 'M12 19V5M5 12l7-7 7 7', check: 'M5 12l5 5 9-10',
   chevronUp: 'M6 15l6-6 6 6', chevronDown: 'M6 9l6 6 6-6', chevronRight: 'M9 6l6 6-6 6', chevronsUpDown: 'M8 9l4-4 4 4M8 15l4 4 4-4', stop: 'M7 7h10v10H7z', alert: 'M12 4l9 16H3zM12 10v4M12 17h.01',
   search: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4', panel: 'M4 5h16v14H4zM9 5v14', info: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5M12 8h.01',
