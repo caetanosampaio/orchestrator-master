@@ -1,13 +1,40 @@
-# Agentes: Claude Code e Codex CLI
+# Agentes: as 10 IAs do FORGE
 
 O FORGE executa agentes de linha de comando em terminais reais (PTY). Cada terminal ("pane") tem **um provedor**, escolhido ao abri-lo, e provedores diferentes convivem na mesma equipe e no mesmo Maestro. Este documento descreve o que cada integração faz hoje, onde está no código e o que ela **não** faz.
 
-## Comparação
+Nenhuma IA é obrigatória: basta **uma** das 10 instalada (o popup "Antes de começar" só bloqueia quando não há nenhuma).
+
+## Níveis de integração
+
+| IA | Executável | Nível | Coordenação com o Maestro |
+|---|---|---|---|
+| Claude Code | `claude` | completo | MCP por arquivo (`--mcp-config`), plugin de skills, hooks de estado |
+| Codex CLI | `codex` | completo, sem retomada | MCP por `-c`, token só no ambiente |
+| Gemini CLI | `gemini` | 2 (a confirmar) | arquivo de padrões do sistema por terminal (`GEMINI_CLI_SYSTEM_DEFAULTS_PATH`) com o MCP e um hook `BeforeAgent` que entrega o papel |
+| Cursor CLI | `cursor-agent` (ou `agent`, se estiver numa pasta do Cursor) | 2 parcial | entrada fixa `forge-maestro` no `~/.cursor/mcp.json`, sem porta nem token (vêm de `FORGE_MCP_URL`/`FORGE_MCP_TOKEN`); só vagas de time que recebem tarefas |
+| Copilot CLI | `copilot` | 2 parcial | `--additional-mcp-config=@<pasta do pane>/mcp.json` (o token fica nesse arquivo) e `COPILOT_CUSTOM_INSTRUCTIONS_DIRS` para o papel; só vagas de time |
+| OpenCode | `opencode` | 1 (terminal livre) | nenhuma |
+| Antigravity CLI | `agy` | 1 | nenhuma |
+| Kimi Code | `kimi` | 1 | nenhuma |
+| Kiro CLI | `kiro-cli chat` | 1 | nenhuma |
+| Grok Build | `grok` | 1 | nenhuma (atenção: CLIs da comunidade também se chamam `grok`) |
+
+- **Nível 1 (terminal livre):** abre o terminal da IA na pasta do projeto, e só. Não pode ser Maestro, vaga de time, membro de squad nem etapa de missão, e o papel (prompt) não chega ao agente: um "Revisor" numa IA de nível 1 **não** é somente leitura. O Maestro não manda tarefas a esses terminais.
+- **Nível 2:** o terminal fala com o Maestro e recebe tarefas. Gemini, Cursor e Copilot ainda não foram conferidos contra a CLI real (`mcpVerified: false`), então o Maestro **só manda tarefa depois que o terminal se conecta de fato ao MCP** (`maestro.connected(id)`); antes disso ele é tratado como livre. Em missão, um terminal recém-aberto tem 90 s (`CONNECT_GRACE_MS`) para se conectar antes de a etapa falhar. Assim, se o mecanismo documentado não funcionar na prática, nenhuma tarefa fica presa.
+- **Sem estado do agente** (Cursor, Copilot e o nível 1): não viram Maestro nem etapa de missão. O Gemini lê o estado pelo título do terminal.
+
+**Acesso total.** Sem pedir confirmação, cada IA usa a flag dela: Gemini `--approval-mode yolo`, Cursor `--force`, Copilot `--allow-all`, Antigravity `--dangerously-skip-permissions`, Kimi `--yolo`, Kiro `--trust-all-tools`, Grok `--always-approve`. Ela só é ligada com o acesso total da missão (opt-in) ou com o **Maestro autônomo** ligado, e neste caso vale para **todas** as IAs, inclusive as de nível 1 (decisão do produto). O planejador nunca recebe acesso total. O **OpenCode** é a exceção: a política padrão dele já é permitir tudo, sem confirmação (a interface avisa).
+
+**Testar de graça** (segundo a documentação de cada uma): OpenCode, Kiro (`kiro-cli login --license free`) e Antigravity (conta Google pessoal no plano gratuito). Copilot, Gemini e Cursor pedem plano pago; Kimi e Grok não foram verificados.
+
+Tudo o que não foi verificado contra a CLI real está marcado nos comentários de cada `server/providers/<ia>.js` com `HIPÓTESE` ou `não verificada`.
+
+## Claude Code e Codex CLI em detalhe
 
 | | Claude Code | Codex CLI |
 |---|---|---|
 | Adaptador | `server/providers/claude.js` | `server/providers/codex.js` |
-| Requisito | obrigatório (o app não libera o uso sem ele) | opcional |
+| Requisito | opcional (basta uma IA) | opcional (basta uma IA) |
 | Login | contas do FORGE (Configurações > Contas) ou conta do sistema | do próprio Codex CLI (`codex login`); o FORGE só **verifica** |
 | Várias contas | sim (pasta de configuração própria por conta, `CLAUDE_CONFIG_DIR`) | não |
 | Retomar e bifurcar sessão | sim (`--resume`, `--fork-session`) | não: um terminal interrompido volta como terminal **novo** |
@@ -26,11 +53,30 @@ O núcleo (`terminals.js`, `maestro.js`) só conhece a interface em `server/prov
 
 - `resolve()`: onde a CLI está no PATH (arquivo real, sem shell; `.cmd`/`.bat` do npm no Windows passam pelo `cmd.exe` com argumentos fixos).
 - `paneArgs()`: argumentos do terminal (novo, retomar, bifurcar).
-- `capabilities`: `resume`, `fork`, `hooks`, `plugins`, `accounts`, `transcript`. O que o provedor não tem fica `false` e o resto do sistema se adapta (por exemplo, sem `resume` o histórico oferece "reabrir").
+- `capabilities` (ausente = `true`): `resume`, `fork`, `hooks`, `plugins`, `accounts`, `transcript`, `mcp` (conversa com o Maestro), `readOnly`, e os que só aparecem como `false`: `mcpVerified` (exige a prova de conexão), `planner`, `state` (sem estado do agente) e `rolePrompt` (o papel não chega). O resto do sistema se adapta (por exemplo, sem `resume` o histórico oferece "reabrir"). As regras derivadas (`coordinates`, `canLead`, `canStep`, `canPlan`, `needsProof`) e a recusa única `coordinationBlock(id, { role, group, step })` ficam em `providers/index.js` e são usadas por `terminals.js`, `team-templates.js`, `flows.js` e `harness.js`.
 - `envFor()`: ambiente do filho (o do Codex remove as variáveis `CLAUDE_*` e `ANTHROPIC_*`).
 - `submit`: como entregar uma tarefa do Maestro (bloco entre marcadores de colagem e Enter separado).
-- `projectConfig`: arquivos e pastas de configuração de projeto que executam comandos.
+- `projectConfig`: arquivos e pastas de configuração de projeto que executam comandos. É conferido ao **criar** e ao **retomar ou reabrir** o terminal, sempre com os caminhos da IA daquele terminal.
+- `paneFiles({ dir, prompt, mcp, node, platform })` e `prepare(...)` (opcionais): arquivos que o `terminals.js` grava numa pasta só do terminal (`<dados>/pane-files/<id>`, com ACL só do usuário no Windows, apagada no fim e limpa na partida) e o preparo antes de abrir (o Cursor usa para a entrada do `~/.cursor/mcp.json`).
 - Opcionais: `oscState` (estado lido do terminal) e `authProbe` (verificação de login).
+- **IA nova de terminal livre:** um arquivo de ~12 linhas com a fábrica `cliProvider` de `providers/cli-path.js` (`antigravity.js`, `kimi.js`, `kiro.js` e `grok.js` são o molde), o registro em `providers/index.js`, uma entrada em `client/src/provider-catalog.js` e o ícone em `client/src/components/ProviderLogo.jsx`.
+
+## Configuração de projeto vigiada (todas as IAs)
+
+| IA | O que exige confirmação se não estiver revisado no Git |
+|---|---|
+| Claude Code | `.claude/settings.json`, `.claude/settings.local.json`, `.mcp.json`, `.claude/agents`, `.claude/skills` |
+| Codex CLI | `.codex` |
+| Gemini CLI | `.gemini` |
+| Cursor CLI | `.cursor` |
+| Copilot CLI | `.mcp.json`, `.github/mcp.json`, `.github/hooks` |
+| OpenCode | `opencode.json`, `opencode.jsonc` (qualquer chave além de `$schema`), `.opencode` |
+| Antigravity CLI | `.agents` |
+| Kimi Code | `.kimi-code` |
+| Kiro CLI | `.kiro` |
+| Grok Build | `.grok`, `.cursor`, `.mcp.json` |
+
+Configuração em pastas acima do workspace, ou em caminhos que a CLI leia sem a documentação citar, não é vista.
 
 ## Estado do agente
 
@@ -59,3 +105,10 @@ O Maestro é um terminal com o papel `maestro` que fala com os outros por um ser
 - Detecção de `blocked` por outros motivos além de permissão (só `blocked` genérico é tratado como "aguardando você").
 
 A integração foi validada contra o Codex real com um modelo simulado localmente (MCP, entrega de tarefa, aprovação e estados). O uso com conta real ainda não foi exercitado em testes automatizados.
+
+## O que ainda não existe para as outras 8 IAs
+
+- **Nenhuma foi rodada de verdade:** tudo foi conferido na documentação oficial (nov/2026) e testado com terminal simulado.
+- Retomar e bifurcar conversas (um terminal interrompido volta como terminal novo), loadouts e contas do FORGE (o login é feito na própria CLI).
+- Tokens e custo: só existem para Claude e Codex. As outras IAs não aparecem na Home, no golem nem nos limites.
+- No Windows: o hook do papel do Gemini assume que o shell do hook é o PowerShell (hipótese), e os wrappers `.cmd` do npm em caminhos com espaço não foram testados com as CLIs reais.
