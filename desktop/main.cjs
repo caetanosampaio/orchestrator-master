@@ -19,13 +19,20 @@ const { createForgeTray } = require('./tray.cjs');
 const { createSampler } = require('./metrics.cjs');
 const { captureArea, captureScreen, showCaptureCard, prune } = require('./capture.cjs');
 
-app.setName('FORGE');
-app.setPath('userData', path.join(app.getPath('appData'), 'FORGE')); // explícito: a pasta de dados não depende de como o Electron deriva o nome
+// Rodando do código (não empacotado) é o FORGE DEV: nome, pasta de dados, logs e trava de instância única próprios, para abrir ao lado do FORGE instalado sem tocar nele.
+const APP_NAME = app.isPackaged ? 'FORGE' : 'FORGE DEV';
+app.setName(APP_NAME);
+app.setPath('userData', path.join(app.getPath('appData'), APP_NAME)); // explícito: a pasta de dados não depende de como o Electron deriva o nome
 const SMOKE = process.env.ORCH_DESKTOP_SMOKE || null; // só para verificação do pacote: sobe, confere as rotas e sai com um código
 const RES = app.isPackaged ? process.resourcesPath : path.join(__dirname, 'stage');
 const IS_WIN = process.platform === 'win32';
 const APP_DIR = path.join(RES, 'orchestrator'), NODE_EXE = IS_WIN ? path.join(RES, 'node', 'node.exe') : path.join(RES, 'node', 'bin', 'node'); // macOS/Linux: layout oficial do Node (bin/node + lib/node_modules/npm)
-const DATA_DIR = process.env.ORCH_DESKTOP_DATA || path.join(app.getPath('userData'), 'data');
+// Identidade visual do FORGE DEV (selo "DEV" em laranja; arte por scripts/make-dev-icon.cjs). O id próprio impede o Windows de agrupar a janela com a do app instalado.
+const DEV_APP_ID = 'local.forge-dev.source';
+const DEV_ICON = path.join(__dirname, 'build', process.platform === 'win32' ? 'icon-dev.ico' : 'icon-dev.png');
+const DEV_LOGO_CSS = ".fx-brand::after, .fx-setup-brand::after { content: 'DEV';padding: 1px 5px; border: 1px solid #ff7a1a; border-radius: 4px; color: #ff7a1a; font-size: 10px; font-weight: 800; letter-spacing: .06em; }"; // injetado pela casca: o cliente é o mesmo nas duas versões
+if (!app.isPackaged && process.platform === 'win32') app.setAppUserModelId(DEV_APP_ID);
+const DATA_DIR = (app.isPackaged || SMOKE ? process.env.ORCH_DESKTOP_DATA : null) || path.join(app.getPath('userData'), 'data'); // no DEV a variável herdada não vale
 const LOG_FILE = path.join(app.getPath('userData'), 'logs', 'server.log');
 
 const logWriter = createLogWriter({ file: LOG_FILE }); // rotaciona em 5 MB (server.log.1, .2)
@@ -72,10 +79,10 @@ async function capture(kind) {
 }
 function setupTray() {
   try {
-    tray = createForgeTray({ Tray, Menu, nativeImage, iconsDir: path.join(ART, 'tray'), prefsFile: path.join(app.getPath('userData'), 'desktop-prefs.json'), api, showWindow, capture, getWindow: () => win,
+    tray = createForgeTray({ name: app.isPackaged ? 'Forge' : APP_NAME, Tray, Menu, nativeImage, iconsDir: path.join(ART, !app.isPackaged && process.platform !== 'darwin' ? 'tray-dev' : 'tray'), prefsFile: path.join(app.getPath('userData'), 'desktop-prefs.json'), api, showWindow, capture, getWindow: () => win,
       sampler: (onSample) => createSampler({ onSample, memInfo: () => process.getSystemMemoryInfo() }), quit: () => app.quit() });
   } catch (e) { log(`--- bandeja indisponível: ${e?.message || e}`); } // Linux sem área de notificação: o app segue sem ela
-  try { globalShortcut.register('CommandOrControl+Shift+2', () => capture('area')); } catch { /* atalho em uso por outro app */ }
+  if (app.isPackaged) try { globalShortcut.register('CommandOrControl+Shift+2', () => capture('area')); } catch { /* atalho em uso por outro app */ } // o FORGE DEV não disputa o atalho global com o instalado
   if (process.platform === 'darwin' && app.dock) app.dock.setMenu(Menu.buildFromTemplate([{ label: 'Capturar área da tela…', click: () => capture('area') }, { label: 'Capturar tela inteira', click: () => capture('screen') }]));
   if (IS_WIN && win) { // botões na miniatura da janela na barra de tarefas
     const icon = nativeImage.createFromPath(path.join(ART, 'tray', 'tray.png'));
@@ -94,6 +101,10 @@ function startServer() {
   const env = { ...process.env, PORT: String(port), ORCH_DATA_DIR: DATA_DIR, ORCH_API_TOKEN: API_TOKEN };
   if (!IS_WIN) env.PATH = buildMacPath({ home: require('node:os').homedir(), pathEnv: env.PATH }); // app aberto pelo Finder não herda o PATH do shell (git do usuário na frente; claude/node do usuário no fim)
   delete env.ELECTRON_RUN_AS_NODE; delete env.NODE_OPTIONS; // o servidor roda no Node do pacote, nunca como Electron
+  if (!app.isPackaged) { // FORGE DEV aberto de um terminal do app instalado: nada que aponte para ele (contas, arquivos de pane) segue adiante. O stage não tem .git, então a limpeza é aqui
+    const installed = path.join(app.getPath('appData'), 'FORGE').toLowerCase();
+    for (const [k, v] of Object.entries(env)) { const t = String(v).toLowerCase(); if (/^FORGE_MCP_/i.test(k) || t === installed || t.startsWith(installed + path.sep)) delete env[k]; }
+  }
   child = spawn(NODE_EXE, [path.join(APP_DIR, 'server', 'index.js')], { cwd: APP_DIR, env, windowsHide: true, detached: !IS_WIN, stdio: ['ignore', 'pipe', 'pipe'] }); // fora do Windows o servidor lidera o próprio grupo de processos (permite encerrar a árvore)
   lastPid = child.pid;
   log(`--- servidor iniciado (pid ${child.pid}) em 127.0.0.1:${port}; dados em ${DATA_DIR}`);
@@ -129,7 +140,7 @@ function pidAlive(pid) { try { process.kill(pid, 0); return true; } catch (e) { 
 
 /** Primeira execução depois da troca de nome: copia os dados de "AI Dev Orchestrator" para "FORGE". Com dados explícitos (verificação do pacote) não mexe em nada. */
 function runMigration() {
-  if (SMOKE || process.env.ORCH_DESKTOP_DATA) return; // verificação do pacote: nunca toca os dados reais
+  if (!app.isPackaged || SMOKE || process.env.ORCH_DESKTOP_DATA) return; // FORGE DEV e verificação do pacote: nunca tocam os dados reais
   const r = migrateUserData({ appData: app.getPath('appData') });
   if (r.status === 'migrated') {
     fs.mkdirSync(path.dirname(LOG_FILE), { recursive: true });
@@ -176,10 +187,16 @@ async function waitReady() {
 function createWindow() {
   const origin = `http://127.0.0.1:${port}`;
   // Título da janela: "FORGE <versão>". No macOS a faixa da janela é desenhada pela própria interface (titleBarStyle hidden): os botões de fechar, minimizar e ampliar ficam à esquerda e o texto da faixa vem logo depois deles.
-  const title = `FORGE ${app.getVersion()}`;
+  const title = `${APP_NAME} ${app.getVersion()}`;
   win = new BrowserWindow({ width: 1440, height: 900, minWidth: 900, minHeight: 600, backgroundColor: '#000000', title, autoHideMenuBar: true, show: false,
     ...(process.platform === 'darwin' ? { titleBarStyle: 'hidden', trafficLightPosition: { x: 14, y: 9 } } : {}),
     webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false, devTools: !app.isPackaged, preload: path.join(__dirname, 'preload.cjs'), additionalArguments: [`--forge-version=${app.getVersion()}`] } });
+  if (!app.isPackaged) {
+    win.setIcon(DEV_ICON);
+    win.webContents.on('did-finish-load', () => { win?.webContents.insertCSS(DEV_LOGO_CSS).catch(() => {}); });
+    // fixar a janela na barra de tarefas reabre pelo mesmo lançador do atalho (sem isto o Windows fixaria o electron.exe puro)
+    if (IS_WIN) win.setAppDetails({ appId: DEV_APP_ID, appIconPath: DEV_ICON, appIconIndex: 0, relaunchDisplayName: APP_NAME, relaunchCommand: `powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Minimized -File "${path.join(__dirname, 'scripts', 'forge-dev-launcher.ps1')}"` });
+  }
   win.on('page-title-updated', (e) => e.preventDefault()); // o título da página ("FORGE") não substitui o da janela, que leva a versão
   session.defaultSession.webRequest.onBeforeSendHeaders({ urls: [`${origin}/*`] }, (details, cb) => { details.requestHeaders['x-orch-token'] = API_TOKEN; cb({ requestHeaders: details.requestHeaders }); });
   win.once('ready-to-show', () => win.show());

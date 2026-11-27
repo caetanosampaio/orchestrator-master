@@ -29,13 +29,13 @@ function writePrefs(file, prefs) { try { fs.mkdirSync(path.dirname(file), { recu
  * Cria a bandeja. Tudo do Electron entra por injeção. `api(path, init)` chama o servidor local com o token; `showWindow(hash)` mostra a janela
  * principal e navega a interface (ex.: '#/cockpit'); `capture(kind)` faz a captura ('area' | 'screen').
  */
-function createForgeTray({ Tray, Menu, nativeImage, platform = process.platform, iconsDir, prefsFile, api, showWindow, capture, sampler, getWindow, quit }) {
+function createForgeTray({ name: appName = 'Forge', Tray,Menu, nativeImage, platform = process.platform, iconsDir, prefsFile, api, showWindow, capture, sampler, getWindow, quit }) {
   const mac = platform === 'darwin', win = platform === 'win32';
   const name = (base, k) => path.join(iconsDir, `${mac ? 'trayTemplate' : 'tray'}${k === null ? '' : `-work-${k}`}.png`);
   const load = (file) => { const img = nativeImage.createFromPath(file); if (mac) img.setTemplateImage(true); return img; };
   const idle = load(name('', null)), frames = Array.from({ length: FRAMES }, (_, k) => load(name('', k)));
   const tray = new Tray(idle);
-  tray.setToolTip('Forge');
+  tray.setToolTip(appName);
   let prefs = readPrefs(prefsFile), metrics = {}, counts = { running: 0, working: 0, waiting: 0 }, workspaces = [], activeId = null, frame = 0, anim = null, poll = null, stopSampler = null;
 
   const setTitle = () => { if (mac) tray.setTitle(menuBarTitle(metrics, prefs.cpuInMenuBar), { fontType: 'monospacedDigit' }); };
@@ -50,7 +50,7 @@ function createForgeTray({ Tray, Menu, nativeImage, platform = process.platform,
   };
   const rebuild = () => {
     const tpl = [
-      { label: `Forge · ${statusLine(counts)}`, enabled: false },
+      { label: `${appName} · ${statusLine(counts)}`, enabled: false },
       { label: metricsLine(metrics), enabled: false },
       { type: 'separator' },
       { label: 'Abrir o Forge', click: () => showWindow(null) },
@@ -74,7 +74,7 @@ function createForgeTray({ Tray, Menu, nativeImage, platform = process.platform,
       counts = agentCounts(t?.sessions); workspaces = Array.isArray(ws) ? ws : []; activeId = st?.activeWorkspace?.id ?? null;
     } catch { /* servidor subindo ou reiniciando: mantém o último */ }
     animate(counts.working > 0);
-    tray.setToolTip(`Forge · ${statusLine(counts)}\n${metricsLine(metrics)}`);
+    tray.setToolTip(`${appName} · ${statusLine(counts)}\n${metricsLine(metrics)}`);
     rebuild();
   };
   if (!mac) tray.on('click', () => showWindow(null)); // Windows/Linux: clique simples abre a janela; o menu fica no botão direito

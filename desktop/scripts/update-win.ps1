@@ -14,6 +14,12 @@ if (Get-Process -Name FORGE -ErrorAction SilentlyContinue) {
   Write-Error 'O FORGE está aberto. Feche-o (todas as janelas) e rode de novo.'
 }
 
+# O FORGE DEV aberto usa o desktop\stage que o build apaga e recria.
+$StageDir = Join-Path $Desktop 'stage'
+if (Get-Process -Name node -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($StageDir, [StringComparison]::OrdinalIgnoreCase) }) {
+  Write-Error 'O FORGE DEV está aberto. Feche-o e rode de novo.'
+}
+
 if (-not $SemPull) {
   Push-Location $Repo
   try { git pull --ff-only; if ($LASTEXITCODE -ne 0) { throw 'git pull falhou' } } finally { Pop-Location }

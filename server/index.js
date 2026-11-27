@@ -45,6 +45,7 @@ import { strictProjectConfig } from './project-config.js';
 import { configureCodexCatalog } from './providers/codex.js';
 import { codexHomeDir } from './codex-usage.js';
 import { consumeApiTokenFromEnv, createTokenGuard } from './session-token.js';
+import { consumeServerEnv } from './dev-guard.js';
 
 const apiToken = consumeApiTokenFromEnv(); // M2: lido e REMOVIDO de process.env antes de qualquer processo filho existir (ver session-token.js)
 
@@ -56,7 +57,9 @@ const probeGit = testDeps.gitProbe ?? createGitProbe();
 process.on('unhandledRejection', (reason) => { console.error('[forge] rejeição não tratada:', reason?.code || reason?.message || reason); });
 const childRegistry = createChildRegistry(); // PIDs dos processos filhos (terminais, logins, preparação de worktrees) no banco (db.childProcesses), para o boot reclamar o que um servidor anterior deixou vivo
 
-const PORT = Number(process.env.PORT) || 4317;
+const serverEnv = consumeServerEnv(); // ORCH_DATA_DIR e PORT são só DESTE servidor: nenhum terminal os herda (ver dev-guard.js)
+const customData = serverEnv.customDataDir;
+const PORT = serverEnv.port || 4317;
 const HOST = '127.0.0.1'; // somente local
 // Trava de instância ANTES de qualquer operação que possa tocar o banco (load, recover): uma 2ª instância sai sem alterar nada.
 const lock = acquireInstanceLock({ dir: store.dataDir, autoRelease: true });
@@ -70,19 +73,19 @@ const worktrees = createWorktreeManager({ db, track: childRegistry.track, childr
 // Credenciais MCP dos panes: com ORCH_DATA_DIR (testes, app desktop) ficam na pasta de dados; no modo dev, FORA do repositório (um agente com cwd no repositório leria data/ sem pedir permissão).
 const devHome = path.join(process.env.LOCALAPPDATA || os.homedir(), 'forge'); // modo dev; antes era 'ai-dev-orchestrator' (o histórico e os loadouts são copiados no boot, ver legacy-dirs.js)
 const legacyDevHome = path.join(process.env.LOCALAPPDATA || os.homedir(), 'ai-dev-orchestrator');
-const mcpDir = process.env.ORCH_DATA_DIR ? path.join(store.dataDir, 'mcp') : path.join(devHome, 'mcp'); // mcp tem tokens por sessão, regenerados a cada terminal: não se migra
+const mcpDir = customData ? path.join(store.dataDir, 'mcp') : path.join(devHome, 'mcp'); // mcp tem tokens por sessão, regenerados a cada terminal: não se migra
 // Maestro autônomo (também liga o acesso total dos terminais novos): instalação NOVA começa DESLIGADO; instalação já usada continua ligada, gravado de forma explícita (maestro-default.js).
 const autonomyBoot = resolveAutonomous(db);
 if (autonomyBoot.changed) { try { store.saveOrThrow(); } catch { /* sem gravar, o próximo boot repete a mesma decisão */ } }
 const maestro = createMaestro({ autonomous: autonomyBoot.autonomous, getTerminals: () => terminals, harness: { routes: () => routesForMaestro(db), route: (type) => routeFor(db, type), hint: taskHint }, mcpDir, url: `http://127.0.0.1:${PORT}/mcp`, serverName: stableServerName(db, { save: store.saveOrThrow }) }); // nome com sufixo aleatório POR INSTALAÇÃO (estável entre boots, ver maestro.js): um .mcp.json homônimo não herda a pré-autorização // coordenação entre panes por MCP local (aprovação do usuário por padrão)
 // Conversas copiadas: com ORCH_DATA_DIR (testes, app desktop) na pasta de dados; no modo dev, FORA do repositório (mesmo motivo do mcpDir).
-const historyDir = process.env.ORCH_DATA_DIR ? path.join(store.dataDir, 'history') : path.join(devHome, 'history');
-if (!process.env.ORCH_DATA_DIR) for (const name of ['history', 'loadouts']) { const r = migrateLegacyDir(path.join(legacyDevHome, name), path.join(devHome, name)); if (r.status === 'migrated') console.log(`[forge] ${name} copiado de ${legacyDevHome} (a pasta original foi mantida)`); else if (r.status === 'error') console.error(`[forge] não foi possível copiar ${name} da pasta anterior: ${r.error}`); }
+const historyDir = customData ? path.join(store.dataDir, 'history') : path.join(devHome, 'history');
+if (!customData) for (const name of ['history', 'loadouts']) { const r = migrateLegacyDir(path.join(legacyDevHome, name), path.join(devHome, name)); if (r.status === 'migrated') console.log(`[forge] ${name} copiado de ${legacyDevHome} (a pasta original foi mantida)`); else if (r.status === 'error') console.error(`[forge] não foi possível copiar ${name} da pasta anterior: ${r.error}`); }
 // Skills por papel (loadouts.js): plugins de sessão gerados numa pasta própria, FORA do workspace do usuário (mesmo critério do mcpDir/historyDir).
-const loadoutsDir = process.env.ORCH_DATA_DIR ? path.join(store.dataDir, 'loadouts') : path.join(devHome, 'loadouts');
+const loadoutsDir = customData ? path.join(store.dataDir, 'loadouts') : path.join(devHome, 'loadouts');
 // Estado real do agente (running/waiting/completed/error): hooks do Claude Code gravam eventos aqui, fora do workspace (agent-status.js). Sem caminho seguro, os hooks não são registrados e a tela usa a leitura pela saída.
-const statusDir = process.env.ORCH_DATA_DIR ? path.join(store.dataDir, 'agent-status') : path.join(devHome, 'agent-status');
-const paneFilesDir = process.env.ORCH_DATA_DIR ? path.join(store.dataDir, 'pane-files') : path.join(devHome, 'pane-files'); // arquivos por terminal (Gemini: padrões com o MCP e o papel, sem token; Copilot: mcp.json COM o token do pane): pasta com ACL só do usuário, apagados no fim
+const statusDir = customData ? path.join(store.dataDir, 'agent-status') : path.join(devHome, 'agent-status');
+const paneFilesDir = customData ? path.join(store.dataDir, 'pane-files') : path.join(devHome, 'pane-files'); // arquivos por terminal (Gemini: padrões com o MCP e o papel, sem token; Copilot: mcp.json COM o token do pane): pasta com ACL só do usuário, apagados no fim
 const agentStatus = createAgentStatus({ dir: statusDir });
 const loadouts = createLoadouts({ db, dir: loadoutsDir, hooks: hooksJson({ node: process.execPath, script: fileURLToPath(new URL('./agent-status-hook.mjs', import.meta.url)), dir: statusDir }) });
 // Contas (accounts.js, modelo v2): toda conta é um login de algum provider (a do computador ou uma pasta isolada). Testes que injetam a sonda e não injetam `accountsCli` rodam SEM CLI (nunca chamam a real).
@@ -94,10 +97,10 @@ const accounts = createAccounts({ db, dataDir: store.dataDir, persist: store.sav
 migrateAtBoot({ db, persist: store.saveOrThrow, installed: accounts.installedMap(), uid, now, backup: createDbBackup(store.dataDir), log: (m) => console.log(`[forge] ${m}`) });
 logins = createLoginManager({ accounts, ...(accountsCli.unavailable ? { unavailable: true } : {}), track: childRegistry.track });
 // Limite real de uso das contas (janela de 5 h e semanal): a status line do Claude Code grava aqui (claude-statusline-hook.mjs) e o Codex vem dos rollouts; e, quando o login permite, o uso REAL da conta vem do provedor (usage-api.js: lê o token só em memória e consulta o endpoint de uso; desliga com ORCH_LIMITS_API=off) (rate-limits.js). Pasta fora do workspace.
-const limitsDir = process.env.ORCH_DATA_DIR ? path.join(store.dataDir, 'rate-limits') : path.join(devHome, 'rate-limits');
+const limitsDir = customData ? path.join(store.dataDir, 'rate-limits') : path.join(devHome, 'rate-limits');
 // Uso real da conta no provedor (inclui o gasto fora do FORGE): só no servidor de verdade; testes com ORCH_DATA_DIR não leem credenciais nem usam a rede, salvo ORCH_LIMITS_API=on.
 // Por conta: a pasta padrão do ambiente só para a conta do computador DAQUELE provider; conta isolada usa só a pasta dela, e conta desconhecida não tem pasta (nunca cai no login do computador).
-const usageApi = (!process.env.ORCH_DATA_DIR && !process.env.NODE_TEST_CONTEXT) || String(process.env.ORCH_LIMITS_API ?? '').toLowerCase() === 'on' ? createUsageApi({
+const usageApi = (!customData && !process.env.NODE_TEST_CONTEXT) || String(process.env.ORCH_LIMITS_API ?? '').toLowerCase() === 'on' ? createUsageApi({
   isMachine: (id, provider) => { const a = accounts.find(id); return !!a && a.home === 'machine' && a.provider === provider; },
   credsDirOf: (id, provider) => { const a = accounts.find(id); return a && a.provider === provider && a.home !== 'machine' ? accounts.configDirOf(id) : null; },
 }) : null;

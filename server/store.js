@@ -3,9 +3,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
+import { assertDevDataDir, scrubInstalledEnv } from './dev-guard.js';
 
-// ORCH_DATA_DIR só serve para os testes isolarem o banco; não afeta o que é executado.
-const DATA_DIR = process.env.ORCH_DATA_DIR || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'data');
+// ORCH_DATA_DIR isola o banco (testes e app desktop); não afeta o que é executado.
+const CODE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const DATA_DIR = process.env.ORCH_DATA_DIR || path.join(CODE_ROOT, 'data');
+assertDevDataDir(DATA_DIR, { codeRoot: CODE_ROOT }); // antes de qualquer leitura, trava ou gravação
+scrubInstalledEnv({ codeRoot: CODE_ROOT }); // contas e credenciais herdadas do app instalado
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 const BAK_FILE = `${DB_FILE}.bak`;
 export const dataDir = DATA_DIR; // usado pela trava de instância (instance-lock.js)

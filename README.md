@@ -109,21 +109,19 @@ No menu **Ajuda** (no Windows, pressione `Alt` para exibir o menu) use **Copiar 
 
 ```bash
 npm run install:all       # dependências da raiz e do client
-npm run server            # API em 127.0.0.1:4317 (usa o banco REAL em data/)
-npm run dev               # servidor + Vite (também usa o banco real)
+npm run forge-dev         # janela "FORGE DEV" com o código atual (dados próprios; pede npm install em desktop/)
+npm run server            # API em 127.0.0.1:4317 (usa o banco de desenvolvimento em data/)
+npm run dev               # servidor + Vite (mesmo banco de data/)
 npm run build             # gera client/dist, que o servidor serve
 ```
 
-**Testes** (a suíte completa leva alguns minutos). Aponte sempre `ORCH_DATA_DIR` para uma pasta temporária, senão alguns testes usam `data/`:
+No Windows, `powershell -ExecutionPolicy Bypass -File desktop\scripts\make-dev-shortcut.ps1` cria o atalho **FORGE DEV** no menu Iniciar (ícone com o selo "DEV"; a arte é refeita com `npx electron scripts/make-dev-icon.cjs` em `desktop/`). Ele aponta para esta pasta: se ela mudar de lugar, crie o atalho de novo.
 
-```bash
-# bash
-export ORCH_DATA_DIR="$(mktemp -d -t orch-suite-XXXX)"; npm test
-# PowerShell
-$env:ORCH_DATA_DIR = (New-Item -ItemType Directory -Path (Join-Path $env:TEMP "orch-suite-$(Get-Random)")).FullName; npm test
-```
+**FORGE instalado x FORGE DEV.** Dá para usar o app instalado no dia a dia e desenvolver o FORGE ao mesmo tempo: o DEV tem pasta de dados, logs e instância próprios, e código rodado de um checkout Git se recusa a abrir os dados do instalado. O app instalado só muda quando você o atualiza: feche-o e rode, num terminal fora do FORGE, `npm run update:win -- -SemPull` em `desktop/` (usa o código desta pasta como está; sem `-SemPull`, faz `git pull` antes).
 
-Um arquivo só: `node --test server/test/<arquivo>.test.mjs`. A suíte usa CLIs simuladas e não consome créditos. Alguns testes só valem para um sistema (`posix-process.test.mjs` no macOS/Linux e `win-process.test.mjs` no Windows) e aparecem como ignorados nos outros. A integração contínua (`.github/workflows/ci.yml`) roda a suíte no Windows, Linux e macOS a cada push na `main` e em cada pull request.
+**Testes** (a suíte completa leva alguns minutos). `npm test` cria um banco temporário e o apaga no fim; para um arquivo, `npm test -- server/test/<arquivo>.test.mjs`.
+
+Um arquivo só: `npm test -- server/test/<arquivo>.test.mjs`. A suíte usa CLIs simuladas e não consome créditos. Alguns testes só valem para um sistema (`posix-process.test.mjs` no macOS/Linux e `win-process.test.mjs` no Windows) e aparecem como ignorados nos outros. A integração contínua (`.github/workflows/ci.yml`) roda a suíte no Windows, Linux e macOS a cada push na `main` e em cada pull request.
 
 **Empacotar o desktop** (rode dentro de `desktop/`, onde estão os scripts):
 
